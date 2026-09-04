@@ -1,5 +1,5 @@
 {
   "team_password": "insta2026",
   "port": 8000,
-  "default_channels": ["random", "memes", "kaffeekueche"]
+  "default_channels": ["allgemein"]
 }

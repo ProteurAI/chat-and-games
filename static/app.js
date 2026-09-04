@@ -64,12 +64,21 @@ async function loadChannels() {
   renderChannelList();
   if (!currentChannelId && channels.length) {
     selectChannel(channels[0].id);
+  } else if (!channels.length) {
+    showNoChannelsState();
   }
 }
 
 function renderChannelList() {
   const list = el("channel-list");
   list.innerHTML = "";
+  if (!channels.length) {
+    const li = document.createElement("li");
+    li.className = "channel-empty-hint";
+    li.textContent = "Noch keine Kanäle – leg unten den ersten an! 👇";
+    list.appendChild(li);
+    return;
+  }
   for (const ch of channels) {
     const li = document.createElement("li");
     li.textContent = `#${ch.name}`;
@@ -79,8 +88,26 @@ function renderChannelList() {
   }
 }
 
+function showNoChannelsState() {
+  currentChannelId = null;
+  el("current-channel-name").textContent = "#";
+  el("messages").innerHTML = "";
+  const hint = document.createElement("div");
+  hint.className = "msg-system";
+  hint.textContent = "Noch keine Kanäle vorhanden – leg links deinen ersten Kanal an!";
+  el("messages").appendChild(hint);
+  setComposerEnabled(false);
+}
+
+function setComposerEnabled(enabled) {
+  for (const id of ["snap-btn", "attach-btn", "poll-btn", "message-input", "send-btn"]) {
+    el(id).disabled = !enabled;
+  }
+}
+
 async function selectChannel(id) {
   currentChannelId = id;
+  setComposerEnabled(true);
   renderChannelList();
   const ch = channels.find((c) => c.id === id);
   el("current-channel-name").textContent = ch ? `#${ch.name}` : "#";
@@ -228,6 +255,8 @@ function renderMessage(msg) {
     bubble.appendChild(img);
   } else if (msg.type === "poll") {
     bubble.appendChild(buildPollElement(msg));
+  } else if (msg.type === "snap") {
+    bubble.appendChild(buildSnapElement(msg));
   }
 
   const reactions = document.createElement("div");
@@ -366,6 +395,57 @@ el("poll-submit").addEventListener("click", () => {
   el("poll-question").value = "";
 });
 
+// ---------- snap rendering (ephemeral view-once effect) ----------
+const VIEWED_SNAPS_KEY = "instachat_viewed_snaps";
+
+function getViewedSnaps() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(VIEWED_SNAPS_KEY) || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
+function markSnapViewed(id) {
+  const viewed = getViewedSnaps();
+  viewed.add(id);
+  localStorage.setItem(VIEWED_SNAPS_KEY, JSON.stringify([...viewed]));
+}
+
+function buildSnapElement(msg) {
+  const wrap = document.createElement("div");
+  wrap.className = "snap-frame";
+
+  const label = document.createElement("div");
+  label.className = "snap-label";
+  label.textContent = "⚡ Snap";
+  wrap.appendChild(label);
+
+  const img = document.createElement("img");
+  img.className = "chat-image snap-image";
+  img.src = msg.image_url;
+  img.alt = "Snap";
+  wrap.appendChild(img);
+
+  const seenHint = document.createElement("div");
+  seenHint.className = "snap-seen-hint";
+  seenHint.textContent = "👁 Bereits angesehen";
+  seenHint.hidden = true;
+  wrap.appendChild(seenHint);
+
+  if (getViewedSnaps().has(msg.id)) {
+    wrap.classList.add("snap-viewed");
+    seenHint.hidden = false;
+  } else {
+    markSnapViewed(msg.id);
+    setTimeout(() => {
+      wrap.classList.add("snap-viewed");
+      seenHint.hidden = false;
+    }, 4000);
+  }
+  return wrap;
+}
+
 // ---------- text messages ----------
 el("message-form").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -405,6 +485,85 @@ async function uploadAndSendImage(file) {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "image_message", channel_id: currentChannelId, image_path: result.image_path }));
     }
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+// ---------- snap (webcam) ----------
+let snapStream = null;
+let snapBlob = null;
+
+el("snap-btn").addEventListener("click", openSnapModal);
+el("snap-close-btn").addEventListener("click", closeSnapModal);
+el("snap-capture-btn").addEventListener("click", captureSnap);
+el("snap-retake-btn").addEventListener("click", resetSnapUI);
+el("snap-send-btn").addEventListener("click", sendSnap);
+
+async function openSnapModal() {
+  if (!currentChannelId) return;
+  resetSnapUI();
+  el("snap-error").hidden = true;
+  el("snap-modal").hidden = false;
+  try {
+    snapStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+    el("snap-video").srcObject = snapStream;
+  } catch (err) {
+    el("snap-error").textContent = "Kein Kamerazugriff: " + err.message;
+    el("snap-error").hidden = false;
+  }
+}
+
+function closeSnapModal() {
+  el("snap-modal").hidden = true;
+  stopSnapStream();
+  resetSnapUI();
+}
+
+function stopSnapStream() {
+  if (snapStream) {
+    snapStream.getTracks().forEach((t) => t.stop());
+    snapStream = null;
+  }
+}
+
+function resetSnapUI() {
+  snapBlob = null;
+  el("snap-video").hidden = false;
+  el("snap-preview-img").hidden = true;
+  el("snap-capture-btn").hidden = false;
+  el("snap-retake-btn").hidden = true;
+  el("snap-send-btn").hidden = true;
+}
+
+function captureSnap() {
+  const video = el("snap-video");
+  const canvas = el("snap-canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    snapBlob = blob;
+    el("snap-preview-img").src = URL.createObjectURL(blob);
+    el("snap-video").hidden = true;
+    el("snap-preview-img").hidden = false;
+    el("snap-capture-btn").hidden = true;
+    el("snap-retake-btn").hidden = false;
+    el("snap-send-btn").hidden = false;
+  }, "image/jpeg", 0.9);
+}
+
+async function sendSnap() {
+  if (!snapBlob || !currentChannelId) return;
+  try {
+    const form = new FormData();
+    form.append("file", snapBlob, "snap.jpg");
+    const result = await api("/api/upload", { method: "POST", body: form });
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "snap_message", channel_id: currentChannelId, image_path: result.image_path }));
+    }
+    closeSnapModal();
   } catch (err) {
     toast(err.message);
   }

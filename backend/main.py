@@ -145,7 +145,7 @@ def serialize_message(conn, row) -> dict:
             "my_option_id": None,
         }
 
-    if msg["type"] == "image" and msg.get("image_path"):
+    if msg["type"] in ("image", "snap") and msg.get("image_path"):
         msg["image_url"] = f"/uploads/{msg['image_path']}"
 
     return msg
@@ -394,6 +394,20 @@ async def websocket_endpoint(ws: WebSocket, token: Optional[str] = None):
                 with db.get_conn() as conn:
                     cur = conn.execute(
                         "INSERT INTO messages (channel_id, user_id, type, image_path, created_at) VALUES (?, ?, 'image', ?, ?)",
+                        (channel_id, user["id"], image_path, db.now()),
+                    )
+                    row = conn.execute("SELECT * FROM messages WHERE id = ?", (cur.lastrowid,)).fetchone()
+                    full = serialize_message(conn, row)
+                await manager.broadcast_channel(channel_id, {"type": "message", "message": full})
+
+            elif msg_type == "snap_message":
+                channel_id = raw.get("channel_id")
+                image_path = raw.get("image_path")
+                if not isinstance(channel_id, int) or not image_path:
+                    continue
+                with db.get_conn() as conn:
+                    cur = conn.execute(
+                        "INSERT INTO messages (channel_id, user_id, type, image_path, created_at) VALUES (?, ?, 'snap', ?, ?)",
                         (channel_id, user["id"], image_path, db.now()),
                     )
                     row = conn.execute("SELECT * FROM messages WHERE id = ?", (cur.lastrowid,)).fetchone()

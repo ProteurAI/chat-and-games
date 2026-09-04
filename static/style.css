@@ -125,6 +125,8 @@ input { font-family: inherit; }
   border: none; background: var(--indigo); color: white; border-radius: 8px; width: 28px; font-weight: 700;
 }
 
+.channel-empty-hint { padding: 8px 2px; font-size: 12.5px; color: var(--text-dim); line-height: 1.4; }
+
 .bingo-open-btn {
   margin-top: auto; border: none; background: var(--indigo); color: white;
   padding: 12px; border-radius: 14px; font-weight: 700; font-size: 14px; box-shadow: var(--shadow);
@@ -158,6 +160,16 @@ input { font-family: inherit; }
 }
 .msg.mine .bubble { background: var(--bubble-mine); color: var(--bubble-mine-text); }
 .bubble img.chat-image { max-width: 280px; border-radius: 12px; display: block; margin-top: 2px; }
+
+/* snap bubble */
+.snap-frame {
+  display: inline-block; border-radius: 16px; padding: 4px;
+  background: linear-gradient(160deg, var(--coral) 0%, var(--indigo) 100%);
+}
+.snap-label { color: white; font-size: 11px; font-weight: 700; padding: 2px 6px 4px; letter-spacing: 0.03em; }
+.snap-frame img.snap-image { max-width: 260px; border-radius: 12px; display: block; transition: filter 0.4s ease; }
+.snap-frame.snap-viewed img.snap-image { filter: blur(9px) grayscale(70%) brightness(0.75); }
+.snap-seen-hint { color: white; font-size: 11px; text-align: center; padding: 4px 0 2px; opacity: 0.9; }
 .mention { background: rgba(124, 111, 240, 0.18); color: var(--indigo-dark); border-radius: 6px; padding: 0 3px; font-weight: 600; }
 .msg.mine .mention { background: rgba(255,255,255,0.25); color: white; }
 
@@ -203,6 +215,9 @@ input { font-family: inherit; }
 .message-form { display: flex; align-items: center; gap: 8px; padding: 14px 24px; border-top: 1px solid var(--border); background: var(--bg-alt); }
 .icon-btn { background: none; border: none; font-size: 20px; padding: 4px 6px; border-radius: 10px; color: var(--text-dim); }
 .icon-btn:hover { background: var(--border); }
+.icon-btn:disabled, .send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.icon-btn:disabled:hover { background: none; }
+#message-input:disabled { opacity: 0.6; }
 #message-input {
   flex: 1; padding: 11px 16px; border-radius: 20px; border: 1px solid var(--border);
   font-size: 14.5px; background: var(--bg); color: var(--text);
@@ -232,6 +247,16 @@ input { font-family: inherit; }
 .bingo-cell.checked { background: var(--coral); border-color: var(--coral); color: white; font-weight: 600; }
 .bingo-cell.free { background: var(--indigo); border-color: var(--indigo); color: white; font-weight: 700; cursor: default; }
 
+/* ---------- SNAP MODAL ---------- */
+.snap-modal { max-width: 420px; }
+.snap-stage {
+  position: relative; width: 100%; aspect-ratio: 4 / 3; background: #111;
+  border-radius: 14px; overflow: hidden; margin-top: 14px;
+}
+.snap-stage video, .snap-stage img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.snap-error { color: #D64545; font-size: 13px; margin-top: 10px; }
+.snap-actions { display: flex; gap: 8px; margin-top: 14px; justify-content: center; }
+
 /* toast */
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
@@ -251,4 +276,5 @@ input { font-family: inherit; }
   .chat-header { padding-left: 58px; }
   .msg { max-width: 88%; }
   .bubble img.chat-image { max-width: 200px; }
+  .snap-frame img.snap-image { max-width: 200px; }
 }

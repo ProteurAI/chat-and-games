@@ -73,6 +73,7 @@
     </div>
 
     <form id="message-form" class="message-form">
+      <button type="button" id="snap-btn" class="icon-btn" title="Snap aufnehmen">📸</button>
       <button type="button" id="attach-btn" class="icon-btn" title="Bild senden">📷</button>
       <button type="button" id="poll-btn" class="icon-btn" title="Umfrage erstellen">📊</button>
       <input id="message-input" type="text" placeholder="Nachricht schreiben..." autocomplete="off" maxlength="4000" />
@@ -91,6 +92,27 @@
     </div>
     <p class="bingo-hint">Klick ein Feld an, sobald es passiert ist. Volle Reihe = BINGO für alle sichtbar!</p>
     <div id="bingo-grid" class="bingo-grid"></div>
+  </div>
+</div>
+
+<!-- SNAP MODAL -->
+<div id="snap-modal" class="modal-overlay" hidden>
+  <div class="modal snap-modal">
+    <div class="modal-head">
+      <h2>📸 Snap</h2>
+      <button type="button" id="snap-close-btn" class="icon-btn">✕</button>
+    </div>
+    <div class="snap-stage">
+      <video id="snap-video" autoplay playsinline muted></video>
+      <img id="snap-preview-img" hidden alt="Snap-Vorschau" />
+    </div>
+    <canvas id="snap-canvas" hidden></canvas>
+    <p id="snap-error" class="snap-error" hidden></p>
+    <div class="snap-actions">
+      <button type="button" id="snap-capture-btn" class="primary-btn">📸 Aufnehmen</button>
+      <button type="button" id="snap-retake-btn" class="ghost-btn" hidden>↺ Verwerfen</button>
+      <button type="button" id="snap-send-btn" class="primary-btn" hidden>Senden 🚀</button>
+    </div>
   </div>
 </div>
 
