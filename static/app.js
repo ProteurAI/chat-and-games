@@ -8,6 +8,14 @@ let ws = null;
 let wsReconnectDelay = 1000;
 let pollOptionCount = 2;
 
+let gameTypes = [];
+let gameSessions = [];
+let myGameSessionId = null;
+let myGameType = null;
+let myGamePlayers = [];
+let pongCtx = null;
+let pongPressedKey = null;
+
 const el = (id) => document.getElementById(id);
 
 // ---------- api helper ----------
@@ -55,6 +63,7 @@ async function startApp() {
   el("app").hidden = false;
   el("sidebar-me").textContent = `angemeldet als ${me.name}`;
   await loadChannels();
+  await loadGames();
   connectWebSocket();
 }
 
@@ -173,6 +182,18 @@ function handleWsEvent(data) {
       scrollToBottom();
     }
     toast(data.message.content);
+  } else if (data.type === "games_update") {
+    gameSessions = data.games;
+    renderGameSidebar();
+  } else if (data.type === "game_joined") {
+    myGameSessionId = data.session_id;
+    myGameType = data.game_type;
+  } else if (data.type === "game_started") {
+    openGameModal(data);
+  } else if (data.type === "game_state") {
+    if (data.session_id === myGameSessionId) updateGameState(data.state);
+  } else if (data.type === "game_over") {
+    if (data.session_id === myGameSessionId) showGameOver(data);
   }
 }
 
@@ -567,6 +588,294 @@ async function sendSnap() {
   } catch (err) {
     toast(err.message);
   }
+}
+
+// ---------- games: lobby ----------
+async function loadGames() {
+  const data = await api("/api/games");
+  gameTypes = data.game_types;
+  gameSessions = data.sessions;
+  renderGameSidebar();
+}
+
+function renderGameSidebar() {
+  const iAmInSession = gameSessions.some((s) => s.players.some((p) => p.id === me.id));
+
+  const typeList = el("game-type-list");
+  typeList.innerHTML = "";
+  for (const gt of gameTypes) {
+    const li = document.createElement("li");
+    li.className = "game-type-item";
+    const label = document.createElement("span");
+    label.textContent = `${gt.emoji} ${gt.name}`;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "Starten";
+    btn.disabled = iAmInSession;
+    btn.addEventListener("click", () => startGame(gt.game_type));
+    li.appendChild(label);
+    li.appendChild(btn);
+    typeList.appendChild(li);
+  }
+
+  const lobbyList = el("game-lobby-list");
+  lobbyList.innerHTML = "";
+  for (const s of gameSessions) {
+    const amIIn = s.players.some((p) => p.id === me.id);
+    const li = document.createElement("li");
+    li.className = "game-lobby-item";
+
+    const title = document.createElement("div");
+    title.className = "game-lobby-title";
+    const hostName = s.players[0] ? s.players[0].name : "Jemand";
+    title.textContent = amIIn ? `${s.emoji} ${s.game_name}` : `${s.emoji} ${hostName} spielt gerade ${s.game_name}`;
+    li.appendChild(title);
+
+    const count = document.createElement("div");
+    count.className = "game-lobby-count";
+    count.textContent = `${s.player_count}/${s.max_players} Spieler`;
+    li.appendChild(count);
+
+    if (amIIn && s.status === "waiting") {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ghost-btn";
+      btn.textContent = "Abbrechen";
+      btn.addEventListener("click", () => leaveGame(s.id));
+      li.appendChild(btn);
+    } else if (!amIIn && !iAmInSession && s.status === "waiting" && s.player_count < s.max_players) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = "Beitreten";
+      btn.addEventListener("click", () => joinGame(s.id));
+      li.appendChild(btn);
+    }
+
+    lobbyList.appendChild(li);
+  }
+}
+
+function startGame(gameType) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "game_create", game_type: gameType }));
+  }
+}
+
+function joinGame(sessionId) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "game_join", session_id: sessionId }));
+  }
+}
+
+function leaveGame(sessionId) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "game_leave", session_id: sessionId }));
+  }
+}
+
+function sendGameInput(payload) {
+  if (ws && ws.readyState === WebSocket.OPEN && myGameSessionId) {
+    ws.send(JSON.stringify({ type: "game_input", session_id: myGameSessionId, payload }));
+  }
+}
+
+// ---------- games: modal ----------
+function openGameModal(data) {
+  myGameSessionId = data.session_id;
+  myGameType = data.game_type;
+  myGamePlayers = data.players;
+
+  el("game-overlay-msg").hidden = true;
+  el("game-rematch-btn").hidden = true;
+  el("game-modal-title").textContent = data.game_type === "pong" ? "🏓 Pong" : "⭕ Tic-Tac-Toe";
+
+  const stage = el("game-stage");
+  stage.innerHTML = "";
+  if (data.game_type === "pong") {
+    buildPongStage(stage);
+  } else if (data.game_type === "tictactoe") {
+    buildTttStage(stage);
+  }
+  updateGameState(data.state);
+  el("game-modal").hidden = false;
+}
+
+function closeGameModal() {
+  if (myGameSessionId && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "game_leave", session_id: myGameSessionId }));
+  }
+  stopPongControls();
+  el("game-modal").hidden = true;
+  myGameSessionId = null;
+  myGameType = null;
+  myGamePlayers = [];
+}
+
+el("game-close-btn").addEventListener("click", closeGameModal);
+el("game-overlay-close-btn").addEventListener("click", closeGameModal);
+el("game-rematch-btn").addEventListener("click", () => {
+  if (myGameSessionId && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "game_rematch", session_id: myGameSessionId }));
+  }
+  el("game-overlay-msg").hidden = true;
+});
+
+function updateGameState(state) {
+  if (myGameType === "pong") renderPong(state);
+  else if (myGameType === "tictactoe") renderTtt(state);
+}
+
+function showGameOver(data) {
+  stopPongControls();
+  let text;
+  if (data.reason === "draw") {
+    text = "🤝 Unentschieden!";
+  } else if (data.reason === "opponent_left") {
+    text = data.winner_user_id === me.id ? "🏆 Du gewinnst — dein Gegner hat das Spiel verlassen." : "Spiel beendet.";
+  } else if (data.winner_user_id === me.id) {
+    text = "🏆 Du hast gewonnen!";
+  } else {
+    text = `${data.winner_name || "Dein Gegner"} hat gewonnen.`;
+  }
+  el("game-overlay-text").textContent = text;
+  el("game-rematch-btn").hidden = myGameType !== "tictactoe" || data.reason === "opponent_left";
+  el("game-overlay-msg").hidden = false;
+}
+
+// ---------- games: pong ----------
+function buildPongStage(stage) {
+  const scoreRow = document.createElement("div");
+  scoreRow.className = "pong-score-row";
+  scoreRow.innerHTML = `
+    <span id="pong-name-left">…</span>
+    <span class="pong-score" id="pong-score-text">0 : 0</span>
+    <span id="pong-name-right">…</span>
+  `;
+  stage.appendChild(scoreRow);
+
+  const canvas = document.createElement("canvas");
+  canvas.id = "pong-canvas";
+  canvas.width = 480;
+  canvas.height = 288;
+  stage.appendChild(canvas);
+  pongCtx = canvas.getContext("2d");
+
+  const hint = document.createElement("p");
+  hint.style.cssText = "font-size:12px;color:var(--text-dim);margin:0;";
+  hint.textContent = "Steuerung: Pfeiltaste hoch/runter";
+  stage.appendChild(hint);
+
+  startPongControls();
+}
+
+function renderPong(state) {
+  const leftUid = Object.keys(state.sides).find((u) => state.sides[u] === "left");
+  const rightUid = Object.keys(state.sides).find((u) => state.sides[u] === "right");
+  const leftPlayer = myGamePlayers.find((p) => String(p.id) === leftUid);
+  const rightPlayer = myGamePlayers.find((p) => String(p.id) === rightUid);
+  if (el("pong-name-left")) el("pong-name-left").textContent = leftPlayer ? leftPlayer.name : "?";
+  if (el("pong-name-right")) el("pong-name-right").textContent = rightPlayer ? rightPlayer.name : "?";
+  if (el("pong-score-text")) {
+    el("pong-score-text").textContent = `${state.score[leftUid]} : ${state.score[rightUid]}`;
+  }
+
+  if (!pongCtx) return;
+  const canvas = el("pong-canvas");
+  const w = canvas.width;
+  const h = canvas.height;
+  const scale = w / state.width;
+
+  pongCtx.fillStyle = "#14121f";
+  pongCtx.fillRect(0, 0, w, h);
+  pongCtx.strokeStyle = "rgba(255,255,255,0.25)";
+  pongCtx.setLineDash([8, 10]);
+  pongCtx.beginPath();
+  pongCtx.moveTo(w / 2, 0);
+  pongCtx.lineTo(w / 2, h);
+  pongCtx.stroke();
+  pongCtx.setLineDash([]);
+
+  const paddleW = 8;
+  const paddleH = state.paddle_half * 2 * scale;
+  pongCtx.fillStyle = "#ffffff";
+  pongCtx.fillRect(state.paddle_x_left * scale - paddleW / 2, state.paddles[leftUid] * scale - paddleH / 2, paddleW, paddleH);
+  pongCtx.fillRect(state.paddle_x_right * scale - paddleW / 2, state.paddles[rightUid] * scale - paddleH / 2, paddleW, paddleH);
+
+  pongCtx.beginPath();
+  pongCtx.arc(state.ball.x * scale, state.ball.y * scale, 6, 0, Math.PI * 2);
+  pongCtx.fill();
+}
+
+function startPongControls() {
+  pongPressedKey = null;
+  document.addEventListener("keydown", onPongKeyDown);
+  document.addEventListener("keyup", onPongKeyUp);
+}
+
+function stopPongControls() {
+  document.removeEventListener("keydown", onPongKeyDown);
+  document.removeEventListener("keyup", onPongKeyUp);
+  pongPressedKey = null;
+  pongCtx = null;
+}
+
+function onPongKeyDown(e) {
+  if (myGameType !== "pong" || !myGameSessionId) return;
+  if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+  e.preventDefault();
+  const dir = e.key === "ArrowUp" ? "up" : "down";
+  if (pongPressedKey === dir) return;
+  pongPressedKey = dir;
+  sendGameInput({ direction: dir });
+}
+
+function onPongKeyUp(e) {
+  if (myGameType !== "pong" || !myGameSessionId) return;
+  if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+  e.preventDefault();
+  if (pongPressedKey === (e.key === "ArrowUp" ? "up" : "down")) {
+    pongPressedKey = null;
+    sendGameInput({ direction: "stop" });
+  }
+}
+
+// ---------- games: tic-tac-toe ----------
+function buildTttStage(stage) {
+  const turnRow = document.createElement("div");
+  turnRow.id = "ttt-turn-indicator";
+  turnRow.className = "ttt-turn-indicator";
+  stage.appendChild(turnRow);
+
+  const grid = document.createElement("div");
+  grid.className = "ttt-grid";
+  grid.id = "ttt-grid";
+  for (let i = 0; i < 9; i++) {
+    const cell = document.createElement("button");
+    cell.type = "button";
+    cell.className = "ttt-cell";
+    cell.disabled = true;
+    cell.addEventListener("click", () => sendGameInput({ cell_index: i }));
+    grid.appendChild(cell);
+  }
+  stage.appendChild(grid);
+}
+
+function renderTtt(state) {
+  const mySymbol = state.symbols[String(me.id)];
+  const isMyTurn = state.turn === String(me.id);
+  const indicator = el("ttt-turn-indicator");
+  if (indicator) {
+    indicator.textContent = isMyTurn ? `Du bist dran (${mySymbol})` : "Gegner ist dran …";
+    indicator.classList.toggle("my-turn", isMyTurn);
+  }
+  const grid = el("ttt-grid");
+  if (!grid) return;
+  state.board.forEach((val, i) => {
+    const cell = grid.children[i];
+    cell.textContent = val || "";
+    cell.classList.toggle("symbol-o", val === "O");
+    cell.disabled = !!val || !isMyTurn || !!state.winner;
+  });
 }
 
 // ---------- bingo ----------

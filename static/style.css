@@ -127,6 +127,32 @@ input { font-family: inherit; }
 
 .channel-empty-hint { padding: 8px 2px; font-size: 12.5px; color: var(--text-dim); line-height: 1.4; }
 
+.game-type-list, .game-lobby-list { list-style: none; margin: 0; padding: 0; }
+.game-type-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 10px; border-radius: 10px; font-size: 13.5px; margin-bottom: 2px;
+}
+.game-type-item:hover { background: rgba(0,0,0,0.05); }
+.game-type-item button {
+  border: none; background: var(--indigo); color: white; border-radius: 8px;
+  padding: 4px 9px; font-size: 12px; font-weight: 700;
+}
+.game-type-item button:hover { background: var(--indigo-dark); }
+.game-type-item button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.game-lobby-item {
+  padding: 8px 10px; border-radius: 10px; font-size: 12.5px; margin-top: 4px;
+  background: var(--bg-alt); border: 1px solid var(--border);
+}
+.game-lobby-item .game-lobby-title { font-weight: 600; margin-bottom: 4px; }
+.game-lobby-item .game-lobby-count { color: var(--text-dim); font-size: 11.5px; }
+.game-lobby-item button {
+  margin-top: 6px; width: 100%; border: none; background: var(--coral); color: white;
+  border-radius: 8px; padding: 5px; font-size: 12px; font-weight: 700;
+}
+.game-lobby-item button:hover { background: var(--coral-dark); }
+.game-lobby-item button.ghost-btn { background: none; border: 1px dashed var(--border); color: var(--text-dim); }
+
 .bingo-open-btn {
   margin-top: auto; border: none; background: var(--indigo); color: white;
   padding: 12px; border-radius: 14px; font-weight: 700; font-size: 14px; box-shadow: var(--shadow);
@@ -246,6 +272,40 @@ input { font-family: inherit; }
 }
 .bingo-cell.checked { background: var(--coral); border-color: var(--coral); color: white; font-weight: 600; }
 .bingo-cell.free { background: var(--indigo); border-color: var(--indigo); color: white; font-weight: 700; cursor: default; }
+
+/* ---------- GAME MODAL ---------- */
+.game-modal { max-width: 540px; }
+.game-stage { position: relative; margin-top: 14px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+
+.pong-score-row {
+  display: flex; align-items: center; justify-content: center; gap: 18px;
+  font-family: 'Baloo 2', sans-serif; font-size: 15px; color: var(--text);
+}
+.pong-score-row .pong-score { font-size: 26px; font-weight: 700; color: var(--coral-dark); }
+#pong-canvas { background: #14121f; border-radius: 14px; max-width: 100%; display: block; }
+
+.ttt-turn-indicator { font-size: 14px; font-weight: 600; color: var(--text-dim); text-align: center; }
+.ttt-turn-indicator.my-turn { color: var(--coral-dark); }
+.ttt-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; max-width: 300px;
+}
+.ttt-cell {
+  aspect-ratio: 1; border: 2px solid var(--border); border-radius: 12px; background: var(--bg);
+  font-family: 'Baloo 2', sans-serif; font-size: 34px; font-weight: 700; color: var(--indigo);
+  display: flex; align-items: center; justify-content: center;
+}
+.ttt-cell:not(:disabled):hover { background: var(--border); }
+.ttt-cell:disabled { cursor: default; }
+.ttt-cell.symbol-o { color: var(--coral); }
+
+.game-overlay-msg {
+  position: absolute; inset: 0; background: rgba(20, 18, 31, 0.82); border-radius: 14px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  padding: 20px; text-align: center;
+}
+.game-overlay-text { color: white; font-family: 'Baloo 2', sans-serif; font-size: 20px; }
+.game-overlay-actions { display: flex; gap: 8px; }
+.game-overlay-actions .ghost-btn { color: white; border-color: rgba(255,255,255,0.4); }
 
 /* ---------- SNAP MODAL ---------- */
 .snap-modal { max-width: 420px; }

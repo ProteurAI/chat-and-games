@@ -1,3 +1,4 @@
+import asyncio
 import json
 import mimetypes
 import os
@@ -12,6 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
+from . import games as games_module
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT_DIR / "static"
@@ -65,16 +67,19 @@ class ConnectionManager:
         self.by_channel: dict[int, set[WebSocket]] = {}
         self.current_channel: dict[WebSocket, int] = {}
         self.user_of: dict[WebSocket, dict] = {}
+        self.locks: dict[WebSocket, asyncio.Lock] = {}
 
     async def connect(self, ws: WebSocket, user: dict):
         await ws.accept()
         self.user_of[ws] = user
+        self.locks[ws] = asyncio.Lock()
 
     def disconnect(self, ws: WebSocket):
         ch = self.current_channel.pop(ws, None)
         if ch is not None and ch in self.by_channel:
             self.by_channel[ch].discard(ws)
         self.user_of.pop(ws, None)
+        self.locks.pop(ws, None)
 
     def join_channel(self, ws: WebSocket, channel_id: int):
         old = self.current_channel.get(ws)
@@ -84,21 +89,25 @@ class ConnectionManager:
         self.current_channel[ws] = channel_id
 
     async def send_to(self, ws: WebSocket, payload: dict):
-        await ws.send_json(payload)
+        # A per-connection lock keeps concurrent senders (chat broadcasts vs.
+        # the game tick loop, which run as independent asyncio tasks) from
+        # writing to the same socket at the same time.
+        lock = self.locks.get(ws)
+        if lock is None:
+            return
+        async with lock:
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                pass
 
     async def broadcast_channel(self, channel_id: int, payload: dict):
         for ws in list(self.by_channel.get(channel_id, set())):
-            try:
-                await ws.send_json(payload)
-            except Exception:
-                pass
+            await self.send_to(ws, payload)
 
     async def broadcast_all(self, payload: dict):
         for ws in list(self.user_of.keys()):
-            try:
-                await ws.send_json(payload)
-            except Exception:
-                pass
+            await self.send_to(ws, payload)
 
     def online_names(self) -> list[str]:
         seen = {}
@@ -108,6 +117,7 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+game_manager = games_module.GameManager(manager)
 
 
 # ---------- serialization ----------
@@ -243,6 +253,13 @@ async def get_messages(channel_id: int, limit: int = 50, before_id: Optional[int
                 full["poll"]["my_option_id"] = my_vote["option_id"] if my_vote else None
             messages.append(full)
     return messages
+
+
+# ---------- REST: games ----------
+
+@app.get("/api/games")
+async def list_games(user: dict = Depends(get_current_user)):
+    return {"game_types": game_manager.game_types(), "sessions": game_manager.public_lobby()}
 
 
 # ---------- REST: image upload ----------
@@ -485,9 +502,35 @@ async def websocket_endpoint(ws: WebSocket, token: Optional[str] = None):
                     {"type": "reaction_update", "message_id": message_id, "reactions": full["reactions"]},
                 )
 
+            elif msg_type == "game_create":
+                game_type = raw.get("game_type")
+                if isinstance(game_type, str):
+                    await game_manager.create_session(user, ws, game_type)
+
+            elif msg_type == "game_join":
+                session_id = raw.get("session_id")
+                if isinstance(session_id, str):
+                    await game_manager.join_session(user, ws, session_id)
+
+            elif msg_type == "game_input":
+                session_id = raw.get("session_id")
+                if isinstance(session_id, str):
+                    await game_manager.handle_input(user, ws, session_id, raw.get("payload") or {})
+
+            elif msg_type == "game_rematch":
+                session_id = raw.get("session_id")
+                if isinstance(session_id, str):
+                    await game_manager.handle_rematch(user, ws, session_id)
+
+            elif msg_type == "game_leave":
+                session_id = raw.get("session_id")
+                if isinstance(session_id, str):
+                    await game_manager.leave_session(user, ws, session_id)
+
     except WebSocketDisconnect:
         pass
     finally:
+        await game_manager.handle_disconnect(ws)
         manager.disconnect(ws)
         await manager.broadcast_all({"type": "presence", "online": manager.online_names()})
 

@@ -44,6 +44,12 @@
     </div>
 
     <div class="sidebar-section">
+      <div class="sidebar-title">🎮 Spiele</div>
+      <ul id="game-type-list" class="game-type-list"></ul>
+      <ul id="game-lobby-list" class="game-lobby-list"></ul>
+    </div>
+
+    <div class="sidebar-section">
       <div class="sidebar-title">Online</div>
       <ul id="online-list" class="online-list"></ul>
     </div>
@@ -112,6 +118,24 @@
       <button type="button" id="snap-capture-btn" class="primary-btn">📸 Aufnehmen</button>
       <button type="button" id="snap-retake-btn" class="ghost-btn" hidden>↺ Verwerfen</button>
       <button type="button" id="snap-send-btn" class="primary-btn" hidden>Senden 🚀</button>
+    </div>
+  </div>
+</div>
+
+<!-- GAME MODAL -->
+<div id="game-modal" class="modal-overlay" hidden>
+  <div class="modal game-modal">
+    <div class="modal-head">
+      <h2 id="game-modal-title">🎮 Spiel</h2>
+      <button type="button" id="game-close-btn" class="icon-btn">✕</button>
+    </div>
+    <div id="game-stage" class="game-stage"></div>
+    <div id="game-overlay-msg" class="game-overlay-msg" hidden>
+      <div id="game-overlay-text" class="game-overlay-text"></div>
+      <div class="game-overlay-actions">
+        <button type="button" id="game-rematch-btn" class="primary-btn" hidden>🔁 Nochmal spielen</button>
+        <button type="button" id="game-overlay-close-btn" class="ghost-btn">Schließen</button>
+      </div>
     </div>
   </div>
 </div>
