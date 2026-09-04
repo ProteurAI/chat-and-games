@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>InstaChat</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div id="login-screen" class="screen">
+  <form id="login-form" class="login-card">
+    <div class="login-logo">💬</div>
+    <h1>InstaChat</h1>
+    <p class="login-sub">Der inoffizielle Büro-Chat. Kein Enterprise-Kram, nur wir.</p>
+    <label>Zugangscode</label>
+    <input type="password" id="login-code" placeholder="Team-Passwort" autocomplete="off" required />
+    <label>Dein Name</label>
+    <input type="text" id="login-name" placeholder="z.B. Tim" maxlength="32" autocomplete="off" required />
+    <button type="submit">Rein damit 🚀</button>
+    <p id="login-error" class="login-error" hidden></p>
+  </form>
+</div>
+
+<!-- APP SHELL -->
+<div id="app" class="screen" hidden>
+  <button id="sidebar-toggle" class="sidebar-toggle" aria-label="Menü">☰</button>
+
+  <aside id="sidebar" class="sidebar">
+    <div class="brand">💬 InstaChat</div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">Kanäle</div>
+      <ul id="channel-list" class="channel-list"></ul>
+      <form id="new-channel-form" class="new-channel-form">
+        <input id="new-channel-input" type="text" placeholder="neuer-kanal" maxlength="32" />
+        <button type="submit">+</button>
+      </form>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">Online</div>
+      <ul id="online-list" class="online-list"></ul>
+    </div>
+
+    <button id="bingo-open-btn" class="bingo-open-btn">🎯 Büro-Bingo</button>
+
+    <p class="ephemeral-hint">ℹ️ Nachrichtenverlauf kann bei Inaktivität zurückgesetzt werden</p>
+    <div class="sidebar-me" id="sidebar-me"></div>
+  </aside>
+
+  <main class="main">
+    <header class="chat-header">
+      <span id="current-channel-name">#</span>
+    </header>
+
+    <div id="messages" class="messages"></div>
+
+    <div id="poll-composer" class="poll-composer" hidden>
+      <div class="poll-composer-head">
+        <strong>Neue Umfrage</strong>
+        <button type="button" id="poll-close-btn" class="icon-btn">✕</button>
+      </div>
+      <input id="poll-question" type="text" placeholder="Frage..." maxlength="300" />
+      <div id="poll-options"></div>
+      <button type="button" id="poll-add-option" class="ghost-btn">+ Option</button>
+      <button type="button" id="poll-submit" class="primary-btn">Umfrage posten</button>
+    </div>
+
+    <form id="message-form" class="message-form">
+      <button type="button" id="attach-btn" class="icon-btn" title="Bild senden">📷</button>
+      <button type="button" id="poll-btn" class="icon-btn" title="Umfrage erstellen">📊</button>
+      <input id="message-input" type="text" placeholder="Nachricht schreiben..." autocomplete="off" maxlength="4000" />
+      <button type="submit" class="send-btn">Senden</button>
+      <input type="file" id="file-input" accept="image/png,image/jpeg,image/gif,image/webp" hidden />
+    </form>
+  </main>
+</div>
+
+<!-- BINGO MODAL -->
+<div id="bingo-modal" class="modal-overlay" hidden>
+  <div class="modal bingo-modal">
+    <div class="modal-head">
+      <h2>🎯 Büro-Bingo</h2>
+      <button type="button" id="bingo-close-btn" class="icon-btn">✕</button>
+    </div>
+    <p class="bingo-hint">Klick ein Feld an, sobald es passiert ist. Volle Reihe = BINGO für alle sichtbar!</p>
+    <div id="bingo-grid" class="bingo-grid"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
