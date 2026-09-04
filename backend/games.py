@@ -3,12 +3,18 @@
 Every game is a small "engine" class exposing a fixed interface:
 
     game_type, name, emoji, min_players, max_players  (class attrs)
-    tick_interval                                      (seconds, or None for turn-based games)
+    manual_start                                        (bool; False = auto-start once max_players joined,
+                                                           True = session waits in the lobby until the host
+                                                           explicitly starts it, once min_players have joined)
+    tick_interval                                       (seconds, or None for turn-based games)
     init_state(players) -> state
     apply_input(state, user_id, payload) -> bool changed   (mutates state)
     tick(state) -> None                                     (mutates state; only called if tick_interval is set)
-    check_finished(state) -> Optional[{"winner_user_id": int|None, "reason": str}]
+    check_finished(state) -> Optional[{"winner_user_id": int|None, "reason": str, "details": optional dict}]
     reset(state) -> None                                    (optional; enables a "rematch" button)
+    on_player_left(state, user_id) -> None                  (optional; lets a >2-player game keep running
+                                                              when one participant disconnects mid-match
+                                                              instead of ending the whole session for everyone)
 
 To add a new game later: write a new engine class implementing the interface
 above and register it in GAME_ENGINES. GameSession/GameManager below are
@@ -17,6 +23,7 @@ generic and don't need to change.
 
 import asyncio
 import random
+import time
 import uuid
 
 
@@ -48,6 +55,7 @@ class PongEngine:
     emoji = "🏓"
     min_players = 2
     max_players = 2
+    manual_start = False
     tick_interval = 1 / 30
 
     @staticmethod
@@ -147,6 +155,7 @@ class TicTacToeEngine:
     emoji = "⭕"
     min_players = 2
     max_players = 2
+    manual_start = False
     tick_interval = None
 
     @staticmethod
@@ -200,9 +209,193 @@ class TicTacToeEngine:
         state["turn"] = next(u for u, s in state["symbols"].items() if s == "X")
 
 
+# ---------- Light Cycles (Tron-style, 2-4 players) ----------
+
+LC_GRID_SIZE = 30
+LC_COLORS = ["red", "blue", "green", "yellow"]
+# (x, y, initial_dir) per player slot, ordered so the 2-player case lands on
+# maximally-separated diagonal corners rather than two adjacent ones.
+LC_START_CONFIG = [
+    (2, 2, "right"),
+    (LC_GRID_SIZE - 3, LC_GRID_SIZE - 3, "left"),
+    (LC_GRID_SIZE - 3, 2, "down"),
+    (2, LC_GRID_SIZE - 3, "up"),
+]
+_LC_DELTAS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
+_LC_OPPOSITE = {"up": "down", "down": "up", "left": "right", "right": "left"}
+
+
+class LightCyclesEngine:
+    game_type = "lightcycles"
+    name = "Light Cycles"
+    emoji = "🏍️"
+    min_players = 2
+    max_players = 4
+    manual_start = True
+    tick_interval = 1 / 8
+
+    @staticmethod
+    def init_state(players):
+        state = {"grid_size": LC_GRID_SIZE, "players": {}, "trail": []}
+        for i, p in enumerate(players):
+            uid = str(p["user_id"])
+            x, y, d = LC_START_CONFIG[i]
+            color = LC_COLORS[i]
+            state["players"][uid] = {"x": x, "y": y, "dir": d, "pending_dir": d, "alive": True, "color": color}
+            state["trail"].append([x, y, color])
+        return state
+
+    @staticmethod
+    def apply_input(state, user_id, payload):
+        uid = str(user_id)
+        p = state["players"].get(uid)
+        if not p or not p["alive"]:
+            return False
+        new_dir = payload.get("direction")
+        if new_dir not in _LC_DELTAS or _LC_OPPOSITE[new_dir] == p["dir"]:
+            return False  # invalid direction, or a 180 turn straight into the own trail
+        p["pending_dir"] = new_dir
+        return False
+
+    @staticmethod
+    def tick(state):
+        occupied = {(c[0], c[1]) for c in state["trail"]}
+        next_positions = {}
+        for uid, p in state["players"].items():
+            if not p["alive"]:
+                continue
+            p["dir"] = p["pending_dir"]
+            dx, dy = _LC_DELTAS[p["dir"]]
+            next_positions[uid] = (p["x"] + dx, p["y"] + dy)
+
+        size = state["grid_size"]
+        cell_counts = {}
+        for pos in next_positions.values():
+            cell_counts[pos] = cell_counts.get(pos, 0) + 1
+
+        for uid, (nx, ny) in next_positions.items():
+            p = state["players"][uid]
+            out_of_bounds = nx < 0 or ny < 0 or nx >= size or ny >= size
+            crashed = out_of_bounds or (nx, ny) in occupied or cell_counts[(nx, ny)] > 1
+            if crashed:
+                p["alive"] = False
+            else:
+                p["x"], p["y"] = nx, ny
+                state["trail"].append([nx, ny, p["color"]])
+
+    @staticmethod
+    def check_finished(state):
+        alive = [uid for uid, p in state["players"].items() if p["alive"]]
+        if len(alive) == 1:
+            return {"winner_user_id": int(alive[0]), "reason": "last_standing"}
+        if len(alive) == 0:
+            return {"winner_user_id": None, "reason": "draw"}
+        return None
+
+    @staticmethod
+    def on_player_left(state, user_id):
+        p = state["players"].get(str(user_id))
+        if p:
+            p["alive"] = False
+
+
+# ---------- Buzzer ----------
+
+BUZZER_MIN_DELAY = 2.0
+BUZZER_MAX_DELAY = 6.0
+
+
+class BuzzerEngine:
+    game_type = "buzzer"
+    name = "Buzzer"
+    emoji = "🔔"
+    min_players = 2
+    max_players = 4
+    manual_start = True
+    tick_interval = 1 / 20
+
+    @staticmethod
+    def init_state(players):
+        uids = [str(p["user_id"]) for p in players]
+        return {
+            "phase": "countdown",  # countdown -> signal
+            "signal_at": time.time() + random.uniform(BUZZER_MIN_DELAY, BUZZER_MAX_DELAY),
+            "players_order": uids,
+            "results": {uid: {"clicked_at": None, "reaction_ms": None, "disqualified": False} for uid in uids},
+        }
+
+    @staticmethod
+    def apply_input(state, user_id, payload):
+        uid = str(user_id)
+        if payload.get("action") != "buzz":
+            return False
+        r = state["results"].get(uid)
+        if r is None or r["clicked_at"] is not None:
+            return False
+        now = time.time()
+        r["clicked_at"] = now
+        # Compare against the authoritative deadline directly (not the
+        # tick-driven "phase" field) so a click landing in the gap between
+        # the true random deadline and the next tick noticing it is never
+        # unfairly judged a false start.
+        if now < state["signal_at"]:
+            r["disqualified"] = True
+        else:
+            r["reaction_ms"] = round((now - state["signal_at"]) * 1000)
+        return True
+
+    @staticmethod
+    def tick(state):
+        if state["phase"] == "countdown" and time.time() >= state["signal_at"]:
+            state["phase"] = "signal"
+
+    @staticmethod
+    def check_finished(state):
+        results = state["results"]
+        valid_clicks = [(uid, r) for uid, r in results.items() if r["clicked_at"] is not None and not r["disqualified"]]
+        all_clicked = all(r["clicked_at"] is not None for r in results.values()) if results else True
+
+        if not valid_clicks and not all_clicked:
+            return None
+
+        winner_uid = min(valid_clicks, key=lambda item: item[1]["reaction_ms"])[0] if valid_clicks else None
+
+        ranking = []
+        for uid in state["players_order"]:
+            r = results[uid]
+            ranking.append({
+                "user_id": int(uid),
+                "reaction_ms": r["reaction_ms"],
+                "disqualified": r["disqualified"],
+            })
+        ranking.sort(key=lambda e: (e["disqualified"], e["reaction_ms"] is None, e["reaction_ms"] or 0))
+
+        return {
+            "winner_user_id": int(winner_uid) if winner_uid is not None else None,
+            "reason": "buzzer",
+            "details": {"ranking": ranking},
+        }
+
+    @staticmethod
+    def reset(state):
+        uids = state["players_order"]
+        state["phase"] = "countdown"
+        state["signal_at"] = time.time() + random.uniform(BUZZER_MIN_DELAY, BUZZER_MAX_DELAY)
+        state["results"] = {uid: {"clicked_at": None, "reaction_ms": None, "disqualified": False} for uid in uids}
+
+    @staticmethod
+    def on_player_left(state, user_id):
+        uid = str(user_id)
+        state["results"].pop(uid, None)
+        if uid in state["players_order"]:
+            state["players_order"].remove(uid)
+
+
 GAME_ENGINES = {
     "pong": PongEngine,
     "tictactoe": TicTacToeEngine,
+    "lightcycles": LightCyclesEngine,
+    "buzzer": BuzzerEngine,
 }
 
 
@@ -232,7 +425,9 @@ class GameSession:
             "emoji": self.engine.emoji,
             "players": [{"id": p["user_id"], "name": p["name"]} for p in self.players],
             "player_count": len(self.players),
+            "min_players": self.engine.min_players,
             "max_players": self.engine.max_players,
+            "manual_start": self.engine.manual_start,
             "status": self.status,
         }
 
@@ -290,10 +485,20 @@ class GameManager:
             return
         session.players.append({"user_id": user["id"], "name": user["name"], "ws": ws})
         await self.cm.send_to(ws, {"type": "game_joined", "session_id": session_id, "game_type": session.game_type})
-        if len(session.players) >= session.engine.max_players:
+        if not session.engine.manual_start and len(session.players) >= session.engine.max_players:
             await self._start_session(session)
         else:
             await self.broadcast_lobby()
+
+    async def start_now(self, user, ws, session_id):
+        session = self.sessions.get(session_id)
+        if not session or session.status != "waiting" or not session.has_ws(ws):
+            return
+        if session.players[0]["user_id"] != user["id"]:
+            return  # only the host may start the round
+        if len(session.players) < session.engine.min_players:
+            return
+        await self._start_session(session)
 
     async def _start_session(self, session):
         session.status = "playing"
@@ -351,13 +556,16 @@ class GameManager:
         if result.get("winner_user_id") is not None:
             winner = next((p for p in session.players if p["user_id"] == result["winner_user_id"]), None)
             winner_name = winner["name"] if winner else None
-        await self.send_to_session(session, {
+        payload = {
             "type": "game_over",
             "session_id": session.id,
             "reason": result.get("reason"),
             "winner_user_id": result.get("winner_user_id"),
             "winner_name": winner_name,
-        })
+        }
+        if result.get("details") is not None:
+            payload["details"] = result["details"]
+        await self.send_to_session(session, payload)
         await self.broadcast_lobby()
 
     async def handle_rematch(self, user, ws, session_id):
@@ -383,22 +591,34 @@ class GameManager:
             return
         was_public = session.status in ("waiting", "playing")
         leaving_mid_game = session.status == "playing"
+        leaving_uid = next((p["user_id"] for p in session.players if p["ws"] is ws), None)
         session.players = [p for p in session.players if p["ws"] is not ws]
 
         if leaving_mid_game:
-            if session.task:
-                session.task.cancel()
-                session.task = None
-            session.status = "over"
-            if session.players:
-                remaining = session.players[0]
-                await self.send_to_session(session, {
-                    "type": "game_over",
-                    "session_id": session.id,
-                    "reason": "opponent_left",
-                    "winner_user_id": remaining["user_id"],
-                    "winner_name": remaining["name"],
-                })
+            if session.state is not None and hasattr(session.engine, "on_player_left"):
+                session.engine.on_player_left(session.state, leaving_uid)
+
+            if len(session.players) < session.engine.min_players:
+                # Not enough players left to meaningfully continue (always
+                # true for a fixed-2-player game like Pong/Tic-Tac-Toe) ->
+                # end the match now instead of leaving it stuck.
+                if session.task:
+                    session.task.cancel()
+                    session.task = None
+                session.status = "over"
+                if session.players:
+                    remaining = session.players[0]
+                    await self.send_to_session(session, {
+                        "type": "game_over",
+                        "session_id": session.id,
+                        "reason": "opponent_left",
+                        "winner_user_id": remaining["user_id"],
+                        "winner_name": remaining["name"],
+                    })
+            # else: enough players remain for a >2-player game (Light Cycles,
+            # Buzzer) - the still-running tick loop picks up the engine state
+            # change from on_player_left above and resolves the match
+            # normally via check_finished on its next tick.
 
         if not session.players:
             self.sessions.pop(session.id, None)

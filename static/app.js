@@ -649,6 +649,15 @@ function renderGameSidebar() {
     li.appendChild(count);
 
     if (amIIn && s.status === "waiting") {
+      const isHost = s.players[0] && s.players[0].id === me.id;
+      if (s.manual_start && isHost) {
+        const startBtn = document.createElement("button");
+        startBtn.type = "button";
+        startBtn.textContent = "▶ Jetzt starten";
+        startBtn.disabled = s.player_count < s.min_players;
+        startBtn.addEventListener("click", () => startGameNow(s.id));
+        li.appendChild(startBtn);
+      }
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "ghost-btn";
@@ -685,6 +694,12 @@ function leaveGame(sessionId) {
   }
 }
 
+function startGameNow(sessionId) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "game_start_now", session_id: sessionId }));
+  }
+}
+
 function sendGameInput(payload) {
   if (ws && ws.readyState === WebSocket.OPEN && myGameSessionId) {
     ws.send(JSON.stringify({ type: "game_input", session_id: myGameSessionId, payload }));
@@ -699,7 +714,7 @@ function openGameModal(data) {
 
   el("game-overlay-msg").hidden = true;
   el("game-rematch-btn").hidden = true;
-  el("game-modal-title").textContent = data.game_type === "pong" ? "🏓 Pong" : "⭕ Tic-Tac-Toe";
+  el("game-modal-title").textContent = GAME_TITLES[data.game_type] || "🎮 Spiel";
 
   const stage = el("game-stage");
   stage.innerHTML = "";
@@ -707,16 +722,29 @@ function openGameModal(data) {
     buildPongStage(stage);
   } else if (data.game_type === "tictactoe") {
     buildTttStage(stage);
+  } else if (data.game_type === "lightcycles") {
+    buildLightCyclesStage(stage);
+  } else if (data.game_type === "buzzer") {
+    buildBuzzerStage(stage);
   }
   updateGameState(data.state);
   el("game-modal").hidden = false;
 }
+
+const GAME_TITLES = {
+  pong: "🏓 Pong",
+  tictactoe: "⭕ Tic-Tac-Toe",
+  lightcycles: "🏍️ Light Cycles",
+  buzzer: "🔔 Buzzer",
+};
+const REMATCH_GAME_TYPES = ["tictactoe", "buzzer"];
 
 function closeGameModal() {
   if (myGameSessionId && ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "game_leave", session_id: myGameSessionId }));
   }
   stopPongControls();
+  stopLcControls();
   el("game-modal").hidden = true;
   myGameSessionId = null;
   myGameType = null;
@@ -735,22 +763,50 @@ el("game-rematch-btn").addEventListener("click", () => {
 function updateGameState(state) {
   if (myGameType === "pong") renderPong(state);
   else if (myGameType === "tictactoe") renderTtt(state);
+  else if (myGameType === "lightcycles") renderLightCycles(state);
+  else if (myGameType === "buzzer") renderBuzzer(state);
 }
 
 function showGameOver(data) {
   stopPongControls();
+  stopLcControls();
   let text;
   if (data.reason === "draw") {
     text = "🤝 Unentschieden!";
   } else if (data.reason === "opponent_left") {
     text = data.winner_user_id === me.id ? "🏆 Du gewinnst — dein Gegner hat das Spiel verlassen." : "Spiel beendet.";
+  } else if (data.reason === "last_standing") {
+    text = data.winner_user_id === me.id ? "🏆 Du hast überlebt und gewonnen!" : `${data.winner_name || "Jemand"} hat gewonnen.`;
+  } else if (data.reason === "buzzer") {
+    text = data.winner_user_id === null
+      ? "😅 Alle haben zu früh geklickt!"
+      : data.winner_user_id === me.id
+        ? "🏆 Du warst am schnellsten!"
+        : `${data.winner_name || "Jemand"} war am schnellsten.`;
   } else if (data.winner_user_id === me.id) {
     text = "🏆 Du hast gewonnen!";
   } else {
     text = `${data.winner_name || "Dein Gegner"} hat gewonnen.`;
   }
   el("game-overlay-text").textContent = text;
-  el("game-rematch-btn").hidden = myGameType !== "tictactoe" || data.reason === "opponent_left";
+
+  const rankingBox = el("game-overlay-ranking");
+  rankingBox.innerHTML = "";
+  rankingBox.hidden = true;
+  if (data.reason === "buzzer" && data.details && data.details.ranking) {
+    rankingBox.hidden = false;
+    data.details.ranking.forEach((entry, i) => {
+      const row = document.createElement("div");
+      row.className = "ranking-row" + (i === 0 && !entry.disqualified ? " rank-1" : "");
+      const player = myGamePlayers.find((p) => p.id === entry.user_id);
+      const name = player ? player.name : "?";
+      const label = entry.disqualified ? "Fehlstart ⛔" : entry.reaction_ms !== null ? `${entry.reaction_ms} ms` : "–";
+      row.innerHTML = `<span>${i + 1}. ${escapeHtml(name)}</span><span>${label}</span>`;
+      rankingBox.appendChild(row);
+    });
+  }
+
+  el("game-rematch-btn").hidden = !REMATCH_GAME_TYPES.includes(myGameType) || data.reason === "opponent_left";
   el("game-overlay-msg").hidden = false;
 }
 
@@ -888,6 +944,125 @@ function renderTtt(state) {
     cell.classList.toggle("symbol-o", val === "O");
     cell.disabled = !!val || !isMyTurn || !!state.winner;
   });
+}
+
+// ---------- games: light cycles ----------
+let lcCtx = null;
+let lastSentLcDir = null;
+const LC_COLOR_HEX = { red: "#ff5252", blue: "#4fa8ff", green: "#4ade80", yellow: "#fbbf24" };
+
+function buildLightCyclesStage(stage) {
+  const hint = document.createElement("p");
+  hint.style.cssText = "font-size:12px;color:var(--text-dim);margin:0 0 8px;text-align:center;";
+  hint.textContent = "Steuerung: Pfeiltasten — nicht in die eigene Spur zurückfahren!";
+  stage.appendChild(hint);
+
+  const canvas = document.createElement("canvas");
+  canvas.id = "lc-canvas";
+  canvas.width = 360;
+  canvas.height = 360;
+  stage.appendChild(canvas);
+  lcCtx = canvas.getContext("2d");
+
+  const status = document.createElement("div");
+  status.id = "lc-status";
+  status.className = "lc-status";
+  stage.appendChild(status);
+
+  lastSentLcDir = null;
+  document.addEventListener("keydown", onLightCyclesKeyDown);
+}
+
+function stopLcControls() {
+  document.removeEventListener("keydown", onLightCyclesKeyDown);
+  lastSentLcDir = null;
+  lcCtx = null;
+}
+
+function onLightCyclesKeyDown(e) {
+  const map = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
+  const dir = map[e.key];
+  if (!dir || myGameType !== "lightcycles" || !myGameSessionId) return;
+  e.preventDefault();
+  if (dir === lastSentLcDir) return;
+  lastSentLcDir = dir;
+  sendGameInput({ direction: dir });
+}
+
+function renderLightCycles(state) {
+  const status = el("lc-status");
+  if (status) {
+    const aliveNames = Object.entries(state.players)
+      .filter(([, p]) => p.alive)
+      .map(([uid]) => (myGamePlayers.find((p) => String(p.id) === uid) || {}).name || "?");
+    status.textContent = aliveNames.length ? `Noch am Leben: ${aliveNames.join(", ")}` : "";
+  }
+
+  if (!lcCtx) return;
+  const canvas = el("lc-canvas");
+  const size = state.grid_size;
+  const cell = canvas.width / size;
+
+  lcCtx.fillStyle = "#14121f";
+  lcCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+  lcCtx.globalAlpha = 0.55;
+  for (const [x, y, color] of state.trail) {
+    lcCtx.fillStyle = LC_COLOR_HEX[color] || "#ffffff";
+    lcCtx.fillRect(x * cell, y * cell, cell, cell);
+  }
+  lcCtx.globalAlpha = 1;
+
+  for (const p of Object.values(state.players)) {
+    if (!p.alive) continue;
+    lcCtx.fillStyle = LC_COLOR_HEX[p.color] || "#ffffff";
+    lcCtx.fillRect(p.x * cell, p.y * cell, cell, cell);
+    lcCtx.strokeStyle = "#ffffff";
+    lcCtx.lineWidth = 1.5;
+    lcCtx.strokeRect(p.x * cell + 0.75, p.y * cell + 0.75, cell - 1.5, cell - 1.5);
+  }
+}
+
+// ---------- games: buzzer ----------
+function buildBuzzerStage(stage) {
+  const status = document.createElement("div");
+  status.id = "buzzer-status";
+  status.className = "buzzer-status";
+  status.textContent = "Bereit machen …";
+  stage.appendChild(status);
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.id = "buzzer-btn";
+  btn.className = "buzzer-btn waiting";
+  btn.textContent = "⏳";
+  btn.addEventListener("click", () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    sendGameInput({ action: "buzz" });
+  });
+  stage.appendChild(btn);
+}
+
+function renderBuzzer(state) {
+  const status = el("buzzer-status");
+  const btn = el("buzzer-btn");
+  if (!status || !btn) return;
+
+  if (state.phase === "signal") {
+    status.textContent = "JETZT KLICKEN!";
+    btn.textContent = "JETZT!";
+    btn.className = "buzzer-btn armed";
+  } else {
+    status.textContent = "Bereit machen …";
+    btn.textContent = "⏳";
+    btn.className = "buzzer-btn waiting";
+  }
+
+  const mine = state.results[String(me.id)];
+  if (mine && mine.clicked_at !== null) {
+    btn.disabled = true;
+  }
 }
 
 // ---------- bingo ----------

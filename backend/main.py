@@ -512,6 +512,11 @@ async def websocket_endpoint(ws: WebSocket, token: Optional[str] = None):
                 if isinstance(session_id, str):
                     await game_manager.join_session(user, ws, session_id)
 
+            elif msg_type == "game_start_now":
+                session_id = raw.get("session_id")
+                if isinstance(session_id, str):
+                    await game_manager.start_now(user, ws, session_id)
+
             elif msg_type == "game_input":
                 session_id = raw.get("session_id")
                 if isinstance(session_id, str):
