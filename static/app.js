@@ -417,20 +417,32 @@ el("poll-submit").addEventListener("click", () => {
 });
 
 // ---------- snap rendering (ephemeral view-once effect) ----------
+// Stores { [messageId]: firstViewedAtEpochMs } per viewer (localStorage), not
+// just a seen/unseen flag. That timestamp is the single source of truth for
+// "how long has this been visible" - every render (including a channel
+// switch away-and-back, which fully rebuilds the message list) recomputes
+// the remaining time from it instead of restarting or truncating a fresh
+// per-render setTimeout, so a snap always stays sharp for exactly
+// SNAP_VISIBLE_MS from the very first time it was actually shown.
 const VIEWED_SNAPS_KEY = "instachat_viewed_snaps";
+const SNAP_VISIBLE_MS = 8000;
 
-function getViewedSnaps() {
+function getViewedSnapTimestamps() {
   try {
-    return new Set(JSON.parse(localStorage.getItem(VIEWED_SNAPS_KEY) || "[]"));
+    const parsed = JSON.parse(localStorage.getItem(VIEWED_SNAPS_KEY) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {
-    return new Set();
+    return {};
   }
 }
 
-function markSnapViewed(id) {
-  const viewed = getViewedSnaps();
-  viewed.add(id);
-  localStorage.setItem(VIEWED_SNAPS_KEY, JSON.stringify([...viewed]));
+function firstViewedAt(id) {
+  const viewed = getViewedSnapTimestamps();
+  if (viewed[id] === undefined) {
+    viewed[id] = Date.now();
+    localStorage.setItem(VIEWED_SNAPS_KEY, JSON.stringify(viewed));
+  }
+  return viewed[id];
 }
 
 function buildSnapElement(msg) {
@@ -454,15 +466,15 @@ function buildSnapElement(msg) {
   seenHint.hidden = true;
   wrap.appendChild(seenHint);
 
-  if (getViewedSnaps().has(msg.id)) {
+  const remaining = SNAP_VISIBLE_MS - (Date.now() - firstViewedAt(msg.id));
+  if (remaining <= 0) {
     wrap.classList.add("snap-viewed");
     seenHint.hidden = false;
   } else {
-    markSnapViewed(msg.id);
     setTimeout(() => {
       wrap.classList.add("snap-viewed");
       seenHint.hidden = false;
-    }, 4000);
+    }, remaining);
   }
   return wrap;
 }
