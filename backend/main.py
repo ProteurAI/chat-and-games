@@ -540,4 +540,21 @@ async def websocket_endpoint(ws: WebSocket, token: Optional[str] = None):
         await manager.broadcast_all({"type": "presence", "online": manager.online_names()})
 
 
+@app.middleware("http")
+async def no_cache_static_assets(request, call_next):
+    # Without this, browsers apply heuristic caching to index.html/app.js/
+    # style.css (no explicit Cache-Control was ever set) and can keep
+    # serving an old cached copy for a while after a fresh deploy, without
+    # even asking the server - two people testing minutes apart can end up
+    # running different frontend code against the same live backend.
+    # "no-cache" still lets the browser cache the file but forces it to
+    # revalidate via the existing ETag/Last-Modified on every load, so a
+    # changed file is always picked up (an unchanged one is still a cheap
+    # 304, not a full re-download).
+    response = await call_next(request)
+    if request.url.path in ("/", "/app.js", "/style.css"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
