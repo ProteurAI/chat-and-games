@@ -15,6 +15,13 @@ Every game is a small "engine" class exposing a fixed interface:
     on_player_left(state, user_id) -> None                  (optional; lets a >2-player game keep running
                                                               when one participant disconnects mid-match
                                                               instead of ending the whole session for everyone)
+    public_state(state, viewer_user_id) -> dict              (optional; for games with hidden information,
+                                                              e.g. a player's own hand or ship layout. When
+                                                              defined, GameManager sends each player their OWN
+                                                              filtered view instead of the one shared `state` -
+                                                              other players' private data is never put on that
+                                                              player's websocket in the first place. Omit this
+                                                              method for fully-public games like Pong.)
 
 To add a new game later: write a new engine class implementing the interface
 above and register it in GAME_ENGINES. GameSession/GameManager below are
@@ -391,11 +398,379 @@ class BuzzerEngine:
             state["players_order"].remove(uid)
 
 
+# ---------- Battleship (Schiffe versenken, 2 players) ----------
+
+BS_GRID = 10
+BS_SHIP_SIZES = [5, 4, 3, 3, 2]
+
+
+def _bs_generate_ships():
+    occupied = [[False] * BS_GRID for _ in range(BS_GRID)]
+    ships = []
+    for size in BS_SHIP_SIZES:
+        while True:
+            horizontal = random.choice([True, False])
+            if horizontal:
+                x = random.randint(0, BS_GRID - size)
+                y = random.randint(0, BS_GRID - 1)
+                cells = [(x + i, y) for i in range(size)]
+            else:
+                x = random.randint(0, BS_GRID - 1)
+                y = random.randint(0, BS_GRID - size)
+                cells = [(x, y + i) for i in range(size)]
+            if all(not occupied[c[0]][c[1]] for c in cells):
+                for c in cells:
+                    occupied[c[0]][c[1]] = True
+                ships.append(cells)
+                break
+    return ships
+
+
+def _bs_parse_cell(cell_str):
+    if not isinstance(cell_str, str) or len(cell_str) < 2:
+        return None
+    col = cell_str[0].upper()
+    if col < "A" or col > "J":
+        return None
+    try:
+        row = int(cell_str[1:])
+    except ValueError:
+        return None
+    if not (1 <= row <= BS_GRID):
+        return None
+    return (ord(col) - ord("A"), row - 1)
+
+
+class BattleshipEngine:
+    game_type = "battleship"
+    name = "Schiffe versenken"
+    emoji = "🚢"
+    min_players = 2
+    max_players = 2
+    manual_start = False  # fixed exactly-2 game, same auto-start pattern as Pong/Tic-Tac-Toe
+    tick_interval = None
+
+    @staticmethod
+    def init_state(players):
+        uids = [str(p["user_id"]) for p in players]
+        return {
+            "players_order": uids,
+            "ships": {uid: _bs_generate_ships() for uid in uids},
+            "shots_fired": {uid: {} for uid in uids},  # uid's own shots against their opponent
+            "turn": uids[0],
+        }
+
+    @staticmethod
+    def apply_input(state, user_id, payload):
+        uid = str(user_id)
+        if state["turn"] != uid:
+            return False
+        cell = _bs_parse_cell(payload.get("cell"))
+        if cell is None:
+            return False
+        key = f"{cell[0]},{cell[1]}"
+        if key in state["shots_fired"][uid]:
+            return False
+
+        opponent_uid = next(u for u in state["players_order"] if u != uid)
+        hit_ship = next((ship for ship in state["ships"][opponent_uid] if cell in ship), None)
+
+        if hit_ship is None:
+            state["shots_fired"][uid][key] = "miss"
+            state["turn"] = opponent_uid
+        else:
+            state["shots_fired"][uid][key] = "hit"
+            ship_keys = [f"{c[0]},{c[1]}" for c in hit_ship]
+            if all(state["shots_fired"][uid].get(k) == "hit" for k in ship_keys):
+                for k in ship_keys:
+                    state["shots_fired"][uid][k] = "sunk"
+            # a hit (including a sink) grants the same player another shot
+        return True
+
+    @staticmethod
+    def tick(state):
+        pass
+
+    @staticmethod
+    def check_finished(state):
+        for uid in state["players_order"]:
+            opponent_uid = next(u for u in state["players_order"] if u != uid)
+            shots_against_uid = state["shots_fired"][opponent_uid]
+            all_cells = [f"{c[0]},{c[1]}" for ship in state["ships"][uid] for c in ship]
+            if all(shots_against_uid.get(k) == "sunk" for k in all_cells):
+                return {"winner_user_id": int(opponent_uid), "reason": "all_sunk"}
+        return None
+
+    @staticmethod
+    def public_state(state, viewer_user_id):
+        uid = str(viewer_user_id)
+        opponent_uid = next((u for u in state["players_order"] if u != uid), None)
+        return {
+            "grid_size": BS_GRID,
+            "turn": state["turn"],
+            "own_ships": [[list(c) for c in ship] for ship in state["ships"].get(uid, [])],
+            "incoming_shots": state["shots_fired"].get(opponent_uid, {}),
+            "outgoing_shots": state["shots_fired"].get(uid, {}),
+        }
+
+
+# ---------- UNO (2-6 players, full 108-card deck, official rules) ----------
+
+UNO_COLORS = ["red", "yellow", "green", "blue"]
+UNO_ACTION_VALUES = ("skip", "reverse", "draw2")
+
+
+def _build_uno_deck():
+    deck = []
+    cid = 0
+    for color in UNO_COLORS:
+        deck.append({"id": cid, "color": color, "value": "0"}); cid += 1
+        for n in range(1, 10):
+            for _ in range(2):
+                deck.append({"id": cid, "color": color, "value": str(n)}); cid += 1
+        for value in UNO_ACTION_VALUES:
+            for _ in range(2):
+                deck.append({"id": cid, "color": color, "value": value}); cid += 1
+    for _ in range(4):
+        deck.append({"id": cid, "color": None, "value": "wild"}); cid += 1
+    for _ in range(4):
+        deck.append({"id": cid, "color": None, "value": "wild4"}); cid += 1
+    return deck  # 4 * (1 + 18 + 2 + 2 + 2) + 4 + 4 = 4*25 + 8 = 108
+
+
+def _uno_is_playable(card, top_color, top_value):
+    if card["value"] in ("wild", "wild4"):
+        return True
+    return card["color"] == top_color or card["value"] == top_value
+
+
+def _uno_next_index(state, steps):
+    n = len(state["players_order"])
+    return (state["turn_index"] + steps * state["direction"]) % n
+
+
+def _uno_finish_turn(state, steps):
+    state["turn_index"] = _uno_next_index(state, steps)
+    state["has_drawn"] = False
+
+
+def _uno_draw_cards(state, uid, n):
+    drawn = []
+    for _ in range(n):
+        if not state["draw_pile"]:
+            if len(state["discard_pile"]) <= 1:
+                break  # deck fully exhausted (extreme edge case) - nothing left to reshuffle
+            top = state["discard_pile"][-1]
+            rest = state["discard_pile"][:-1]
+            random.shuffle(rest)
+            state["draw_pile"] = rest
+            state["discard_pile"] = [top]
+        card = state["draw_pile"].pop()
+        state["hands"][uid].append(card)
+        drawn.append(card)
+    return drawn
+
+
+def _uno_close_uno_window(state, acting_uid):
+    # The moment the rightful next player begins validly acting, any earlier
+    # "must call UNO" vulnerability for someone else is no longer catchable -
+    # matches "bevor der naechste Spieler seinen Zug beginnt".
+    for uid in list(state["must_call_uno"]):
+        if uid != acting_uid:
+            state["must_call_uno"].discard(uid)
+
+
+class UnoEngine:
+    game_type = "uno"
+    name = "UNO"
+    emoji = "🎴"
+    min_players = 2
+    max_players = 6
+    manual_start = True  # variable 2-6 players -> host-triggered start, per the central start-button rule
+    tick_interval = None
+
+    @staticmethod
+    def init_state(players):
+        uids = [str(p["user_id"]) for p in players]
+        deck = _build_uno_deck()
+        random.shuffle(deck)
+
+        hands = {uid: [] for uid in uids}
+        for _ in range(7):
+            for uid in uids:
+                hands[uid].append(deck.pop())
+
+        # The opening discard card may never be a Wild Draw Four - reshuffle
+        # it back in and re-draw until it isn't.
+        top = deck.pop()
+        while top["value"] == "wild4":
+            deck.append(top)
+            random.shuffle(deck)
+            top = deck.pop()
+
+        state = {
+            "players_order": uids,
+            "hands": hands,
+            "draw_pile": deck,
+            "discard_pile": [top],
+            "current_color": top["color"],  # None only if top is a plain Wild -> player 0 must choose
+            "direction": 1,
+            "turn_index": 0,
+            "has_drawn": False,
+            "must_call_uno": set(),
+            "winner": None,
+        }
+
+        if top["value"] == "skip":
+            state["turn_index"] = _uno_next_index(state, 1)
+        elif top["value"] == "reverse":
+            state["direction"] = -1
+        elif top["value"] == "draw2":
+            victim = state["players_order"][_uno_next_index(state, 1)]
+            _uno_draw_cards(state, victim, 2)
+            state["turn_index"] = _uno_next_index(state, 1)
+        # top["value"] == "wild": current_color stays None; the first player
+        # must send a "choose_start_color" action before anything else.
+
+        return state
+
+    @staticmethod
+    def apply_input(state, user_id, payload):
+        uid = str(user_id)
+        if state["winner"] is not None:
+            return False
+
+        action = payload.get("action")
+
+        # "call_uno" / "catch" may be sent by any player at any time,
+        # regardless of whose turn it currently is.
+        if action == "call_uno":
+            if uid in state["must_call_uno"]:
+                state["must_call_uno"].discard(uid)
+                return True
+            return False
+
+        if action == "catch":
+            target = str(payload.get("target_user_id"))
+            if target != uid and target in state["must_call_uno"]:
+                state["must_call_uno"].discard(target)
+                _uno_draw_cards(state, target, 2)
+                return True
+            return False
+
+        current_uid = state["players_order"][state["turn_index"]]
+        if current_uid != uid:
+            return False
+
+        if state["current_color"] is None:
+            if action == "choose_start_color" and payload.get("color") in UNO_COLORS:
+                state["current_color"] = payload["color"]
+                return True
+            return False
+
+        _uno_close_uno_window(state, uid)
+
+        hand = state["hands"][uid]
+        top_value = state["discard_pile"][-1]["value"]
+        top_color = state["current_color"]
+        playable = [c for c in hand if _uno_is_playable(c, top_color, top_value)]
+
+        if action == "draw":
+            if playable or state["has_drawn"]:
+                return False
+            drawn = _uno_draw_cards(state, uid, 1)
+            state["has_drawn"] = True
+            if not (drawn and _uno_is_playable(drawn[0], top_color, top_value)):
+                _uno_finish_turn(state, 1)
+            return True
+
+        if action == "pass":
+            if not state["has_drawn"]:
+                return False
+            _uno_finish_turn(state, 1)
+            return True
+
+        if action == "play":
+            card = next((c for c in hand if c["id"] == payload.get("card_id")), None)
+            if card is None or not _uno_is_playable(card, top_color, top_value):
+                return False
+            chosen_color = payload.get("chosen_color")
+            if card["value"] in ("wild", "wild4") and chosen_color not in UNO_COLORS:
+                return False
+
+            hand.remove(card)
+            state["discard_pile"].append(card)
+            state["current_color"] = chosen_color if card["value"] in ("wild", "wild4") else card["color"]
+
+            if len(hand) == 1:
+                state["must_call_uno"].add(uid)
+            else:
+                state["must_call_uno"].discard(uid)
+
+            if not hand:
+                state["winner"] = uid
+                return True
+
+            if card["value"] == "skip":
+                _uno_finish_turn(state, 2)
+            elif card["value"] == "reverse":
+                state["direction"] *= -1
+                _uno_finish_turn(state, 1 if len(state["players_order"]) > 2 else 0)
+            elif card["value"] == "draw2":
+                victim = state["players_order"][_uno_next_index(state, 1)]
+                _uno_draw_cards(state, victim, 2)
+                _uno_finish_turn(state, 2)
+            elif card["value"] == "wild4":
+                victim = state["players_order"][_uno_next_index(state, 1)]
+                _uno_draw_cards(state, victim, 4)
+                _uno_finish_turn(state, 2)
+            else:
+                _uno_finish_turn(state, 1)
+            return True
+
+        return False
+
+    @staticmethod
+    def tick(state):
+        pass
+
+    @staticmethod
+    def check_finished(state):
+        if state["winner"] is not None:
+            return {"winner_user_id": int(state["winner"]), "reason": "out_of_cards"}
+        return None
+
+    @staticmethod
+    def public_state(state, viewer_user_id):
+        uid = str(viewer_user_id)
+        return {
+            "players_order": state["players_order"],
+            "hand": state["hands"].get(uid, []),
+            "hand_counts": {u: len(h) for u, h in state["hands"].items()},
+            "top_card": state["discard_pile"][-1] if state["discard_pile"] else None,
+            "current_color": state["current_color"],
+            "turn_index": state["turn_index"],
+            "direction": state["direction"],
+            "has_drawn": state["has_drawn"] if state["players_order"][state["turn_index"]] == uid else False,
+            "must_call_uno": list(state["must_call_uno"]),
+            "draw_pile_count": len(state["draw_pile"]),
+            "awaiting_start_color": state["current_color"] is None,
+        }
+
+    @staticmethod
+    def reset(state):
+        fresh = UnoEngine.init_state([{"user_id": int(uid)} for uid in state["players_order"]])
+        state.clear()
+        state.update(fresh)
+
+
 GAME_ENGINES = {
     "pong": PongEngine,
     "tictactoe": TicTacToeEngine,
     "lightcycles": LightCyclesEngine,
     "buzzer": BuzzerEngine,
+    "battleship": BattleshipEngine,
+    "uno": UnoEngine,
 }
 
 
@@ -458,6 +833,28 @@ class GameManager:
         for p in session.players:
             await self.cm.send_to(p["ws"], payload)
 
+    async def _send_state(self, session, msg_type, extra=None):
+        """Broadcast the current engine state as `msg_type`. For engines that
+        define public_state(), each player gets their OWN filtered view sent
+        directly to their socket (their private data, e.g. an UNO hand or
+        Battleship ship layout, never touches another player's connection at
+        all); other engines just get the one shared state as before."""
+        extra = extra or {}
+        engine = session.engine
+        if hasattr(engine, "public_state"):
+            for p in session.players:
+                payload = {
+                    "type": msg_type,
+                    "session_id": session.id,
+                    "state": engine.public_state(session.state, p["user_id"]),
+                    **extra,
+                }
+                await self.cm.send_to(p["ws"], payload)
+        else:
+            await self.send_to_session(session, {
+                "type": msg_type, "session_id": session.id, "state": session.state, **extra,
+            })
+
     def _active_session_for_ws(self, ws):
         for s in self.sessions.values():
             if s.status in ("waiting", "playing") and s.has_ws(ws):
@@ -503,12 +900,9 @@ class GameManager:
     async def _start_session(self, session):
         session.status = "playing"
         session.state = session.engine.init_state(session.players)
-        await self.send_to_session(session, {
-            "type": "game_started",
-            "session_id": session.id,
+        await self._send_state(session, "game_started", {
             "game_type": session.game_type,
             "players": [{"id": p["user_id"], "name": p["name"]} for p in session.players],
-            "state": session.state,
         })
         await self.broadcast_lobby()
         if session.engine.tick_interval:
@@ -521,9 +915,7 @@ class GameManager:
                 if session.status != "playing":
                     break
                 session.engine.tick(session.state)
-                await self.send_to_session(session, {
-                    "type": "game_state", "session_id": session.id, "state": session.state,
-                })
+                await self._send_state(session, "game_state")
                 result = session.engine.check_finished(session.state)
                 if result:
                     await self._finish_session(session, result)
@@ -540,9 +932,7 @@ class GameManager:
             return  # the tick loop drives broadcasts + finish-checks for this game
         if not changed:
             return
-        await self.send_to_session(session, {
-            "type": "game_state", "session_id": session.id, "state": session.state,
-        })
+        await self._send_state(session, "game_state")
         result = session.engine.check_finished(session.state)
         if result:
             await self._finish_session(session, result)
@@ -576,12 +966,9 @@ class GameManager:
             return
         session.engine.reset(session.state)
         session.status = "playing"
-        await self.send_to_session(session, {
-            "type": "game_started",
-            "session_id": session.id,
+        await self._send_state(session, "game_started", {
             "game_type": session.game_type,
             "players": [{"id": p["user_id"], "name": p["name"]} for p in session.players],
-            "state": session.state,
         })
         if session.engine.tick_interval:
             session.task = asyncio.create_task(self._run_ticks(session))

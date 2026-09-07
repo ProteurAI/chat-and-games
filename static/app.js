@@ -416,14 +416,15 @@ el("poll-submit").addEventListener("click", () => {
   el("poll-question").value = "";
 });
 
-// ---------- snap rendering (ephemeral view-once effect) ----------
-// Stores { [messageId]: firstViewedAtEpochMs } per viewer (localStorage), not
-// just a seen/unseen flag. That timestamp is the single source of truth for
-// "how long has this been visible" - every render (including a channel
+// ---------- snap rendering (click-to-reveal, ephemeral view-once effect) ----------
+// Stores { [messageId]: firstClickedAtEpochMs } per viewer (localStorage) -
+// set only when the viewer actively clicks to open the snap, never just from
+// it being rendered/arriving. That timestamp is the single source of truth
+// for "how long has this been open" - every render (including a channel
 // switch away-and-back, which fully rebuilds the message list) recomputes
-// the remaining time from it instead of restarting or truncating a fresh
-// per-render setTimeout, so a snap always stays sharp for exactly
-// SNAP_VISIBLE_MS from the very first time it was actually shown.
+// the remaining time from it instead of starting a fresh per-render
+// setTimeout, so a snap always stays sharp for exactly SNAP_VISIBLE_MS from
+// the actual click, no matter how many times it gets re-rendered afterwards.
 const VIEWED_SNAPS_KEY = "instachat_viewed_snaps";
 const SNAP_VISIBLE_MS = 8000;
 
@@ -436,7 +437,7 @@ function getViewedSnapTimestamps() {
   }
 }
 
-function firstViewedAt(id) {
+function markSnapClickedNow(id) {
   const viewed = getViewedSnapTimestamps();
   if (viewed[id] === undefined) {
     viewed[id] = Date.now();
@@ -451,7 +452,6 @@ function buildSnapElement(msg) {
 
   const label = document.createElement("div");
   label.className = "snap-label";
-  label.textContent = "⚡ Snap";
   wrap.appendChild(label);
 
   const img = document.createElement("img");
@@ -462,19 +462,42 @@ function buildSnapElement(msg) {
 
   const seenHint = document.createElement("div");
   seenHint.className = "snap-seen-hint";
-  seenHint.textContent = "👁 Bereits angesehen";
-  seenHint.hidden = true;
   wrap.appendChild(seenHint);
 
-  const remaining = SNAP_VISIBLE_MS - (Date.now() - firstViewedAt(msg.id));
-  if (remaining <= 0) {
-    wrap.classList.add("snap-viewed");
-    seenHint.hidden = false;
-  } else {
+  function reveal(remainingMs) {
+    wrap.classList.remove("snap-blurred");
+    label.textContent = "⚡ Snap";
+    seenHint.hidden = true;
     setTimeout(() => {
-      wrap.classList.add("snap-viewed");
+      wrap.classList.add("snap-blurred");
+      label.textContent = "⚡ Snap";
       seenHint.hidden = false;
-    }, remaining);
+      seenHint.textContent = "👁 Bereits angesehen";
+    }, remainingMs);
+  }
+
+  const clickedAt = getViewedSnapTimestamps()[msg.id];
+  if (clickedAt === undefined) {
+    // Never opened yet: always starts blurred, requires an explicit click.
+    wrap.classList.add("snap-blurred", "snap-clickable");
+    label.textContent = "📷 Snap – zum Ansehen klicken";
+    seenHint.hidden = true;
+    wrap.addEventListener("click", function onFirstClick() {
+      wrap.removeEventListener("click", onFirstClick);
+      wrap.classList.remove("snap-clickable");
+      markSnapClickedNow(msg.id);
+      reveal(SNAP_VISIBLE_MS);
+    });
+  } else {
+    const remaining = SNAP_VISIBLE_MS - (Date.now() - clickedAt);
+    if (remaining <= 0) {
+      wrap.classList.add("snap-blurred");
+      label.textContent = "⚡ Snap";
+      seenHint.hidden = false;
+      seenHint.textContent = "👁 Bereits angesehen";
+    } else {
+      reveal(remaining);
+    }
   }
   return wrap;
 }
@@ -715,6 +738,7 @@ function openGameModal(data) {
   el("game-overlay-msg").hidden = true;
   el("game-rematch-btn").hidden = true;
   el("game-modal-title").textContent = GAME_TITLES[data.game_type] || "🎮 Spiel";
+  el("game-modal").classList.toggle("wide", WIDE_GAME_TYPES.includes(data.game_type));
 
   const stage = el("game-stage");
   stage.innerHTML = "";
@@ -726,6 +750,10 @@ function openGameModal(data) {
     buildLightCyclesStage(stage);
   } else if (data.game_type === "buzzer") {
     buildBuzzerStage(stage);
+  } else if (data.game_type === "battleship") {
+    buildBattleshipStage(stage);
+  } else if (data.game_type === "uno") {
+    buildUnoStage(stage);
   }
   updateGameState(data.state);
   el("game-modal").hidden = false;
@@ -736,8 +764,11 @@ const GAME_TITLES = {
   tictactoe: "⭕ Tic-Tac-Toe",
   lightcycles: "🏍️ Light Cycles",
   buzzer: "🔔 Buzzer",
+  battleship: "🚢 Schiffe versenken",
+  uno: "🎴 UNO",
 };
-const REMATCH_GAME_TYPES = ["tictactoe", "buzzer"];
+const REMATCH_GAME_TYPES = ["tictactoe", "buzzer", "uno"];
+const WIDE_GAME_TYPES = ["battleship", "uno"];
 
 function closeGameModal() {
   if (myGameSessionId && ws && ws.readyState === WebSocket.OPEN) {
@@ -765,6 +796,8 @@ function updateGameState(state) {
   else if (myGameType === "tictactoe") renderTtt(state);
   else if (myGameType === "lightcycles") renderLightCycles(state);
   else if (myGameType === "buzzer") renderBuzzer(state);
+  else if (myGameType === "battleship") renderBattleship(state);
+  else if (myGameType === "uno") renderUno(state);
 }
 
 function showGameOver(data) {
@@ -1062,6 +1095,344 @@ function renderBuzzer(state) {
   const mine = state.results[String(me.id)];
   if (mine && mine.clicked_at !== null) {
     btn.disabled = true;
+  }
+}
+
+// ---------- games: battleship ----------
+function buildBattleshipStage(stage) {
+  const turnRow = document.createElement("div");
+  turnRow.id = "bs-turn-indicator";
+  turnRow.className = "bs-turn-indicator";
+  stage.appendChild(turnRow);
+
+  const boards = document.createElement("div");
+  boards.className = "bs-boards";
+
+  const ownBlock = document.createElement("div");
+  ownBlock.className = "bs-board-block";
+  const ownTitle = document.createElement("div");
+  ownTitle.className = "bs-board-title";
+  ownTitle.textContent = "Dein Gewässer";
+  ownBlock.appendChild(ownTitle);
+  ownBlock.appendChild(buildBsGrid("bs-own-grid", false));
+  boards.appendChild(ownBlock);
+
+  const trackBlock = document.createElement("div");
+  trackBlock.id = "bs-track-block";
+  trackBlock.className = "bs-board-block";
+  const trackTitle = document.createElement("div");
+  trackTitle.className = "bs-board-title";
+  trackTitle.textContent = "Gegnerisches Gewässer — klicken zum Schießen";
+  trackBlock.appendChild(trackTitle);
+  trackBlock.appendChild(buildBsGrid("bs-track-grid", true));
+  boards.appendChild(trackBlock);
+
+  stage.appendChild(boards);
+}
+
+function buildBsGrid(id, clickable) {
+  const grid = document.createElement("div");
+  grid.className = "bs-grid";
+  grid.id = id;
+
+  const corner = document.createElement("div");
+  corner.className = "bs-cell bs-label";
+  grid.appendChild(corner);
+  for (let c = 0; c < 10; c++) {
+    const label = document.createElement("div");
+    label.className = "bs-cell bs-label";
+    label.textContent = String.fromCharCode(65 + c);
+    grid.appendChild(label);
+  }
+  for (let r = 0; r < 10; r++) {
+    const rowLabel = document.createElement("div");
+    rowLabel.className = "bs-cell bs-label";
+    rowLabel.textContent = String(r + 1);
+    grid.appendChild(rowLabel);
+    for (let c = 0; c < 10; c++) {
+      const cell = document.createElement("div");
+      cell.className = "bs-cell" + (clickable ? " bs-target" : "");
+      cell.dataset.x = c;
+      cell.dataset.y = r;
+      if (clickable) {
+        cell.addEventListener("click", () => {
+          sendGameInput({ cell: `${String.fromCharCode(65 + c)}${r + 1}` });
+        });
+      }
+      grid.appendChild(cell);
+    }
+  }
+  return grid;
+}
+
+function bsCellAt(grid, x, y) {
+  return grid.querySelector(`[data-x="${x}"][data-y="${y}"]`);
+}
+
+function renderBattleship(state) {
+  const isMyTurn = state.turn === String(me.id);
+  const indicator = el("bs-turn-indicator");
+  if (indicator) {
+    indicator.textContent = isMyTurn ? "Du bist dran — klicke ins gegnerische Gewässer" : "Gegner ist dran …";
+    indicator.classList.toggle("my-turn", isMyTurn);
+  }
+  const trackBlock = el("bs-track-block");
+  if (trackBlock) trackBlock.style.opacity = isMyTurn ? "1" : "0.55";
+
+  const ownGrid = el("bs-own-grid");
+  if (ownGrid) {
+    Array.from(ownGrid.children).forEach((cell) => {
+      if (!cell.classList.contains("bs-label")) cell.className = "bs-cell";
+    });
+    for (const ship of state.own_ships) {
+      for (const [x, y] of ship) {
+        const cell = bsCellAt(ownGrid, x, y);
+        if (cell) cell.classList.add("bs-ship");
+      }
+    }
+    for (const [key, result] of Object.entries(state.incoming_shots)) {
+      const [x, y] = key.split(",").map(Number);
+      const cell = bsCellAt(ownGrid, x, y);
+      if (cell) cell.classList.add(result === "sunk" ? "bs-sunk" : result === "hit" ? "bs-hit" : "bs-miss");
+    }
+  }
+
+  const trackGrid = el("bs-track-grid");
+  if (trackGrid) {
+    Array.from(trackGrid.children).forEach((cell) => {
+      if (!cell.classList.contains("bs-label")) cell.className = "bs-cell bs-target";
+    });
+    for (const [key, result] of Object.entries(state.outgoing_shots)) {
+      const [x, y] = key.split(",").map(Number);
+      const cell = bsCellAt(trackGrid, x, y);
+      if (cell) cell.classList.add(result === "sunk" ? "bs-sunk" : result === "hit" ? "bs-hit" : "bs-miss");
+    }
+  }
+}
+
+// ---------- games: uno ----------
+const UNO_COLOR_HEX = { red: "#e63946", yellow: "#f4c430", green: "#2ea043", blue: "#3579d6" };
+const UNO_COLOR_LIST = ["red", "yellow", "green", "blue"];
+let unoPendingWildCardId = null;
+let lastUnoState = null;
+
+function buildUnoStage(stage) {
+  unoPendingWildCardId = null;
+  lastUnoState = null;
+
+  const table = document.createElement("div");
+  table.className = "uno-table";
+
+  const status = document.createElement("div");
+  status.id = "uno-status";
+  status.className = "uno-status";
+  table.appendChild(status);
+
+  const others = document.createElement("div");
+  others.id = "uno-others";
+  others.className = "uno-others";
+  table.appendChild(others);
+
+  const center = document.createElement("div");
+  center.className = "uno-center";
+
+  const drawPile = document.createElement("div");
+  drawPile.id = "uno-draw-pile";
+  drawPile.className = "uno-draw-pile";
+  const drawCard = document.createElement("div");
+  drawCard.className = "uno-card color-none";
+  drawCard.textContent = "🂠";
+  const drawCount = document.createElement("div");
+  drawCount.id = "uno-draw-count";
+  drawCount.className = "uno-draw-count";
+  drawPile.appendChild(drawCard);
+  drawPile.appendChild(drawCount);
+  drawPile.addEventListener("click", () => sendGameInput({ action: "draw" }));
+  center.appendChild(drawPile);
+
+  const topCard = document.createElement("div");
+  topCard.id = "uno-top-card";
+  center.appendChild(topCard);
+  table.appendChild(center);
+
+  const picker = document.createElement("div");
+  picker.id = "uno-color-picker";
+  picker.className = "uno-color-picker";
+  picker.hidden = true;
+  table.appendChild(picker);
+
+  const actions = document.createElement("div");
+  actions.id = "uno-actions";
+  actions.className = "uno-actions";
+  table.appendChild(actions);
+
+  const hand = document.createElement("div");
+  hand.id = "uno-hand";
+  hand.className = "uno-hand";
+  table.appendChild(hand);
+
+  stage.appendChild(table);
+}
+
+function unoCardLabel(c) {
+  const map = { skip: "🚫", reverse: "🔁", draw2: "+2", wild: "🌈", wild4: "+4" };
+  return map[c.value] || c.value;
+}
+
+function unoIsPlayable(card, currentColor, topValue) {
+  if (card.value === "wild" || card.value === "wild4") return true;
+  return card.color === currentColor || card.value === topValue;
+}
+
+function unoPlayerName(uid) {
+  const p = myGamePlayers.find((pl) => String(pl.id) === uid);
+  return p ? p.name : "?";
+}
+
+function unoSortHand(hand) {
+  const order = { red: 0, yellow: 1, green: 2, blue: 3 };
+  const valueRank = (v) => (v === "skip" ? 10.1 : v === "reverse" ? 10.2 : v === "draw2" ? 10.3 : parseInt(v, 10));
+  return [...hand].sort((a, b) => {
+    const ca = a.color === null ? 4 : order[a.color];
+    const cb = b.color === null ? 4 : order[b.color];
+    if (ca !== cb) return ca - cb;
+    return ca === 4 ? 0 : valueRank(a.value) - valueRank(b.value);
+  });
+}
+
+function renderUno(state) {
+  lastUnoState = state;
+  const myUid = String(me.id);
+  const isMyTurn = state.players_order[state.turn_index] === myUid;
+  if (!isMyTurn) unoPendingWildCardId = null;
+
+  const status = el("uno-status");
+  if (status) {
+    const dirArrow = state.direction === 1 ? "↻" : "↺";
+    if (state.awaiting_start_color) {
+      status.textContent = isMyTurn ? "Wähle die Startfarbe" : "Warte auf Startfarben-Wahl …";
+    } else {
+      status.textContent = `${isMyTurn ? "Du bist dran" : unoPlayerName(state.players_order[state.turn_index]) + " ist dran"} ${dirArrow}`;
+    }
+    status.classList.toggle("my-turn", isMyTurn);
+  }
+
+  const others = el("uno-others");
+  if (others) {
+    others.innerHTML = "";
+    state.players_order.forEach((uid, idx) => {
+      if (uid === myUid) return;
+      const box = document.createElement("div");
+      box.className = "uno-other-player" + (idx === state.turn_index ? " current-turn" : "");
+      const nameRow = document.createElement("div");
+      nameRow.textContent = unoPlayerName(uid);
+      const countRow = document.createElement("div");
+      countRow.textContent = `${state.hand_counts[uid] || 0} Karten`;
+      box.appendChild(nameRow);
+      box.appendChild(countRow);
+      if (state.must_call_uno.includes(uid)) {
+        const catchBtn = document.createElement("button");
+        catchBtn.type = "button";
+        catchBtn.className = "uno-catch-btn";
+        catchBtn.textContent = "Erwischt!";
+        catchBtn.addEventListener("click", () => sendGameInput({ action: "catch", target_user_id: Number(uid) }));
+        box.appendChild(catchBtn);
+      }
+      others.appendChild(box);
+    });
+  }
+
+  const topCardBox = el("uno-top-card");
+  if (topCardBox) {
+    topCardBox.innerHTML = "";
+    if (state.top_card) {
+      const isWildTop = state.top_card.value === "wild" || state.top_card.value === "wild4";
+      const c = document.createElement("div");
+      c.className = `uno-card color-${isWildTop ? state.current_color || "none" : state.top_card.color}`;
+      c.textContent = unoCardLabel(state.top_card);
+      topCardBox.appendChild(c);
+    }
+  }
+  const drawCount = el("uno-draw-count");
+  if (drawCount) drawCount.textContent = `${state.draw_pile_count} übrig`;
+
+  const picker = el("uno-color-picker");
+  const showPicker = isMyTurn && (state.awaiting_start_color || unoPendingWildCardId !== null);
+  if (picker) {
+    picker.hidden = !showPicker;
+    picker.innerHTML = "";
+    if (showPicker) {
+      UNO_COLOR_LIST.forEach((color) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "uno-color-btn";
+        btn.style.background = UNO_COLOR_HEX[color];
+        btn.addEventListener("click", () => {
+          if (state.awaiting_start_color) {
+            sendGameInput({ action: "choose_start_color", color });
+          } else if (unoPendingWildCardId !== null) {
+            sendGameInput({ action: "play", card_id: unoPendingWildCardId, chosen_color: color });
+            unoPendingWildCardId = null;
+          }
+        });
+        picker.appendChild(btn);
+      });
+    }
+  }
+
+  const actions = el("uno-actions");
+  if (actions) {
+    actions.innerHTML = "";
+    if (isMyTurn && !state.awaiting_start_color) {
+      const topValue = state.top_card ? state.top_card.value : null;
+      const hasPlayable = state.hand.some((c) => unoIsPlayable(c, state.current_color, topValue));
+      if (!hasPlayable && !state.has_drawn) {
+        const drawBtn = document.createElement("button");
+        drawBtn.type = "button";
+        drawBtn.className = "primary-btn";
+        drawBtn.textContent = "Karte ziehen";
+        drawBtn.addEventListener("click", () => sendGameInput({ action: "draw" }));
+        actions.appendChild(drawBtn);
+      }
+      if (state.has_drawn) {
+        const passBtn = document.createElement("button");
+        passBtn.type = "button";
+        passBtn.className = "ghost-btn";
+        passBtn.textContent = "Weitergeben";
+        passBtn.addEventListener("click", () => sendGameInput({ action: "pass" }));
+        actions.appendChild(passBtn);
+      }
+    }
+    if (state.must_call_uno.includes(myUid)) {
+      const unoBtn = document.createElement("button");
+      unoBtn.type = "button";
+      unoBtn.className = "uno-uno-btn";
+      unoBtn.textContent = "UNO!";
+      unoBtn.addEventListener("click", () => sendGameInput({ action: "call_uno" }));
+      actions.appendChild(unoBtn);
+    }
+  }
+
+  const handBox = el("uno-hand");
+  if (handBox) {
+    handBox.innerHTML = "";
+    const topValue = state.top_card ? state.top_card.value : null;
+    unoSortHand(state.hand).forEach((c) => {
+      const playable = isMyTurn && !state.awaiting_start_color && unoIsPlayable(c, state.current_color, topValue);
+      const cardEl = document.createElement("div");
+      cardEl.className = `uno-card color-${c.color || "none"}` + (playable ? "" : " disabled");
+      cardEl.textContent = unoCardLabel(c);
+      cardEl.addEventListener("click", () => {
+        if (!playable) return;
+        if (c.value === "wild" || c.value === "wild4") {
+          unoPendingWildCardId = c.id;
+          renderUno(lastUnoState);
+        } else {
+          sendGameInput({ action: "play", card_id: c.id });
+        }
+      });
+      handBox.appendChild(cardEl);
+    });
   }
 }
 
