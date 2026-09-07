@@ -738,7 +738,12 @@ function openGameModal(data) {
   el("game-overlay-msg").hidden = true;
   el("game-rematch-btn").hidden = true;
   el("game-modal-title").textContent = GAME_TITLES[data.game_type] || "🎮 Spiel";
-  el("game-modal").classList.toggle("wide", WIDE_GAME_TYPES.includes(data.game_type));
+  // .wide/.uno-mode are sizing modifiers on the INNER dialog (class
+  // "game-modal"), not on #game-modal itself (that's the fixed, always-
+  // full-viewport overlay backdrop wrapping it).
+  const dialog = document.querySelector(".game-modal");
+  dialog.classList.toggle("wide", WIDE_GAME_TYPES.includes(data.game_type));
+  dialog.classList.toggle("uno-mode", data.game_type === "uno");
 
   const stage = el("game-stage");
   stage.innerHTML = "";
@@ -768,7 +773,7 @@ const GAME_TITLES = {
   uno: "🎴 UNO",
 };
 const REMATCH_GAME_TYPES = ["tictactoe", "buzzer", "uno"];
-const WIDE_GAME_TYPES = ["battleship", "uno"];
+const WIDE_GAME_TYPES = ["battleship"];
 
 function closeGameModal() {
   if (myGameSessionId && ws && ws.readyState === WebSocket.OPEN) {
@@ -1220,18 +1225,27 @@ function buildUnoStage(stage) {
   unoPendingWildCardId = null;
   lastUnoState = null;
 
-  const table = document.createElement("div");
-  table.className = "uno-table";
+  const arena = document.createElement("div");
+  arena.className = "uno-arena";
 
-  const status = document.createElement("div");
-  status.id = "uno-status";
-  status.className = "uno-status";
-  table.appendChild(status);
-
+  // top zone: other players, active-turn glow, "Erwischt!" buttons
+  const topZone = document.createElement("div");
+  topZone.className = "uno-top-zone";
   const others = document.createElement("div");
   others.id = "uno-others";
   others.className = "uno-others";
-  table.appendChild(others);
+  topZone.appendChild(others);
+  arena.appendChild(topZone);
+
+  // middle zone: big turn banner, discard/draw piles, stack banner, color
+  // picker, action buttons
+  const midZone = document.createElement("div");
+  midZone.className = "uno-mid-zone";
+
+  const banner = document.createElement("div");
+  banner.id = "uno-turn-banner";
+  banner.className = "uno-turn-banner";
+  midZone.appendChild(banner);
 
   const center = document.createElement("div");
   center.className = "uno-center";
@@ -1239,39 +1253,55 @@ function buildUnoStage(stage) {
   const drawPile = document.createElement("div");
   drawPile.id = "uno-draw-pile";
   drawPile.className = "uno-draw-pile";
-  const drawCard = document.createElement("div");
-  drawCard.className = "uno-card color-none";
-  drawCard.textContent = "🂠";
+  const deckBack = document.createElement("div");
+  deckBack.className = "uno-deck-back";
+  deckBack.textContent = "🂠";
   const drawCount = document.createElement("div");
   drawCount.id = "uno-draw-count";
   drawCount.className = "uno-draw-count";
-  drawPile.appendChild(drawCard);
+  drawPile.appendChild(deckBack);
   drawPile.appendChild(drawCount);
   drawPile.addEventListener("click", () => sendGameInput({ action: "draw" }));
   center.appendChild(drawPile);
 
+  const colorRing = document.createElement("div");
+  colorRing.id = "uno-color-ring";
+  colorRing.className = "uno-color-ring";
   const topCard = document.createElement("div");
   topCard.id = "uno-top-card";
-  center.appendChild(topCard);
-  table.appendChild(center);
+  colorRing.appendChild(topCard);
+  center.appendChild(colorRing);
+  midZone.appendChild(center);
+
+  const stackBanner = document.createElement("div");
+  stackBanner.id = "uno-stack-banner";
+  stackBanner.className = "uno-stack-banner";
+  stackBanner.hidden = true;
+  midZone.appendChild(stackBanner);
 
   const picker = document.createElement("div");
   picker.id = "uno-color-picker";
   picker.className = "uno-color-picker";
   picker.hidden = true;
-  table.appendChild(picker);
+  midZone.appendChild(picker);
 
   const actions = document.createElement("div");
   actions.id = "uno-actions";
   actions.className = "uno-actions";
-  table.appendChild(actions);
+  midZone.appendChild(actions);
 
+  arena.appendChild(midZone);
+
+  // bottom zone: own hand, fanned/overlapping
+  const bottomZone = document.createElement("div");
+  bottomZone.className = "uno-bottom-zone";
   const hand = document.createElement("div");
   hand.id = "uno-hand";
-  hand.className = "uno-hand";
-  table.appendChild(hand);
+  hand.className = "uno-hand-fan";
+  bottomZone.appendChild(hand);
+  arena.appendChild(bottomZone);
 
-  stage.appendChild(table);
+  stage.appendChild(arena);
 }
 
 function unoCardLabel(c) {
@@ -1282,6 +1312,15 @@ function unoCardLabel(c) {
 function unoIsPlayable(card, currentColor, topValue) {
   if (card.value === "wild" || card.value === "wild4") return true;
   return card.color === currentColor || card.value === topValue;
+}
+
+// While a +2/+4 chain is pending, only a matching-type card (or taking the
+// pile) is legal - color/value matching against the discard pile doesn't
+// apply until the chain resolves.
+function unoIsPlayableNow(card, state) {
+  if (state.pending_stack) return card.value === state.pending_stack.type;
+  const topValue = state.top_card ? state.top_card.value : null;
+  return unoIsPlayable(card, state.current_color, topValue);
 }
 
 function unoPlayerName(uid) {
@@ -1306,15 +1345,15 @@ function renderUno(state) {
   const isMyTurn = state.players_order[state.turn_index] === myUid;
   if (!isMyTurn) unoPendingWildCardId = null;
 
-  const status = el("uno-status");
-  if (status) {
+  const banner = el("uno-turn-banner");
+  if (banner) {
     const dirArrow = state.direction === 1 ? "↻" : "↺";
     if (state.awaiting_start_color) {
-      status.textContent = isMyTurn ? "Wähle die Startfarbe" : "Warte auf Startfarben-Wahl …";
+      banner.textContent = isMyTurn ? "Wähle die Startfarbe" : "Warte auf Startfarben-Wahl …";
     } else {
-      status.textContent = `${isMyTurn ? "Du bist dran" : unoPlayerName(state.players_order[state.turn_index]) + " ist dran"} ${dirArrow}`;
+      banner.textContent = `${isMyTurn ? "Du bist dran!" : unoPlayerName(state.players_order[state.turn_index]) + " ist dran"} ${dirArrow}`;
     }
-    status.classList.toggle("my-turn", isMyTurn);
+    banner.classList.toggle("my-turn", isMyTurn);
   }
 
   const others = el("uno-others");
@@ -1324,10 +1363,16 @@ function renderUno(state) {
       if (uid === myUid) return;
       const box = document.createElement("div");
       box.className = "uno-other-player" + (idx === state.turn_index ? " current-turn" : "");
+      const avatar = document.createElement("div");
+      avatar.className = "uno-avatar";
+      avatar.textContent = unoPlayerName(uid).slice(0, 1).toUpperCase();
       const nameRow = document.createElement("div");
+      nameRow.className = "uno-other-name";
       nameRow.textContent = unoPlayerName(uid);
       const countRow = document.createElement("div");
+      countRow.className = "uno-other-count";
       countRow.textContent = `${state.hand_counts[uid] || 0} Karten`;
+      box.appendChild(avatar);
       box.appendChild(nameRow);
       box.appendChild(countRow);
       if (state.must_call_uno.includes(uid)) {
@@ -1348,13 +1393,30 @@ function renderUno(state) {
     if (state.top_card) {
       const isWildTop = state.top_card.value === "wild" || state.top_card.value === "wild4";
       const c = document.createElement("div");
-      c.className = `uno-card color-${isWildTop ? state.current_color || "none" : state.top_card.color}`;
+      c.className = `uno-card color-${isWildTop ? "wild" : state.top_card.color}`;
       c.textContent = unoCardLabel(state.top_card);
       topCardBox.appendChild(c);
     }
   }
+  const colorRing = el("uno-color-ring");
+  if (colorRing) {
+    colorRing.style.background = state.current_color
+      ? `radial-gradient(circle, ${UNO_COLOR_HEX[state.current_color]}4d, transparent 72%)`
+      : "transparent";
+  }
   const drawCount = el("uno-draw-count");
   if (drawCount) drawCount.textContent = `${state.draw_pile_count} übrig`;
+
+  const stackBanner = el("uno-stack-banner");
+  if (stackBanner) {
+    if (state.pending_stack) {
+      const label = state.pending_stack.type === "draw2" ? "+2-Kette" : "+4-Kette";
+      stackBanner.textContent = `🔥 ${label}: ${state.pending_stack.count} stehen im Raum!`;
+      stackBanner.hidden = false;
+    } else {
+      stackBanner.hidden = true;
+    }
+  }
 
   const picker = el("uno-color-picker");
   const showPicker = isMyTurn && (state.awaiting_start_color || unoPendingWildCardId !== null);
@@ -1384,23 +1446,31 @@ function renderUno(state) {
   if (actions) {
     actions.innerHTML = "";
     if (isMyTurn && !state.awaiting_start_color) {
-      const topValue = state.top_card ? state.top_card.value : null;
-      const hasPlayable = state.hand.some((c) => unoIsPlayable(c, state.current_color, topValue));
-      if (!hasPlayable && !state.has_drawn) {
-        const drawBtn = document.createElement("button");
-        drawBtn.type = "button";
-        drawBtn.className = "primary-btn";
-        drawBtn.textContent = "Karte ziehen";
-        drawBtn.addEventListener("click", () => sendGameInput({ action: "draw" }));
-        actions.appendChild(drawBtn);
-      }
-      if (state.has_drawn) {
-        const passBtn = document.createElement("button");
-        passBtn.type = "button";
-        passBtn.className = "ghost-btn";
-        passBtn.textContent = "Weitergeben";
-        passBtn.addEventListener("click", () => sendGameInput({ action: "pass" }));
-        actions.appendChild(passBtn);
+      if (state.pending_stack) {
+        const takeBtn = document.createElement("button");
+        takeBtn.type = "button";
+        takeBtn.className = "primary-btn";
+        takeBtn.textContent = `Stapel aufnehmen (+${state.pending_stack.count})`;
+        takeBtn.addEventListener("click", () => sendGameInput({ action: "draw" }));
+        actions.appendChild(takeBtn);
+      } else {
+        const hasPlayable = state.hand.some((c) => unoIsPlayableNow(c, state));
+        if (!hasPlayable && !state.has_drawn) {
+          const drawBtn = document.createElement("button");
+          drawBtn.type = "button";
+          drawBtn.className = "primary-btn";
+          drawBtn.textContent = "Karte ziehen";
+          drawBtn.addEventListener("click", () => sendGameInput({ action: "draw" }));
+          actions.appendChild(drawBtn);
+        }
+        if (state.has_drawn) {
+          const passBtn = document.createElement("button");
+          passBtn.type = "button";
+          passBtn.className = "ghost-btn";
+          passBtn.textContent = "Weitergeben";
+          passBtn.addEventListener("click", () => sendGameInput({ action: "pass" }));
+          actions.appendChild(passBtn);
+        }
       }
     }
     if (state.must_call_uno.includes(myUid)) {
@@ -1416,11 +1486,10 @@ function renderUno(state) {
   const handBox = el("uno-hand");
   if (handBox) {
     handBox.innerHTML = "";
-    const topValue = state.top_card ? state.top_card.value : null;
     unoSortHand(state.hand).forEach((c) => {
-      const playable = isMyTurn && !state.awaiting_start_color && unoIsPlayable(c, state.current_color, topValue);
+      const playable = isMyTurn && !state.awaiting_start_color && unoIsPlayableNow(c, state);
       const cardEl = document.createElement("div");
-      cardEl.className = `uno-card color-${c.color || "none"}` + (playable ? "" : " disabled");
+      cardEl.className = `uno-card color-${c.color || "wild"}` + (playable ? "" : " disabled");
       cardEl.textContent = unoCardLabel(c);
       cardEl.addEventListener("click", () => {
         if (!playable) return;

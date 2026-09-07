@@ -618,6 +618,7 @@ class UnoEngine:
             "turn_index": 0,
             "has_drawn": False,
             "must_call_uno": set(),
+            "pending_stack": None,  # None, or {"type": "draw2"|"wild4", "count": int}
             "winner": None,
         }
 
@@ -626,8 +627,9 @@ class UnoEngine:
         elif top["value"] == "reverse":
             state["direction"] = -1
         elif top["value"] == "draw2":
-            victim = state["players_order"][_uno_next_index(state, 1)]
-            _uno_draw_cards(state, victim, 2)
+            # Same resolution as any in-game +2: the next player must stack
+            # another +2 or take the pile, rather than an immediate draw.
+            state["pending_stack"] = {"type": "draw2", "count": 2}
             state["turn_index"] = _uno_next_index(state, 1)
         # top["value"] == "wild": current_color stays None; the first player
         # must send a "choose_start_color" action before anything else.
@@ -673,6 +675,45 @@ class UnoEngine:
         hand = state["hands"][uid]
         top_value = state["discard_pile"][-1]["value"]
         top_color = state["current_color"]
+        stack = state["pending_stack"]
+
+        if stack is not None:
+            # A +2/+4 chain is running: the only legal moves are stacking
+            # another card of the SAME type, or taking the whole pile.
+            # +2 and +4 chains never mix (checked via stack["type"]).
+            if action == "play":
+                card = next((c for c in hand if c["id"] == payload.get("card_id")), None)
+                if card is None or card["value"] != stack["type"]:
+                    return False
+                chosen_color = payload.get("chosen_color")
+                if card["value"] == "wild4" and chosen_color not in UNO_COLORS:
+                    return False
+
+                hand.remove(card)
+                state["discard_pile"].append(card)
+                state["current_color"] = chosen_color if card["value"] == "wild4" else card["color"]
+                stack["count"] += 2 if card["value"] == "draw2" else 4
+
+                if len(hand) == 1:
+                    state["must_call_uno"].add(uid)
+                else:
+                    state["must_call_uno"].discard(uid)
+
+                if not hand:
+                    state["winner"] = uid
+                    return True
+
+                _uno_finish_turn(state, 1)
+                return True
+
+            if action == "draw":
+                _uno_draw_cards(state, uid, stack["count"])
+                state["pending_stack"] = None
+                _uno_finish_turn(state, 1)
+                return True
+
+            return False
+
         playable = [c for c in hand if _uno_is_playable(c, top_color, top_value)]
 
         if action == "draw":
@@ -717,13 +758,13 @@ class UnoEngine:
                 state["direction"] *= -1
                 _uno_finish_turn(state, 1 if len(state["players_order"]) > 2 else 0)
             elif card["value"] == "draw2":
-                victim = state["players_order"][_uno_next_index(state, 1)]
-                _uno_draw_cards(state, victim, 2)
-                _uno_finish_turn(state, 2)
+                # Starts a new +2 chain instead of an immediate draw - the
+                # next player must stack or take the (currently 2-card) pile.
+                state["pending_stack"] = {"type": "draw2", "count": 2}
+                _uno_finish_turn(state, 1)
             elif card["value"] == "wild4":
-                victim = state["players_order"][_uno_next_index(state, 1)]
-                _uno_draw_cards(state, victim, 4)
-                _uno_finish_turn(state, 2)
+                state["pending_stack"] = {"type": "wild4", "count": 4}
+                _uno_finish_turn(state, 1)
             else:
                 _uno_finish_turn(state, 1)
             return True
@@ -755,6 +796,7 @@ class UnoEngine:
             "must_call_uno": list(state["must_call_uno"]),
             "draw_pile_count": len(state["draw_pile"]),
             "awaiting_start_color": state["current_color"] is None,
+            "pending_stack": state["pending_stack"],
         }
 
     @staticmethod
