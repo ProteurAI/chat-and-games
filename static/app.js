@@ -417,7 +417,7 @@ el("poll-submit").addEventListener("click", () => {
 });
 
 // ---------- snap rendering (click-to-reveal, ephemeral view-once effect) ----------
-// Stores { [messageId]: firstClickedAtEpochMs } per viewer (localStorage) -
+// Stores { [imagePath]: firstClickedAtEpochMs } per viewer (localStorage) -
 // set only when the viewer actively clicks to open the snap, never just from
 // it being rendered/arriving. That timestamp is the single source of truth
 // for "how long has this been open" - every render (including a channel
@@ -425,6 +425,15 @@ el("poll-submit").addEventListener("click", () => {
 // the remaining time from it instead of starting a fresh per-render
 // setTimeout, so a snap always stays sharp for exactly SNAP_VISIBLE_MS from
 // the actual click, no matter how many times it gets re-rendered afterwards.
+//
+// Keyed by msg.image_path (a UUID-based upload filename), NOT msg.id: the
+// message id is just a SQLite autoincrement row number, and this app's
+// render.yaml has no persistent disk, so every redeploy wipes the DB and
+// restarts ids from 1. A viewer's browser that had already clicked an
+// earlier snap sitting at id=1 would otherwise treat any brand-new future
+// snap that happens to also land on id=1 (after a redeploy) as already
+// viewed, blurring an image nobody has ever opened. image_path is generated
+// fresh per upload and never reused, so it can't collide across resets.
 const VIEWED_SNAPS_KEY = "instachat_viewed_snaps";
 const SNAP_VISIBLE_MS = 8000;
 
@@ -476,7 +485,7 @@ function buildSnapElement(msg) {
     }, remainingMs);
   }
 
-  const clickedAt = getViewedSnapTimestamps()[msg.id];
+  const clickedAt = getViewedSnapTimestamps()[msg.image_path];
   if (clickedAt === undefined) {
     // Never opened yet: always starts blurred, requires an explicit click.
     wrap.classList.add("snap-blurred", "snap-clickable");
@@ -485,7 +494,7 @@ function buildSnapElement(msg) {
     wrap.addEventListener("click", function onFirstClick() {
       wrap.removeEventListener("click", onFirstClick);
       wrap.classList.remove("snap-clickable");
-      markSnapClickedNow(msg.id);
+      markSnapClickedNow(msg.image_path);
       reveal(SNAP_VISIBLE_MS);
     });
   } else {
