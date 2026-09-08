@@ -2,7 +2,6 @@ import asyncio
 import json
 import mimetypes
 import os
-import random
 import re
 import uuid
 from pathlib import Path
@@ -28,14 +27,10 @@ with open(ROOT_DIR / "config.json", encoding="utf-8") as f:
 if os.environ.get("TEAM_PASSWORD"):
     CONFIG["team_password"] = os.environ["TEAM_PASSWORD"]
 
-with open(ROOT_DIR / "bingo_config.json", encoding="utf-8") as f:
-    BINGO_PHRASES = json.load(f)
-
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
-FREE_SPACE_TEXT = "☕ Kaffeepause"
 
-app = FastAPI(title="InstaChat")
+app = FastAPI(title="Chat & Games")
 
 db.init_db(CONFIG.get("default_channels", []))
 
@@ -289,81 +284,6 @@ async def get_upload(filename: str):
     if not path.exists():
         raise HTTPException(status_code=404, detail="Nicht gefunden")
     return FileResponse(path)
-
-
-# ---------- REST: bingo ----------
-
-def build_bingo_card() -> list[str]:
-    pool = BINGO_PHRASES.copy()
-    random.shuffle(pool)
-    cells = pool[:24]
-    cells.insert(12, FREE_SPACE_TEXT)
-    return cells
-
-
-@app.get("/api/bingo")
-async def get_bingo(user: dict = Depends(get_current_user)):
-    with db.get_conn() as conn:
-        row = conn.execute("SELECT * FROM bingo_cards WHERE user_id = ?", (user["id"],)).fetchone()
-        if not row:
-            cells = build_bingo_card()
-            checked = [i == 12 for i in range(25)]
-            conn.execute(
-                "INSERT INTO bingo_cards (user_id, cells_json, checked_json, announced_json, created_at) VALUES (?, ?, ?, ?, ?)",
-                (user["id"], db.dumps(cells), db.dumps(checked), db.dumps([]), db.now()),
-            )
-            row = conn.execute("SELECT * FROM bingo_cards WHERE user_id = ?", (user["id"],)).fetchone()
-    return {
-        "cells": json.loads(row["cells_json"]),
-        "checked": json.loads(row["checked_json"]),
-    }
-
-
-def winning_lines(checked: list[bool]) -> list[int]:
-    lines = []
-    for r in range(5):
-        if all(checked[r * 5 + c] for c in range(5)):
-            lines.append(r)
-    return lines
-
-
-@app.post("/api/bingo/check")
-async def toggle_bingo_cell(payload: dict, user: dict = Depends(get_current_user)):
-    cell_index = payload.get("cell_index")
-    channel_id = payload.get("channel_id")
-    if not isinstance(cell_index, int) or not (0 <= cell_index < 25) or cell_index == 12:
-        raise HTTPException(status_code=400, detail="Ungueltiges Feld")
-
-    with db.get_conn() as conn:
-        row = conn.execute("SELECT * FROM bingo_cards WHERE user_id = ?", (user["id"],)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Keine Bingo-Karte gefunden, bitte erst laden")
-        checked = json.loads(row["checked_json"])
-        announced = json.loads(row["announced_json"])
-        checked[cell_index] = not checked[cell_index]
-
-        new_wins = [line for line in winning_lines(checked) if line not in announced]
-        announced.extend(new_wins)
-
-        conn.execute(
-            "UPDATE bingo_cards SET checked_json = ?, announced_json = ? WHERE user_id = ?",
-            (db.dumps(checked), db.dumps(announced), user["id"]),
-        )
-
-    result = {"checked": checked, "new_bingo": len(new_wins) > 0}
-
-    if new_wins and channel_id:
-        text = f"🎉 {user['name']} hat BINGO!"
-        with db.get_conn() as conn:
-            cur = conn.execute(
-                "INSERT INTO messages (channel_id, user_id, type, content, created_at) VALUES (?, ?, 'system', ?, ?)",
-                (channel_id, None, text, db.now()),
-            )
-            msg_row = conn.execute("SELECT * FROM messages WHERE id = ?", (cur.lastrowid,)).fetchone()
-            full = serialize_message(conn, msg_row)
-        await manager.broadcast_all({"type": "bingo_win", "message": full})
-
-    return result
 
 
 # ---------- websocket ----------

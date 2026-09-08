@@ -1,4 +1,4 @@
-# InstaChat starten
+# Chat & Games starten
 # Zeigt die lokale IP an und startet den Server fuer das gesamte Buero-Netzwerk.
 
 $config = Get-Content "$PSScriptRoot\config.json" | ConvertFrom-Json
@@ -9,7 +9,7 @@ $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {
 } | Select-Object -First 1 -ExpandProperty IPAddress)
 
 Write-Host ""
-Write-Host "InstaChat startet..." -ForegroundColor Cyan
+Write-Host "Chat & Games startet..." -ForegroundColor Cyan
 Write-Host "Kollegen erreichen den Chat im WLAN unter:" -ForegroundColor Green
 Write-Host "  http://$ip`:$port" -ForegroundColor Yellow
 Write-Host ""

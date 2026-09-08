@@ -176,12 +176,6 @@ function handleWsEvent(data) {
     updatePollUI(data.message_id, data.poll);
   } else if (data.type === "presence") {
     renderOnline(data.online);
-  } else if (data.type === "bingo_win") {
-    if (data.message.channel_id === currentChannelId) {
-      renderMessage(data.message);
-      scrollToBottom();
-    }
-    toast(data.message.content);
   } else if (data.type === "games_update") {
     gameSessions = data.games;
     renderGameSidebar();
@@ -1797,44 +1791,6 @@ function renderLudo(state) {
         layer.appendChild(pieceEl);
       });
     });
-  }
-}
-
-// ---------- bingo ----------
-el("bingo-open-btn").addEventListener("click", openBingo);
-el("bingo-close-btn").addEventListener("click", () => (el("bingo-modal").hidden = true));
-
-async function openBingo() {
-  el("bingo-modal").hidden = false;
-  const data = await api("/api/bingo");
-  renderBingoGrid(data.cells, data.checked);
-}
-
-function renderBingoGrid(cells, checked) {
-  const grid = el("bingo-grid");
-  grid.innerHTML = "";
-  cells.forEach((text, i) => {
-    const cell = document.createElement("button");
-    cell.type = "button";
-    const isFree = i === 12;
-    cell.className = "bingo-cell" + (checked[i] ? " checked" : "") + (isFree ? " free" : "");
-    cell.textContent = text;
-    if (!isFree) {
-      cell.addEventListener("click", () => toggleBingoCell(i));
-    }
-    grid.appendChild(cell);
-  });
-}
-
-async function toggleBingoCell(index) {
-  const result = await api("/api/bingo/check", {
-    method: "POST",
-    body: JSON.stringify({ cell_index: index, channel_id: currentChannelId }),
-  });
-  const cells = Array.from(el("bingo-grid").children).map((c) => c.textContent);
-  renderBingoGrid(cells, result.checked);
-  if (result.new_bingo) {
-    toast("🎉 BINGO! Ist im Kanal gepostet.");
   }
 }
 

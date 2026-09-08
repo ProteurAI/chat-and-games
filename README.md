@@ -1,4 +1,4 @@
-# InstaChat 💬
+# Chat & Games 💬🎲
 
 Der inoffizielle Büro-Chat – läuft komplett lokal auf deinem Rechner, keine Cloud, keine Kosten.
 
@@ -10,7 +10,6 @@ Der inoffizielle Büro-Chat – läuft komplett lokal auf deinem Rechner, keine 
    python -m pip install -r requirements.txt
    ```
 3. Optional: `config.json` anpassen – dort steht das Team-Passwort (`team_password`, Standard: `insta2026`), der Port und die Standard-Kanäle. Unbedingt vor dem echten Einsatz ändern!
-4. Optional: `bingo_config.json` mit euren eigenen Büro-Sprüchen befüllen (einfache JSON-Liste mit mindestens 24 Einträgen, damit die Bingo-Karten sich unterscheiden).
 
 ## Starten
 
@@ -47,7 +46,7 @@ Damit andere im Netzwerk überhaupt auf deinen Rechner zugreifen dürfen, muss d
 
 **Falls das Popup nicht kommt / manuell nötig**, als Administrator in PowerShell:
 ```powershell
-New-NetFirewallRule -DisplayName "InstaChat" -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow -Profile Private
+New-NetFirewallRule -DisplayName "Chat & Games" -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow -Profile Private
 ```
 
 ## Worauf du achten solltest, damit es zuverlässig läuft
@@ -66,7 +65,7 @@ New-NetFirewallRule -DisplayName "InstaChat" -Direction Inbound -Protocol TCP -L
 - @Erwähnungen (visuell hervorgehoben)
 - Bilder per Drag & Drop oder Datei-Auswahl, inline im Chat
 - Umfragen (2–6 Optionen) mit Live-Ergebnis-Balken
-- Büro-Bingo: persönliche 5x5-Karte, bei voller Reihe gibt's eine Bingo-Meldung im Kanal
 - Wer-ist-online-Anzeige in der Seitenleiste
+- Webcam-Snaps (Einmal-Ansicht) und Multiplayer-Minispiele (Pong, Tic-Tac-Toe, Light Cycles, Buzzer, Schiffe versenken, UNO, Mensch ärgere dich nicht)
 
 Nicht enthalten (bewusst, siehe Anforderungen): GIF-Suche, "Nachricht des Tages", Video-/Sprachchat, SSO/E-Mail-Verifizierung, Verschlüsselung.

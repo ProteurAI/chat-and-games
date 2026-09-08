@@ -62,15 +62,6 @@ CREATE TABLE IF NOT EXISTS poll_votes (
     FOREIGN KEY (option_id) REFERENCES poll_options (id)
 );
 
-CREATE TABLE IF NOT EXISTS bingo_cards (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER UNIQUE NOT NULL,
-    cells_json TEXT NOT NULL,
-    checked_json TEXT NOT NULL,
-    announced_json TEXT NOT NULL DEFAULT '[]',
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users (id)
-);
 """
 
 
@@ -98,6 +89,7 @@ def get_conn():
 def init_db(default_channels: list[str]):
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        conn.execute("DROP TABLE IF EXISTS bingo_cards")
         existing = {row["name"] for row in conn.execute("SELECT name FROM channels")}
         for name in default_channels:
             if name not in existing:
