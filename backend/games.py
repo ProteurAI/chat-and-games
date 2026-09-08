@@ -806,6 +806,205 @@ class UnoEngine:
         state.update(fresh)
 
 
+# ---------- Mensch aergere Dich nicht (2-4 players, fully public state) ----------
+#
+# Per-piece position is a single integer "steps" value:
+#   -1        -> still waiting in the yard
+#   0..39     -> steps taken along the shared 40-cell ring since entering
+#                (absolute ring cell = (LUDO_ENTRY[color] + steps) % 40)
+#   40..43    -> steps into the color's own private 4-cell home stretch
+#   44        -> home (finished)
+# No hidden information at all here, so (unlike Battleship/UNO) this engine
+# does not define public_state - the one shared `state` goes to everyone.
+
+LUDO_COLORS = ["red", "blue", "yellow", "green"]
+LUDO_ENTRY = {"red": 0, "blue": 10, "yellow": 20, "green": 30}
+LUDO_HOME_STEPS = 44
+
+
+class LudoEngine:
+    game_type = "ludo"
+    name = "Mensch ärgere dich nicht"
+    emoji = "🎲"
+    min_players = 2
+    max_players = 4
+    manual_start = True  # variable 2-4 players, same pattern as Light Cycles/UNO
+    tick_interval = None
+
+    @staticmethod
+    def init_state(players):
+        player_colors = {}
+        for i, p in enumerate(players):
+            player_colors[str(p["user_id"])] = LUDO_COLORS[i]
+        pieces = {color: [{"steps": -1} for _ in range(4)] for color in LUDO_COLORS}
+        return {
+            "players_order": [str(p["user_id"]) for p in players],
+            "player_colors": player_colors,
+            "active_colors": LUDO_COLORS[: len(players)],
+            "pieces": pieces,
+            "turn_index": 0,
+            "dice": None,
+            "awaiting_move": False,
+            "movable_pieces": [],
+            "winner": None,
+            "last_event": None,
+        }
+
+    @staticmethod
+    def _own_ring_occupied(pieces, entry, abs_pos, exclude_idx):
+        for j, p in enumerate(pieces):
+            if j == exclude_idx:
+                continue
+            if 0 <= p["steps"] <= 39 and (entry + p["steps"]) % 40 == abs_pos:
+                return True
+        return False
+
+    @staticmethod
+    def _own_home_occupied(pieces, home_steps, exclude_idx):
+        for j, p in enumerate(pieces):
+            if j == exclude_idx:
+                continue
+            if p["steps"] == home_steps:
+                return True
+        return False
+
+    @staticmethod
+    def _available_moves(state, color, roll):
+        pieces = state["pieces"][color]
+        entry = LUDO_ENTRY[color]
+        moves = []
+        for i, piece in enumerate(pieces):
+            steps = piece["steps"]
+            if steps == LUDO_HOME_STEPS:
+                continue
+            if steps == -1:
+                if roll == 6 and not LudoEngine._own_ring_occupied(pieces, entry, entry, i):
+                    moves.append({"piece": i, "new_steps": 0})
+                continue
+            new_steps = steps + roll
+            if new_steps > LUDO_HOME_STEPS:
+                continue
+            if new_steps <= 39:
+                abs_pos = (entry + new_steps) % 40
+                if LudoEngine._own_ring_occupied(pieces, entry, abs_pos, i):
+                    continue
+            elif new_steps <= 43:
+                if LudoEngine._own_home_occupied(pieces, new_steps, i):
+                    continue
+            moves.append({"piece": i, "new_steps": new_steps})
+        return moves
+
+    @staticmethod
+    def _advance_turn(state):
+        n = len(state["players_order"])
+        state["turn_index"] = (state["turn_index"] + 1) % n
+        state["dice"] = None
+        state["awaiting_move"] = False
+        state["movable_pieces"] = []
+
+    @staticmethod
+    def apply_input(state, user_id, payload):
+        uid = str(user_id)
+        if state["winner"] is not None:
+            return False
+        if not state["players_order"] or state["players_order"][state["turn_index"]] != uid:
+            return False
+        color = state["player_colors"].get(uid)
+        if color is None:
+            return False
+        action = payload.get("action")
+
+        if action == "roll":
+            if state["awaiting_move"]:
+                return False
+            state["dice"] = random.randint(1, 6)
+            state["last_event"] = None
+            moves = LudoEngine._available_moves(state, color, state["dice"])
+            if moves:
+                state["awaiting_move"] = True
+                # Sent to everyone (this game has no hidden info at all) so
+                # the frontend can highlight exactly which of the current
+                # player's pieces are legally clickable, using the same
+                # rule-check the server just ran - no separate copy of the
+                # move-legality rules needs to live in the frontend too.
+                state["movable_pieces"] = [m["piece"] for m in moves]
+            else:
+                state["movable_pieces"] = []
+                if state["dice"] != 6:
+                    LudoEngine._advance_turn(state)
+            # else: rolled a 6 with no usable move -> same player rolls again
+            # (awaiting_move stays False, dice stays visible until next roll)
+            return True
+
+        if action == "move":
+            if not state["awaiting_move"]:
+                return False
+            moves = LudoEngine._available_moves(state, color, state["dice"])
+            move = next((m for m in moves if m["piece"] == payload.get("piece_index")), None)
+            if move is None:
+                return False
+
+            piece = state["pieces"][color][move["piece"]]
+            piece["steps"] = move["new_steps"]
+            state["last_event"] = None
+            if move["new_steps"] <= 39:
+                abs_pos = (LUDO_ENTRY[color] + move["new_steps"]) % 40
+                for other_color in state["active_colors"]:
+                    if other_color == color:
+                        continue
+                    for op in state["pieces"][other_color]:
+                        if 0 <= op["steps"] <= 39 and (LUDO_ENTRY[other_color] + op["steps"]) % 40 == abs_pos:
+                            op["steps"] = -1
+                            state["last_event"] = {"type": "capture", "color": color, "victim_color": other_color}
+
+            state["awaiting_move"] = False
+            state["movable_pieces"] = []
+
+            if all(p["steps"] == LUDO_HOME_STEPS for p in state["pieces"][color]):
+                state["winner"] = uid
+                return True
+
+            rolled_six = state["dice"] == 6
+            if not rolled_six:
+                LudoEngine._advance_turn(state)
+            else:
+                state["dice"] = None  # same player continues, must roll again
+            return True
+
+        return False
+
+    @staticmethod
+    def tick(state):
+        pass
+
+    @staticmethod
+    def check_finished(state):
+        if state["winner"] is not None:
+            return {"winner_user_id": int(state["winner"]), "reason": "all_home"}
+        return None
+
+    @staticmethod
+    def on_player_left(state, user_id):
+        uid = str(user_id)
+        if uid not in state["players_order"]:
+            return
+        idx = state["players_order"].index(uid)
+        state["players_order"].remove(uid)
+        if not state["players_order"]:
+            return
+        n = len(state["players_order"])
+        if idx < state["turn_index"]:
+            state["turn_index"] -= 1
+        elif idx == state["turn_index"]:
+            state["turn_index"] %= n
+            state["dice"] = None
+            state["awaiting_move"] = False
+            state["movable_pieces"] = []
+        # the departed player's pieces are simply left in place, frozen -
+        # their color is never taken again since players_order no longer
+        # includes them.
+
+
 GAME_ENGINES = {
     "pong": PongEngine,
     "tictactoe": TicTacToeEngine,
@@ -813,6 +1012,7 @@ GAME_ENGINES = {
     "buzzer": BuzzerEngine,
     "battleship": BattleshipEngine,
     "uno": UnoEngine,
+    "ludo": LudoEngine,
 }
 
 

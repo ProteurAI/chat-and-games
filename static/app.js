@@ -753,6 +753,7 @@ function openGameModal(data) {
   const dialog = document.querySelector(".game-modal");
   dialog.classList.toggle("wide", WIDE_GAME_TYPES.includes(data.game_type));
   dialog.classList.toggle("uno-mode", data.game_type === "uno");
+  dialog.classList.toggle("ludo-mode", data.game_type === "ludo");
 
   const stage = el("game-stage");
   stage.innerHTML = "";
@@ -768,6 +769,8 @@ function openGameModal(data) {
     buildBattleshipStage(stage);
   } else if (data.game_type === "uno") {
     buildUnoStage(stage);
+  } else if (data.game_type === "ludo") {
+    buildLudoStage(stage);
   }
   updateGameState(data.state);
   el("game-modal").hidden = false;
@@ -780,6 +783,7 @@ const GAME_TITLES = {
   buzzer: "🔔 Buzzer",
   battleship: "🚢 Schiffe versenken",
   uno: "🎴 UNO",
+  ludo: "🎲 Mensch ärgere dich nicht",
 };
 const REMATCH_GAME_TYPES = ["tictactoe", "buzzer", "uno"];
 const WIDE_GAME_TYPES = ["battleship"];
@@ -790,6 +794,7 @@ function closeGameModal() {
   }
   stopPongControls();
   stopLcControls();
+  ludoStopResizeWatcher();
   el("game-modal").hidden = true;
   myGameSessionId = null;
   myGameType = null;
@@ -812,6 +817,7 @@ function updateGameState(state) {
   else if (myGameType === "buzzer") renderBuzzer(state);
   else if (myGameType === "battleship") renderBattleship(state);
   else if (myGameType === "uno") renderUno(state);
+  else if (myGameType === "ludo") renderLudo(state);
 }
 
 function showGameOver(data) {
@@ -1510,6 +1516,286 @@ function renderUno(state) {
         }
       });
       handBox.appendChild(cardEl);
+    });
+  }
+}
+
+// ---------- games: ludo (Mensch ärgere dich nicht) ----------
+// Board is rendered with percentage-positioned absolute elements over a
+// square board div, rather than a rigid cell grid - the 40 ring markers
+// trace a simple rounded-square loop (10 per side), each color's 4-cell
+// home stretch is a short spoke from its own entry point in toward the
+// center, and the 4 corners hold that color's yard. This keeps every
+// coordinate a simple, independently-computable formula instead of a
+// hand-authored 15x15 grid of cell coordinates.
+const LUDO_COLOR_LIST = ["red", "blue", "yellow", "green"];
+const LUDO_ENTRY = { red: 0, blue: 10, yellow: 20, green: 30 };
+const LUDO_LO = 12;
+const LUDO_HI = 88;
+
+function ludoRingPoint(i) {
+  const seg = Math.floor(i / 10);
+  const t = (i % 10) / 9;
+  const span = LUDO_HI - LUDO_LO;
+  if (seg === 0) return { x: LUDO_LO, y: LUDO_HI - t * span }; // left side, bottom -> top
+  if (seg === 1) return { x: LUDO_LO + t * span, y: LUDO_LO }; // top side, left -> right
+  if (seg === 2) return { x: LUDO_HI, y: LUDO_LO + t * span }; // right side, top -> bottom
+  return { x: LUDO_HI - t * span, y: LUDO_HI }; // bottom side, right -> left
+}
+
+function ludoHomePoint(color, idx) {
+  const entry = ludoRingPoint(LUDO_ENTRY[color]);
+  const t = 0.24 + idx * 0.18;
+  return { x: entry.x + (50 - entry.x) * t, y: entry.y + (50 - entry.y) * t };
+}
+
+const LUDO_GOAL_OFFSET = {
+  red: { x: -4, y: 4 }, blue: { x: -4, y: -4 }, yellow: { x: 4, y: -4 }, green: { x: 4, y: 4 },
+};
+function ludoGoalPoint(color) {
+  const o = LUDO_GOAL_OFFSET[color];
+  return { x: 50 + o.x, y: 50 + o.y };
+}
+
+const LUDO_YARD_CENTER = {
+  red: { x: 20, y: 80 }, blue: { x: 20, y: 20 }, yellow: { x: 80, y: 20 }, green: { x: 80, y: 80 },
+};
+function ludoYardPoint(color, idx) {
+  const c = LUDO_YARD_CENTER[color];
+  return { x: c.x + (idx % 2 === 0 ? -7 : 7), y: c.y + (idx < 2 ? -7 : 7) };
+}
+
+function ludoPiecePoint(color, steps) {
+  if (steps <= 39) return ludoRingPoint((LUDO_ENTRY[color] + steps) % 40);
+  if (steps <= 43) return ludoHomePoint(color, steps - 40);
+  return ludoGoalPoint(color);
+}
+
+function ludoPlayerName(uid) {
+  const p = myGamePlayers.find((pl) => String(pl.id) === uid);
+  return p ? p.name : "?";
+}
+
+function buildLudoStage(stage) {
+  const arena = document.createElement("div");
+  arena.className = "ludo-arena";
+
+  const players = document.createElement("div");
+  players.id = "ludo-players";
+  players.className = "ludo-players";
+  arena.appendChild(players);
+
+  const boardWrap = document.createElement("div");
+  boardWrap.id = "ludo-board-wrap";
+  boardWrap.className = "ludo-board-wrap";
+  const board = document.createElement("div");
+  board.id = "ludo-board";
+  board.className = "ludo-board";
+
+  LUDO_COLOR_LIST.forEach((color) => {
+    const yard = document.createElement("div");
+    yard.className = `ludo-yard-zone ludo-yard-${color}`;
+    board.appendChild(yard);
+  });
+
+  const hub = document.createElement("div");
+  hub.className = "ludo-hub";
+  board.appendChild(hub);
+
+  for (let i = 0; i < 40; i++) {
+    const p = ludoRingPoint(i);
+    const dot = document.createElement("div");
+    dot.className = "ludo-cell ludo-ring-cell";
+    dot.style.left = p.x + "%";
+    dot.style.top = p.y + "%";
+    board.appendChild(dot);
+  }
+
+  LUDO_COLOR_LIST.forEach((color) => {
+    for (let i = 0; i < 4; i++) {
+      const p = ludoHomePoint(color, i);
+      const dot = document.createElement("div");
+      dot.className = `ludo-cell ludo-home-cell color-${color}`;
+      dot.style.left = p.x + "%";
+      dot.style.top = p.y + "%";
+      board.appendChild(dot);
+    }
+  });
+
+  const piecesLayer = document.createElement("div");
+  piecesLayer.id = "ludo-pieces";
+  piecesLayer.className = "ludo-pieces-layer";
+  board.appendChild(piecesLayer);
+
+  boardWrap.appendChild(board);
+  arena.appendChild(boardWrap);
+
+  const controls = document.createElement("div");
+  controls.className = "ludo-controls";
+
+  const banner = document.createElement("div");
+  banner.id = "ludo-turn-banner";
+  banner.className = "ludo-turn-banner";
+  controls.appendChild(banner);
+
+  const dice = document.createElement("div");
+  dice.id = "ludo-dice";
+  dice.className = "ludo-dice empty";
+  controls.appendChild(dice);
+
+  const rollBtn = document.createElement("button");
+  rollBtn.type = "button";
+  rollBtn.id = "ludo-roll-btn";
+  rollBtn.className = "primary-btn ludo-roll-btn";
+  rollBtn.textContent = "🎲 Würfeln";
+  rollBtn.disabled = true;
+  rollBtn.addEventListener("click", () => {
+    if (rollBtn.disabled) return;
+    sendGameInput({ action: "roll" });
+  });
+  controls.appendChild(rollBtn);
+
+  const event = document.createElement("div");
+  event.id = "ludo-event";
+  event.className = "ludo-event";
+  event.hidden = true;
+  controls.appendChild(event);
+
+  arena.appendChild(controls);
+  stage.appendChild(arena);
+  ludoLastDice = null;
+  ludoStartResizeWatcher();
+}
+
+// CSS aspect-ratio on .ludo-board doesn't reliably resolve to a square
+// inside this nested flex layout (empirically it renders a tall rectangle
+// instead), so the board's pixel size is instead computed directly from
+// its wrapper's available space and kept square as long as the modal is
+// open, watched via ResizeObserver rather than a single one-off read.
+let ludoResizeObserver = null;
+
+function ludoSizeBoard() {
+  const wrap = el("ludo-board-wrap");
+  const board = el("ludo-board");
+  if (!wrap || !board) return;
+  const size = Math.max(120, Math.min(wrap.clientWidth, wrap.clientHeight) - 8);
+  board.style.width = size + "px";
+  board.style.height = size + "px";
+}
+
+function ludoStartResizeWatcher() {
+  ludoStopResizeWatcher();
+  ludoSizeBoard();
+  const wrap = el("ludo-board-wrap");
+  if (!wrap || typeof ResizeObserver === "undefined") return;
+  ludoResizeObserver = new ResizeObserver(() => ludoSizeBoard());
+  ludoResizeObserver.observe(wrap);
+}
+
+function ludoStopResizeWatcher() {
+  if (ludoResizeObserver) {
+    ludoResizeObserver.disconnect();
+    ludoResizeObserver = null;
+  }
+}
+
+const LUDO_DICE_PIPS = {
+  1: [4],
+  2: [0, 8],
+  3: [0, 4, 8],
+  4: [0, 2, 6, 8],
+  5: [0, 2, 4, 6, 8],
+  6: [0, 2, 3, 5, 6, 8],
+};
+
+function ludoDiceFace(value) {
+  const frag = document.createDocumentFragment();
+  const active = new Set(LUDO_DICE_PIPS[value] || []);
+  for (let i = 0; i < 9; i++) {
+    const cell = document.createElement("div");
+    if (active.has(i)) cell.className = "ludo-pip";
+    frag.appendChild(cell);
+  }
+  return frag;
+}
+
+let ludoLastDice = null;
+
+function renderLudo(state) {
+  const myUid = String(me.id);
+  const isMyTurn = state.players_order[state.turn_index] === myUid;
+  const myColor = state.player_colors[myUid];
+
+  const playersBox = el("ludo-players");
+  if (playersBox) {
+    playersBox.innerHTML = "";
+    state.players_order.forEach((uid, idx) => {
+      const color = state.player_colors[uid];
+      const chip = document.createElement("div");
+      chip.className = `ludo-player-chip color-${color}` + (idx === state.turn_index ? " current-turn" : "");
+      chip.textContent = ludoPlayerName(uid);
+      playersBox.appendChild(chip);
+    });
+  }
+
+  const banner = el("ludo-turn-banner");
+  if (banner) {
+    banner.textContent = isMyTurn ? "Du bist dran!" : `${ludoPlayerName(state.players_order[state.turn_index])} ist dran`;
+    banner.classList.toggle("my-turn", isMyTurn);
+  }
+
+  const diceBox = el("ludo-dice");
+  if (diceBox) {
+    diceBox.innerHTML = "";
+    if (state.dice) {
+      diceBox.classList.remove("empty");
+      diceBox.appendChild(ludoDiceFace(state.dice));
+      if (state.dice !== ludoLastDice) {
+        diceBox.classList.remove("rolling");
+        void diceBox.offsetWidth; // force reflow so the animation restarts
+        diceBox.classList.add("rolling");
+      }
+    } else {
+      diceBox.classList.add("empty");
+    }
+  }
+  ludoLastDice = state.dice;
+
+  const rollBtn = el("ludo-roll-btn");
+  if (rollBtn) rollBtn.disabled = !(isMyTurn && !state.awaiting_move);
+
+  const eventBox = el("ludo-event");
+  if (eventBox) {
+    if (state.last_event && state.last_event.type === "capture") {
+      const victimUid = state.players_order.find((uid) => state.player_colors[uid] === state.last_event.victim_color);
+      eventBox.textContent = `💥 Figur von ${victimUid ? ludoPlayerName(victimUid) : "Jemand"} rausgeschmissen!`;
+      eventBox.hidden = false;
+    } else {
+      eventBox.hidden = true;
+    }
+  }
+
+  const layer = el("ludo-pieces");
+  if (layer) {
+    layer.innerHTML = "";
+    LUDO_COLOR_LIST.forEach((color) => {
+      if (!state.active_colors.includes(color)) return;
+      const isMine = color === myColor;
+      const eligible = isMyTurn && isMine && state.awaiting_move;
+      let yardCount = 0;
+      state.pieces[color].forEach((piece, i) => {
+        const canMove = eligible && state.movable_pieces.includes(i);
+        const dim = eligible && !canMove;
+        const point = piece.steps === -1 ? ludoYardPoint(color, yardCount++) : ludoPiecePoint(color, piece.steps);
+        const pieceEl = document.createElement("div");
+        pieceEl.className = `ludo-piece color-${color}` + (canMove ? " movable" : "") + (dim ? " not-movable-dim" : "");
+        pieceEl.style.left = point.x + "%";
+        pieceEl.style.top = point.y + "%";
+        if (canMove) {
+          pieceEl.addEventListener("click", () => sendGameInput({ action: "move", piece_index: i }));
+        }
+        layer.appendChild(pieceEl);
+      });
     });
   }
 }
