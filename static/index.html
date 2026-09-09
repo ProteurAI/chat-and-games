@@ -179,15 +179,37 @@
       <h2 id="game-modal-title">🎮 Spiel</h2>
       <button type="button" id="game-close-btn" class="icon-btn" title="Spiel verlassen" aria-label="Spiel verlassen">✕</button>
     </div>
-    <div id="game-stage" class="game-stage"></div>
-    <div id="game-overlay-msg" class="game-overlay-msg" hidden>
-      <div id="game-overlay-text" class="game-overlay-text"></div>
-      <div id="game-overlay-ranking" class="game-overlay-ranking" hidden></div>
-      <div class="game-overlay-actions">
-        <button type="button" id="game-rematch-btn" class="primary-btn" hidden>🔁 Nochmal spielen</button>
-        <button type="button" id="game-overlay-close-btn" class="ghost-btn">Schließen</button>
+
+    <div class="game-main">
+      <div class="game-content">
+        <div id="game-stage" class="game-stage"></div>
+        <div id="game-overlay-msg" class="game-overlay-msg" hidden>
+          <div id="game-overlay-text" class="game-overlay-text"></div>
+          <div id="game-overlay-ranking" class="game-overlay-ranking" hidden></div>
+          <div class="game-overlay-actions">
+            <button type="button" id="game-rematch-btn" class="primary-btn" hidden>🔁 Nochmal spielen</button>
+            <button type="button" id="game-overlay-close-btn" class="ghost-btn">Schließen</button>
+          </div>
+        </div>
       </div>
+
+      <aside id="game-chat-panel" class="game-chat-panel">
+        <div class="game-chat-header">
+          <span class="game-chat-title">💬 Chat</span>
+          <span id="game-chat-channel-name" class="game-chat-channel-name"></span>
+          <button type="button" id="game-chat-close-btn" class="icon-btn game-chat-close-btn" title="Chat schließen" aria-label="Chat schließen">✕</button>
+        </div>
+        <div id="game-chat-messages" class="messages game-chat-messages"></div>
+        <form id="game-chat-form" class="message-form game-chat-form">
+          <input id="game-chat-input" type="text" placeholder="Nachricht schreiben..." autocomplete="off" maxlength="4000" />
+          <button type="submit" class="send-btn">Senden</button>
+        </form>
+      </aside>
     </div>
+
+    <button type="button" id="game-chat-toggle" class="game-chat-toggle" title="Chat öffnen" aria-label="Chat öffnen">
+      💬 Chat <span id="game-chat-badge" class="game-chat-badge" hidden>0</span>
+    </button>
   </div>
 </div>
 

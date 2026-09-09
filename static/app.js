@@ -16,6 +16,9 @@ let myGamePlayers = [];
 let pongCtx = null;
 let pongPressedKey = null;
 
+// game-chat panel (shared by every game - see openGameModal/closeGameModal)
+let gameChatUnread = 0;
+
 const el = (id) => document.getElementById(id);
 
 // ---------- theme ----------
@@ -235,6 +238,13 @@ function scrollToBottom() {
   box.scrollTop = box.scrollHeight;
 }
 
+// Whether `box` is already scrolled (close enough) to its own bottom - used
+// so the game-chat panel only auto-follows new messages when the user
+// hasn't scrolled up to read something older.
+function isNearBottom(box) {
+  return box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+}
+
 function showEmptyMessagesState() {
   const wrap = document.createElement("div");
   wrap.className = "chat-empty-state";
@@ -253,16 +263,18 @@ function showEmptyMessagesState() {
   el("messages").appendChild(wrap);
 }
 
-function renderMessage(msg) {
-  const emptyState = el("messages").querySelector(".chat-empty-state");
-  if (emptyState) emptyState.remove();
-
+// Pure builder: returns a fresh DOM node for `msg` with all its own event
+// listeners attached, appended nowhere yet. Called once per *container* a
+// message needs to appear in (main chat, and - while a game is open - the
+// game-chat panel too), rather than building one node and reusing it in two
+// places, since a DOM node can only ever have a single parent and
+// cloneNode() would silently drop the reaction/snap/poll click handlers.
+function buildMessageElement(msg) {
   if (msg.type === "system") {
     const div = document.createElement("div");
     div.className = "msg-system";
     div.textContent = msg.content;
-    el("messages").appendChild(div);
-    return;
+    return div;
   }
 
   const mine = msg.user_id === me.id;
@@ -322,7 +334,28 @@ function renderMessage(msg) {
   body.appendChild(bubble);
   wrap.appendChild(avatar);
   wrap.appendChild(body);
-  el("messages").appendChild(wrap);
+  return wrap;
+}
+
+// Renders `msg` into the main chat, and - if a game is currently open, so
+// its chat panel exists in the DOM - into the game-chat panel too. Both are
+// simply two views of the exact same message data (same WS event, same
+// underlying DB row); nothing here sends anything or stores anything twice.
+function renderMessage(msg) {
+  const emptyState = el("messages").querySelector(".chat-empty-state");
+  if (emptyState) emptyState.remove();
+  el("messages").appendChild(buildMessageElement(msg));
+
+  const gameBox = el("game-chat-messages");
+  if (gameBox) {
+    const wasAtBottom = isNearBottom(gameBox);
+    const isMine = msg.user_id === me.id;
+    gameBox.appendChild(buildMessageElement(msg));
+    if (wasAtBottom || isMine) {
+      gameBox.scrollTop = gameBox.scrollHeight; // own message always scrolls into view
+    }
+    if (!isMine) bumpGameChatUnread();
+  }
 }
 
 function renderReactionPills(container, reactions) {
@@ -342,10 +375,12 @@ function renderReactionPills(container, reactions) {
 }
 
 function updateReactionsUI(messageId, reactions) {
-  const wrap = document.querySelector(`.msg[data-message-id="${messageId}"]`);
-  if (!wrap) return;
-  const container = wrap.querySelector('[data-role="reactions"]');
-  renderReactionPills(container, reactions);
+  // A message can currently be rendered in up to two places (main chat +
+  // game-chat panel) - keep every visible copy of it in sync.
+  document.querySelectorAll(`.msg[data-message-id="${messageId}"]`).forEach((wrap) => {
+    const container = wrap.querySelector('[data-role="reactions"]');
+    if (container) renderReactionPills(container, reactions);
+  });
 }
 
 function sendReaction(messageId, emoji) {
@@ -404,11 +439,10 @@ function renderPollOptions(pollBox, poll) {
 }
 
 function updatePollUI(messageId, poll) {
-  const pollBox = document.querySelector(`.poll[data-message-id="${messageId}"]`);
-  if (!pollBox) return;
-  const myVote = pollBox.dataset.myVote ? parseInt(pollBox.dataset.myVote, 10) : poll.my_option_id;
-  poll.my_option_id = myVote || poll.my_option_id;
-  renderPollOptions(pollBox, poll);
+  document.querySelectorAll(`.poll[data-message-id="${messageId}"]`).forEach((pollBox) => {
+    const myVote = pollBox.dataset.myVote ? parseInt(pollBox.dataset.myVote, 10) : poll.my_option_id;
+    renderPollOptions(pollBox, { ...poll, my_option_id: myVote || poll.my_option_id });
+  });
 }
 
 el("poll-btn").addEventListener("click", () => {
@@ -544,15 +578,27 @@ function buildSnapElement(msg) {
 }
 
 // ---------- text messages ----------
-el("message-form").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const input = el("message-input");
+// Shared by the main composer AND the game-chat panel's composer - both are
+// just two inputs that submit into the same channel over the same, single
+// WebSocket connection. Each form has exactly one submit listener, so a
+// given Enter/click only ever triggers one send.
+function sendChatMessage(input) {
   const content = input.value.trim();
   if (!content) return;
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "message", channel_id: currentChannelId, content }));
   }
   input.value = "";
+}
+
+el("message-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  sendChatMessage(el("message-input"));
+});
+
+el("game-chat-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  sendChatMessage(el("game-chat-input"));
 });
 
 // ---------- image upload ----------
@@ -771,6 +817,59 @@ function sendGameInput(payload) {
 }
 
 // ---------- games: modal ----------
+// ---------- game-chat panel (shared by every game) ----------
+// Reuses the exact same channel/REST/WebSocket the normal chat uses - see
+// buildMessageElement/renderMessage/sendChatMessage above. This just wires
+// up the panel's own visibility/badge state.
+async function initGameChatPanel() {
+  const ch = channels.find((c) => c.id === currentChannelId);
+  el("game-chat-channel-name").textContent = ch ? `#${ch.name}` : "";
+  gameChatUnread = 0;
+  updateGameChatBadge();
+  el("game-chat-panel").classList.remove("open");
+
+  const box = el("game-chat-messages");
+  box.innerHTML = "";
+  if (!currentChannelId) return;
+  try {
+    const msgs = await api(`/api/channels/${currentChannelId}/messages`);
+    for (const m of msgs) box.appendChild(buildMessageElement(m));
+    box.scrollTop = box.scrollHeight;
+  } catch (err) {
+    // non-fatal - the game itself still works without chat history loaded
+  }
+}
+
+function updateGameChatBadge() {
+  const badge = el("game-chat-badge");
+  if (gameChatUnread > 0) {
+    badge.textContent = String(gameChatUnread);
+    badge.hidden = false;
+  } else {
+    badge.hidden = true;
+  }
+}
+
+// Only the collapsible mobile/tablet drawer needs an unread count - on
+// desktop (>=900px) the panel is always visible, so nothing is ever unread.
+function bumpGameChatUnread() {
+  if (el("game-chat-panel").classList.contains("open")) return;
+  if (window.matchMedia("(min-width: 900px)").matches) return;
+  gameChatUnread++;
+  updateGameChatBadge();
+}
+
+el("game-chat-toggle").addEventListener("click", () => {
+  el("game-chat-panel").classList.add("open");
+  gameChatUnread = 0;
+  updateGameChatBadge();
+  const box = el("game-chat-messages");
+  box.scrollTop = box.scrollHeight;
+});
+el("game-chat-close-btn").addEventListener("click", () => {
+  el("game-chat-panel").classList.remove("open");
+});
+
 function openGameModal(data) {
   myGameSessionId = data.session_id;
   myGameType = data.game_type;
@@ -779,6 +878,7 @@ function openGameModal(data) {
   el("game-overlay-msg").hidden = true;
   el("game-rematch-btn").hidden = true;
   el("game-modal-title").textContent = GAME_TITLES[data.game_type] || "🎮 Spiel";
+  initGameChatPanel();
   // .wide/.uno-mode are sizing modifiers on the INNER dialog (class
   // "game-modal"), not on #game-modal itself (that's the fixed, always-
   // full-viewport overlay backdrop wrapping it).
@@ -830,6 +930,10 @@ function closeGameModal() {
   myGameSessionId = null;
   myGameType = null;
   myGamePlayers = [];
+  el("game-chat-messages").innerHTML = "";
+  el("game-chat-panel").classList.remove("open");
+  gameChatUnread = 0;
+  updateGameChatBadge();
 }
 
 el("game-close-btn").addEventListener("click", closeGameModal);
@@ -1552,54 +1656,123 @@ function renderUno(state) {
 }
 
 // ---------- games: ludo (Mensch ärgere dich nicht) ----------
-// Board is rendered with percentage-positioned absolute elements over a
-// square board div, rather than a rigid cell grid - the 40 ring markers
-// trace a simple rounded-square loop (10 per side), each color's 4-cell
-// home stretch is a short spoke from its own entry point in toward the
-// center, and the 4 corners hold that color's yard. This keeps every
-// coordinate a simple, independently-computable formula instead of a
-// hand-authored 15x15 grid of cell coordinates.
+//
+// The board is modeled as an explicit 11x11 logical grid (rows/cols 0-10),
+// matching the classic cross-shaped layout: a 3-cell-wide arm in each of
+// the 4 directions, a shared 3x3 hub in the middle, and a 4x4 yard cut out
+// of each corner. Every field type is a distinct, named data structure -
+// there is no "approximate" positioning left:
+//
+//   LUDO_MAIN_TRACK   - the 40 shared ring cells, in walk order (index 0-39,
+//                        matching the backend's `steps` 0-39 exactly)
+//   LUDO_HOME_SLOTS   - per color, the 4 fixed yard/home positions
+//   LUDO_GOAL_LANE    - per color, the 4 private home-stretch cells
+//                        (backend steps 40-43), outer -> inner
+//   LUDO_CENTER       - the single finish cell (backend step 44)
+//
+// LUDO_MAIN_TRACK is generated (not hand-typed) by walking each of the 4
+// arms in turn - out along its outer rail, across the tip, back along its
+// inner rail - which is what makes it a *verified* closed loop: every
+// consecutive pair (including the wrap from index 39 back to 0) is exactly
+// one grid step apart, all 40 cells are unique, and each color's
+// LUDO_ENTRY index lands exactly one step outside its own yard corner.
+// (A first version tried to reuse the "2 rails per arm" shape international
+// 52-cell Ludo boards use, but that shape only ever totals 52 cells for
+// integer arm lengths - it mathematically cannot produce 40. This single
+// -width outer-perimeter walk is the shape that actually does.)
 const LUDO_COLOR_LIST = ["red", "blue", "yellow", "green"];
 const LUDO_ENTRY = { red: 0, blue: 10, yellow: 20, green: 30 };
-const LUDO_LO = 12;
-const LUDO_HI = 88;
 
-function ludoRingPoint(i) {
-  const seg = Math.floor(i / 10);
-  const t = (i % 10) / 9;
-  const span = LUDO_HI - LUDO_LO;
-  if (seg === 0) return { x: LUDO_LO, y: LUDO_HI - t * span }; // left side, bottom -> top
-  if (seg === 1) return { x: LUDO_LO + t * span, y: LUDO_LO }; // top side, left -> right
-  if (seg === 2) return { x: LUDO_HI, y: LUDO_LO + t * span }; // right side, top -> bottom
-  return { x: LUDO_HI - t * span, y: LUDO_HI }; // bottom side, right -> left
+function ludoBuildMainTrack() {
+  const cells = [];
+  const push = (row, col) => cells.push({ row, col });
+  // top arm: tip row (left -> right), then its right rail down to the hub
+  push(0, 4); push(0, 5); push(0, 6);
+  push(1, 6); push(2, 6); push(3, 6);
+  // jog across the hub band into the right arm's top rail
+  push(4, 6); push(4, 7); push(4, 8); push(4, 9);
+  // right arm: outer tip column (top -> bottom), then its bottom rail back to the hub
+  push(4, 10); push(5, 10); push(6, 10);
+  push(6, 9); push(6, 8); push(6, 7); push(6, 6);
+  // jog across the hub band into the bottom arm's right rail
+  push(7, 6); push(8, 6); push(9, 6);
+  // bottom arm: outer tip row (right -> left), then its left rail back to the hub
+  push(10, 6); push(10, 5); push(10, 4);
+  push(9, 4); push(8, 4); push(7, 4); push(6, 4);
+  // jog across the hub band into the left arm's bottom rail
+  push(6, 3); push(6, 2); push(6, 1);
+  // left arm: outer tip column (bottom -> top), then its top rail back to the hub
+  push(6, 0); push(5, 0); push(4, 0);
+  push(4, 1); push(4, 2); push(4, 3); push(4, 4);
+  // jog across the hub band into the top arm's left rail, closing the loop
+  push(3, 4); push(2, 4); push(1, 4);
+  return cells;
+}
+const LUDO_MAIN_TRACK = ludoBuildMainTrack();
+
+const LUDO_HOME_SLOTS = {
+  red: [[1, 1], [1, 2], [2, 1], [2, 2]],
+  blue: [[1, 8], [1, 9], [2, 8], [2, 9]],
+  yellow: [[8, 8], [8, 9], [9, 8], [9, 9]],
+  green: [[8, 1], [8, 2], [9, 1], [9, 2]],
+};
+
+// Each color's private stretch runs down the center column/row of its OWN
+// arm (the one non-shared column the main track deliberately skips),
+// outer cell (just inside the ring) first, innermost cell (touching the
+// center) last - so goalLane[color][3] is always the cell right before
+// the center/finish.
+const LUDO_GOAL_LANE = {
+  red: [[1, 5], [2, 5], [3, 5], [4, 5]],
+  blue: [[5, 9], [5, 8], [5, 7], [5, 6]],
+  yellow: [[9, 5], [8, 5], [7, 5], [6, 5]],
+  green: [[5, 1], [5, 2], [5, 3], [5, 4]],
+};
+
+const LUDO_CENTER = [5, 5];
+
+// Grid -> percentage: an 11x11 grid (indices 0-10) mapped with a small
+// inset margin so the outermost ring cells don't sit flush against the
+// board's edge.
+const LUDO_GRID_MAX = 10;
+const LUDO_GRID_INSET = 5;
+const LUDO_GRID_SPAN = 90;
+function ludoGridPoint(row, col) {
+  return {
+    x: LUDO_GRID_INSET + (col / LUDO_GRID_MAX) * LUDO_GRID_SPAN,
+    y: LUDO_GRID_INSET + (row / LUDO_GRID_MAX) * LUDO_GRID_SPAN,
+  };
 }
 
+// index is an ABSOLUTE main-track position (0-39), matching the backend's
+// `(LUDO_ENTRY[color] + steps) % 40` exactly.
+function ludoRingPoint(index) {
+  const cell = LUDO_MAIN_TRACK[((index % 40) + 40) % 40];
+  return ludoGridPoint(cell.row, cell.col);
+}
+
+// idx is 0-3 within that color's private goal lane (backend steps 40-43).
 function ludoHomePoint(color, idx) {
-  const entry = ludoRingPoint(LUDO_ENTRY[color]);
-  const t = 0.24 + idx * 0.18;
-  return { x: entry.x + (50 - entry.x) * t, y: entry.y + (50 - entry.y) * t };
+  const [row, col] = LUDO_GOAL_LANE[color][idx];
+  return ludoGridPoint(row, col);
 }
 
-const LUDO_GOAL_OFFSET = {
-  red: { x: -4, y: 4 }, blue: { x: -4, y: -4 }, yellow: { x: 4, y: -4 }, green: { x: 4, y: 4 },
-};
-function ludoGoalPoint(color) {
-  const o = LUDO_GOAL_OFFSET[color];
-  return { x: 50 + o.x, y: 50 + o.y };
-}
-
-const LUDO_YARD_CENTER = {
-  red: { x: 20, y: 80 }, blue: { x: 20, y: 20 }, yellow: { x: 80, y: 20 }, green: { x: 80, y: 80 },
-};
+// idx is 0-3, one of that color's 4 fixed home/yard slots.
 function ludoYardPoint(color, idx) {
-  const c = LUDO_YARD_CENTER[color];
-  return { x: c.x + (idx % 2 === 0 ? -7 : 7), y: c.y + (idx < 2 ? -7 : 7) };
+  const [row, col] = LUDO_HOME_SLOTS[color][idx];
+  return ludoGridPoint(row, col);
+}
+
+// The single finish cell (backend step 44) - same physical point for every
+// color, at the board's true center.
+function ludoGoalPoint() {
+  return ludoGridPoint(LUDO_CENTER[0], LUDO_CENTER[1]);
 }
 
 function ludoPiecePoint(color, steps) {
-  if (steps <= 39) return ludoRingPoint((LUDO_ENTRY[color] + steps) % 40);
+  if (steps <= 39) return ludoRingPoint(LUDO_ENTRY[color] + steps);
   if (steps <= 43) return ludoHomePoint(color, steps - 40);
-  return ludoGoalPoint(color);
+  return ludoGoalPoint();
 }
 
 function ludoPlayerName(uid) {
