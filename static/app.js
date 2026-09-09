@@ -826,7 +826,6 @@ function closeGameModal() {
   }
   stopPongControls();
   stopLcControls();
-  ludoStopResizeWatcher();
   el("game-modal").hidden = true;
   myGameSessionId = null;
   myGameType = null;
@@ -1612,14 +1611,33 @@ function buildLudoStage(stage) {
   const arena = document.createElement("div");
   arena.className = "ludo-arena";
 
+  const statusRow = document.createElement("div");
+  statusRow.className = "ludo-status-row";
+
   const players = document.createElement("div");
   players.id = "ludo-players";
   players.className = "ludo-players";
-  arena.appendChild(players);
+  statusRow.appendChild(players);
+
+  const banner = document.createElement("div");
+  banner.id = "ludo-turn-banner";
+  banner.className = "ludo-turn-banner";
+  statusRow.appendChild(banner);
+
+  const status = document.createElement("div");
+  status.id = "ludo-status";
+  status.className = "ludo-status";
+  statusRow.appendChild(status);
+
+  arena.appendChild(statusRow);
 
   const boardWrap = document.createElement("div");
   boardWrap.id = "ludo-board-wrap";
   boardWrap.className = "ludo-board-wrap";
+  // Board is sized purely via CSS clamp() on .ludo-board now (width/height
+  // set to the identical expression, so it's square without depending on
+  // aspect-ratio - which didn't reliably resolve to a square inside this
+  // nested flex layout - or on any JS measurement/ResizeObserver.
   const board = document.createElement("div");
   board.id = "ludo-board";
   board.className = "ludo-board";
@@ -1628,16 +1646,33 @@ function buildLudoStage(stage) {
     const yard = document.createElement("div");
     yard.className = `ludo-yard-zone ludo-yard-${color}`;
     board.appendChild(yard);
+    // Decorative fixed "slots" printed on the yard panel - purely visual,
+    // but they make it obvious at a glance that each color has exactly 4
+    // distinct, stable home spots, matching where pieces with steps=-1
+    // actually render (ludoYardPoint(color, i) for the same i).
+    for (let i = 0; i < 4; i++) {
+      const p = ludoYardPoint(color, i);
+      const slot = document.createElement("div");
+      slot.className = "ludo-yard-slot";
+      slot.style.left = p.x + "%";
+      slot.style.top = p.y + "%";
+      board.appendChild(slot);
+    }
   });
 
   const hub = document.createElement("div");
   hub.className = "ludo-hub";
   board.appendChild(hub);
 
+  const entryCells = new Set(LUDO_COLOR_LIST.map((c) => LUDO_ENTRY[c]));
   for (let i = 0; i < 40; i++) {
     const p = ludoRingPoint(i);
     const dot = document.createElement("div");
     dot.className = "ludo-cell ludo-ring-cell";
+    if (entryCells.has(i)) {
+      const entryColor = LUDO_COLOR_LIST.find((c) => LUDO_ENTRY[c] === i);
+      dot.className += ` ludo-ring-entry color-${entryColor}`;
+    }
     dot.style.left = p.x + "%";
     dot.style.top = p.y + "%";
     board.appendChild(dot);
@@ -1665,15 +1700,21 @@ function buildLudoStage(stage) {
   const controls = document.createElement("div");
   controls.className = "ludo-controls";
 
-  const banner = document.createElement("div");
-  banner.id = "ludo-turn-banner";
-  banner.className = "ludo-turn-banner";
-  controls.appendChild(banner);
+  const dicePanel = document.createElement("div");
+  dicePanel.className = "ludo-dice-panel";
 
   const dice = document.createElement("div");
   dice.id = "ludo-dice";
   dice.className = "ludo-dice empty";
-  controls.appendChild(dice);
+  dicePanel.appendChild(dice);
+
+  const diceLabel = document.createElement("div");
+  diceLabel.id = "ludo-dice-label";
+  diceLabel.className = "ludo-dice-label";
+  diceLabel.textContent = "Noch nicht gewürfelt";
+  dicePanel.appendChild(diceLabel);
+
+  controls.appendChild(dicePanel);
 
   const rollBtn = document.createElement("button");
   rollBtn.type = "button";
@@ -1687,48 +1728,16 @@ function buildLudoStage(stage) {
   });
   controls.appendChild(rollBtn);
 
+  arena.appendChild(controls);
+
   const event = document.createElement("div");
   event.id = "ludo-event";
   event.className = "ludo-event";
   event.hidden = true;
-  controls.appendChild(event);
+  arena.appendChild(event);
 
-  arena.appendChild(controls);
   stage.appendChild(arena);
   ludoLastDice = null;
-  ludoStartResizeWatcher();
-}
-
-// CSS aspect-ratio on .ludo-board doesn't reliably resolve to a square
-// inside this nested flex layout (empirically it renders a tall rectangle
-// instead), so the board's pixel size is instead computed directly from
-// its wrapper's available space and kept square as long as the modal is
-// open, watched via ResizeObserver rather than a single one-off read.
-let ludoResizeObserver = null;
-
-function ludoSizeBoard() {
-  const wrap = el("ludo-board-wrap");
-  const board = el("ludo-board");
-  if (!wrap || !board) return;
-  const size = Math.max(120, Math.min(wrap.clientWidth, wrap.clientHeight) - 8);
-  board.style.width = size + "px";
-  board.style.height = size + "px";
-}
-
-function ludoStartResizeWatcher() {
-  ludoStopResizeWatcher();
-  ludoSizeBoard();
-  const wrap = el("ludo-board-wrap");
-  if (!wrap || typeof ResizeObserver === "undefined") return;
-  ludoResizeObserver = new ResizeObserver(() => ludoSizeBoard());
-  ludoResizeObserver.observe(wrap);
-}
-
-function ludoStopResizeWatcher() {
-  if (ludoResizeObserver) {
-    ludoResizeObserver.disconnect();
-    ludoResizeObserver = null;
-  }
 }
 
 const LUDO_DICE_PIPS = {
@@ -1753,6 +1762,48 @@ function ludoDiceFace(value) {
 
 let ludoLastDice = null;
 
+// Builds the secondary status/hint line (Teil "Kopfbereich" guidance text).
+// Reads dice/dice_owner/dice_had_moves rather than just dice/awaiting_move
+// so it can correctly explain *why* nothing happened after a roll (e.g.
+// "you need a 6") instead of only reacting to whether a move is pending.
+function ludoStatusText(state, myUid, isMyTurn) {
+  const dice = state.dice;
+  const owner = state.dice_owner;
+  if (dice === null || dice === undefined) {
+    return isMyTurn ? "Würfle, um zu starten." : "Warte, bis du an der Reihe bist.";
+  }
+
+  const ownerIsMe = owner === myUid;
+  const ownerName = ownerIsMe ? "Du" : ludoPlayerName(owner);
+  const verb = ownerIsMe ? "hast" : "hat";
+  const currentName = ludoPlayerName(state.players_order[state.turn_index]);
+
+  if (state.awaiting_move) {
+    return isMyTurn ? "Wähle eine Figur, die du ziehen möchtest." : `${currentName} wählt eine Figur.`;
+  }
+
+  if (state.dice_had_moves) {
+    // that roll DID have a legal move (already played, since awaiting_move
+    // is false here) - nothing left to explain about it.
+    return isMyTurn ? "Würfle, um weiterzuspielen." : `${currentName} ist dran.`;
+  }
+
+  if (dice === 6) {
+    return ownerIsMe && isMyTurn
+      ? "Du hast eine 6 gewürfelt, aber keine Figur konnte ziehen – wirf nochmal!"
+      : `${ownerName} ${verb} eine 6 gewürfelt, aber keine Figur konnte ziehen.`;
+  }
+
+  const ownerColor = state.player_colors[owner];
+  const ownerHasYardPiece = (state.pieces[ownerColor] || []).some((p) => p.steps === -1);
+  if (ownerHasYardPiece) {
+    return ownerIsMe
+      ? `Du hast eine ${dice} gewürfelt – du brauchst eine 6, um eine Figur ins Spiel zu bringen.`
+      : `${ownerName} ${verb} eine ${dice} gewürfelt – braucht eine 6, um eine Figur ins Spiel zu bringen.`;
+  }
+  return `${ownerName} ${verb} eine ${dice} gewürfelt, aber keine Figur konnte ziehen.`;
+}
+
 function renderLudo(state) {
   const myUid = String(me.id);
   const isMyTurn = state.players_order[state.turn_index] === myUid;
@@ -1776,10 +1827,19 @@ function renderLudo(state) {
     banner.classList.toggle("my-turn", isMyTurn);
   }
 
+  const statusBox = el("ludo-status");
+  if (statusBox) {
+    statusBox.textContent = ludoStatusText(state, myUid, isMyTurn);
+  }
+
   const diceBox = el("ludo-dice");
   if (diceBox) {
     diceBox.innerHTML = "";
-    if (state.dice) {
+    // Show the dice face (and label below) for ANY roll on record, not
+    // just when a move is currently pending - this is the actual fix for
+    // "rolled number sometimes never appears": the value now survives in
+    // the state even when the roll had no legal move at all.
+    if (state.dice !== null && state.dice !== undefined) {
       diceBox.classList.remove("empty");
       diceBox.appendChild(ludoDiceFace(state.dice));
       if (state.dice !== ludoLastDice) {
@@ -1792,6 +1852,11 @@ function renderLudo(state) {
     }
   }
   ludoLastDice = state.dice;
+
+  const diceLabel = el("ludo-dice-label");
+  if (diceLabel) {
+    diceLabel.textContent = state.dice !== null && state.dice !== undefined ? `Letzter Wurf: ${state.dice}` : "Noch nicht gewürfelt";
+  }
 
   const rollBtn = el("ludo-roll-btn");
   if (rollBtn) rollBtn.disabled = !(isMyTurn && !state.awaiting_move);
@@ -1814,11 +1879,16 @@ function renderLudo(state) {
       if (!state.active_colors.includes(color)) return;
       const isMine = color === myColor;
       const eligible = isMyTurn && isMine && state.awaiting_move;
-      let yardCount = 0;
       state.pieces[color].forEach((piece, i) => {
         const canMove = eligible && state.movable_pieces.includes(i);
         const dim = eligible && !canMove;
-        const point = piece.steps === -1 ? ludoYardPoint(color, yardCount++) : ludoPiecePoint(color, piece.steps);
+        // Each piece's yard slot is its own stable array index i, not a
+        // running count of "how many yard pieces have I seen so far" - the
+        // old code reassigned slots by encounter order, so a piece still
+        // sitting in the yard would silently jump to a different slot
+        // (sometimes the exact slot another piece had just vacated)
+        // whenever ANY sibling piece left or returned to the yard.
+        const point = piece.steps === -1 ? ludoYardPoint(color, i) : ludoPiecePoint(color, piece.steps);
         const pieceEl = document.createElement("div");
         pieceEl.className = `ludo-piece color-${color}` + (canMove ? " movable" : "") + (dim ? " not-movable-dim" : "");
         pieceEl.style.left = point.x + "%";

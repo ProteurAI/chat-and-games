@@ -731,9 +731,13 @@ button, input, .channel-list li, .game-type-item, .icon-btn {
 .game-modal.ludo-mode .icon-btn:hover { background: rgba(120, 90, 40, 0.12); }
 .game-modal.ludo-mode .game-stage { flex: 1; min-height: 0; margin-top: var(--space-2); }
 
-.ludo-arena { height: 100%; display: flex; flex-direction: column; gap: var(--space-2); }
+.ludo-arena { height: 100%; width: 100%; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: var(--space-3); }
 
-.ludo-players { flex: 0 0 auto; display: flex; gap: var(--space-3); flex-wrap: wrap; justify-content: center; padding: 2px 0; }
+/* ---- status/header zone: players, whose turn, and a contextual hint ---- */
+.ludo-status-row {
+  flex: 0 0 auto; width: 100%; display: flex; flex-direction: column; align-items: center; gap: var(--space-2); padding-top: 2px;
+}
+.ludo-players { display: flex; gap: var(--space-3); flex-wrap: wrap; justify-content: center; }
 .ludo-player-chip {
   display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); border-radius: var(--radius-full);
   background: rgba(255, 255, 255, 0.55); border: 2px solid rgba(120, 90, 40, 0.18); font-size: var(--text-sm); font-weight: var(--font-semibold);
@@ -751,39 +755,84 @@ button, input, .channel-list li, .game-type-item, .icon-btn {
   border-color: var(--accent); box-shadow: var(--shadow-glow);
 }
 
-.ludo-board-wrap { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; min-width: 0; }
+.ludo-turn-banner {
+  font-size: var(--text-lg); font-weight: var(--font-bold); color: #5b4324;
+  padding: var(--space-2) var(--space-5); border-radius: var(--radius-full); background: rgba(255, 255, 255, 0.6);
+}
+.ludo-turn-banner.my-turn { background: var(--accent); color: white; box-shadow: 0 4px 16px rgba(244, 124, 72, 0.45); }
+
+.ludo-status { font-size: var(--text-sm); font-weight: var(--font-semibold); color: #6b5636; text-align: center; min-height: 1.4em; }
+
+/* ---- the board itself: the clear visual center of the screen ---- */
+.ludo-board-wrap {
+  flex: 1; width: 100%; display: flex; align-items: center; justify-content: center;
+  min-height: 0; min-width: 0; padding: var(--space-2) 0;
+  /* Establishes a query container so .ludo-board can size itself off this
+     wrap's OWN live box (which varies with however much room the status
+     row / controls card above and below it actually take), not a global
+     vmin guess - a vmin-only board would either overflow when those rows
+     are tall, or (if clamped with a plain %, which clips width/height
+     independently) stop being square. */
+  container-type: size; container-name: ludo-wrap;
+}
 .ludo-board {
-  /* Actual pixel width/height are set by JS (ludoSizeBoard) to guarantee a
-     true square - aspect-ratio inside this nested flex layout didn't
-     reliably resolve to one. These are just a same-shaped fallback for the
-     brief moment before that first runs. */
-  position: relative; aspect-ratio: 1; max-width: 100%; max-height: 100%;
+  /* The biggest square that still fits the wrap on BOTH axes at once:
+     width is the smallest of the 760px cap, 96% of the container's own
+     width, and 96% of its own height (aspect-ratio:1 then makes height
+     follow width exactly, so it can never end up non-square). Falls back
+     to a vmin-based guess in the rare case a browser lacks container query
+     units. Deliberately large - the board is meant to be the clear visual
+     center of the screen, not a small tile floating in a mostly-empty
+     modal. */
+  width: clamp(420px, 62vmin, 760px);
+  width: max(420px, min(760px, 96cqw, 96cqh));
+  aspect-ratio: 1;
+  position: relative;
   background:
     repeating-linear-gradient(45deg, rgba(120, 90, 40, 0.035) 0 2px, transparent 2px 14px),
     linear-gradient(160deg, #fbf3e3 0%, #f0e0bd 100%);
-  border-radius: var(--radius-lg); box-shadow: 0 14px 40px rgba(90, 65, 25, 0.35), inset 0 0 0 2px rgba(120, 90, 40, 0.15);
+  border-radius: var(--radius-lg); box-shadow: 0 18px 50px rgba(90, 65, 25, 0.4), inset 0 0 0 2px rgba(120, 90, 40, 0.18);
 }
 
 .ludo-yard-zone {
   position: absolute; width: 34%; height: 34%; border-radius: var(--radius-lg);
-  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.12);
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.15), inset 0 0 0 3px rgba(255, 255, 255, 0.35);
 }
 .ludo-yard-red { left: 3%; bottom: 3%; background: linear-gradient(160deg, #ff8a80 0%, #e63946 100%); }
 .ludo-yard-blue { left: 3%; top: 3%; background: linear-gradient(160deg, #7fb2ff 0%, #3579d6 100%); }
 .ludo-yard-yellow { right: 3%; top: 3%; background: linear-gradient(160deg, #ffe37a 0%, #f4c430 100%); }
 .ludo-yard-green { right: 3%; bottom: 3%; background: linear-gradient(160deg, #7be09a 0%, #2ea043 100%); }
 
+/* decorative fixed "holes" printed on each yard panel - purely visual, but
+   they make each color's 4 stable home slots obvious even before pieces
+   are drawn, reinforcing that every piece owns exactly one fixed spot. */
+.ludo-yard-slot {
+  position: absolute; width: 8.5%; height: 8.5%; border-radius: var(--radius-full); transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, 0.4); box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.25), 0 1px 1px rgba(255, 255, 255, 0.5);
+  z-index: 1;
+}
+
 .ludo-hub {
   position: absolute; left: 50%; top: 50%; width: 20%; height: 20%; transform: translate(-50%, -50%);
   border-radius: var(--radius-full);
   background: conic-gradient(#e63946 0deg 90deg, #3579d6 90deg 180deg, #f4c430 180deg 270deg, #2ea043 270deg 360deg);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25), inset 0 0 0 4px rgba(255, 255, 255, 0.5);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3), inset 0 0 0 5px rgba(255, 255, 255, 0.55);
 }
 
 .ludo-cell {
-  position: absolute; width: 5.2%; height: 5.2%; border-radius: var(--radius-full); transform: translate(-50%, -50%);
-  background: #fffdf6; box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.2);
+  position: absolute; width: 6.2%; height: 6.2%; border-radius: var(--radius-full); transform: translate(-50%, -50%);
+  background: #fffdf6; box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.25);
+  border: 1.5px solid rgba(120, 90, 40, 0.25);
 }
+/* the 4 entry squares (one per color) get a classic colored ring so the
+   ring path's start point per color is unmistakable at a glance */
+.ludo-ring-entry { border-width: 2.5px; }
+.ludo-ring-entry.color-red { border-color: #d81c2b; box-shadow: inset 0 0 0 2px rgba(216, 28, 43, 0.35); }
+.ludo-ring-entry.color-blue { border-color: #1e5fc4; box-shadow: inset 0 0 0 2px rgba(30, 95, 196, 0.35); }
+.ludo-ring-entry.color-yellow { border-color: #d9a300; box-shadow: inset 0 0 0 2px rgba(217, 163, 0, 0.35); }
+.ludo-ring-entry.color-green { border-color: #1e8a3d; box-shadow: inset 0 0 0 2px rgba(30, 138, 61, 0.35); }
+
+.ludo-home-cell { width: 6.4%; height: 6.4%; }
 .ludo-home-cell.color-red { background: #f4a3a9; }
 .ludo-home-cell.color-blue { background: #a8c7f0; }
 .ludo-home-cell.color-yellow { background: #f9e2a0; }
@@ -791,9 +840,9 @@ button, input, .channel-list li, .game-type-item, .icon-btn {
 
 .ludo-pieces-layer { position: absolute; inset: 0; }
 .ludo-piece {
-  position: absolute; width: 7.6%; height: 7.6%; border-radius: var(--radius-full); transform: translate(-50%, -50%);
+  position: absolute; width: 8.4%; height: 8.4%; border-radius: var(--radius-full); transform: translate(-50%, -50%);
   box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4), inset -2px -3px 4px rgba(0, 0, 0, 0.3), inset 2px 2px 3px rgba(255, 255, 255, 0.7);
-  border: 1.5px solid rgba(255, 255, 255, 0.4); transition: left 0.35s ease, top 0.35s ease, transform var(--transition-fast);
+  border: 1.5px solid rgba(255, 255, 255, 0.5); transition: left 0.35s ease, top 0.35s ease, transform var(--transition-fast);
   z-index: 2;
 }
 .ludo-piece.color-red { background: radial-gradient(circle at 35% 30%, #ff8a80, #d81c2b 75%); }
@@ -808,18 +857,17 @@ button, input, .channel-list li, .game-type-item, .icon-btn {
   50% { box-shadow: 0 0 0 7px rgba(255, 214, 0, 0), 0 3px 6px rgba(0, 0, 0, 0.4); }
 }
 
+/* ---- controls zone: dice + roll button grouped into one clear card ---- */
 .ludo-controls {
-  flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: var(--space-4);
-  flex-wrap: wrap; padding: var(--space-2) 0 2px;
+  flex: 0 0 auto; width: 100%; max-width: 420px; display: flex; align-items: center; justify-content: center; gap: var(--space-5);
+  flex-wrap: wrap; padding: var(--space-4) var(--space-5); margin-bottom: var(--space-1);
+  background: rgba(255, 255, 255, 0.4); border: 1px solid rgba(120, 90, 40, 0.18); border-radius: var(--radius-lg);
+  box-shadow: 0 6px 20px rgba(90, 65, 25, 0.12);
 }
-.ludo-turn-banner {
-  font-size: var(--text-base); font-weight: var(--font-bold); color: #5b4324;
-  padding: var(--space-2) var(--space-4); border-radius: var(--radius-full); background: rgba(255, 255, 255, 0.55);
-}
-.ludo-turn-banner.my-turn { background: var(--accent); color: white; box-shadow: 0 4px 16px rgba(244, 124, 72, 0.45); }
 
+.ludo-dice-panel { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); }
 .ludo-dice {
-  width: 56px; height: 56px; border-radius: var(--radius-md); background: linear-gradient(160deg, #ffffff, #e4e0d6);
+  width: 68px; height: 68px; border-radius: var(--radius-md); background: linear-gradient(160deg, #ffffff, #e4e0d6);
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3), inset 0 1px 2px rgba(255, 255, 255, 0.8);
   display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
   padding: var(--space-2); gap: 2px;
@@ -833,18 +881,27 @@ button, input, .channel-list li, .game-type-item, .icon-btn {
   100% { transform: rotate(360deg) scale(1); }
 }
 .ludo-pip { border-radius: var(--radius-full); background: #3a3226; align-self: center; justify-self: center; width: 70%; height: 70%; }
+.ludo-dice-label { font-size: var(--text-xs); font-weight: var(--font-semibold); color: #6b5636; white-space: nowrap; }
 
-.ludo-roll-btn { font-size: var(--text-base); padding: var(--space-3) var(--space-5); border-radius: var(--radius-full); }
+.ludo-roll-btn { font-size: var(--text-base); padding: var(--space-3) var(--space-6); border-radius: var(--radius-full); }
 .ludo-roll-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .ludo-event {
+  align-self: center; flex: 0 0 auto;
   font-size: var(--text-sm); font-weight: var(--font-semibold); color: white; background: var(--accent);
   padding: var(--space-2) var(--space-4); border-radius: var(--radius-full); box-shadow: 0 4px 14px rgba(244, 124, 72, 0.4);
 }
 
 @media (max-width: 767px) {
   .game-modal.ludo-mode { width: 100vw; max-width: 100vw; height: 100vh; height: 100dvh; max-height: 100dvh; border-radius: 0; }
-  .ludo-dice { width: 44px; height: 44px; }
+  .ludo-board {
+    width: clamp(260px, 88vmin, 420px);
+    width: min(420px, 92cqw, 92cqh);
+  }
+  .ludo-controls { padding: var(--space-3) var(--space-4); gap: var(--space-3); }
+  .ludo-dice { width: 48px; height: 48px; }
+  .ludo-turn-banner { font-size: var(--text-base); padding: var(--space-2) var(--space-4); }
+  .ludo-status { font-size: var(--text-xs); }
 }
 
 /* ---------- SNAP MODAL ---------- */

@@ -844,6 +844,8 @@ class LudoEngine:
             "pieces": pieces,
             "turn_index": 0,
             "dice": None,
+            "dice_owner": None,
+            "dice_had_moves": False,
             "awaiting_move": False,
             "movable_pieces": [],
             "winner": None,
@@ -896,9 +898,16 @@ class LudoEngine:
 
     @staticmethod
     def _advance_turn(state):
+        # Deliberately does NOT clear state["dice"]/"dice_owner" - the just
+        # -rolled value must stay visible (attributed to whoever rolled it,
+        # via dice_owner) until the next roll overwrites it, even when that
+        # roll turns out to have no legal move and the turn passes in the
+        # same instant. Clearing it here used to silently wipe the number
+        # before the single post-input broadcast ever went out, so a roll
+        # with no usable move (the common "need a 6" case) was never seen
+        # by anyone.
         n = len(state["players_order"])
         state["turn_index"] = (state["turn_index"] + 1) % n
-        state["dice"] = None
         state["awaiting_move"] = False
         state["movable_pieces"] = []
 
@@ -918,8 +927,10 @@ class LudoEngine:
             if state["awaiting_move"]:
                 return False
             state["dice"] = random.randint(1, 6)
+            state["dice_owner"] = uid
             state["last_event"] = None
             moves = LudoEngine._available_moves(state, color, state["dice"])
+            state["dice_had_moves"] = bool(moves)
             if moves:
                 state["awaiting_move"] = True
                 # Sent to everyone (this game has no hidden info at all) so
@@ -967,8 +978,8 @@ class LudoEngine:
             rolled_six = state["dice"] == 6
             if not rolled_six:
                 LudoEngine._advance_turn(state)
-            else:
-                state["dice"] = None  # same player continues, must roll again
+            # else: same player continues and must roll again - dice/dice_owner
+            # are left as-is (showing the 6 they just used) until that next roll
             return True
 
         return False
@@ -998,6 +1009,8 @@ class LudoEngine:
         elif idx == state["turn_index"]:
             state["turn_index"] %= n
             state["dice"] = None
+            state["dice_owner"] = None
+            state["dice_had_moves"] = False
             state["awaiting_move"] = False
             state["movable_pieces"] = []
         # the departed player's pieces are simply left in place, frozen -
