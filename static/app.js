@@ -18,6 +18,19 @@ let pongPressedKey = null;
 
 const el = (id) => document.getElementById(id);
 
+// ---------- theme ----------
+// The <head> inline script already set data-theme on <html> before first
+// paint (saved choice, else OS preference) to avoid a flash of the wrong
+// theme - this just wires up the visible toggle button to flip + persist it.
+function setTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  localStorage.setItem("cg_theme", theme);
+}
+el("theme-toggle").addEventListener("click", () => {
+  const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+  setTheme(next);
+});
+
 // ---------- api helper ----------
 async function api(path, options = {}) {
   const headers = options.headers || {};
@@ -122,7 +135,11 @@ async function selectChannel(id) {
   el("current-channel-name").textContent = ch ? `#${ch.name}` : "#";
   el("messages").innerHTML = "";
   const msgs = await api(`/api/channels/${id}/messages`);
-  for (const m of msgs) renderMessage(m);
+  if (!msgs.length) {
+    showEmptyMessagesState();
+  } else {
+    for (const m of msgs) renderMessage(m);
+  }
   scrollToBottom();
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "join", channel_id: id }));
@@ -218,7 +235,28 @@ function scrollToBottom() {
   box.scrollTop = box.scrollHeight;
 }
 
+function showEmptyMessagesState() {
+  const wrap = document.createElement("div");
+  wrap.className = "chat-empty-state";
+  const bubble = document.createElement("div");
+  bubble.className = "chat-empty-bubble";
+  bubble.textContent = "💬";
+  const title = document.createElement("div");
+  title.className = "chat-empty-title";
+  title.textContent = "Noch keine Nachrichten";
+  const sub = document.createElement("div");
+  sub.className = "chat-empty-sub";
+  sub.textContent = "Starte die Unterhaltung – schreib einfach los.";
+  wrap.appendChild(bubble);
+  wrap.appendChild(title);
+  wrap.appendChild(sub);
+  el("messages").appendChild(wrap);
+}
+
 function renderMessage(msg) {
+  const emptyState = el("messages").querySelector(".chat-empty-state");
+  if (emptyState) emptyState.remove();
+
   if (msg.type === "system") {
     const div = document.createElement("div");
     div.className = "msg-system";
