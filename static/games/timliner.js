@@ -34,6 +34,11 @@
   const MAX_SPEED = 2600;
   const RIDER_RADIUS = 7; // collision radius of each rider point, world units
   const CONSTRAINT_ITERATIONS = 4;
+  const NORMAL_RESTITUTION = 0.12; // fraction of inbound normal speed kept on landing - cushions instead of "sticking"
+  const SLED_ANGULAR_DAMPING = 0.985; // per-substep damping of the sled's OWN rotational velocity (translation untouched)
+  const CRASH_HEAD_SPEED = 1400; // world units/s of normal-velocity impact on the head/shoulder point to count as a crash
+  const CRASH_LANDING_SPEED = 2100; // world units/s of normal-velocity impact on the sled itself to count as a crash landing
+  const OVERTURN_SUBSTEPS = 45; // consecutive grounded+upside-down substeps (~0.09s) before a genuine overturn is called
   const MIN_SAMPLE_DIST = 6; // world units between freehand points before a new one is recorded
   const ERASER_RADIUS = 14;
   const SELECT_RADIUS = 10;
@@ -202,6 +207,30 @@
     }
     return out;
   }
+  // Same query as queryNear, but writes into a caller-owned array (cleared
+  // first) instead of allocating a new Set + Array every call - this runs
+  // up to 4 times per physics substep, so at 120Hz*4 that's 480+ fresh
+  // allocations/second avoided during normal riding.
+  function queryNearInto(grid, x, y, radius, outArr) {
+    outArr.length = 0;
+    _scratchSeen.clear();
+    const minX = Math.floor((x - radius) / grid.cell);
+    const maxX = Math.floor((x + radius) / grid.cell);
+    const minY = Math.floor((y - radius) / grid.cell);
+    const maxY = Math.floor((y + radius) / grid.cell);
+    for (let cx = minX; cx <= maxX; cx++) {
+      for (let cy = minY; cy <= maxY; cy++) {
+        const arr = grid.map.get(gridKey(cx, cy));
+        if (!arr) continue;
+        for (const id of arr) {
+          if (_scratchSeen.has(id)) continue;
+          _scratchSeen.add(id);
+          outArr.push(grid.byId.get(id));
+        }
+      }
+    }
+    return outArr;
+  }
 
   // ---------------------------------------------------------------------
   // Undo / redo - each entry is a diff {added:[lines], removed:[lines]}.
@@ -256,24 +285,61 @@
     if (t < 0 || t > 1 || u < 0 || u > 1) return null;
     return { x: ax + d1x * t, y: ay + d1y * t, t };
   }
+  // Allocation-free variants of the two helpers above, writing into a
+  // caller-owned object instead of returning a fresh one - used only in
+  // the hot collision path (collidePoint), which calls these dozens of
+  // times per physics substep.
+  function segClosestPointInto(px, py, x1, y1, x2, y2, out) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const lenSq = dx * dx + dy * dy;
+    let t = lenSq > 1e-9 ? ((px - x1) * dx + (py - y1) * dy) / lenSq : 0;
+    t = Math.max(0, Math.min(1, t));
+    out.x = x1 + dx * t; out.y = y1 + dy * t; out.t = t;
+    return out;
+  }
+  function segIntersectInto(ax, ay, bx, by, cx, cy, dx, dy, out) {
+    const d1x = bx - ax, d1y = by - ay;
+    const d2x = dx - cx, d2y = dy - cy;
+    const denom = d1x * d2y - d1y * d2x;
+    if (Math.abs(denom) < 1e-9) return null;
+    const t = ((cx - ax) * d2y - (cy - ay) * d2x) / denom;
+    const u = ((cx - ax) * d1y - (cy - ay) * d1x) / denom;
+    if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+    out.x = ax + d1x * t; out.y = ay + d1y * t; out.t = t;
+    return out;
+  }
 
   // ---------------------------------------------------------------------
-  // Rider / Physics - a small Verlet point system (sledBack, sledFront,
-  // hip, shoulder) held together by distance constraints instead of a
-  // rigid body. Deliberately simple: stable riding + collision first,
-  // expressive tumbling falls out of the same system for free once a
-  // constraint breaks contact, without needing a separate "crash" animation.
+  // Rider / Physics - a small Verlet point system held together by
+  // MASS-WEIGHTED distance constraints (not a rigid body): sledBack,
+  // sledFront and hip form a heavy, low, stable "sled + seated body"
+  // core; shoulder (head/upper body) is deliberately light so it can
+  // flop around for a natural lean/tumble without dragging the sled off
+  // balance - a stray head-bump barely perturbs the heavy points at all,
+  // which is what keeps the sled from tipping over on small bumps while
+  // still allowing genuinely violent impacts to end in a real crash.
   // ---------------------------------------------------------------------
   const RIDER_SHAPE = {
-    sledLen: 46,
-    sledToHip: 24,
-    hipToShoulder: 26,
-    sledFrontToHip: 30,
-    shoulderToSledFront: 40,
+    sledLen: 52, // slightly longer runner base than a single point = harder to tip
+    hipBack: -5, hipDrop: 11, // seat sits LOW, just above the sled deck, close to its center
+    shoulderBack: -9, shoulderDrop: 32, // torso leans back a little, modest height (was 50 - about half as tall)
   };
+  // Inverse mass per point: sledBack/sledFront/hip are the heavy "core"
+  // (equal weight so the seat doesn't get dragged toward either runner);
+  // shoulder is deliberately light. Constraint corrections are split by
+  // these ratios, so correcting a sled<->shoulder distance moves the
+  // shoulder ~9x more than the sled - a bumped head doesn't fling the sled.
+  const RIDER_MASS = { sledBack: 3, sledFront: 3, hip: 3, shoulder: 0.35 };
+  const RIDER_INV_MASS = {};
+  for (const k in RIDER_MASS) RIDER_INV_MASS[k] = 1 / RIDER_MASS[k];
 
   function createRider() {
-    return { points: {}, crashed: false, crashedAt: 0, speed: 0, groundedSubsteps: 0 };
+    return {
+      points: {}, prevStepPoints: {}, // prevStepPoints: snapshot at the START of the last
+      // completed physicsStep(), used to interpolate the rendered position
+      // between physics steps instead of visibly snapping frame to frame.
+      crashed: false, crashReason: null, speed: 0, groundedSubsteps: 0,
+    };
   }
 
   function placeRiderAt(rider, x, y, angle) {
@@ -287,21 +353,34 @@
     }
     rider.points.sledBack = pt(-RIDER_SHAPE.sledLen / 2, 0);
     rider.points.sledFront = pt(RIDER_SHAPE.sledLen / 2, 0);
-    rider.points.hip = pt(0, -RIDER_SHAPE.sledToHip);
-    rider.points.shoulder = pt(6, -RIDER_SHAPE.sledToHip - RIDER_SHAPE.hipToShoulder);
+    rider.points.hip = pt(RIDER_SHAPE.hipBack, -RIDER_SHAPE.hipDrop);
+    rider.points.shoulder = pt(RIDER_SHAPE.shoulderBack, -RIDER_SHAPE.hipDrop - RIDER_SHAPE.shoulderDrop);
+    for (const k in rider.points) rider.prevStepPoints[k] = { x: rider.points[k].x, y: rider.points[k].y };
     rider.crashed = false;
-    rider.crashedAt = 0;
+    rider.crashReason = null;
     rider.speed = 0;
     rider.groundedSubsteps = 0;
   }
 
-  const RIDER_CONSTRAINTS = [
-    ["sledBack", "sledFront", RIDER_SHAPE.sledLen, 1.0],
-    ["sledBack", "hip", Math.hypot(RIDER_SHAPE.sledLen / 2, RIDER_SHAPE.sledToHip), 0.6],
-    ["sledFront", "hip", RIDER_SHAPE.sledFrontToHip, 0.6],
-    ["hip", "shoulder", RIDER_SHAPE.hipToShoulder, 0.5],
-    ["sledFront", "shoulder", RIDER_SHAPE.shoulderToSledFront, 0.35],
-  ];
+  function distBetween(points, aKey, bKey) {
+    return Math.hypot(points[bKey].x - points[aKey].x, points[bKey].y - points[aKey].y);
+  }
+
+  // Rest lengths are derived from the neutral pose above (not hand-typed)
+  // so RIDER_SHAPE stays the single source of truth for the silhouette.
+  function buildRiderConstraints() {
+    const ref = createRider();
+    placeRiderAt(ref, 0, 0, 0);
+    const p = ref.points;
+    return [
+      ["sledBack", "sledFront", RIDER_SHAPE.sledLen, 1.0],
+      ["sledBack", "hip", distBetween(p, "sledBack", "hip"), 0.95],
+      ["sledFront", "hip", distBetween(p, "sledFront", "hip"), 0.95],
+      ["hip", "shoulder", distBetween(p, "hip", "shoulder"), 0.55],
+      ["sledFront", "shoulder", distBetween(p, "sledFront", "shoulder"), 0.25],
+    ];
+  }
+  const RIDER_CONSTRAINTS = buildRiderConstraints();
 
   function verletIntegrate(p, ax, ay, dt) {
     const vx = (p.x - p.px) * AIR_DAMPING;
@@ -312,52 +391,86 @@
     p.x = nx; p.y = ny;
   }
 
+  // Mass-weighted correction: a constraint between a heavy and a light
+  // point moves the light one much more, so the sled's own trajectory
+  // barely reacts to the head/shoulder flopping around.
   function solveConstraints(points) {
     for (let it = 0; it < CONSTRAINT_ITERATIONS; it++) {
       for (const [aKey, bKey, restLen, stiffness] of RIDER_CONSTRAINTS) {
         const a = points[aKey], b = points[bKey];
-        let dx = b.x - a.x, dy = b.y - a.y;
-        let dist = Math.hypot(dx, dy) || 0.0001;
-        const diff = ((dist - restLen) / dist) * stiffness * 0.5;
-        const ox = dx * diff, oy = dy * diff;
-        a.x += ox; a.y += oy;
-        b.x -= ox; b.y -= oy;
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy) || 0.0001;
+        const diff = ((dist - restLen) / dist) * stiffness;
+        const invA = RIDER_INV_MASS[aKey], invB = RIDER_INV_MASS[bKey];
+        const invSum = invA + invB || 1;
+        const corrA = diff * (invA / invSum);
+        const corrB = diff * (invB / invSum);
+        a.x += dx * corrA; a.y += dy * corrA;
+        b.x -= dx * corrB; b.y -= dy * corrB;
       }
     }
   }
 
+  // Gently damps the SLED's own rotational velocity (not its translation,
+  // and not the hip/shoulder) - decomposes sledBack/sledFront's velocity
+  // into a shared translational part and an opposite rotational part, and
+  // only bleeds off a small fraction of the rotational part each substep.
+  // This is what keeps small contact noise from spinning the sled while
+  // still letting genuine jumps rotate freely (the damping factor is
+  // close to 1, so it barely registers over the handful of substeps a
+  // real airborne rotation takes).
+  function dampSledAngularVelocity(points, damping) {
+    const a = points.sledBack, b = points.sledFront;
+    const avx = a.x - a.px, avy = a.y - a.py;
+    const bvx = b.x - b.px, bvy = b.y - b.py;
+    const tvx = (avx + bvx) / 2, tvy = (avy + bvy) / 2;
+    const arx = (avx - tvx) * damping, ary = (avy - tvy) * damping;
+    const brx = (bvx - tvx) * damping, bry = (bvy - tvy) * damping;
+    a.px = a.x - (tvx + arx); a.py = a.y - (tvy + ary);
+    b.px = b.x - (tvx + brx); b.py = b.y - (tvy + bry);
+  }
+
+  // Scratch objects reused across calls instead of allocated per query/
+  // hit-test, since these run many times per substep - see Constants.
+  const _scratchNearby = [];
+  const _scratchSeen = new Set();
+  const _scratchClosest = { x: 0, y: 0, t: 0 };
+  const _scratchHit = { x: 0, y: 0, t: 0 };
+
   // Resolves collision for a single point against nearby segments. Uses a
   // swept test (previous->current movement vs. each segment) to catch fast
   // tunneling, plus a resting-proximity test for slow/settled contact.
-  function collidePoint(p, grid, boostAccum) {
-    const nearby = queryNear(grid, p.x, p.y, RIDER_RADIUS + 40);
-    if (!nearby.length) return;
-    let contactType = null;
-    for (const l of nearby) {
+  // Returns the largest inbound normal speed (world units/s) it had to
+  // cancel this call, so the caller can judge "how hard was that hit" for
+  // crash detection - a real hard landing has a big number here; everyday
+  // resting contact and small bumps stay tiny.
+  function collidePoint(p, grid, out) {
+    queryNearInto(grid, p.x, p.y, RIDER_RADIUS + 40, _scratchNearby);
+    out.contactType = null;
+    out.maxNormalSpeed = 0;
+    if (!_scratchNearby.length) return;
+    for (const l of _scratchNearby) {
       const dx = l.x2 - l.x1, dy = l.y2 - l.y1;
       const len = Math.hypot(dx, dy) || 0.0001;
       // Normal points "up" (away from the direction gravity pulls things
-      // onto the line) for a line drawn left-to-right, matching the usual
-      // "draw left-to-right = track surface faces the sky" convention:
-      // start->end determines which side is collidable.
+      // onto the line) for a line drawn left-to-right: start->end
+      // determines which side is collidable.
       const nx = dy / len, ny = -dx / len;
 
-      // 1) swept crossing test (previous position -> new position)
-      const hit = segIntersect(p.px, p.py, p.x, p.y, l.x1, l.y1, l.x2, l.y2);
       let resolved = false;
+      const hit = segIntersectInto(p.px, p.py, p.x, p.y, l.x1, l.y1, l.x2, l.y2, _scratchHit);
       if (hit) {
         const side = (p.px - l.x1) * nx + (p.py - l.y1) * ny;
         if (side >= 0) {
-          p.x = hit.x + nx * RIDER_RADIUS * 0.6;
-          p.y = hit.y + ny * RIDER_RADIUS * 0.6;
+          p.x = _scratchHit.x + nx * RIDER_RADIUS * 0.6;
+          p.y = _scratchHit.y + ny * RIDER_RADIUS * 0.6;
           resolved = true;
         }
       }
 
-      // 2) resting-proximity test
       if (!resolved) {
-        const cp = segClosestPoint(p.x, p.y, l.x1, l.y1, l.x2, l.y2);
-        const ddx = p.x - cp.x, ddy = p.y - cp.y;
+        segClosestPointInto(p.x, p.y, l.x1, l.y1, l.x2, l.y2, _scratchClosest);
+        const ddx = p.x - _scratchClosest.x, ddy = p.y - _scratchClosest.y;
         const dist = Math.hypot(ddx, ddy);
         if (dist < RIDER_RADIUS) {
           const side = ddx * nx + ddy * ny >= 0 ? 1 : -1;
@@ -372,11 +485,18 @@
 
       if (!resolved) continue;
 
-      // velocity response: kill the normal component, keep + slightly
+      // velocity response: absorb the normal component (a small fraction
+      // kept as gentle restitution rather than a hard snap-to-zero, so a
+      // landing feels cushioned instead of magnetic), keep + lightly
       // dampen the tangential one (friction); boost lines add impulse.
       let vx = p.x - p.px, vy = p.y - p.py;
       const vn = vx * nx + vy * ny;
-      if (vn < 0) { vx -= vn * nx; vy -= vn * ny; }
+      if (vn < 0) {
+        const inboundSpeed = -vn / SUB_DT; // world units/s, for crash judgement
+        if (inboundSpeed > out.maxNormalSpeed) out.maxNormalSpeed = inboundSpeed;
+        const keep = vn * NORMAL_RESTITUTION;
+        vx += (keep - vn) * nx; vy += (keep - vn) * ny;
+      }
       const tx = dx / len, ty = dy / len;
       let vt = vx * tx + vy * ty;
       vt *= GROUND_FRICTION;
@@ -385,51 +505,102 @@
         const dir = vt >= 0 ? 1 : -1;
         outVx += tx * dir * BOOST_IMPULSE;
         outVy += ty * dir * BOOST_IMPULSE;
-        contactType = LINE_TYPES.BOOST;
-      } else if (contactType !== LINE_TYPES.BOOST) {
-        contactType = LINE_TYPES.PHYSICS;
+        out.contactType = LINE_TYPES.BOOST;
+      } else if (out.contactType !== LINE_TYPES.BOOST) {
+        out.contactType = LINE_TYPES.PHYSICS;
       }
       const speed = Math.hypot(outVx, outVy);
       if (speed > MAX_SPEED) { outVx = (outVx / speed) * MAX_SPEED; outVy = (outVy / speed) * MAX_SPEED; }
       p.px = p.x - outVx;
       p.py = p.y - outVy;
     }
-    if (contactType) boostAccum.contact = contactType;
-    return contactType;
   }
 
+  const _collideOut = { contactType: null, maxNormalSpeed: 0 };
   function physicsSubstep(rider, grid) {
     const pts = rider.points;
     for (const key in pts) verletIntegrate(pts[key], 0, GRAVITY, SUB_DT);
     solveConstraints(pts);
+    dampSledAngularVelocity(pts, SLED_ANGULAR_DAMPING);
+
     let anyContact = false;
-    const accum = {};
+    let hardestHit = 0;
+    let sledHit = false;
+    let headHit = false;
     for (const key in pts) {
-      const c = collidePoint(pts[key], grid, accum);
-      if (c) anyContact = true;
+      collidePoint(pts[key], grid, _collideOut);
+      if (_collideOut.contactType) {
+        anyContact = true;
+        if (_collideOut.maxNormalSpeed > hardestHit) hardestHit = _collideOut.maxNormalSpeed;
+        if (key === "sledBack" || key === "sledFront") sledHit = true;
+        if (key === "shoulder") headHit = true;
+      }
     }
     solveConstraints(pts);
     if (anyContact) rider.groundedSubsteps++; else rider.groundedSubsteps = 0;
 
-    // crash: head/shoulder slamming into a segment hard, or losing all
-    // rigidity (sled badly overstretched from a violent impact)
-    const sledDist = Math.hypot(pts.sledFront.x - pts.sledBack.x, pts.sledFront.y - pts.sledBack.y);
     if (!rider.crashed) {
-      const shoulderSpeed = Math.hypot(pts.shoulder.x - pts.shoulder.px, pts.shoulder.y - pts.shoulder.py);
-      if (sledDist > RIDER_SHAPE.sledLen * 1.9) rider.crashed = true;
-      if (shoulderSpeed > 90 && anyContact) {
-        // only a crash if the shoulder itself is the thing making contact
-        const shoulderNear = queryNear(grid, pts.shoulder.x, pts.shoulder.y, RIDER_RADIUS + 2);
-        if (shoulderNear.length) rider.crashed = true;
+      // 1) sled deformed far beyond its rigid rest length - a violent,
+      //    unrecoverable impact rather than normal riding flex.
+      const sledDist = Math.hypot(pts.sledFront.x - pts.sledBack.x, pts.sledFront.y - pts.sledBack.y);
+      if (sledDist > RIDER_SHAPE.sledLen * 1.6) {
+        rider.crashed = true; rider.crashReason = "sled";
+      }
+      // 2) the head/shoulder itself slams into the track hard - not just
+      //    "touching" it, a genuinely fast impact.
+      if (!rider.crashed && headHit && hardestHit > CRASH_HEAD_SPEED) {
+        rider.crashed = true; rider.crashReason = "head";
+      }
+      // 3) the SLED lands hard enough to count as a real crash (vs. a
+      //    normal landing, which this same collision code cushions).
+      if (!rider.crashed && sledHit && hardestHit > CRASH_LANDING_SPEED) {
+        rider.crashed = true; rider.crashReason = "landing";
+      }
+      // 4) sustained upside-down ground contact = a real overturn, not a
+      //    brief wobble - checked only while something is touching the
+      //    track so mid-air flips (intentional, expected) never count.
+      if (!rider.crashed && anyContact) {
+        const dx = pts.shoulder.x - pts.hip.x, dy = pts.shoulder.y - pts.hip.y;
+        const uprightness = -dy / (Math.hypot(dx, dy) || 1); // 1 = fully upright, -1 = fully upside down
+        if (uprightness < -0.35) {
+          rider.groundedUpsideDownSubsteps = (rider.groundedUpsideDownSubsteps || 0) + 1;
+          if (rider.groundedUpsideDownSubsteps > OVERTURN_SUBSTEPS) {
+            rider.crashed = true; rider.crashReason = "overturn";
+          }
+        } else {
+          rider.groundedUpsideDownSubsteps = 0;
+        }
+      } else {
+        rider.groundedUpsideDownSubsteps = 0;
       }
     }
   }
 
   function physicsStep(rider, grid, dt) {
+    for (const key in rider.points) {
+      rider.prevStepPoints[key].x = rider.points[key].x;
+      rider.prevStepPoints[key].y = rider.points[key].y;
+    }
     const steps = Math.round(dt / SUB_DT);
     for (let i = 0; i < steps; i++) physicsSubstep(rider, grid);
-    const p = rider.points.sledBack;
-    rider.speed = Math.hypot(p.x - p.px, p.y - p.py) / dt;
+    // full-step displacement (not just the last substep's), so this reads
+    // as true world-units/second speed - matters for anything that judges
+    // "how fast" the rider is going, debug tooling included.
+    const p = rider.points.sledBack, prevP = rider.prevStepPoints.sledBack;
+    rider.speed = Math.hypot(p.x - prevP.x, p.y - prevP.y) / dt;
+  }
+
+  // Blends prevStepPoints -> points by alpha (0..1) into `out`, so the
+  // renderer never has to draw the raw, frame-to-frame-jumpy physics
+  // state directly - see the render-interpolation note by the main loop.
+  function interpolateRiderInto(rider, alpha, out) {
+    for (const key in rider.points) {
+      const prev = rider.prevStepPoints[key], cur = rider.points[key];
+      if (!out[key]) out[key] = { x: 0, y: 0 };
+      out[key].x = prev.x + (cur.x - prev.x) * alpha;
+      out[key].y = prev.y + (cur.y - prev.y) * alpha;
+    }
+    return out;
   }
 
   // ---------------------------------------------------------------------
@@ -504,14 +675,19 @@
   }
 
   // Custom minimalist rider-on-a-sled graphic (own design, no external
-  // assets): rounded sled plank, simple body/head, a scarf that trails
-  // behind based on current speed/direction.
-  function drawRider(ctx, camera, rider) {
+  // assets): rounded sled plank, a genuinely SEATED body (low hip right
+  // at the deck, legs stretched forward to the front of the sled, arms
+  // resting toward the knees, head low), a scarf that trails behind
+  // based on current speed/direction. Draws from `renderPoints` (the
+  // interpolated, smoothed position) for the visible pose, but reads
+  // true physics velocity off `rider.points` (px/py) for the scarf.
+  function drawRider(ctx, camera, rider, renderPoints) {
+    const rp = renderPoints || rider.points;
     const p = rider.points;
-    const sled = camera.worldToScreen(p.sledBack.x, p.sledBack.y);
-    const sledF = camera.worldToScreen(p.sledFront.x, p.sledFront.y);
-    const hip = camera.worldToScreen(p.hip.x, p.hip.y);
-    const shoulder = camera.worldToScreen(p.shoulder.x, p.shoulder.y);
+    const sled = camera.worldToScreen(rp.sledBack.x, rp.sledBack.y);
+    const sledF = camera.worldToScreen(rp.sledFront.x, rp.sledFront.y);
+    const hip = camera.worldToScreen(rp.hip.x, rp.hip.y);
+    const shoulder = camera.worldToScreen(rp.shoulder.x, rp.shoulder.y);
     const z = camera.zoom;
 
     ctx.save();
@@ -544,11 +720,14 @@
       ctx.restore();
     }
 
-    // legs (hip -> sled contact point, midway front/back)
-    const footX = (sled.x + sledF.x) / 2, footY = (sled.y + sledF.y) / 2;
+    // legs: seated pose - knee roughly above the front third of the sled,
+    // foot near the very front, so the silhouette reads as "sitting with
+    // legs stretched forward" rather than "standing on the sled".
+    const kneeX = sled.x + (sledF.x - sled.x) * 0.62, kneeY = sled.y + (sledF.y - sled.y) * 0.62 - 6 * z;
+    const footX = sled.x + (sledF.x - sled.x) * 0.92, footY = sled.y + (sledF.y - sled.y) * 0.92;
     ctx.strokeStyle = "#2b2f3a";
     ctx.lineWidth = 5 * z;
-    ctx.beginPath(); ctx.moveTo(hip.x, hip.y); ctx.lineTo(footX, footY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(hip.x, hip.y); ctx.lineTo(kneeX, kneeY); ctx.lineTo(footX, footY); ctx.stroke();
 
     // scarf: a few segments trailing opposite of velocity
     const vx = p.shoulder.x - p.shoulder.px, vy = p.shoulder.y - p.shoulder.py;
@@ -571,11 +750,12 @@
     ctx.lineWidth = 7 * z;
     ctx.beginPath(); ctx.moveTo(hip.x, hip.y); ctx.lineTo(shoulder.x, shoulder.y); ctx.stroke();
 
-    // arm (shoulder -> a point ahead near sled front, simple gesture)
+    // arm (shoulder -> loosely toward the knee, a relaxed seated gesture
+    // rather than reaching for the front of the sled)
     ctx.strokeStyle = "#3457c9";
     ctx.lineWidth = 4.5 * z;
-    const armX = shoulder.x + (sledF.x - shoulder.x) * 0.55;
-    const armY = shoulder.y + (sledF.y - shoulder.y) * 0.55;
+    const armX = shoulder.x + (kneeX - shoulder.x) * 0.75;
+    const armY = shoulder.y + (kneeY - shoulder.y) * 0.75;
     ctx.beginPath(); ctx.moveTo(shoulder.x, shoulder.y); ctx.lineTo(armX, armY); ctx.stroke();
 
     // head
@@ -621,6 +801,7 @@
       raf: null,
       lastFrameTime: null,
       accumulator: 0,
+      renderRider: {}, // interpolated (or, outside "play", raw) rider points used only for drawing
     };
 
     // ---- DOM ----
@@ -1381,8 +1562,18 @@
     }
 
     // ---------------------------------------------------------------
-    // Main loop - fixed timestep physics, rAF-driven rendering
+    // Main loop - fixed timestep physics, rAF-driven rendering.
+    //
+    // Physics runs at a fixed 60Hz (8 substeps each) via the classic
+    // accumulator pattern regardless of display framerate; rendering
+    // interpolates between the previous and current physics snapshot
+    // using `alpha = accumulator / FIXED_DT` so motion stays visually
+    // smooth even when the render rate and physics rate drift apart
+    // (a 144Hz display, a dropped frame, etc). Camera-follow smoothing
+    // is time-based (exponential), not a fixed per-frame multiplier, so
+    // it behaves the same regardless of framerate.
     // ---------------------------------------------------------------
+    const CAMERA_SMOOTH_RATE = 7; // 1/s - higher = camera catches up faster
     let wasCrashed = false;
     function frame(now) {
       state.raf = requestAnimationFrame(frame);
@@ -1401,16 +1592,28 @@
         else if (!state.rider.crashed) crashMsg.hidden = true;
         wasCrashed = state.rider.crashed;
 
+        const alpha = Math.max(0, Math.min(1, state.accumulator / FIXED_DT));
+        interpolateRiderInto(state.rider, alpha, state.renderRider);
+
         if (state.followCamera) {
-          const p = state.rider.points.hip;
-          const vx = p.x - p.px;
+          const prevHip = state.rider.prevStepPoints.hip, curHip = state.rider.points.hip;
+          const vx = curHip.x - prevHip.x; // per-FIXED_DT step velocity, framerate-independent
           const lead = Math.max(-120, Math.min(120, vx * 6));
-          const targetX = p.x + lead, targetY = p.y - 40;
-          state.camera.x += (targetX - state.camera.x) * 0.08;
-          state.camera.y += (targetY - state.camera.y) * 0.08;
+          const rp = state.renderRider.hip;
+          const targetX = rp.x + lead, targetY = rp.y - 40;
+          const smooth = 1 - Math.exp(-CAMERA_SMOOTH_RATE * frameDt);
+          state.camera.x += (targetX - state.camera.x) * smooth;
+          state.camera.y += (targetY - state.camera.y) * smooth;
         }
         const secs = Math.floor(state.playElapsed);
         timeLabel.textContent = `${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")}`;
+      } else {
+        // edit/paused: nothing to interpolate between, render the raw pose
+        for (const key in state.rider.points) {
+          if (!state.renderRider[key]) state.renderRider[key] = { x: 0, y: 0 };
+          state.renderRider[key].x = state.rider.points[key].x;
+          state.renderRider[key].y = state.rider.points[key].y;
+        }
       }
 
       render();
@@ -1437,7 +1640,7 @@
 
       drawLines(ctx, state.camera, state.track.lines, state.selectedId, state.hoverId);
       if (state.mode === "edit") drawStartMarker(ctx, state.camera, state.track.start);
-      drawRider(ctx, state.camera, state.rider);
+      drawRider(ctx, state.camera, state.rider, state.renderRider);
     }
 
     resetRider();
@@ -1468,9 +1671,11 @@
           selectedId: state.selectedId,
           rider: {
             crashed: state.rider.crashed,
+            crashReason: state.rider.crashReason,
             sledBack: { x: state.rider.points.sledBack.x, y: state.rider.points.sledBack.y },
             sledFront: { x: state.rider.points.sledFront.x, y: state.rider.points.sledFront.y },
             hip: { x: state.rider.points.hip.x, y: state.rider.points.hip.y },
+            shoulder: { x: state.rider.points.shoulder.x, y: state.rider.points.shoulder.y },
           },
           speed: state.rider.speed,
         };

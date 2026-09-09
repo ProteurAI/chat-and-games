@@ -1,5 +1,5 @@
 # Chat & Games starten
-# Zeigt die lokale IP an und startet den Server fuer das gesamte Buero-Netzwerk.
+# Zeigt die lokale IP an und startet den Server fuer das gesamte Netzwerk.
 
 $config = Get-Content "$PSScriptRoot\config.json" | ConvertFrom-Json
 $port = $config.port
@@ -10,7 +10,7 @@ $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {
 
 Write-Host ""
 Write-Host "Chat & Games startet..." -ForegroundColor Cyan
-Write-Host "Kollegen erreichen den Chat im WLAN unter:" -ForegroundColor Green
+Write-Host "Deine Freunde erreichen den Chat im WLAN unter:" -ForegroundColor Green
 Write-Host "  http://$ip`:$port" -ForegroundColor Yellow
 Write-Host ""
 

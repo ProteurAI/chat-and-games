@@ -1,6 +1,6 @@
 # Chat & Games 💬🎲
 
-Der inoffizielle Büro-Chat – läuft komplett lokal auf deinem Rechner, keine Cloud, keine Kosten.
+Chat & Games – läuft komplett lokal auf deinem Rechner, keine Cloud, keine Kosten.
 
 ## Einmalige Einrichtung
 
@@ -9,7 +9,7 @@ Der inoffizielle Büro-Chat – läuft komplett lokal auf deinem Rechner, keine 
    ```powershell
    python -m pip install -r requirements.txt
    ```
-3. Optional: `config.json` anpassen – dort steht das Team-Passwort (`team_password`, Standard: `insta2026`), der Port und die Standard-Kanäle. Unbedingt vor dem echten Einsatz ändern!
+3. Optional: `config.json` anpassen – dort steht das Zugangspasswort (`team_password`, Standard: `insta2026`), der Port und die Standard-Kanäle. Unbedingt vor dem echten Einsatz ändern!
 
 ## Starten
 
@@ -17,7 +17,7 @@ Der inoffizielle Büro-Chat – läuft komplett lokal auf deinem Rechner, keine 
 .\start.ps1
 ```
 
-Das Skript zeigt dir direkt die Adresse an, die deine Kollegen im Browser eingeben müssen, z. B.:
+Das Skript zeigt dir direkt die Adresse an, die deine Freunde im Browser eingeben müssen, z. B.:
 
 ```
 http://192.168.1.42:8000
@@ -30,11 +30,11 @@ Alternativ manuell:
 python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
-## Wie Kollegen draufkommen
+## Wie andere draufkommen
 
-1. Gleiches WLAN/Büro-Netzwerk wie dein Rechner.
+1. Gleiches WLAN/Netzwerk wie dein Rechner.
 2. Im Browser (auch am Handy) die angezeigte Adresse eingeben, z. B. `http://192.168.1.42:8000`.
-3. Team-Passwort eingeben, Namen wählen – fertig.
+3. Passwort eingeben, Namen wählen – fertig.
 
 Falls sich die IP mal ändert (z. B. nach Router-Neustart): auf deinem Rechner erneut `.\start.ps1` ausführen, die aktuelle IP wird angezeigt. Wer öfter denselben Chat nutzen will, kann im Router eine **DHCP-Reservierung** für deinen Rechner einrichten, dann bleibt die IP dauerhaft gleich.
 
@@ -51,14 +51,14 @@ New-NetFirewallRule -DisplayName "Chat & Games" -Direction Inbound -Protocol TCP
 
 ## Worauf du achten solltest, damit es zuverlässig läuft
 
-- **Rechner darf nicht in den Standby/Sleep gehen**, solange der Chat laufen soll (Energieoptionen ggf. anpassen, "Nie in den Ruhezustand" während der Bürozeit).
+- **Rechner darf nicht in den Standby/Sleep gehen**, solange der Chat laufen soll (Energieoptionen ggf. anpassen, "Nie in den Ruhezustand" während der Nutzung).
 - **Nur im gleichen Netzwerk** erreichbar – kein Zugriff von unterwegs/mobilen Daten, das ist so gewollt (kein Internet-Hosting).
-- Manche Gäste-WLANs isolieren Geräte voneinander (AP-Isolation) – dann funktioniert der Zugriff nicht. Nutzt das reguläre Büro-WLAN.
+- Manche Gäste-WLANs isolieren Geräte voneinander (AP-Isolation) – dann funktioniert der Zugriff nicht. Nutzt das reguläre WLAN.
 - Die Datenbank (`data/instachat.db`) und hochgeladene Bilder (`data/uploads/`) liegen lokal im Projektordner – bei Bedarf einfach sichern/kopieren.
 
 ## Features (v1)
 
-- Zugang nur per Team-Passwort + Namenswahl, kein offenes Sign-up
+- Zugang nur per Passwort + Namenswahl, kein offenes Sign-up
 - Mehrere Kanäle, frei anlegbar
 - Echtzeit-Textchat (WebSockets)
 - Emoji-Reaktionen auf Nachrichten
