@@ -740,6 +740,22 @@ function renderGameSidebar() {
     typeList.appendChild(li);
   }
 
+  // TimLiner is single-player and purely client-side (no backend game
+  // session at all), so it isn't part of the server-driven `gameTypes`
+  // list above - it's just one more static entry here that opens the
+  // game modal directly instead of sending game_create over the WS.
+  const timlinerLi = document.createElement("li");
+  timlinerLi.className = "game-type-item";
+  const timlinerLabel = document.createElement("span");
+  timlinerLabel.textContent = "🛷 TimLiner";
+  const timlinerBtn = document.createElement("button");
+  timlinerBtn.type = "button";
+  timlinerBtn.textContent = "Spielen";
+  timlinerBtn.addEventListener("click", openTimLinerGame);
+  timlinerLi.appendChild(timlinerLabel);
+  timlinerLi.appendChild(timlinerBtn);
+  typeList.appendChild(timlinerLi);
+
   const lobbyList = el("game-lobby-list");
   lobbyList.innerHTML = "";
   for (const s of gameSessions) {
@@ -916,9 +932,37 @@ const GAME_TITLES = {
   battleship: "🚢 Schiffe versenken",
   uno: "🎴 UNO",
   ludo: "🎲 Mensch ärgere dich nicht",
+  timliner: "🛷 TimLiner",
 };
 const REMATCH_GAME_TYPES = ["tictactoe", "buzzer", "uno"];
 const WIDE_GAME_TYPES = ["battleship"];
+
+// TimLiner is single-player: no game_create/game_join round-trip, no
+// session id, no server state at all - "Spielen" just opens the same
+// shared game-modal/game-chat shell every other game uses, and mounts the
+// TimLiner module (static/games/timliner.js) into #game-stage.
+let timLinerInstance = null;
+
+function openTimLinerGame() {
+  myGameSessionId = null;
+  myGameType = "timliner";
+  myGamePlayers = [];
+
+  el("game-overlay-msg").hidden = true;
+  el("game-rematch-btn").hidden = true;
+  el("game-modal-title").textContent = GAME_TITLES.timliner;
+  initGameChatPanel();
+
+  const dialog = document.querySelector(".game-modal");
+  dialog.classList.remove("wide", "uno-mode", "ludo-mode");
+  dialog.classList.add("timliner-mode");
+
+  const stage = el("game-stage");
+  stage.innerHTML = "";
+  timLinerInstance = window.TimLiner.mount(stage);
+
+  el("game-modal").hidden = false;
+}
 
 function closeGameModal() {
   if (myGameSessionId && ws && ws.readyState === WebSocket.OPEN) {
@@ -926,6 +970,11 @@ function closeGameModal() {
   }
   stopPongControls();
   stopLcControls();
+  if (timLinerInstance) {
+    timLinerInstance.destroy();
+    timLinerInstance = null;
+  }
+  document.querySelector(".game-modal").classList.remove("timliner-mode");
   el("game-modal").hidden = true;
   myGameSessionId = null;
   myGameType = null;
