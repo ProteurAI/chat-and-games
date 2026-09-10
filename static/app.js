@@ -734,7 +734,13 @@ function renderGameSidebar() {
     btn.type = "button";
     btn.textContent = "Starten";
     btn.disabled = iAmInSession;
-    btn.addEventListener("click", () => startGame(gt.game_type));
+    btn.addEventListener("click", () => {
+      if (gt.game_type === "estimate") {
+        window.EstimateGame.openHostOptionsModal((options) => startGame("estimate", options));
+      } else {
+        startGame(gt.game_type);
+      }
+    });
     li.appendChild(label);
     li.appendChild(btn);
     typeList.appendChild(li);
@@ -802,9 +808,11 @@ function renderGameSidebar() {
   }
 }
 
-function startGame(gameType) {
+function startGame(gameType, options) {
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "game_create", game_type: gameType }));
+    const msg = { type: "game_create", game_type: gameType };
+    if (options) msg.options = options;
+    ws.send(JSON.stringify(msg));
   }
 }
 
@@ -902,6 +910,7 @@ function openGameModal(data) {
   dialog.classList.toggle("wide", WIDE_GAME_TYPES.includes(data.game_type));
   dialog.classList.toggle("uno-mode", data.game_type === "uno");
   dialog.classList.toggle("ludo-mode", data.game_type === "ludo");
+  dialog.classList.toggle("estimate-mode", data.game_type === "estimate");
 
   const stage = el("game-stage");
   stage.innerHTML = "";
@@ -919,6 +928,24 @@ function openGameModal(data) {
     buildUnoStage(stage);
   } else if (data.game_type === "ludo") {
     buildLudoStage(stage);
+  } else if (data.game_type === "estimate") {
+    const isHost = data.players[0] && data.players[0].id === me.id;
+    estimateGameInstance = window.EstimateGame.mount(stage, {
+      me,
+      players: data.players,
+      isHost,
+      sendInput: (payload) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "game_input", session_id: myGameSessionId, payload }));
+        }
+      },
+      sendRematch: () => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "game_rematch", session_id: myGameSessionId }));
+        }
+      },
+      closeGame: () => closeGameModal(),
+    });
   }
   updateGameState(data.state);
   el("game-modal").hidden = false;
@@ -933,6 +960,7 @@ const GAME_TITLES = {
   uno: "🎴 UNO",
   ludo: "🎲 Mensch ärgere dich nicht",
   timliner: "🛷 TimLiner",
+  estimate: "🎯 Schätzmeister",
 };
 const REMATCH_GAME_TYPES = ["tictactoe", "buzzer", "uno"];
 const WIDE_GAME_TYPES = ["battleship"];
@@ -942,6 +970,7 @@ const WIDE_GAME_TYPES = ["battleship"];
 // shared game-modal/game-chat shell every other game uses, and mounts the
 // TimLiner module (static/games/timliner.js) into #game-stage.
 let timLinerInstance = null;
+let estimateGameInstance = null;
 
 function openTimLinerGame() {
   myGameSessionId = null;
@@ -974,7 +1003,11 @@ function closeGameModal() {
     timLinerInstance.destroy();
     timLinerInstance = null;
   }
-  document.querySelector(".game-modal").classList.remove("timliner-mode");
+  if (estimateGameInstance) {
+    estimateGameInstance.destroy();
+    estimateGameInstance = null;
+  }
+  document.querySelector(".game-modal").classList.remove("timliner-mode", "estimate-mode");
   el("game-modal").hidden = true;
   myGameSessionId = null;
   myGameType = null;
@@ -1002,11 +1035,19 @@ function updateGameState(state) {
   else if (myGameType === "battleship") renderBattleship(state);
   else if (myGameType === "uno") renderUno(state);
   else if (myGameType === "ludo") renderLudo(state);
+  else if (myGameType === "estimate") { if (estimateGameInstance) estimateGameInstance.setState(state); }
 }
 
 function showGameOver(data) {
   stopPongControls();
   stopLcControls();
+  if (myGameType === "estimate") {
+    // Schaetzmeister owns its whole end screen (podium, stats, rematch)
+    // inside the game-stage itself rather than the shared overlay - see
+    // EstimateGame.showGameOver/renderEndscreen.
+    if (estimateGameInstance) estimateGameInstance.showGameOver(data);
+    return;
+  }
   let text;
   if (data.reason === "draw") {
     text = "🤝 Unentschieden!";

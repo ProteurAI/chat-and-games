@@ -425,7 +425,7 @@ async def websocket_endpoint(ws: WebSocket, token: Optional[str] = None):
             elif msg_type == "game_create":
                 game_type = raw.get("game_type")
                 if isinstance(game_type, str):
-                    await game_manager.create_session(user, ws, game_type)
+                    await game_manager.create_session(user, ws, game_type, raw.get("options"))
 
             elif msg_type == "game_join":
                 session_id = raw.get("session_id")

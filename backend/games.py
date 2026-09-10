@@ -7,7 +7,9 @@ Every game is a small "engine" class exposing a fixed interface:
                                                            True = session waits in the lobby until the host
                                                            explicitly starts it, once min_players have joined)
     tick_interval                                       (seconds, or None for turn-based games)
-    init_state(players) -> state
+    init_state(players, options=None) -> state          (options: the dict a host passed to game_create, if any -
+                                                           e.g. Schaetzmeister's round count/difficulty/categories;
+                                                           engines that don't need setup just ignore the default)
     apply_input(state, user_id, payload) -> bool changed   (mutates state)
     tick(state) -> None                                     (mutates state; only called if tick_interval is set)
     check_finished(state) -> Optional[{"winner_user_id": int|None, "reason": str, "details": optional dict}]
@@ -32,6 +34,8 @@ import asyncio
 import random
 import time
 import uuid
+
+from .estimate_game import EstimateEngine
 
 
 # ---------- Pong ----------
@@ -66,7 +70,7 @@ class PongEngine:
     tick_interval = 1 / 30
 
     @staticmethod
-    def init_state(players):
+    def init_state(players, options=None):
         uids = [str(p["user_id"]) for p in players]
         state = {
             "width": PONG_WIDTH,
@@ -166,7 +170,7 @@ class TicTacToeEngine:
     tick_interval = None
 
     @staticmethod
-    def init_state(players):
+    def init_state(players, options=None):
         uids = [str(p["user_id"]) for p in players]
         return {
             "board": [None] * 9,
@@ -242,7 +246,7 @@ class LightCyclesEngine:
     tick_interval = 1 / 8
 
     @staticmethod
-    def init_state(players):
+    def init_state(players, options=None):
         state = {"grid_size": LC_GRID_SIZE, "players": {}, "trail": []}
         for i, p in enumerate(players):
             uid = str(p["user_id"])
@@ -322,7 +326,7 @@ class BuzzerEngine:
     tick_interval = 1 / 20
 
     @staticmethod
-    def init_state(players):
+    def init_state(players, options=None):
         uids = [str(p["user_id"]) for p in players]
         return {
             "phase": "countdown",  # countdown -> signal
@@ -451,7 +455,7 @@ class BattleshipEngine:
     tick_interval = None
 
     @staticmethod
-    def init_state(players):
+    def init_state(players, options=None):
         uids = [str(p["user_id"]) for p in players]
         return {
             "players_order": uids,
@@ -590,7 +594,7 @@ class UnoEngine:
     tick_interval = None
 
     @staticmethod
-    def init_state(players):
+    def init_state(players, options=None):
         uids = [str(p["user_id"]) for p in players]
         deck = _build_uno_deck()
         random.shuffle(deck)
@@ -832,7 +836,7 @@ class LudoEngine:
     tick_interval = None
 
     @staticmethod
-    def init_state(players):
+    def init_state(players, options=None):
         player_colors = {}
         for i, p in enumerate(players):
             player_colors[str(p["user_id"])] = LUDO_COLORS[i]
@@ -1026,13 +1030,14 @@ GAME_ENGINES = {
     "battleship": BattleshipEngine,
     "uno": UnoEngine,
     "ludo": LudoEngine,
+    "estimate": EstimateEngine,
 }
 
 
 # ---------- session / lobby management ----------
 
 class GameSession:
-    def __init__(self, session_id, engine, host):
+    def __init__(self, session_id, engine, host, options=None):
         self.id = session_id
         self.engine = engine
         self.game_type = engine.game_type
@@ -1040,6 +1045,12 @@ class GameSession:
         self.players = [host]  # [{"user_id", "name", "ws"}]
         self.state = None
         self.task = None
+        # Host-chosen setup (e.g. Schaetzmeister round count/difficulty/
+        # categories) picked before create_session is even called; engines
+        # that don't take any just ignore the options=None default on
+        # init_state. Never mutated after creation - there's no "change
+        # options while waiting" flow, only "create with options".
+        self.options = options or {}
 
     def player_ids(self):
         return {p["user_id"] for p in self.players}
@@ -1116,13 +1127,13 @@ class GameManager:
                 return s
         return None
 
-    async def create_session(self, user, ws, game_type):
+    async def create_session(self, user, ws, game_type, options=None):
         engine = GAME_ENGINES.get(game_type)
         if not engine or self._active_session_for_ws(ws):
             return
         session_id = uuid.uuid4().hex[:10]
         host = {"user_id": user["id"], "name": user["name"], "ws": ws}
-        session = GameSession(session_id, engine, host)
+        session = GameSession(session_id, engine, host, options=options if isinstance(options, dict) else None)
         self.sessions[session_id] = session
         await self.cm.send_to(ws, {"type": "game_joined", "session_id": session_id, "game_type": game_type})
         await self.broadcast_lobby()
@@ -1154,7 +1165,7 @@ class GameManager:
 
     async def _start_session(self, session):
         session.status = "playing"
-        session.state = session.engine.init_state(session.players)
+        session.state = session.engine.init_state(session.players, session.options)
         await self._send_state(session, "game_started", {
             "game_type": session.game_type,
             "players": [{"id": p["user_id"], "name": p["name"]} for p in session.players],
