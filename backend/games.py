@@ -36,6 +36,8 @@ import time
 import uuid
 
 from .estimate_game import EstimateEngine
+from .tank_battle import TankBattleEngine
+from .dodge_arena import DodgeArenaEngine
 
 
 # ---------- Pong ----------
@@ -1031,6 +1033,8 @@ GAME_ENGINES = {
     "uno": UnoEngine,
     "ludo": LudoEngine,
     "estimate": EstimateEngine,
+    "tankbattle": TankBattleEngine,
+    "dodgearena": DodgeArenaEngine,
 }
 
 

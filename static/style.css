@@ -1304,3 +1304,75 @@ button, input, .channel-list li, .game-type-item, .icon-btn {
   .est-podium { gap: var(--space-2); }
   .est-podium-entry { min-width: 74px; padding: var(--space-2); }
 }
+
+/* ---------- TANK BATTLE / DODGE ARENA (shared .arc-* classes) ---------- */
+/* Both realtime arcade games share this layout: a HUD chip row, a
+   canvas (fixed aspect ratio matching the server's world size, scaled
+   responsively via CSS rather than resized per-frame in JS), a countdown
+   overlay, and - shown only on coarse-pointer (touch) devices - virtual
+   joystick(s)/fire button. Scoped entirely to .arc-* so nothing here
+   touches any other game. */
+.arc-root { display: flex; flex-direction: column; gap: var(--space-3); width: 100%; align-items: center; }
+
+.arc-hud { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: center; width: 100%; }
+.arc-hud-chip {
+  display: flex; align-items: center; gap: var(--space-2); background: var(--bg-surface-alt); border: 1px solid var(--border);
+  border-radius: var(--radius-full); padding: var(--space-1) var(--space-3); font-size: var(--text-sm); font-weight: var(--font-semibold);
+}
+.arc-hud-chip--dead { opacity: 0.45; text-decoration: line-through; }
+.arc-hud-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(0,0,0,0.2); }
+.arc-hud-lives { font-size: 11px; letter-spacing: -1px; }
+.arc-hud-status { font-size: var(--text-sm); }
+
+.arc-canvas-wrap { position: relative; width: 100%; max-width: 920px; margin: 0 auto; touch-action: none; }
+.arc-canvas { width: 100%; height: auto; display: block; border-radius: var(--radius-md); background: #20242f; box-shadow: 0 0 0 1px var(--border); }
+.arc-tank .arc-canvas { aspect-ratio: 960 / 640; }
+.arc-dodge .arc-canvas { aspect-ratio: 1 / 1; max-width: 640px; margin-left: auto; margin-right: auto; }
+
+.arc-countdown {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 96px; font-weight: var(--font-bold); color: white; text-shadow: 0 4px 24px rgba(0,0,0,0.5);
+  background: rgba(0,0,0,0.25); border-radius: var(--radius-md); pointer-events: none;
+}
+.arc-hint { color: var(--text-secondary); font-size: var(--text-xs); text-align: center; margin: 0; }
+
+.arc-dodge-status { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-sm); font-weight: var(--font-semibold); }
+.arc-dodge-outmsg { color: var(--danger); }
+.arc-final-banner {
+  position: absolute; top: var(--space-3); left: 50%; transform: translateX(-50%);
+  background: var(--accent); color: white; padding: var(--space-2) var(--space-4); border-radius: var(--radius-full);
+  font-weight: var(--font-bold); pointer-events: none; animation: est-pop 0.3s ease;
+}
+
+/* Touch controls: virtual joystick(s) + (Tank Battle only) a fire button,
+   overlaid on the bottom of the canvas. Hidden entirely on mouse/trackpad
+   devices - shown only where touch is the primary pointer, so desktop
+   players just see the canvas + the WASD/mouse hint text. */
+.arc-touch-controls { display: none; }
+@media (pointer: coarse) {
+  .arc-touch-controls { display: block; position: absolute; inset: 0; pointer-events: none; }
+  .arc-hint { display: none; }
+}
+.arc-stick-zone {
+  position: absolute; bottom: var(--space-4); width: 96px; height: 96px; border-radius: 50%;
+  background: rgba(255,255,255,0.12); border: 2px solid rgba(255,255,255,0.35); pointer-events: auto;
+}
+.arc-stick-zone--left { left: var(--space-4); }
+.arc-stick-zone--right { right: var(--space-4); }
+.arc-touch-controls--dodge .arc-stick-zone--left { left: var(--space-4); }
+.arc-stick-knob {
+  position: absolute; top: 50%; left: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px;
+  border-radius: 50%; background: rgba(255,255,255,0.85); transition: transform 0.05s linear; pointer-events: none;
+}
+.arc-fire-btn {
+  position: absolute; right: var(--space-4); bottom: 120px; width: 76px; height: 76px; border-radius: 50%;
+  background: var(--danger); color: white; font-weight: var(--font-bold); font-size: var(--text-xs);
+  border: 3px solid rgba(255,255,255,0.5); pointer-events: auto; user-select: none;
+}
+
+@media (max-width: 767px) {
+  .arc-countdown { font-size: 64px; }
+  .arc-hud-chip { font-size: var(--text-xs); padding: var(--space-1) var(--space-2); }
+  .arc-stick-zone { width: 84px; height: 84px; }
+  .arc-fire-btn { width: 64px; height: 64px; bottom: 108px; }
+}

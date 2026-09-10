@@ -808,6 +808,18 @@ function renderGameSidebar() {
   }
 }
 
+// Shared by every realtime game module (TankBattle, DodgeArena, ...) that
+// just forwards raw input payloads through the existing game_input
+// channel - reads myGameSessionId fresh on each call rather than
+// capturing it, so it stays correct across a rematch's fresh session id.
+function gameInputSender() {
+  return (payload) => {
+    if (ws && ws.readyState === WebSocket.OPEN && myGameSessionId) {
+      ws.send(JSON.stringify({ type: "game_input", session_id: myGameSessionId, payload }));
+    }
+  };
+}
+
 function startGame(gameType, options) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     const msg = { type: "game_create", game_type: gameType };
@@ -946,6 +958,10 @@ function openGameModal(data) {
       },
       closeGame: () => closeGameModal(),
     });
+  } else if (data.game_type === "tankbattle") {
+    tankBattleInstance = window.TankBattle.mount(stage, { me, players: data.players, sendInput: gameInputSender() });
+  } else if (data.game_type === "dodgearena") {
+    dodgeArenaInstance = window.DodgeArena.mount(stage, { me, players: data.players, sendInput: gameInputSender() });
   }
   updateGameState(data.state);
   el("game-modal").hidden = false;
@@ -961,9 +977,11 @@ const GAME_TITLES = {
   ludo: "🎲 Mensch ärgere dich nicht",
   timliner: "🛷 TimLiner",
   estimate: "🎯 Schätzmeister",
+  tankbattle: "🛡️ Tank Battle",
+  dodgearena: "💥 Dodge Arena",
 };
-const REMATCH_GAME_TYPES = ["tictactoe", "buzzer", "uno"];
-const WIDE_GAME_TYPES = ["battleship"];
+const REMATCH_GAME_TYPES = ["tictactoe", "buzzer", "uno", "tankbattle", "dodgearena"];
+const WIDE_GAME_TYPES = ["battleship", "tankbattle", "dodgearena"];
 
 // TimLiner is single-player: no game_create/game_join round-trip, no
 // session id, no server state at all - "Spielen" just opens the same
@@ -971,6 +989,8 @@ const WIDE_GAME_TYPES = ["battleship"];
 // TimLiner module (static/games/timliner.js) into #game-stage.
 let timLinerInstance = null;
 let estimateGameInstance = null;
+let tankBattleInstance = null;
+let dodgeArenaInstance = null;
 
 function openTimLinerGame() {
   myGameSessionId = null;
@@ -1007,6 +1027,14 @@ function closeGameModal() {
     estimateGameInstance.destroy();
     estimateGameInstance = null;
   }
+  if (tankBattleInstance) {
+    tankBattleInstance.destroy();
+    tankBattleInstance = null;
+  }
+  if (dodgeArenaInstance) {
+    dodgeArenaInstance.destroy();
+    dodgeArenaInstance = null;
+  }
   document.querySelector(".game-modal").classList.remove("timliner-mode", "estimate-mode");
   el("game-modal").hidden = true;
   myGameSessionId = null;
@@ -1036,6 +1064,8 @@ function updateGameState(state) {
   else if (myGameType === "uno") renderUno(state);
   else if (myGameType === "ludo") renderLudo(state);
   else if (myGameType === "estimate") { if (estimateGameInstance) estimateGameInstance.setState(state); }
+  else if (myGameType === "tankbattle") { if (tankBattleInstance) tankBattleInstance.setState(state); }
+  else if (myGameType === "dodgearena") { if (dodgeArenaInstance) dodgeArenaInstance.setState(state); }
 }
 
 function showGameOver(data) {
@@ -1080,6 +1110,18 @@ function showGameOver(data) {
       const name = player ? player.name : "?";
       const label = entry.disqualified ? "Fehlstart ⛔" : entry.reaction_ms !== null ? `${entry.reaction_ms} ms` : "–";
       row.innerHTML = `<span>${i + 1}. ${escapeHtml(name)}</span><span>${label}</span>`;
+      rankingBox.appendChild(row);
+    });
+  } else if (data.reason === "draw" && data.details && data.details.jointWinnerUserIds && data.details.jointWinnerUserIds.length > 1) {
+    // Dodge Arena: multiple players eliminated in the same tick - shown as
+    // joint winners rather than an arbitrary tie-break, per the "mehrere
+    // Sieger sauber behandeln" requirement.
+    rankingBox.hidden = false;
+    data.details.jointWinnerUserIds.forEach((uid) => {
+      const row = document.createElement("div");
+      row.className = "ranking-row rank-1";
+      const player = myGamePlayers.find((p) => p.id === uid);
+      row.innerHTML = `<span>🏆 ${escapeHtml(player ? player.name : "?")}</span><span></span>`;
       rankingBox.appendChild(row);
     });
   }
