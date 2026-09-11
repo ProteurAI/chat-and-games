@@ -84,20 +84,22 @@
     stageEl.innerHTML = `
       <div class="arc-root arc-tank">
         <ul class="arc-hud" data-role="hud"></ul>
-        <div class="arc-canvas-wrap">
-          <canvas class="arc-canvas" data-role="canvas"></canvas>
-          <div class="arc-countdown" data-role="countdown" hidden></div>
-          <div class="arc-touch-controls">
-            <div class="arc-stick-zone arc-stick-zone--left" data-role="movezone">
-              <div class="arc-stick-knob"></div>
+        <div class="arc-canvas-outer">
+          <div class="arc-canvas-wrap" data-role="canvaswrap">
+            <canvas class="arc-canvas" data-role="canvas"></canvas>
+            <div class="arc-countdown" data-role="countdown" hidden></div>
+            <div class="arc-touch-controls">
+              <div class="arc-stick-zone arc-stick-zone--left" data-role="movezone">
+                <div class="arc-stick-knob"></div>
+              </div>
+              <div class="arc-stick-zone arc-stick-zone--right" data-role="aimzone">
+                <div class="arc-stick-knob"></div>
+              </div>
+              <button type="button" class="arc-fire-btn" data-role="fire">FEUER</button>
             </div>
-            <div class="arc-stick-zone arc-stick-zone--right" data-role="aimzone">
-              <div class="arc-stick-knob"></div>
-            </div>
-            <button type="button" class="arc-fire-btn" data-role="fire">FEUER</button>
           </div>
-          <p class="arc-hint">WASD bewegen &middot; Maus zielen &middot; Klick schießen</p>
         </div>
+        <p class="arc-hint">WASD bewegen &middot; Maus zielen &middot; Klick schießen</p>
       </div>
     `;
 
@@ -105,6 +107,7 @@
     const ctx = canvas.getContext("2d");
     const hud = stageEl.querySelector('[data-role="hud"]');
     const countdownEl = stageEl.querySelector('[data-role="countdown"]');
+    const canvasWrap = stageEl.querySelector('[data-role="canvaswrap"]');
     const moveZone = stageEl.querySelector('[data-role="movezone"]');
     const aimZone = stageEl.querySelector('[data-role="aimzone"]');
     const fireBtn = stageEl.querySelector('[data-role="fire"]');
@@ -195,7 +198,7 @@
     // ---------------- HUD ----------------
     function renderHud(state) {
       hud.innerHTML = state.players.map((p) => `
-        <li class="arc-hud-chip ${p.alive ? "" : "arc-hud-chip--dead"}">
+        <li class="arc-hud-chip ${p.alive ? "" : "arc-hud-chip--dead"}" style="--chip-color:${p.color}">
           <span class="arc-hud-dot" style="background:${p.color}"></span>
           <span class="arc-hud-name">${escapeHtml(p.name)}${p.userId === myUid ? " (du)" : ""}</span>
           <span class="arc-hud-lives">${p.alive ? "❤️".repeat(Math.max(0, p.lives)) : "💀"}</span>
@@ -248,15 +251,51 @@
       ctx.restore();
     }
 
+    let bgGradient = null, bgGradientKey = "";
+    function getBgGradient(w, h) {
+      const key = `${w}x${h}`;
+      if (bgGradientKey !== key) {
+        bgGradientKey = key;
+        bgGradient = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.75);
+        bgGradient.addColorStop(0, "#3a4364");
+        bgGradient.addColorStop(1, "#262c44");
+      }
+      return bgGradient;
+    }
+
+    function drawFloorGrid(w, h) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,255,255,0.05)";
+      ctx.lineWidth = 1;
+      const cell = 48;
+      ctx.beginPath();
+      for (let x = cell; x < w; x += cell) { ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, h); }
+      for (let y = cell; y < h; y += cell) { ctx.moveTo(0, y + 0.5); ctx.lineTo(w, y + 0.5); }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawWall(x1, y1, x2, y2) {
+      const w = x2 - x1, h = y2 - y1;
+      ctx.fillStyle = "#5b6478";
+      ctx.fillRect(x1, y1, w, h);
+      ctx.fillStyle = "rgba(255,255,255,0.14)";
+      ctx.fillRect(x1, y1, w, 2);
+      ctx.fillRect(x1, y1, 2, h);
+      ctx.fillStyle = "rgba(0,0,0,0.28)";
+      ctx.fillRect(x1, y2 - 2, w, 2);
+      ctx.fillRect(x2 - 2, y1, 2, h);
+    }
+
     function render(state) {
       const w = canvas.width, h = canvas.height;
       ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = "#20242f";
+      ctx.fillStyle = getBgGradient(w, h);
       ctx.fillRect(0, 0, w, h);
+      drawFloorGrid(w, h);
 
-      ctx.fillStyle = "#454b5c";
       for (const [x1, y1, x2, y2] of state.walls) {
-        ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+        drawWall(x1, y1, x2, y2);
       }
 
       for (const pr of state.projectiles) {
@@ -278,11 +317,40 @@
       }
     }
 
+    // Canvas DRAWING resolution (canvas.width/height, world units, used by
+    // ctx.* above) is completely separate from its CSS DISPLAY size - the
+    // latter is fit to whatever room .arc-canvas-outer actually has, via
+    // ResizeObserver so it reacts correctly to window resizes, fullscreen
+    // toggling, and the modal's own (now much larger) sizing.
+    //
+    // .arc-canvas-wrap is ALSO resized to exactly match (not left at
+    // flex:1's full height) - it's what the countdown overlay and touch
+    // controls are positioned against (inset:0 / absolute), and on a
+    // narrow/portrait screen the outer flex area is usually much taller
+    // than a 960x640-aspect canvas ends up being once width-constrained;
+    // without this, the joysticks would end up anchored far below the
+    // visibly smaller, vertically-centered canvas instead of on it.
+    function fitCanvasToContainer() {
+      const outer = canvasWrap.parentElement;
+      const availW = outer.clientWidth, availH = outer.clientHeight;
+      if (!availW || !availH) return;
+      const worldAspect = worldW / worldH;
+      let cssW = availW, cssH = availW / worldAspect;
+      if (cssH > availH) { cssH = availH; cssW = availH * worldAspect; }
+      canvas.style.width = `${Math.floor(cssW)}px`;
+      canvas.style.height = `${Math.floor(cssH)}px`;
+      canvasWrap.style.width = `${Math.floor(cssW)}px`;
+      canvasWrap.style.height = `${Math.floor(cssH)}px`;
+    }
+    const resizeObserver = new ResizeObserver(() => fitCanvasToContainer());
+    resizeObserver.observe(canvasWrap.parentElement);
+
     function setState(state) {
       lastState = state;
       worldW = state.world.width; worldH = state.world.height;
       if (canvas.width !== worldW || canvas.height !== worldH) {
         canvas.width = worldW; canvas.height = worldH;
+        fitCanvasToContainer();
       }
       renderHud(state);
       render(state);
@@ -293,6 +361,7 @@
       window.removeEventListener("keyup", onKeyUp);
       canvas.removeEventListener("mousemove", onMouseMove);
       canvas.removeEventListener("mousedown", onMouseDown);
+      resizeObserver.disconnect();
       stopMoveJoystick();
       stopAimJoystick();
       stopFireHold();

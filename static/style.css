@@ -1306,42 +1306,79 @@ button, input, .channel-list li, .game-type-item, .icon-btn {
 }
 
 /* ---------- TANK BATTLE / DODGE ARENA (shared .arc-* classes) ---------- */
-/* Both realtime arcade games share this layout: a HUD chip row, a
-   canvas (fixed aspect ratio matching the server's world size, scaled
-   responsively via CSS rather than resized per-frame in JS), a countdown
-   overlay, and - shown only on coarse-pointer (touch) devices - virtual
-   joystick(s)/fire button. Scoped entirely to .arc-* so nothing here
-   touches any other game. */
-.arc-root { display: flex; flex-direction: column; gap: var(--space-3); width: 100%; align-items: center; }
-
-.arc-hud { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: center; width: 100%; }
-.arc-hud-chip {
-  display: flex; align-items: center; gap: var(--space-2); background: var(--bg-surface-alt); border: 1px solid var(--border);
-  border-radius: var(--radius-full); padding: var(--space-1) var(--space-3); font-size: var(--text-sm); font-weight: var(--font-semibold);
+/* Both realtime arcade games share this layout. Unlike a typical game in
+   this app, these are canvas-dominant - the .arcade-mode modal override
+   below claims a big, EXPLICIT height (not just a max-height content
+   would need to organically fill, which is what left dead space beneath
+   a content-sized canvas before) and cascades flex:1/min-height:0 down
+   through game-main/game-content/game-stage exactly like TimLiner's own
+   full-bleed mode already does - then .arc-canvas-wrap claims the rest of
+   that space and the canvas's CSS (not internal/drawing) size is fit into
+   it in JS (see fitCanvasToContainer() in each module), since a pure-CSS
+   aspect-ratio can only reliably bind to ONE of width/height at a time
+   and we need "fill whichever of width/height is tighter, preserve
+   ratio" - JS with a ResizeObserver does that exactly and reacts
+   correctly to fullscreen/resize too. Canvas *drawing* resolution
+   (canvas.width/height, i.e. world units) never changes because of any
+   of this - only how large that fixed bitmap is displayed. */
+.game-modal.arcade-mode {
+  max-width: 94vw; width: 94vw; height: 90vh; max-height: 90vh;
+  display: flex; flex-direction: column; overflow: hidden;
 }
-.arc-hud-chip--dead { opacity: 0.45; text-decoration: line-through; }
+.game-modal.arcade-mode .game-main { margin-top: var(--space-3); flex: 1; min-height: 0; }
+.game-modal.arcade-mode .game-content { padding: 0; }
+.game-modal.arcade-mode .game-stage { flex: 1; min-height: 0; width: 100%; margin-top: 0; }
+
+.arc-root { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; height: 100%; min-height: 0; align-items: center; }
+
+.arc-hud {
+  list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-2);
+  justify-content: center; width: 100%; flex: 0 0 auto;
+}
+.arc-hud-chip {
+  display: flex; align-items: center; gap: var(--space-2); background: var(--bg-surface-alt);
+  border: 1px solid var(--border); border-left: 3px solid var(--chip-color, var(--accent));
+  border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); font-size: var(--text-sm);
+  font-weight: var(--font-semibold); box-shadow: var(--shadow-sm); transition: opacity var(--transition-fast);
+}
+.arc-hud-chip--dead { opacity: 0.4; }
+.arc-hud-chip--dead .arc-hud-name { text-decoration: line-through; }
 .arc-hud-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(0,0,0,0.2); }
-.arc-hud-lives { font-size: 11px; letter-spacing: -1px; }
+.arc-hud-lives { font-size: 12px; letter-spacing: -1px; }
 .arc-hud-status { font-size: var(--text-sm); }
 
-.arc-canvas-wrap { position: relative; width: 100%; max-width: 920px; margin: 0 auto; touch-action: none; }
-.arc-canvas { width: 100%; height: auto; display: block; border-radius: var(--radius-md); background: #20242f; box-shadow: 0 0 0 1px var(--border); }
-.arc-tank .arc-canvas { aspect-ratio: 960 / 640; }
-.arc-dodge .arc-canvas { aspect-ratio: 1 / 1; max-width: 640px; margin-left: auto; margin-right: auto; }
+/* .arc-canvas-outer claims the remaining flex space and centers its
+   content; .arc-canvas-wrap is then sized in JS (fitCanvasToContainer())
+   to EXACTLY match the fitted canvas - not left at the outer's full
+   size - so the countdown overlay and touch controls (positioned
+   absolute/inset:0 against the wrap) always sit right on top of the
+   visible canvas instead of spread across extra empty space around it
+   (this matters most on a narrow/portrait screen, where a landscape-
+   aspect world can end up much narrower than the available height). */
+.arc-canvas-outer {
+  width: 100%; flex: 1; min-height: 0; display: flex;
+  align-items: center; justify-content: center; touch-action: none;
+}
+.arc-canvas-wrap { position: relative; }
+.arc-canvas {
+  display: block; border-radius: var(--radius-lg); box-shadow: 0 0 0 1px var(--border), var(--shadow-md);
+}
 
 .arc-countdown {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   font-size: 96px; font-weight: var(--font-bold); color: white; text-shadow: 0 4px 24px rgba(0,0,0,0.5);
-  background: rgba(0,0,0,0.25); border-radius: var(--radius-md); pointer-events: none;
+  background: rgba(0,0,0,0.25); border-radius: var(--radius-lg); pointer-events: none;
 }
-.arc-hint { color: var(--text-secondary); font-size: var(--text-xs); text-align: center; margin: 0; }
+.arc-hint { color: var(--text-secondary); font-size: var(--text-xs); text-align: center; margin: 0; flex: 0 0 auto; }
 
-.arc-dodge-status { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-sm); font-weight: var(--font-semibold); }
+.arc-dodge-status {
+  display: flex; align-items: center; justify-content: center; gap: var(--space-3);
+  font-size: var(--text-sm); font-weight: var(--font-semibold); flex: 0 0 auto; flex-wrap: wrap;
+}
 .arc-dodge-outmsg { color: var(--danger); }
 .arc-final-banner {
-  position: absolute; top: var(--space-3); left: 50%; transform: translateX(-50%);
-  background: var(--accent); color: white; padding: var(--space-2) var(--space-4); border-radius: var(--radius-full);
-  font-weight: var(--font-bold); pointer-events: none; animation: est-pop 0.3s ease;
+  background: var(--accent); color: white; padding: var(--space-1) var(--space-4); border-radius: var(--radius-full);
+  font-weight: var(--font-bold); font-size: var(--text-sm); animation: est-pop 0.3s ease;
 }
 
 /* Touch controls: virtual joystick(s) + (Tank Battle only) a fire button,
@@ -1371,6 +1408,9 @@ button, input, .channel-list li, .game-type-item, .icon-btn {
 }
 
 @media (max-width: 767px) {
+  .game-modal.arcade-mode {
+    width: 100vw; max-width: 100vw; height: 100vh; height: 100dvh; max-height: 100dvh; border-radius: 0;
+  }
   .arc-countdown { font-size: 64px; }
   .arc-hud-chip { font-size: var(--text-xs); padding: var(--space-1) var(--space-2); }
   .arc-stick-zone { width: 84px; height: 84px; }

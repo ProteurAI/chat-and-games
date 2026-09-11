@@ -923,6 +923,7 @@ function openGameModal(data) {
   dialog.classList.toggle("uno-mode", data.game_type === "uno");
   dialog.classList.toggle("ludo-mode", data.game_type === "ludo");
   dialog.classList.toggle("estimate-mode", data.game_type === "estimate");
+  dialog.classList.toggle("arcade-mode", data.game_type === "tankbattle" || data.game_type === "dodgearena");
 
   const stage = el("game-stage");
   stage.innerHTML = "";
@@ -981,7 +982,9 @@ const GAME_TITLES = {
   dodgearena: "💥 Dodge Arena",
 };
 const REMATCH_GAME_TYPES = ["tictactoe", "buzzer", "uno", "tankbattle", "dodgearena"];
-const WIDE_GAME_TYPES = ["battleship", "tankbattle", "dodgearena"];
+// tankbattle/dodgearena use their own much larger .arcade-mode sizing
+// (see openGameModal) instead of .wide, so they're deliberately not listed here.
+const WIDE_GAME_TYPES = ["battleship"];
 
 // TimLiner is single-player: no game_create/game_join round-trip, no
 // session id, no server state at all - "Spielen" just opens the same
@@ -1035,7 +1038,7 @@ function closeGameModal() {
     dodgeArenaInstance.destroy();
     dodgeArenaInstance = null;
   }
-  document.querySelector(".game-modal").classList.remove("timliner-mode", "estimate-mode");
+  document.querySelector(".game-modal").classList.remove("timliner-mode", "estimate-mode", "arcade-mode");
   el("game-modal").hidden = true;
   myGameSessionId = null;
   myGameType = null;
