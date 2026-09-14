@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db
 from . import games as games_module
+from . import who_am_i as who_am_i_module
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT_DIR / "static"
@@ -255,6 +256,18 @@ async def get_messages(channel_id: int, limit: int = 50, before_id: Optional[int
 @app.get("/api/games")
 async def list_games(user: dict = Depends(get_current_user)):
     return {"game_types": game_manager.game_types(), "sessions": game_manager.public_lobby()}
+
+
+# ---------- REST: Wer bin ich? identity bank ----------
+# Fully public data (the LIST of possible identities, never the secret
+# per-match player -> identity assignment) - used client-side for the
+# guess-autocomplete search. See who_am_i.py's module docstring.
+@app.get("/api/whoami/identities")
+async def whoami_identities(user: dict = Depends(get_current_user)):
+    return {
+        "identities": who_am_i_module.public_identity_bank(),
+        "categories": who_am_i_module.VALID_CATEGORIES,
+    }
 
 
 # ---------- REST: image upload ----------

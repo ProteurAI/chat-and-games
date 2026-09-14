@@ -738,6 +738,8 @@ function renderGameSidebar() {
     btn.addEventListener("click", () => {
       if (gt.game_type === "estimate") {
         window.EstimateGame.openHostOptionsModal((options) => startGame("estimate", options));
+      } else if (gt.game_type === "whoami") {
+        window.WhoAmI.openHostOptionsModal((options) => startGame("whoami", options));
       } else {
         startGame(gt.game_type);
       }
@@ -914,6 +916,7 @@ function openGameModal(data) {
   dialog.classList.toggle("ludo-mode", data.game_type === "ludo");
   dialog.classList.toggle("estimate-mode", data.game_type === "estimate");
   dialog.classList.toggle("arcade-mode", data.game_type === "tankbattle" || data.game_type === "dodgearena");
+  dialog.classList.toggle("whoami-mode", data.game_type === "whoami");
 
   const stage = el("game-stage");
   stage.innerHTML = "";
@@ -953,6 +956,24 @@ function openGameModal(data) {
     tankBattleInstance = window.TankBattle.mount(stage, { me, players: data.players, sendInput: gameInputSender() });
   } else if (data.game_type === "dodgearena") {
     dodgeArenaInstance = window.DodgeArena.mount(stage, { me, players: data.players, sendInput: gameInputSender() });
+  } else if (data.game_type === "whoami") {
+    const isHost = data.players[0] && data.players[0].id === me.id;
+    whoAmIInstance = window.WhoAmI.mount(stage, {
+      me,
+      players: data.players,
+      isHost,
+      sendInput: (payload) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "game_input", session_id: myGameSessionId, payload }));
+        }
+      },
+      sendRematch: () => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "game_rematch", session_id: myGameSessionId }));
+        }
+      },
+      closeGame: () => closeGameModal(),
+    });
   }
   updateGameState(data.state);
   el("game-modal").hidden = false;
@@ -970,6 +991,7 @@ const GAME_TITLES = {
   estimate: "🎯 Schätzmeister",
   tankbattle: "🛡️ Tank Battle",
   dodgearena: "💥 Dodge Arena",
+  whoami: "🎭 Wer bin ich?",
 };
 const REMATCH_GAME_TYPES = ["tictactoe", "buzzer", "uno", "tankbattle", "dodgearena"];
 // tankbattle/dodgearena use their own much larger .arcade-mode sizing
@@ -984,6 +1006,7 @@ let timLinerInstance = null;
 let estimateGameInstance = null;
 let tankBattleInstance = null;
 let dodgeArenaInstance = null;
+let whoAmIInstance = null;
 
 function openTimLinerGame() {
   myGameSessionId = null;
@@ -1028,7 +1051,11 @@ function closeGameModal() {
     dodgeArenaInstance.destroy();
     dodgeArenaInstance = null;
   }
-  document.querySelector(".game-modal").classList.remove("timliner-mode", "estimate-mode", "arcade-mode");
+  if (whoAmIInstance) {
+    whoAmIInstance.destroy();
+    whoAmIInstance = null;
+  }
+  document.querySelector(".game-modal").classList.remove("timliner-mode", "estimate-mode", "arcade-mode", "whoami-mode");
   el("game-modal").hidden = true;
   myGameSessionId = null;
   myGameType = null;
@@ -1057,6 +1084,7 @@ function updateGameState(state) {
   else if (myGameType === "estimate") { if (estimateGameInstance) estimateGameInstance.setState(state); }
   else if (myGameType === "tankbattle") { if (tankBattleInstance) tankBattleInstance.setState(state); }
   else if (myGameType === "dodgearena") { if (dodgeArenaInstance) dodgeArenaInstance.setState(state); }
+  else if (myGameType === "whoami") { if (whoAmIInstance) whoAmIInstance.setState(state); }
 }
 
 function showGameOver(data) {
@@ -1067,6 +1095,12 @@ function showGameOver(data) {
     // inside the game-stage itself rather than the shared overlay - see
     // EstimateGame.showGameOver/renderEndscreen.
     if (estimateGameInstance) estimateGameInstance.showGameOver(data);
+    return;
+  }
+  if (myGameType === "whoami") {
+    // Wer bin ich owns its whole end screen (podium, reveal-all, rematch)
+    // inside the game-stage itself, same pattern as Schaetzmeister above.
+    if (whoAmIInstance) whoAmIInstance.showGameOver(data);
     return;
   }
   let text;

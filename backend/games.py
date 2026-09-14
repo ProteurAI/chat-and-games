@@ -38,6 +38,7 @@ import uuid
 from .estimate_game import EstimateEngine
 from .tank_battle import TankBattleEngine
 from .dodge_arena import DodgeArenaEngine
+from .who_am_i import WhoAmIEngine
 
 
 # ---------- Pong ----------
@@ -1035,6 +1036,7 @@ GAME_ENGINES = {
     "estimate": EstimateEngine,
     "tankbattle": TankBattleEngine,
     "dodgearena": DodgeArenaEngine,
+    "whoami": WhoAmIEngine,
 }
 
 

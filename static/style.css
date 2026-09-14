@@ -1506,3 +1506,183 @@ body.scroll-locked { overflow: hidden; }
   .arc-fire-btn { width: 64px; height: 64px; font-size: 26px; bottom: max(108px, calc(108px + env(safe-area-inset-bottom) - var(--space-4))); }
   .arc-mobile-tip { font-size: var(--text-xs); max-width: 88vw; white-space: normal; text-align: center; }
 }
+
+/* ============================================================================
+   WER BIN ICH? - scoped entirely to .whoami-mode / .wai-* classes, no other
+   game is touched. Deliberately light/warm (uses the same --bg-surface/
+   --accent/--accent-cool tokens every other surface uses, so light/dark mode
+   both "just work" without a separate dark override block here) - explicitly
+   NOT another dark arena, per the design brief.
+   ============================================================================ */
+.game-modal.whoami-mode .game-stage { flex: 1; min-height: 0; margin-top: var(--space-2); width: 100%; }
+
+.wai-root { display: flex; flex-direction: column; height: 100%; width: 100%; }
+.wai-topbar { display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-2) var(--space-2); }
+.wai-brand { font-weight: var(--font-bold); color: var(--text-primary); font-size: var(--text-base); }
+.wai-round-info { font-size: var(--text-sm); color: var(--text-secondary); flex: 1; }
+.wai-sound-toggle { border: none; background: none; font-size: 18px; }
+.wai-stage {
+  flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center;
+  gap: var(--space-4); padding: var(--space-2) var(--space-2) var(--space-6); width: 100%;
+}
+
+.wai-turn-banner {
+  font-family: var(--font-display); font-weight: var(--font-bold); font-size: var(--text-lg);
+  color: var(--text-secondary); text-align: center; padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-full); background: var(--bg-surface-alt);
+}
+.wai-turn-banner--me {
+  color: white; background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  box-shadow: var(--shadow-glow); animation: wai-pulse 1.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) { .wai-turn-banner--me { animation: none; } }
+@keyframes wai-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.03); } }
+
+/* ---- Sticky-note cards ---- */
+.wai-card {
+  border-radius: var(--radius-xl); border: 1px solid var(--border); box-shadow: var(--shadow-md);
+  background: var(--bg-surface); position: relative; overflow: hidden;
+}
+.wai-card--own {
+  width: min(280px, 84vw); padding: var(--space-6) var(--space-5); text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-2);
+  transform: rotate(-1deg); border-width: 2px;
+}
+.wai-card-name { font-weight: var(--font-bold); font-size: var(--text-base); color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.02em; }
+.wai-card-question { font-size: 56px; line-height: 1; margin: var(--space-2) 0; }
+.wai-card-secret { font-family: var(--font-display); font-weight: var(--font-bold); font-size: var(--text-lg); color: var(--accent-strong); letter-spacing: 0.06em; }
+.wai-card-prompt { font-size: var(--text-sm); color: var(--text-secondary); }
+.wai-card-identity { font-family: var(--font-display); font-weight: var(--font-bold); font-size: var(--text-lg); color: var(--text-primary); margin: var(--space-2) 0; }
+.wai-card-solved-badge { font-size: var(--text-sm); font-weight: var(--font-semibold); color: var(--success); }
+.wai-card--solved.wai-card--own { transform: rotate(0deg); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .wai-card--flip { animation: wai-flip 0.55s ease-out; }
+}
+@keyframes wai-flip {
+  0% { transform: rotateY(0deg) scale(1); }
+  45% { transform: rotateY(90deg) scale(1.04); }
+  55% { transform: rotateY(90deg) scale(1.04); }
+  100% { transform: rotateY(0deg) scale(1); }
+}
+
+.wai-others-row {
+  display: flex; gap: var(--space-3); overflow-x: auto; width: 100%; padding: var(--space-1) var(--space-1) var(--space-2);
+  -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity;
+}
+.wai-card--other {
+  flex: 0 0 auto; width: 128px; padding: var(--space-3); text-align: center; scroll-snap-align: start;
+}
+.wai-card--other .wai-card-name { font-size: var(--text-xs); }
+.wai-card--other .wai-card-identity { font-size: var(--text-sm); margin: var(--space-1) 0 0; }
+.wai-card--turn { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow-md); }
+.wai-card--inactive { opacity: 0.5; }
+
+/* Eight distinguishable, theme-aware player-card accent stripes - a thin
+   top border rather than a full background wash, so the identity text
+   (which must stay easily readable) never sits on a busy/low-contrast tint. */
+.wai-card--c1 { border-top: 4px solid #F47C48; }
+.wai-card--c2 { border-top: 4px solid #7C6CF2; }
+.wai-card--c3 { border-top: 4px solid #22A06B; }
+.wai-card--c4 { border-top: 4px solid #E0B429; }
+.wai-card--c5 { border-top: 4px solid #4C9FD8; }
+.wai-card--c6 { border-top: 4px solid #D8618C; }
+.wai-card--c7 { border-top: 4px solid #5FB8A8; }
+.wai-card--c8 { border-top: 4px solid #C77DDE; }
+
+/* ---- Action area (asking / voting / vote result) ---- */
+.wai-action-card {
+  width: min(480px, 92vw); background: var(--bg-surface-alt); border-radius: var(--radius-lg);
+  border: 1px solid var(--border); padding: var(--space-5); display: flex; flex-direction: column;
+  align-items: center; gap: var(--space-3); text-align: center;
+}
+.wai-action-label { font-weight: var(--font-semibold); color: var(--text-primary); margin: 0; }
+.wai-question-form { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; }
+.wai-question-input {
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); border: 1.5px solid var(--border);
+  font-size: var(--text-base); background: var(--bg-surface); color: var(--text-primary); min-height: 44px;
+}
+.wai-question-input:focus { outline: none; border-color: var(--accent); box-shadow: var(--shadow-glow); }
+.wai-ask-btn { min-height: 48px; }
+.wai-guess-btn { min-height: 48px; width: 100%; border-color: var(--accent-cool); color: var(--accent-cool-strong); font-weight: var(--font-semibold); }
+.wai-turn-meta { font-size: var(--text-sm); color: var(--text-secondary); }
+.wai-waiting-text { color: var(--text-secondary); margin: 0; }
+.wai-question-echo { font-size: var(--text-sm); color: var(--text-secondary); margin: 0; }
+.wai-question-big { font-family: var(--font-display); font-weight: var(--font-bold); font-size: var(--text-lg); color: var(--text-primary); margin: 0; }
+
+.wai-vote-buttons { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; }
+.wai-vote-btn {
+  min-height: 56px; border-radius: var(--radius-md); border: 2px solid var(--border); background: var(--bg-surface);
+  font-size: var(--text-base); font-weight: var(--font-bold); color: var(--text-primary); touch-action: manipulation;
+}
+.wai-vote-btn--yes:hover, .wai-vote-btn--yes.wai-vote-btn--picked { border-color: var(--success); background: rgba(34, 160, 107, 0.12); }
+.wai-vote-btn--no:hover, .wai-vote-btn--no.wai-vote-btn--picked { border-color: var(--danger); background: rgba(216, 76, 76, 0.12); }
+.wai-vote-btn--unclear:hover, .wai-vote-btn--unclear.wai-vote-btn--picked { border-color: var(--warning); background: rgba(243, 162, 24, 0.14); }
+.wai-vote-btn:disabled { opacity: 0.55; }
+.wai-vote-status-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); justify-content: center; font-size: var(--text-sm); color: var(--text-secondary); }
+
+.wai-vote-result-card { gap: var(--space-1); }
+.wai-vote-result-big { font-family: var(--font-display); font-weight: var(--font-bold); font-size: var(--text-2xl); color: var(--text-primary); }
+.wai-vote-result-counts { font-size: var(--text-sm); color: var(--text-secondary); }
+
+.wai-history { width: min(480px, 92vw); font-size: var(--text-sm); color: var(--text-secondary); }
+.wai-history summary { cursor: pointer; font-weight: var(--font-semibold); color: var(--text-primary); }
+.wai-history-list { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); text-align: left; }
+
+/* ---- Final-guess dialog ---- */
+.wai-guess-modal { max-width: 420px; }
+.wai-guess-body { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-3); }
+.wai-guess-input {
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); border: 1.5px solid var(--border);
+  font-size: var(--text-base); background: var(--bg-app); color: var(--text-primary); min-height: 44px;
+}
+.wai-guess-input:focus { outline: none; border-color: var(--accent); box-shadow: var(--shadow-glow); }
+.wai-guess-suggestions { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; }
+.wai-guess-suggestion { padding: var(--space-3) var(--space-3); border-radius: var(--radius-sm); cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+.wai-guess-suggestion:hover { background: var(--bg-surface-hover); }
+.wai-guess-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4); }
+
+/* ---- Host options modal ---- */
+.wai-options-modal { max-width: 460px; }
+.wai-options-body { display: flex; flex-direction: column; gap: var(--space-4); margin-top: var(--space-3); }
+.wai-options-label { font-weight: var(--font-semibold); color: var(--text-primary); margin-bottom: var(--space-2); font-size: var(--text-sm); }
+.wai-options-chips { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.wai-chip { padding: var(--space-2) var(--space-4); border-radius: var(--radius-full); border: 1.5px solid var(--border); background: var(--bg-surface-alt); color: var(--text-primary); font-weight: var(--font-semibold); min-height: 40px; }
+.wai-chip--active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); }
+.wai-options-cats { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+.wai-cat-check { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); padding: var(--space-1); }
+.wai-custom-terms {
+  width: 100%; min-height: 84px; margin-top: var(--space-2); padding: var(--space-3); border-radius: var(--radius-md);
+  border: 1.5px solid var(--border); background: var(--bg-app); color: var(--text-primary); font-family: inherit; resize: vertical;
+}
+.wai-options-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-5); }
+
+/* ---- Endscreen ---- */
+.wai-endscreen { width: min(560px, 94vw); padding: var(--space-6) var(--space-5); text-align: center; }
+.wai-endscreen-title { font-family: var(--font-display); font-weight: var(--font-bold); font-size: var(--text-lg); color: var(--text-primary); margin-bottom: var(--space-4); }
+.wai-podium-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.wai-podium-entry {
+  display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: "medal name score" "medal identity questions";
+  align-items: center; gap: 2px var(--space-3); background: var(--bg-surface-alt); border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4); text-align: left;
+}
+.wai-podium-medal { grid-area: medal; font-size: 28px; }
+.wai-podium-name { grid-area: name; font-weight: var(--font-bold); color: var(--text-primary); }
+.wai-podium-identity { grid-area: identity; font-size: var(--text-sm); color: var(--accent-cool-strong); font-weight: var(--font-semibold); }
+.wai-podium-score { grid-area: score; font-weight: var(--font-bold); color: var(--accent-strong); }
+.wai-podium-questions { grid-area: questions; font-size: var(--text-xs); color: var(--text-secondary); justify-self: end; }
+.wai-rest-list { list-style: none; margin: var(--space-3) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.wai-rest-list li { display: flex; justify-content: space-between; gap: var(--space-3); font-size: var(--text-sm); color: var(--text-secondary); padding: var(--space-2) var(--space-3); }
+.wai-endscreen-actions { display: flex; justify-content: center; gap: var(--space-3); margin-top: var(--space-5); }
+
+@media (max-width: 767px), (max-height: 480px) and (pointer: coarse) {
+  .wai-card--own { width: min(240px, 78vw); padding: var(--space-5) var(--space-4); }
+  .wai-card-question { font-size: 44px; }
+  .wai-card--other { width: 104px; }
+  .wai-action-card { padding: var(--space-4); }
+  .wai-vote-btn { min-height: 60px; font-size: var(--text-lg); }
+  .wai-guess-btn, .wai-ask-btn { min-height: 52px; }
+  .wai-podium-entry { grid-template-columns: auto 1fr; grid-template-areas: "medal name" "medal identity" "medal score"; }
+  .wai-podium-score { justify-self: start; }
+  .wai-podium-questions { display: none; }
+}
