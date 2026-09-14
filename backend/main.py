@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from . import db
 from . import games as games_module
 from . import who_am_i as who_am_i_module
+from . import party as party_module
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT_DIR / "static"
@@ -114,6 +115,7 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 game_manager = games_module.GameManager(manager)
+party_manager = party_module.PartyManager(manager)
 
 
 # ---------- serialization ----------
@@ -439,6 +441,13 @@ async def websocket_endpoint(ws: WebSocket, token: Optional[str] = None):
                 game_type = raw.get("game_type")
                 if isinstance(game_type, str):
                     await game_manager.create_session(user, ws, game_type, raw.get("options"))
+                    # Party Mode courtesy notification only - never touches
+                    # the session/engine itself, see backend/party.py.
+                    session = game_manager.get_session_for_ws(ws)
+                    if session is not None:
+                        await party_manager.notify_game_started(
+                            ws, session.id, session.game_type, session.engine.name, session.engine.emoji
+                        )
 
             elif msg_type == "game_join":
                 session_id = raw.get("session_id")
@@ -465,10 +474,26 @@ async def websocket_endpoint(ws: WebSocket, token: Optional[str] = None):
                 if isinstance(session_id, str):
                     await game_manager.leave_session(user, ws, session_id)
 
+            elif msg_type == "party_create":
+                await party_manager.create_party(user, ws)
+
+            elif msg_type == "party_join":
+                code = raw.get("code")
+                if isinstance(code, str):
+                    await party_manager.join_party(user, ws, code)
+
+            elif msg_type == "party_leave":
+                await party_manager.leave_party(ws)
+
+            elif msg_type == "party_report_score":
+                points = raw.get("points")
+                await party_manager.report_score(user, ws, points)
+
     except WebSocketDisconnect:
         pass
     finally:
         await game_manager.handle_disconnect(ws)
+        await party_manager.handle_disconnect(ws)
         manager.disconnect(ws)
         await manager.broadcast_all({"type": "presence", "online": manager.online_names()})
 

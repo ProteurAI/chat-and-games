@@ -1137,6 +1137,14 @@ class GameManager:
                 return s
         return None
 
+    def get_session_for_ws(self, ws):
+        """Public wrapper around _active_session_for_ws - used by Party
+        Mode (backend/party.py) to look up the session a game_create call
+        just produced, purely to send a courtesy notification to other
+        party members. Party Mode has no other coupling to this class at
+        all - it never touches session/engine state."""
+        return self._active_session_for_ws(ws)
+
     async def create_session(self, user, ws, game_type, options=None):
         engine = GAME_ENGINES.get(game_type)
         if not engine or self._active_session_for_ws(ws):
