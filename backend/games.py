@@ -40,6 +40,7 @@ from .tank_battle import TankBattleEngine
 from .dodge_arena import DodgeArenaEngine
 from .who_am_i import WhoAmIEngine
 from .know_me import KnowMeEngine
+from .majority_game import MajorityGameEngine
 
 
 # ---------- Pong ----------
@@ -1039,6 +1040,7 @@ GAME_ENGINES = {
     "dodgearena": DodgeArenaEngine,
     "whoami": WhoAmIEngine,
     "knowme": KnowMeEngine,
+    "majority": MajorityGameEngine,
 }
 
 

@@ -742,6 +742,8 @@ function renderGameSidebar() {
         window.WhoAmI.openHostOptionsModal((options) => startGame("whoami", options));
       } else if (gt.game_type === "knowme") {
         window.KnowMe.openHostOptionsModal((options) => startGame("knowme", options));
+      } else if (gt.game_type === "majority") {
+        window.MajorityGame.openHostOptionsModal((options) => startGame("majority", options));
       } else {
         startGame(gt.game_type);
       }
@@ -920,6 +922,7 @@ function openGameModal(data) {
   dialog.classList.toggle("arcade-mode", data.game_type === "tankbattle" || data.game_type === "dodgearena");
   dialog.classList.toggle("whoami-mode", data.game_type === "whoami");
   dialog.classList.toggle("knowme-mode", data.game_type === "knowme");
+  dialog.classList.toggle("majority-mode", data.game_type === "majority");
 
   const stage = el("game-stage");
   stage.innerHTML = "";
@@ -977,6 +980,24 @@ function openGameModal(data) {
       },
       closeGame: () => closeGameModal(),
     });
+  } else if (data.game_type === "majority") {
+    const isHost = data.players[0] && data.players[0].id === me.id;
+    majorityGameInstance = window.MajorityGame.mount(stage, {
+      me,
+      players: data.players,
+      isHost,
+      sendInput: (payload) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "game_input", session_id: myGameSessionId, payload }));
+        }
+      },
+      sendRematch: () => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "game_rematch", session_id: myGameSessionId }));
+        }
+      },
+      closeGame: () => closeGameModal(),
+    });
   } else if (data.game_type === "knowme") {
     const isHost = data.players[0] && data.players[0].id === me.id;
     knowMeInstance = window.KnowMe.mount(stage, {
@@ -1014,6 +1035,7 @@ const GAME_TITLES = {
   dodgearena: "💥 Dodge Arena",
   whoami: "🎭 Wer bin ich?",
   knowme: "❤️ Kennst du mich?",
+  majority: "👑 Mehrheitsmeister",
 };
 const REMATCH_GAME_TYPES = ["tictactoe", "buzzer", "uno", "tankbattle", "dodgearena"];
 // tankbattle/dodgearena use their own much larger .arcade-mode sizing
@@ -1030,6 +1052,7 @@ let tankBattleInstance = null;
 let dodgeArenaInstance = null;
 let whoAmIInstance = null;
 let knowMeInstance = null;
+let majorityGameInstance = null;
 
 function openTimLinerGame() {
   myGameSessionId = null;
@@ -1082,7 +1105,11 @@ function closeGameModal() {
     knowMeInstance.destroy();
     knowMeInstance = null;
   }
-  document.querySelector(".game-modal").classList.remove("timliner-mode", "estimate-mode", "arcade-mode", "whoami-mode", "knowme-mode");
+  if (majorityGameInstance) {
+    majorityGameInstance.destroy();
+    majorityGameInstance = null;
+  }
+  document.querySelector(".game-modal").classList.remove("timliner-mode", "estimate-mode", "arcade-mode", "whoami-mode", "knowme-mode", "majority-mode");
   el("game-modal").hidden = true;
   myGameSessionId = null;
   myGameType = null;
@@ -1113,6 +1140,7 @@ function updateGameState(state) {
   else if (myGameType === "dodgearena") { if (dodgeArenaInstance) dodgeArenaInstance.setState(state); }
   else if (myGameType === "whoami") { if (whoAmIInstance) whoAmIInstance.setState(state); }
   else if (myGameType === "knowme") { if (knowMeInstance) knowMeInstance.setState(state); }
+  else if (myGameType === "majority") { if (majorityGameInstance) majorityGameInstance.setState(state); }
 }
 
 function showGameOver(data) {
@@ -1133,6 +1161,10 @@ function showGameOver(data) {
   }
   if (myGameType === "knowme") {
     if (knowMeInstance) knowMeInstance.showGameOver(data);
+    return;
+  }
+  if (myGameType === "majority") {
+    if (majorityGameInstance) majorityGameInstance.showGameOver(data);
     return;
   }
   let text;
