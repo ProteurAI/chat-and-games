@@ -40,7 +40,7 @@ VALID_CATEGORIES = {
     "mobility": {"label": "Mobilität & Fahrzeuge", "emoji": "🚗"},
     "weird": {"label": "Verrücktes Wissen", "emoji": "🌎"},
 }
-MIN_QUESTION_BANK_SIZE = 150
+MIN_QUESTION_BANK_SIZE = 600
 
 
 def validate_question_bank(raw):
@@ -51,6 +51,7 @@ def validate_question_bank(raw):
     errors = []
     seen_ids = set()
     seen_text = set()
+    seen_near_dup = {}
     questions = []
 
     if not isinstance(raw, list):
@@ -77,6 +78,15 @@ def validate_question_bank(raw):
         norm_text = text.lower()
         if norm_text in seen_text:
             errors.append(f"{prefix}: duplicate question text")
+            continue
+        # Near-duplicate check: strip digits/punctuation so two entries that
+        # differ only by a number or minor punctuation (e.g. a copy-pasted
+        # question with the wrong figure swapped in) still get caught, while
+        # genuinely different questions (different place/subject named in
+        # the text) stay distinct.
+        near_key = re.sub(r"\s+", " ", re.sub(r"[^a-zäöüß ]", " ", re.sub(r"[0-9.,]", "", norm_text))).strip()
+        if near_key and near_key in seen_near_dup:
+            errors.append(f"{prefix}: near-duplicate of '{seen_near_dup[near_key]}'")
             continue
 
         category = q.get("category")
@@ -124,6 +134,8 @@ def validate_question_bank(raw):
         # "seen" (a rejected entry must not block a later, valid duplicate id).
         seen_ids.add(qid)
         seen_text.add(norm_text)
+        if near_key:
+            seen_near_dup[near_key] = qid
         questions.append({
             "id": qid,
             "category": category,
@@ -156,7 +168,14 @@ def validate_question_bank(raw):
 def _load_question_bank():
     with open(QUESTIONS_PATH, encoding="utf-8") as f:
         raw = json.load(f)
-    return validate_question_bank(raw)
+    questions = validate_question_bank(raw)
+    by_category = {}
+    for q in questions:
+        by_category[q["category"]] = by_category.get(q["category"], 0) + 1
+    print(f"[estimate_game] Question bank loaded OK. Total Questions: {len(questions)}")
+    for cat in VALID_CATEGORIES:
+        print(f"[estimate_game]   {VALID_CATEGORIES[cat]['label']} ({cat}): {by_category.get(cat, 0)}")
+    return questions
 
 
 QUESTION_BANK = _load_question_bank()

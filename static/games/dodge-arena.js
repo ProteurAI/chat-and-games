@@ -21,45 +21,9 @@
     return el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA");
   }
 
-  function setupJoystick(zoneEl, knobEl, maxR, onChange) {
-    let active = false, pointerId = null, cx = 0, cy = 0;
-    function start(e) {
-      if (active) return;
-      active = true; pointerId = e.pointerId;
-      const rect = zoneEl.getBoundingClientRect();
-      cx = rect.left + rect.width / 2; cy = rect.top + rect.height / 2;
-      try { zoneEl.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-      // Deliberately NOT calling move(e) here - see tank-battle.js's
-      // identical setupJoystick for why (avoids starting the caller's
-      // send-throttle clock before the player's first real drag).
-      e.preventDefault();
-    }
-    function move(e) {
-      if (!active || e.pointerId !== pointerId) return;
-      let dx = e.clientX - cx, dy = e.clientY - cy;
-      const dist = Math.hypot(dx, dy);
-      if (dist > maxR) { dx = (dx / dist) * maxR; dy = (dy / dist) * maxR; }
-      knobEl.style.transform = `translate(${dx}px, ${dy}px)`;
-      onChange(dx / maxR, dy / maxR);
-      e.preventDefault();
-    }
-    function end(e) {
-      if (e.pointerId !== pointerId) return;
-      active = false; pointerId = null;
-      knobEl.style.transform = "translate(0,0)";
-      onChange(0, 0);
-    }
-    zoneEl.addEventListener("pointerdown", start);
-    zoneEl.addEventListener("pointermove", move);
-    zoneEl.addEventListener("pointerup", end);
-    zoneEl.addEventListener("pointercancel", end);
-    return () => {
-      zoneEl.removeEventListener("pointerdown", start);
-      zoneEl.removeEventListener("pointermove", move);
-      zoneEl.removeEventListener("pointerup", end);
-      zoneEl.removeEventListener("pointercancel", end);
-    };
-  }
+  // Analog stick handling (deadzone, multitouch-safe pointer id tracking,
+  // global blur/visibilitychange/pointercancel reset-to-neutral) now
+  // lives in the shared window.VirtualJoystick (static/mobile-shell.js).
 
   function escapeHtml(str) {
     const d = document.createElement("div");
@@ -83,8 +47,9 @@
           <div class="arc-canvas-wrap" data-role="canvaswrap">
             <canvas class="arc-canvas" data-role="canvas"></canvas>
             <div class="arc-countdown" data-role="countdown" hidden></div>
+            <div class="arc-mobile-tip">Stick bewegen zum Ausweichen</div>
             <div class="arc-touch-controls arc-touch-controls--dodge">
-              <div class="arc-stick-zone arc-stick-zone--left" data-role="movezone">
+              <div class="arc-stick-zone arc-stick-zone--left" data-role="movezone" aria-label="Bewegen" role="slider">
                 <div class="arc-stick-knob"></div>
               </div>
             </div>
@@ -129,16 +94,30 @@
       const { dx, dy } = computeDir();
       sendInput({ action: "move", dx, dy });
     }
+    // A lost keyup (alt-tab while a key is held) must not leave the
+    // player drifting forever - see the identical fix/comment in
+    // tank-battle.js's onKeyboardBlur.
+    function onKeyboardBlur() {
+      if (pressed.size === 0) return;
+      pressed.clear();
+      sendInput({ action: "move", dx: 0, dy: 0 });
+    }
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onKeyboardBlur);
+    document.addEventListener("visibilitychange", onKeyboardBlur);
 
     // ---------------- touch joystick ----------------
     let lastMoveSentAt = 0;
-    const stopMoveJoystick = setupJoystick(moveZone, moveZone.querySelector(".arc-stick-knob"), 40, (dx, dy) => {
-      const now = performance.now();
-      if (now - lastMoveSentAt < MOVE_THROTTLE_MS && !(dx === 0 && dy === 0)) return;
-      lastMoveSentAt = now;
-      sendInput({ action: "move", dx, dy });
+    const moveJoystick = VirtualJoystick.create(moveZone, moveZone.querySelector(".arc-stick-knob"), {
+      maxRadius: 44,
+      deadzone: 0.12,
+      onChange: (dx, dy) => {
+        const now = performance.now();
+        if (now - lastMoveSentAt < MOVE_THROTTLE_MS && !(dx === 0 && dy === 0)) return;
+        lastMoveSentAt = now;
+        sendInput({ action: "move", dx, dy });
+      },
     });
 
     // ---------------- HUD ----------------
@@ -310,8 +289,10 @@
     function destroy() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onKeyboardBlur);
+      document.removeEventListener("visibilitychange", onKeyboardBlur);
       resizeObserver.disconnect();
-      stopMoveJoystick();
+      moveJoystick.destroy();
     }
 
     return {

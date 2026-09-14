@@ -491,7 +491,8 @@ button, input, .channel-list li, .game-type-item, .icon-btn {
 
 /* ---------- GAME MODAL ---------- */
 .game-modal {
-  max-width: 920px; width: 94vw; max-height: 90vh; min-height: 560px; position: relative;
+  max-width: 920px; width: 94vw; max-height: 90vh; max-height: 90dvh;
+  min-height: min(560px, 90vh); min-height: min(560px, 90dvh); position: relative;
   display: flex; flex-direction: column; transition: max-width var(--transition-fast);
 }
 .game-modal.wide { max-width: 1120px; }
@@ -543,10 +544,11 @@ button, input, .channel-list li, .game-type-item, .icon-btn {
 /* floating toggle for the collapsible drawer (tablet/mobile only, see the
    <900px breakpoint below) */
 .game-chat-toggle {
-  display: none; position: absolute; bottom: var(--space-4); right: var(--space-4);
+  display: none; position: absolute; bottom: max(var(--space-4), env(safe-area-inset-bottom)); right: var(--space-4);
   align-items: center; gap: var(--space-2); border: none; border-radius: var(--radius-full);
   background: var(--accent); color: white; font-weight: var(--font-semibold); font-size: var(--text-sm);
   padding: var(--space-3) var(--space-5); box-shadow: var(--shadow-lg); z-index: 5;
+  min-height: 44px;
 }
 .game-chat-toggle:hover { background: var(--accent-strong); transform: scale(1.03); }
 .game-chat-badge {
@@ -555,16 +557,47 @@ button, input, .channel-list li, .game-type-item, .icon-btn {
   padding: 0 5px; display: flex; align-items: center; justify-content: center;
 }
 
-@media (max-width: 899px) {
+/* Dimmed backdrop behind the mobile chat drawer - created by
+   MobileGameChat.init() (see mobile-shell.js), not present in the static
+   HTML. Its own tap-to-close handler is one of three independent ways to
+   dismiss the drawer (alongside the close button and swipe-down), exactly
+   so no single broken path can ever trap the player in it again. */
+.game-chat-backdrop {
+  position: absolute; inset: 0; background: rgba(10, 12, 18, 0.5); z-index: 5;
+  opacity: 0; transition: opacity var(--transition-slow); touch-action: none;
+}
+.game-chat-backdrop.open { opacity: 1; }
+
+/* While the drawer is open on mobile, the page behind the (already
+   fullscreen) modal must not rubber-band scroll; the message list itself
+   stays scrollable via its own overflow-y (unaffected by this). */
+body.scroll-locked { overflow: hidden; }
+
+/* Mobile-game breakpoint: narrow-portrait width OR (short-height AND
+   touch) - the latter clause catches landscape phones like a 915x412
+   Android device, which is wider than 899px but is still unmistakably a
+   phone, not a desktop window, and needs the same drawer/full-bleed
+   treatment as portrait mobile. Desktop users with a short browser window
+   are excluded by the pointer:coarse requirement. */
+@media (max-width: 899px), (max-height: 480px) and (pointer: coarse) {
   .game-chat-toggle { display: flex; }
-  .game-chat-close-btn { display: inline-flex; }
+  .game-chat-close-btn { display: inline-flex; min-width: 44px; min-height: 44px; }
   .game-chat-panel {
-    position: absolute; inset: auto 0 0 0; flex: 0 0 auto; width: 100%;
-    height: min(70%, 480px); border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    position: absolute; inset: auto 0 0 0; bottom: var(--kb-inset, 0px);
+    flex: 0 0 auto; width: 100%;
+    height: min(72%, 520px); border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     box-shadow: var(--shadow-lg); transform: translateY(100%);
-    transition: transform var(--transition-slow); z-index: 6;
+    transition: transform var(--transition-slow), bottom var(--transition-fast);
+    z-index: 6; padding-bottom: env(safe-area-inset-bottom);
   }
   .game-chat-panel.open { transform: translateY(0); }
+  .game-chat-header { position: relative; padding-top: var(--space-2); cursor: grab; touch-action: none; }
+  .game-chat-header:active { cursor: grabbing; }
+  .game-chat-drag-handle {
+    position: absolute; top: var(--space-2); left: 50%; transform: translateX(-50%);
+    width: 36px; height: 4px; border-radius: var(--radius-full); background: var(--border);
+  }
+  .game-chat-messages { overscroll-behavior: contain; }
 }
 
 .pong-score-row {
@@ -572,7 +605,9 @@ button, input, .channel-list li, .game-type-item, .icon-btn {
   font-size: var(--text-sm); color: var(--text-primary);
 }
 .pong-score-row .pong-score { font-size: var(--text-xl); font-weight: var(--font-bold); color: var(--accent-strong); }
-#pong-canvas { background: #14121f; border-radius: var(--radius-md); max-width: 100%; display: block; }
+#pong-canvas { background: #14121f; border-radius: var(--radius-md); max-width: 100%; display: block; touch-action: none; }
+.pong-hint { font-size: var(--text-xs); color: var(--text-secondary); margin: 0; text-align: center; }
+@media (pointer: coarse) { .pong-hint { display: none; } }
 
 .ttt-turn-indicator { font-size: var(--text-sm); font-weight: var(--font-semibold); color: var(--text-secondary); text-align: center; }
 .ttt-turn-indicator.my-turn { color: var(--accent-strong); }
@@ -588,8 +623,36 @@ button, input, .channel-list li, .game-type-item, .icon-btn {
 .ttt-cell:disabled { cursor: default; }
 .ttt-cell.symbol-o { color: var(--accent); }
 
-#lc-canvas { background: #14121f; border-radius: var(--radius-md); max-width: 100%; display: block; }
+.lc-hint { font-size: var(--text-xs); color: var(--text-secondary); margin: 0 0 var(--space-2); text-align: center; }
+.lc-canvas-wrap { display: flex; justify-content: center; width: 100%; }
+#lc-canvas { background: #14121f; border-radius: var(--radius-md); max-width: 100%; width: min(100%, 420px); height: auto; aspect-ratio: 1 / 1; display: block; }
 .lc-status { font-size: var(--text-xs); color: var(--text-secondary); text-align: center; min-height: 16px; }
+
+/* Touch D-pad (window.TouchDPad, see mobile-shell.js - it fully owns its
+   container's class/styling, always "touch-dpad", so any game using it
+   just gets this for free) - hidden on mouse/trackpad, shown only where
+   touch is the primary pointer, mirroring the arcade games' virtual
+   controls. A classic plus-shaped 3x3 grid with only the 4 edge cells
+   populated. */
+.touch-dpad { display: none; }
+@media (pointer: coarse) {
+  .lc-hint { display: none; }
+  .touch-dpad {
+    display: grid; grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(3, 64px);
+    gap: var(--space-2); justify-content: center; margin: var(--space-4) auto 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+.touch-dpad-btn {
+  border: none; border-radius: var(--radius-md); background: var(--bg-surface-alt); border: 1px solid var(--border);
+  color: var(--text-primary); font-size: 24px; display: flex; align-items: center; justify-content: center;
+  touch-action: none; user-select: none;
+}
+.touch-dpad-btn:active { background: var(--accent); color: white; }
+.touch-dpad-btn--up { grid-column: 2; grid-row: 1; }
+.touch-dpad-btn--left { grid-column: 1; grid-row: 2; }
+.touch-dpad-btn--right { grid-column: 3; grid-row: 2; }
+.touch-dpad-btn--down { grid-column: 2; grid-row: 3; }
 
 .buzzer-status { font-size: var(--text-lg); text-align: center; color: var(--text-primary); }
 .buzzer-btn {
@@ -766,7 +829,7 @@ button, input, .channel-list li, .game-type-item, .icon-btn {
 }
 .uno-hand-fan .uno-card.disabled { opacity: 0.4; filter: grayscale(40%); cursor: default; }
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 480px) and (pointer: coarse) {
   .game-modal.uno-mode { width: 100vw; max-width: 100vw; height: 100vh; height: 100dvh; max-height: 100dvh; border-radius: 0; }
   /* the desktop overlapping "fan" hides tappable cards behind their
      disabled neighbors on narrow screens - below 768px, switch to a
@@ -969,7 +1032,7 @@ button, input, .channel-list li, .game-type-item, .icon-btn {
   padding: var(--space-2) var(--space-4); border-radius: var(--radius-full); box-shadow: 0 4px 14px rgba(244, 124, 72, 0.4);
 }
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 480px) and (pointer: coarse) {
   .game-modal.ludo-mode { width: 100vw; max-width: 100vw; height: 100vh; height: 100dvh; max-height: 100dvh; border-radius: 0; }
   .ludo-board {
     width: clamp(260px, 88vmin, 420px);
@@ -1384,35 +1447,62 @@ button, input, .channel-list li, .game-type-item, .icon-btn {
 /* Touch controls: virtual joystick(s) + (Tank Battle only) a fire button,
    overlaid on the bottom of the canvas. Hidden entirely on mouse/trackpad
    devices - shown only where touch is the primary pointer, so desktop
-   players just see the canvas + the WASD/mouse hint text. */
+   players just see the canvas + the WASD/mouse hint text. Bottom/side
+   offsets use env(safe-area-inset-*) so nothing sits under an iPhone's
+   home indicator or off the edge of a rounded-corner screen. */
 .arc-touch-controls { display: none; }
 @media (pointer: coarse) {
-  .arc-touch-controls { display: block; position: absolute; inset: 0; pointer-events: none; }
+  .arc-touch-controls { display: block; position: absolute; inset: 0; pointer-events: none; touch-action: none; }
   .arc-hint { display: none; }
 }
 .arc-stick-zone {
-  position: absolute; bottom: var(--space-4); width: 96px; height: 96px; border-radius: 50%;
-  background: rgba(255,255,255,0.12); border: 2px solid rgba(255,255,255,0.35); pointer-events: auto;
+  position: absolute; bottom: max(var(--space-4), env(safe-area-inset-bottom)); width: 96px; height: 96px; border-radius: 50%;
+  background: rgba(255,255,255,0.12); border: 2px solid rgba(255,255,255,0.35); pointer-events: auto; touch-action: none;
 }
-.arc-stick-zone--left { left: var(--space-4); }
-.arc-stick-zone--right { right: var(--space-4); }
-.arc-touch-controls--dodge .arc-stick-zone--left { left: var(--space-4); }
+.arc-stick-zone--left { left: max(var(--space-4), env(safe-area-inset-left)); }
+.arc-stick-zone--right { right: max(var(--space-4), env(safe-area-inset-right)); }
 .arc-stick-knob {
   position: absolute; top: 50%; left: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px;
   border-radius: 50%; background: rgba(255,255,255,0.85); transition: transform 0.05s linear; pointer-events: none;
 }
 .arc-fire-btn {
-  position: absolute; right: var(--space-4); bottom: 120px; width: 76px; height: 76px; border-radius: 50%;
-  background: var(--danger); color: white; font-weight: var(--font-bold); font-size: var(--text-xs);
-  border: 3px solid rgba(255,255,255,0.5); pointer-events: auto; user-select: none;
+  position: absolute; right: max(var(--space-4), env(safe-area-inset-right));
+  bottom: max(120px, calc(120px + env(safe-area-inset-bottom) - var(--space-4)));
+  width: 76px; height: 76px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  background: var(--danger); color: white; font-size: 30px; line-height: 1;
+  border: 3px solid rgba(255,255,255,0.5); pointer-events: auto; touch-action: none; user-select: none;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+}
+.arc-fire-btn:active { transform: scale(0.94); background: var(--accent-strong); }
+
+/* One-time "how to play" tip - centered over the canvas, fades in then
+   auto-fades out after a few seconds via animation-fill-mode, never
+   intercepts taps (pointer-events:none) and never comes back on its own
+   (no JS timer to clean up, no re-trigger on re-render since setState()
+   never touches this element again after the initial mount). */
+.arc-mobile-tip {
+  display: none; position: absolute; top: var(--space-4); left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.65); color: white; font-size: var(--text-sm); font-weight: var(--font-semibold);
+  padding: var(--space-2) var(--space-4); border-radius: var(--radius-full); pointer-events: none;
+  white-space: nowrap; opacity: 0; animation: arc-tip-fade 5s ease forwards;
+}
+@keyframes arc-tip-fade {
+  0% { opacity: 0; transform: translateX(-50%) translateY(-6px); }
+  10% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  75% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@media (pointer: coarse) {
+  .arc-mobile-tip { display: block; }
 }
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 480px) and (pointer: coarse) {
   .game-modal.arcade-mode {
     width: 100vw; max-width: 100vw; height: 100vh; height: 100dvh; max-height: 100dvh; border-radius: 0;
   }
   .arc-countdown { font-size: 64px; }
   .arc-hud-chip { font-size: var(--text-xs); padding: var(--space-1) var(--space-2); }
   .arc-stick-zone { width: 84px; height: 84px; }
-  .arc-fire-btn { width: 64px; height: 64px; bottom: 108px; }
+  .arc-fire-btn { width: 64px; height: 64px; font-size: 26px; bottom: max(108px, calc(108px + env(safe-area-inset-bottom) - var(--space-4))); }
+  .arc-mobile-tip { font-size: var(--text-xs); max-width: 88vw; white-space: normal; text-align: center; }
 }

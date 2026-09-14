@@ -16,8 +16,9 @@ let myGamePlayers = [];
 let pongCtx = null;
 let pongPressedKey = null;
 
-// game-chat panel (shared by every game - see openGameModal/closeGameModal)
-let gameChatUnread = 0;
+// game-chat panel (shared by every game - see openGameModal/closeGameModal).
+// Drawer open/closed/unread state itself lives inside MobileGameChat
+// (static/mobile-shell.js) now - see that file for why it's centralized.
 
 const el = (id) => document.getElementById(id);
 
@@ -857,12 +858,24 @@ function sendGameInput(payload) {
 // Reuses the exact same channel/REST/WebSocket the normal chat uses - see
 // buildMessageElement/renderMessage/sendChatMessage above. This just wires
 // up the panel's own visibility/badge state.
+// One-time wiring of the drawer's DOM/listeners - see mobile-shell.js for
+// why this lives in one place instead of being toggled from several call
+// sites. init() is idempotent, so it's safe to just call it unconditionally
+// here at module load.
+MobileGameChat.init({
+  panel: el("game-chat-panel"),
+  toggleBtn: el("game-chat-toggle"),
+  closeBtn: el("game-chat-close-btn"),
+  header: el("game-chat-header"),
+  badge: el("game-chat-badge"),
+  messagesBox: el("game-chat-messages"),
+  inputEl: el("game-chat-input"),
+});
+
 async function initGameChatPanel() {
   const ch = channels.find((c) => c.id === currentChannelId);
   el("game-chat-channel-name").textContent = ch ? `#${ch.name}` : "";
-  gameChatUnread = 0;
-  updateGameChatBadge();
-  el("game-chat-panel").classList.remove("open");
+  MobileGameChat.reset();
 
   const box = el("game-chat-messages");
   box.innerHTML = "";
@@ -876,35 +889,12 @@ async function initGameChatPanel() {
   }
 }
 
-function updateGameChatBadge() {
-  const badge = el("game-chat-badge");
-  if (gameChatUnread > 0) {
-    badge.textContent = String(gameChatUnread);
-    badge.hidden = false;
-  } else {
-    badge.hidden = true;
-  }
-}
-
 // Only the collapsible mobile/tablet drawer needs an unread count - on
-// desktop (>=900px) the panel is always visible, so nothing is ever unread.
+// desktop (>=900px) the panel is always visible, so nothing is ever unread
+// (MobileGameChat.bump() already no-ops in both of those cases internally).
 function bumpGameChatUnread() {
-  if (el("game-chat-panel").classList.contains("open")) return;
-  if (window.matchMedia("(min-width: 900px)").matches) return;
-  gameChatUnread++;
-  updateGameChatBadge();
+  MobileGameChat.bump();
 }
-
-el("game-chat-toggle").addEventListener("click", () => {
-  el("game-chat-panel").classList.add("open");
-  gameChatUnread = 0;
-  updateGameChatBadge();
-  const box = el("game-chat-messages");
-  box.scrollTop = box.scrollHeight;
-});
-el("game-chat-close-btn").addEventListener("click", () => {
-  el("game-chat-panel").classList.remove("open");
-});
 
 function openGameModal(data) {
   myGameSessionId = data.session_id;
@@ -1044,9 +1034,7 @@ function closeGameModal() {
   myGameType = null;
   myGamePlayers = [];
   el("game-chat-messages").innerHTML = "";
-  el("game-chat-panel").classList.remove("open");
-  gameChatUnread = 0;
-  updateGameChatBadge();
+  MobileGameChat.reset();
 }
 
 el("game-close-btn").addEventListener("click", closeGameModal);
@@ -1152,14 +1140,15 @@ function buildPongStage(stage) {
   pongCtx = canvas.getContext("2d");
 
   const hint = document.createElement("p");
-  hint.style.cssText = "font-size:12px;color:var(--text-dim);margin:0;";
-  hint.textContent = "Steuerung: Pfeiltaste hoch/runter";
+  hint.className = "pong-hint";
+  hint.textContent = "Steuerung: Pfeiltaste hoch/runter (oder auf dem Feld ziehen)";
   stage.appendChild(hint);
 
   startPongControls();
 }
 
 function renderPong(state) {
+  pongLastState = state; // read by the touch drag handler for the player's own current paddle position
   const leftUid = Object.keys(state.sides).find((u) => state.sides[u] === "left");
   const rightUid = Object.keys(state.sides).find((u) => state.sides[u] === "right");
   const leftPlayer = myGamePlayers.find((p) => String(p.id) === leftUid);
@@ -1201,12 +1190,38 @@ function startPongControls() {
   pongPressedKey = null;
   document.addEventListener("keydown", onPongKeyDown);
   document.addEventListener("keyup", onPongKeyUp);
+
+  // Touch: drag anywhere on the canvas, paddle follows the finger's
+  // vertical position - no need to precisely grab the (small) paddle
+  // first. Throttled re-evaluation on move rather than a one-shot
+  // direction like the keyboard path, since the "target" keeps changing
+  // as the finger moves.
+  const canvas = el("pong-canvas");
+  if (canvas) {
+    canvas.addEventListener("pointerdown", onPongPointerDown);
+    canvas.addEventListener("pointermove", onPongPointerMove);
+    canvas.addEventListener("pointerup", onPongPointerEnd);
+    canvas.addEventListener("pointercancel", onPongPointerEnd);
+  }
+  window.addEventListener("blur", onPongPointerEnd);
+  document.addEventListener("visibilitychange", onPongPointerEnd);
 }
 
 function stopPongControls() {
   document.removeEventListener("keydown", onPongKeyDown);
   document.removeEventListener("keyup", onPongKeyUp);
+  const canvas = el("pong-canvas");
+  if (canvas) {
+    canvas.removeEventListener("pointerdown", onPongPointerDown);
+    canvas.removeEventListener("pointermove", onPongPointerMove);
+    canvas.removeEventListener("pointerup", onPongPointerEnd);
+    canvas.removeEventListener("pointercancel", onPongPointerEnd);
+  }
+  window.removeEventListener("blur", onPongPointerEnd);
+  document.removeEventListener("visibilitychange", onPongPointerEnd);
   pongPressedKey = null;
+  pongTouchActive = false;
+  pongLastState = null;
   pongCtx = null;
 }
 
@@ -1228,6 +1243,47 @@ function onPongKeyUp(e) {
     pongPressedKey = null;
     sendGameInput({ direction: "stop" });
   }
+}
+
+let pongTouchActive = false;
+let pongLastState = null;
+let pongLastTouchSentAt = 0;
+const PONG_TOUCH_THROTTLE_MS = 50;
+const PONG_TOUCH_DEADZONE = 3; // world units - avoids up/down flapping right at the target
+
+function onPongPointerDown(e) {
+  if (myGameType !== "pong" || !myGameSessionId) return;
+  pongTouchActive = true;
+  try { e.target.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+  handlePongTouch(e);
+  e.preventDefault();
+}
+function onPongPointerMove(e) {
+  if (!pongTouchActive) return;
+  const now = performance.now();
+  if (now - pongLastTouchSentAt < PONG_TOUCH_THROTTLE_MS) return;
+  pongLastTouchSentAt = now;
+  handlePongTouch(e);
+  e.preventDefault();
+}
+function onPongPointerEnd() {
+  if (!pongTouchActive) return;
+  pongTouchActive = false;
+  if (myGameType === "pong" && myGameSessionId) sendGameInput({ direction: "stop" });
+}
+function handlePongTouch(e) {
+  if (!pongLastState) return;
+  const canvas = el("pong-canvas");
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const worldY = ((e.clientY - rect.top) / rect.height) * pongLastState.height;
+  const myUid = String(me.id);
+  const myPaddleY = pongLastState.paddles[myUid];
+  if (myPaddleY == null) return; // spectator or not yet in this match
+  const delta = worldY - myPaddleY;
+  if (delta > PONG_TOUCH_DEADZONE) sendGameInput({ direction: "down" });
+  else if (delta < -PONG_TOUCH_DEADZONE) sendGameInput({ direction: "up" });
+  else sendGameInput({ direction: "stop" });
 }
 
 // ---------- games: tic-tac-toe ----------
@@ -1272,19 +1328,23 @@ function renderTtt(state) {
 // ---------- games: light cycles ----------
 let lcCtx = null;
 let lastSentLcDir = null;
+let lcDPad = null;
 const LC_COLOR_HEX = { red: "#ff5252", blue: "#4fa8ff", green: "#4ade80", yellow: "#fbbf24" };
 
 function buildLightCyclesStage(stage) {
   const hint = document.createElement("p");
-  hint.style.cssText = "font-size:12px;color:var(--text-dim);margin:0 0 8px;text-align:center;";
+  hint.className = "lc-hint";
   hint.textContent = "Steuerung: Pfeiltasten — nicht in die eigene Spur zurückfahren!";
   stage.appendChild(hint);
 
+  const canvasWrap = document.createElement("div");
+  canvasWrap.className = "lc-canvas-wrap";
   const canvas = document.createElement("canvas");
   canvas.id = "lc-canvas";
   canvas.width = 360;
   canvas.height = 360;
-  stage.appendChild(canvas);
+  canvasWrap.appendChild(canvas);
+  stage.appendChild(canvasWrap);
   lcCtx = canvas.getContext("2d");
 
   const status = document.createElement("div");
@@ -1292,24 +1352,41 @@ function buildLightCyclesStage(stage) {
   status.className = "lc-status";
   stage.appendChild(status);
 
+  // Touch has no keyboard to fall back on - Light Cycles was previously
+  // unplayable on a phone without this. TouchDPad.create() owns the
+  // container's class/styling entirely (always renders as ".touch-dpad",
+  // shown only on coarse-pointer devices - see that CSS rule). Direction-
+  // reversal rules are already enforced server-side
+  // (LightCyclesEngine.apply_input), same as the keyboard path below, so
+  // the pad doesn't need to duplicate that check.
+  const dpadContainer = document.createElement("div");
+  stage.appendChild(dpadContainer);
+  lcDPad = TouchDPad.create(dpadContainer, sendLcDirection);
+
   lastSentLcDir = null;
   document.addEventListener("keydown", onLightCyclesKeyDown);
 }
 
 function stopLcControls() {
   document.removeEventListener("keydown", onLightCyclesKeyDown);
+  if (lcDPad) { lcDPad.destroy(); lcDPad = null; }
   lastSentLcDir = null;
   lcCtx = null;
+}
+
+function sendLcDirection(dir) {
+  if (myGameType !== "lightcycles" || !myGameSessionId) return;
+  if (dir === lastSentLcDir) return;
+  lastSentLcDir = dir;
+  sendGameInput({ direction: dir });
 }
 
 function onLightCyclesKeyDown(e) {
   const map = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
   const dir = map[e.key];
-  if (!dir || myGameType !== "lightcycles" || !myGameSessionId) return;
+  if (!dir) return;
   e.preventDefault();
-  if (dir === lastSentLcDir) return;
-  lastSentLcDir = dir;
-  sendGameInput({ direction: dir });
+  sendLcDirection(dir);
 }
 
 function renderLightCycles(state) {

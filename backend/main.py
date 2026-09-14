@@ -472,7 +472,7 @@ async def no_cache_static_assets(request, call_next):
     # changed file is always picked up (an unchanged one is still a cheap
     # 304, not a full re-download).
     response = await call_next(request)
-    if request.url.path in ("/", "/app.js", "/style.css"):
+    if request.url.path in ("/", "/app.js", "/style.css", "/mobile-shell.js"):
         response.headers["Cache-Control"] = "no-cache"
     return response
 

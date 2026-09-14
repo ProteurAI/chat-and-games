@@ -29,47 +29,11 @@
     return el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA");
   }
 
-  function setupJoystick(zoneEl, knobEl, maxR, onChange) {
-    let active = false, pointerId = null, cx = 0, cy = 0;
-    function start(e) {
-      if (active) return;
-      active = true; pointerId = e.pointerId;
-      const rect = zoneEl.getBoundingClientRect();
-      cx = rect.left + rect.width / 2; cy = rect.top + rect.height / 2;
-      try { zoneEl.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-      // Deliberately NOT calling move(e) here: a touch-down is centered
-      // (dx=dy=0) in the overwhelming majority of cases, and routing that
-      // through onChange would start the caller's send-throttle clock
-      // before the player's first real drag - swallowing it if that drag
-      // follows within the throttle window (which it very often does).
-      e.preventDefault();
-    }
-    function move(e) {
-      if (!active || e.pointerId !== pointerId) return;
-      let dx = e.clientX - cx, dy = e.clientY - cy;
-      const dist = Math.hypot(dx, dy);
-      if (dist > maxR) { dx = (dx / dist) * maxR; dy = (dy / dist) * maxR; }
-      knobEl.style.transform = `translate(${dx}px, ${dy}px)`;
-      onChange(dx / maxR, dy / maxR);
-      e.preventDefault();
-    }
-    function end(e) {
-      if (e.pointerId !== pointerId) return;
-      active = false; pointerId = null;
-      knobEl.style.transform = "translate(0,0)";
-      onChange(0, 0);
-    }
-    zoneEl.addEventListener("pointerdown", start);
-    zoneEl.addEventListener("pointermove", move);
-    zoneEl.addEventListener("pointerup", end);
-    zoneEl.addEventListener("pointercancel", end);
-    return () => {
-      zoneEl.removeEventListener("pointerdown", start);
-      zoneEl.removeEventListener("pointermove", move);
-      zoneEl.removeEventListener("pointerup", end);
-      zoneEl.removeEventListener("pointercancel", end);
-    };
-  }
+  // Analog stick handling (deadzone, multitouch-safe pointer id tracking,
+  // and the global blur/visibilitychange/pointercancel safety net that
+  // resets a stuck joystick to neutral) now lives in the shared
+  // window.VirtualJoystick (static/mobile-shell.js) instead of being
+  // copy-pasted per game - see that file for the details.
 
   function escapeHtml(str) {
     const d = document.createElement("div");
@@ -88,14 +52,15 @@
           <div class="arc-canvas-wrap" data-role="canvaswrap">
             <canvas class="arc-canvas" data-role="canvas"></canvas>
             <div class="arc-countdown" data-role="countdown" hidden></div>
+            <div class="arc-mobile-tip">Links fahren &middot; Rechts zielen &middot; 💥 feuern</div>
             <div class="arc-touch-controls">
-              <div class="arc-stick-zone arc-stick-zone--left" data-role="movezone">
+              <div class="arc-stick-zone arc-stick-zone--left" data-role="movezone" aria-label="Bewegen" role="slider">
                 <div class="arc-stick-knob"></div>
               </div>
-              <div class="arc-stick-zone arc-stick-zone--right" data-role="aimzone">
+              <div class="arc-stick-zone arc-stick-zone--right" data-role="aimzone" aria-label="Zielen" role="slider">
                 <div class="arc-stick-knob"></div>
               </div>
-              <button type="button" class="arc-fire-btn" data-role="fire">FEUER</button>
+              <button type="button" class="arc-fire-btn" data-role="fire" aria-label="Feuern">💥</button>
             </div>
           </div>
         </div>
@@ -137,8 +102,19 @@
       const m = computeMoveFromKeys();
       sendInput({ action: "move", forward: m.forward, turn: m.turn });
     }
+    // Same "stuck forever" risk as the touch joysticks (see VirtualJoystick
+    // in mobile-shell.js), just via a lost keyup instead of a lost pointerup:
+    // alt-tabbing away while holding W never fires keyup, so without this
+    // the tank would keep driving after the window loses focus.
+    function onKeyboardBlur() {
+      if (pressed.size === 0) return;
+      pressed.clear();
+      sendInput({ action: "move", forward: 0, turn: 0 });
+    }
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onKeyboardBlur);
+    document.addEventListener("visibilitychange", onKeyboardBlur);
 
     // ---------------- mouse aim + fire (desktop) ----------------
     let lastAimSentAt = 0;
@@ -165,20 +141,33 @@
     canvas.addEventListener("mousedown", onMouseDown);
 
     // ---------------- touch controls (mobile) ----------------
+    // Two independent joysticks with two independent pointer ids, tracked
+    // by two independent VirtualJoystick instances - a real multitouch
+    // requirement (drive with the left thumb while aiming with the right
+    // one), which is exactly why the shared implementation tracks its own
+    // pointerId per instance rather than one shared module-level variable.
     let lastMoveSentAt = 0;
-    const stopMoveJoystick = setupJoystick(moveZone, moveZone.querySelector(".arc-stick-knob"), 40, (dx, dy) => {
-      const now = performance.now();
-      if (now - lastMoveSentAt < MOVE_THROTTLE_MS && !(dx === 0 && dy === 0)) return;
-      lastMoveSentAt = now;
-      sendInput({ action: "move", forward: -dy, turn: dx });
+    const moveJoystick = VirtualJoystick.create(moveZone, moveZone.querySelector(".arc-stick-knob"), {
+      maxRadius: 44,
+      deadzone: 0.15,
+      onChange: (dx, dy) => {
+        const now = performance.now();
+        if (now - lastMoveSentAt < MOVE_THROTTLE_MS && !(dx === 0 && dy === 0)) return;
+        lastMoveSentAt = now;
+        sendInput({ action: "move", forward: -dy, turn: dx });
+      },
     });
     let lastAimStickAt = 0;
-    const stopAimJoystick = setupJoystick(aimZone, aimZone.querySelector(".arc-stick-knob"), 40, (dx, dy) => {
-      if (dx === 0 && dy === 0) return; // released - keep last aim direction
-      const now = performance.now();
-      if (now - lastAimStickAt < AIM_THROTTLE_MS) return;
-      lastAimStickAt = now;
-      sendInput({ action: "aim", angle: Math.atan2(dy, dx) });
+    const aimJoystick = VirtualJoystick.create(aimZone, aimZone.querySelector(".arc-stick-knob"), {
+      maxRadius: 44,
+      deadzone: 0.2,
+      onChange: (dx, dy) => {
+        if (dx === 0 && dy === 0) return; // released - keep last aim direction
+        const now = performance.now();
+        if (now - lastAimStickAt < AIM_THROTTLE_MS) return;
+        lastAimStickAt = now;
+        sendInput({ action: "aim", angle: Math.atan2(dy, dx) });
+      },
     });
     let fireHoldInterval = null;
     function startFireHold(e) {
@@ -194,6 +183,11 @@
     fireBtn.addEventListener("pointerup", stopFireHold);
     fireBtn.addEventListener("pointercancel", stopFireHold);
     fireBtn.addEventListener("pointerleave", stopFireHold);
+    // Safety net for a held fire button whose pointerup never arrives
+    // (app switch, notification, incoming call) - without this the
+    // repeat-fire interval would keep calling sendInput forever.
+    window.addEventListener("blur", stopFireHold);
+    document.addEventListener("visibilitychange", stopFireHold);
 
     // ---------------- HUD ----------------
     function renderHud(state) {
@@ -359,16 +353,20 @@
     function destroy() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onKeyboardBlur);
+      document.removeEventListener("visibilitychange", onKeyboardBlur);
       canvas.removeEventListener("mousemove", onMouseMove);
       canvas.removeEventListener("mousedown", onMouseDown);
       resizeObserver.disconnect();
-      stopMoveJoystick();
-      stopAimJoystick();
+      moveJoystick.destroy();
+      aimJoystick.destroy();
       stopFireHold();
       fireBtn.removeEventListener("pointerdown", startFireHold);
       fireBtn.removeEventListener("pointerup", stopFireHold);
       fireBtn.removeEventListener("pointercancel", stopFireHold);
       fireBtn.removeEventListener("pointerleave", stopFireHold);
+      window.removeEventListener("blur", stopFireHold);
+      document.removeEventListener("visibilitychange", stopFireHold);
     }
 
     return {
