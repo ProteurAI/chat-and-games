@@ -39,6 +39,7 @@ from .estimate_game import EstimateEngine
 from .tank_battle import TankBattleEngine
 from .dodge_arena import DodgeArenaEngine
 from .who_am_i import WhoAmIEngine
+from .know_me import KnowMeEngine
 
 
 # ---------- Pong ----------
@@ -1037,6 +1038,7 @@ GAME_ENGINES = {
     "tankbattle": TankBattleEngine,
     "dodgearena": DodgeArenaEngine,
     "whoami": WhoAmIEngine,
+    "knowme": KnowMeEngine,
 }
 
 

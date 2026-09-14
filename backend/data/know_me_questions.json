@@ -1,0 +1,4024 @@
+[
+  {
+    "id": "choice_001",
+    "mode": "choice",
+    "question": "Was würdest du an einem komplett freien Tag am ehesten machen?",
+    "answers": [
+      "Ans Wasser fahren",
+      "Zuhause entspannen",
+      "Etwas unternehmen",
+      "In die Natur gehen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_002",
+    "mode": "choice",
+    "question": "Was würdest du für einen spontanen Kurzurlaub wählen?",
+    "answers": [
+      "Strand",
+      "Berge",
+      "Großstadt",
+      "Wellness"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_003",
+    "mode": "choice",
+    "question": "Was wäre dein perfekter Freitagabend?",
+    "answers": [
+      "Party",
+      "Restaurant",
+      "Couch",
+      "Kino"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_004",
+    "mode": "choice",
+    "question": "Was würdest du eher aufgeben?",
+    "answers": [
+      "Süßigkeiten",
+      "Social Media",
+      "Fernsehen",
+      "Fast Food"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_005",
+    "mode": "choice",
+    "question": "Was würdest du kaufen, wenn du plötzlich 10.000 € bekommst?",
+    "answers": [
+      "Reise",
+      "Auto",
+      "Sparen",
+      "Shopping"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_006",
+    "mode": "choice",
+    "question": "Welches Tier wärst du am liebsten?",
+    "answers": [
+      "Hund",
+      "Katze",
+      "Adler",
+      "Delfin"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_007",
+    "mode": "choice",
+    "question": "Wo würdest du lieber wohnen?",
+    "answers": [
+      "Großstadt",
+      "Dorf",
+      "Meer",
+      "Berge"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_008",
+    "mode": "choice",
+    "question": "Was ist dein bevorzugtes Frühstück?",
+    "answers": [
+      "Süß",
+      "Herzhaft",
+      "Nur Kaffee",
+      "Ich frühstücke nicht"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_009",
+    "mode": "choice",
+    "question": "Welche Jahreszeit magst du am meisten?",
+    "answers": [
+      "Frühling",
+      "Sommer",
+      "Herbst",
+      "Winter"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_010",
+    "mode": "choice",
+    "question": "Was würdest du an einem Regentag machen?",
+    "answers": [
+      "Serien schauen",
+      "Lesen",
+      "Backen",
+      "Schlafen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_011",
+    "mode": "choice",
+    "question": "Wie reist du am liebsten?",
+    "answers": [
+      "Flugzeug",
+      "Auto",
+      "Zug",
+      "Zu Fuß / Rad"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_012",
+    "mode": "choice",
+    "question": "Was ist dein liebster Snack beim Filmabend?",
+    "answers": [
+      "Popcorn",
+      "Chips",
+      "Schokolade",
+      "Gummibärchen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_013",
+    "mode": "choice",
+    "question": "Welches Getränk wählst du am liebsten?",
+    "answers": [
+      "Kaffee",
+      "Tee",
+      "Limonade",
+      "Wasser"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_014",
+    "mode": "choice",
+    "question": "Was machst du lieber am Wochenende?",
+    "answers": [
+      "Ausschlafen",
+      "Früh aufstehen und was erleben",
+      "Sport",
+      "Nichts planen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_015",
+    "mode": "choice",
+    "question": "Welche Art von Musik hörst du am liebsten?",
+    "answers": [
+      "Pop",
+      "Rock",
+      "Hip-Hop",
+      "Klassik"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_016",
+    "mode": "choice",
+    "question": "Was würdest du für ein Haustier wählen?",
+    "answers": [
+      "Hund",
+      "Katze",
+      "Fisch",
+      "Kein Haustier"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_017",
+    "mode": "choice",
+    "question": "Wie verbringst du am liebsten deinen Urlaub?",
+    "answers": [
+      "Aktiv & sportlich",
+      "Kulturell",
+      "Faul am Strand",
+      "Städtereise"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_018",
+    "mode": "choice",
+    "question": "Was ist dein Lieblings-Küchentyp?",
+    "answers": [
+      "Italienisch",
+      "Asiatisch",
+      "Deutsch",
+      "Fast Food"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_019",
+    "mode": "choice",
+    "question": "Was machst du lieber: kochen oder backen?",
+    "answers": [
+      "Kochen",
+      "Backen",
+      "Beides gerne",
+      "Am liebsten bestellen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_020",
+    "mode": "choice",
+    "question": "Wie planst du am liebsten eine Reise?",
+    "answers": [
+      "Bis ins Detail",
+      "Grobe Idee reicht",
+      "Spontan vor Ort",
+      "Alles der Reiseleitung überlassen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_021",
+    "mode": "choice",
+    "question": "Was würdest du zuerst renovieren, wenn du ein altes Haus kaufst?",
+    "answers": [
+      "Küche",
+      "Bad",
+      "Garten",
+      "Wohnzimmer"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_022",
+    "mode": "choice",
+    "question": "Welchen Sport würdest du am ehesten ausprobieren?",
+    "answers": [
+      "Klettern",
+      "Tanzen",
+      "Schwimmen",
+      "Joggen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_023",
+    "mode": "choice",
+    "question": "Was ist für dich der ideale Feierabend?",
+    "answers": [
+      "Sport machen",
+      "Mit Freunden treffen",
+      "Couch & Serie",
+      "Ein Hobby ausüben"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_024",
+    "mode": "choice",
+    "question": "Welches Land würdest du am liebsten bereisen?",
+    "answers": [
+      "Japan",
+      "USA",
+      "Italien",
+      "Australien"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_025",
+    "mode": "choice",
+    "question": "Was würdest du an einem Wellness-Tag zuerst machen?",
+    "answers": [
+      "Sauna",
+      "Massage",
+      "Schwimmen",
+      "Einfach nur liegen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_026",
+    "mode": "choice",
+    "question": "Wie würdest du am liebsten deinen Geburtstag feiern?",
+    "answers": [
+      "Große Party",
+      "Kleiner Kreis",
+      "Alleine entspannen",
+      "Verreisen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_027",
+    "mode": "choice",
+    "question": "Was ist dein Lieblingsfilmgenre?",
+    "answers": [
+      "Komödie",
+      "Action",
+      "Drama",
+      "Horror"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_028",
+    "mode": "choice",
+    "question": "Wie startest du am liebsten in den Tag?",
+    "answers": [
+      "Mit Sport",
+      "Mit Kaffee und Ruhe",
+      "Mit Musik",
+      "So spät wie möglich"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_029",
+    "mode": "choice",
+    "question": "Was würdest du lieber lernen?",
+    "answers": [
+      "Ein Instrument",
+      "Eine Sprache",
+      "Kochen/Backen",
+      "Tanzen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_030",
+    "mode": "choice",
+    "question": "Welches Haustier würde am wenigsten zu dir passen?",
+    "answers": [
+      "Schlange",
+      "Spinne",
+      "Papagei",
+      "Meerschweinchen"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_031",
+    "mode": "choice",
+    "question": "Was wäre deine Notlüge, um eine Party früher zu verlassen?",
+    "answers": [
+      "Kopfschmerzen",
+      "Müde",
+      "Früher Termin morgen",
+      "Haustier wartet"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_032",
+    "mode": "choice",
+    "question": "Was würdest du als Superkraft wählen?",
+    "answers": [
+      "Fliegen",
+      "Unsichtbarkeit",
+      "Gedanken lesen",
+      "Zeit anhalten"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_033",
+    "mode": "choice",
+    "question": "Welches Klischee triffst du am ehesten zu?",
+    "answers": [
+      "Morgenmuffel",
+      "Chaot",
+      "Perfektionist",
+      "Ewig zu spät"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_034",
+    "mode": "choice",
+    "question": "Was wäre dein Künstlername, wenn du berühmt würdest?",
+    "answers": [
+      "Etwas Elegantes",
+      "Etwas Lustiges",
+      "Etwas Mysteriöses",
+      "Mein echter Name reicht"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_035",
+    "mode": "choice",
+    "question": "Wie würdest du am ehesten aus einer Verabredung fliehen?",
+    "answers": [
+      "Notfall vortäuschen",
+      "Ehrlich sagen",
+      "Einfach gehen",
+      "Nie wieder Handy anschalten"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_036",
+    "mode": "choice",
+    "question": "Was wäre dein Signature-Move auf der Tanzfläche?",
+    "answers": [
+      "Robot",
+      "Der Klassiker (mitwippen)",
+      "Volle Show",
+      "Ich tanze nicht"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_037",
+    "mode": "choice",
+    "question": "Wenn du ein Meme wärst, welches?",
+    "answers": [
+      "Das gestresste Meme",
+      "Das chillige Meme",
+      "Das chaotische Meme",
+      "Das übertrieben glückliche Meme"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_038",
+    "mode": "choice",
+    "question": "Was wäre dein Spitzname in einer Reality-Show?",
+    "answers": [
+      "Der/Die Dramatische",
+      "Der/Die Ruhige",
+      "Der/Die Lustige",
+      "Der/Die Strategische"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_039",
+    "mode": "choice",
+    "question": "Welches Klischee-Urlaubsfoto machst du garantiert?",
+    "answers": [
+      "Essen fotografieren",
+      "Sonnenuntergang",
+      "Sprung-Foto am Strand",
+      "Selfie mit Sehenswürdigkeit"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_040",
+    "mode": "choice",
+    "question": "Wie reagierst du, wenn dein Wecker nicht klingelt?",
+    "answers": [
+      "Panik pur",
+      "Ganz entspannt",
+      "Schuldzuweisung ans Handy",
+      "War eh schon wach"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_041",
+    "mode": "choice",
+    "question": "Was würdest du zuerst retten, wenn die Wohnung brennt (nach Menschen/Tieren)?",
+    "answers": [
+      "Handy",
+      "Fotoalbum",
+      "Geldbeutel",
+      "Lieblingskissen"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_042",
+    "mode": "choice",
+    "question": "Wie würdest du reagieren, wenn du im Lotto gewinnst?",
+    "answers": [
+      "Sofort allen erzählen",
+      "Erstmal schweigen",
+      "Direkt Urlaub buchen",
+      "Erstmal ungläubig nachrechnen"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_043",
+    "mode": "choice",
+    "question": "Was wäre dein Erkennungssatz bei Karaoke?",
+    "answers": [
+      "Ich singe nicht, ich performe",
+      "Bitte nicht filmen",
+      "Ich brauche noch ein Getränk",
+      "Ich bin heimlich richtig gut"
+    ],
+    "tone": "spicy"
+  },
+  {
+    "id": "choice_044",
+    "mode": "choice",
+    "question": "Wie würdest du am ehesten aus einer WhatsApp-Gruppe fliegen?",
+    "answers": [
+      "Zu viele Sprachnachrichten",
+      "Politische Diskussion",
+      "Schlechte Wortwitze",
+      "Verspätung immer ankündigen"
+    ],
+    "tone": "spicy"
+  },
+  {
+    "id": "choice_045",
+    "mode": "choice",
+    "question": "Was ist deine geheime Superkraft beim Streiten?",
+    "answers": [
+      "Das letzte Wort haben",
+      "Beleidigt schweigen",
+      "Alles mit Humor auflösen",
+      "Sofort Frieden schließen"
+    ],
+    "tone": "spicy"
+  },
+  {
+    "id": "choice_046",
+    "mode": "choice",
+    "question": "Was würdest du in einer Beziehungs-Show am ehesten machen?",
+    "answers": [
+      "Sofort dramatisch werden",
+      "Ruhig bleiben und beobachten",
+      "Alle glücklich machen wollen",
+      "Eigenes Ding durchziehen"
+    ],
+    "tone": "spicy"
+  },
+  {
+    "id": "choice_047",
+    "mode": "choice",
+    "question": "Wie würdest du reagieren, wenn dich jemand versetzt?",
+    "answers": [
+      "Sofort nachfragen",
+      "Beleidigt sein",
+      "Es einfach abhaken",
+      "Genüsslich Drama machen"
+    ],
+    "tone": "spicy"
+  },
+  {
+    "id": "choice_048",
+    "mode": "choice",
+    "question": "Was wäre dein Talkshow-Thema über dich selbst?",
+    "answers": [
+      "Warum ich immer zu spät komme",
+      "Wie ich jede Diskussion gewinne",
+      "Meine Liebe zu gutem Essen",
+      "Meine chaotische Ordnung"
+    ],
+    "tone": "spicy"
+  },
+  {
+    "id": "choice_049",
+    "mode": "choice",
+    "question": "Wie würdest du am ehesten flirten?",
+    "answers": [
+      "Direkt und ehrlich",
+      "Mit Humor",
+      "Eher schüchtern",
+      "Ich warte lieber ab"
+    ],
+    "tone": "spicy"
+  },
+  {
+    "id": "choice_050",
+    "mode": "choice",
+    "question": "Was wäre dein Motto für eine Dating-App-Bio?",
+    "answers": [
+      "Nimm mich wie ich bin",
+      "Nur für echte Abenteurer",
+      "Ich koche besser als ich tanze",
+      "Vorsicht, ich rede viel"
+    ],
+    "tone": "spicy"
+  },
+  {
+    "id": "choice_051",
+    "mode": "choice",
+    "question": "Wie würdest du am ehesten eine peinliche Situation retten?",
+    "answers": [
+      "Alles ins Lächerliche ziehen",
+      "Schnell das Thema wechseln",
+      "Einfach ehrlich zugeben",
+      "So tun, als wäre nichts passiert"
+    ],
+    "tone": "spicy"
+  },
+  {
+    "id": "choice_052",
+    "mode": "choice",
+    "question": "Was ist dein Lieblingsplatz im Haus?",
+    "answers": [
+      "Küche",
+      "Wohnzimmer",
+      "Bett",
+      "Garten/Balkon"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_053",
+    "mode": "choice",
+    "question": "Wie planst du deinen Kleiderschrank?",
+    "answers": [
+      "Ordentlich sortiert",
+      "Grobe Stapel",
+      "Kreatives Chaos",
+      "Wäschekorb reicht"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_054",
+    "mode": "choice",
+    "question": "Was ist dein liebstes Wochenend-Frühstück?",
+    "answers": [
+      "Ausgiebig mit der Familie",
+      "Allein und in Ruhe",
+      "Unterwegs zum Bäcker",
+      "Im Bett"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_055",
+    "mode": "choice",
+    "question": "Wie gehst du am liebsten shoppen?",
+    "answers": [
+      "Zielstrebig, Liste dabei",
+      "Bummeln ohne Plan",
+      "Online",
+      "Möglichst schnell fertig"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_056",
+    "mode": "choice",
+    "question": "Was ist dein bevorzugtes Transportmittel in der Stadt?",
+    "answers": [
+      "Zu Fuß",
+      "Fahrrad",
+      "Öffentliche Verkehrsmittel",
+      "Auto"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_057",
+    "mode": "choice",
+    "question": "Wie feierst du am liebsten Weihnachten?",
+    "answers": [
+      "Groß mit der ganzen Familie",
+      "Klein und gemütlich",
+      "Reisend im Ausland",
+      "So ruhig wie möglich"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_058",
+    "mode": "choice",
+    "question": "Was ist deine bevorzugte Art, neue Leute kennenzulernen?",
+    "answers": [
+      "Auf Partys",
+      "Über Hobbys",
+      "Über Freunde",
+      "Online"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_059",
+    "mode": "choice",
+    "question": "Wie gehst du mit Stress am liebsten um?",
+    "answers": [
+      "Sport",
+      "Musik hören",
+      "Mit jemandem reden",
+      "Alleine sein"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_060",
+    "mode": "choice",
+    "question": "Was ist dein bevorzugter Ort für ein Gespräch unter vier Augen?",
+    "answers": [
+      "Spaziergang",
+      "Café",
+      "Zuhause",
+      "Auto"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_061",
+    "mode": "choice",
+    "question": "Wie würdest du am liebsten einen Geburtstag geschenkt bekommen?",
+    "answers": [
+      "Erlebnis",
+      "Materielles Geschenk",
+      "Geld/Gutschein",
+      "Selbstgemachtes"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_062",
+    "mode": "choice",
+    "question": "Welche Art von Buch/Film magst du am meisten?",
+    "answers": [
+      "Spannung/Thriller",
+      "Romantik",
+      "Fantasy",
+      "Doku/wahre Geschichten"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_063",
+    "mode": "choice",
+    "question": "Was ist dein liebster Ausflug mit der Familie?",
+    "answers": [
+      "Zoo/Tierpark",
+      "Wandern",
+      "Freizeitpark",
+      "Museum"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_064",
+    "mode": "choice",
+    "question": "Wie gehst du mit Warteschlangen um?",
+    "answers": [
+      "Geduldig abwarten",
+      "Auf dem Handy die Zeit totschlagen",
+      "Genervt sein",
+      "Small Talk mit Fremden"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_065",
+    "mode": "choice",
+    "question": "Was würdest du bei einem Umzug zuerst einpacken?",
+    "answers": [
+      "Küche",
+      "Kleidung",
+      "Persönliche Erinnerungsstücke",
+      "Elektronik"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_066",
+    "mode": "choice",
+    "question": "Wie triffst du am liebsten Entscheidungen?",
+    "answers": [
+      "Kopf",
+      "Bauchgefühl",
+      "Pro-und-Contra-Liste",
+      "Münze werfen (fast)"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_067",
+    "mode": "choice",
+    "question": "Was ist deine bevorzugte Art zu entspannen?",
+    "answers": [
+      "Baden/Duschen",
+      "Spazieren",
+      "Lesen",
+      "Nichts tun"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_068",
+    "mode": "choice",
+    "question": "Wie gehst du an ein neues Hobby heran?",
+    "answers": [
+      "Sofort loslegen",
+      "Erst gründlich recherchieren",
+      "Mit jemandem zusammen starten",
+      "Kurs besuchen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_069",
+    "mode": "choice",
+    "question": "Was ist dein liebstes Wetter?",
+    "answers": [
+      "Sonnig und warm",
+      "Kühl und frisch",
+      "Regnerisch und gemütlich",
+      "Verschneit"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_070",
+    "mode": "choice",
+    "question": "Wie organisierst du am liebsten eine Feier?",
+    "answers": [
+      "Alles selbst planen",
+      "Aufgaben verteilen",
+      "Spontan improvisieren",
+      "Catering bestellen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_071",
+    "mode": "choice",
+    "question": "Was würdest du an einem freien Nachmittag mit den Enkeln/kleinen Kindern machen?",
+    "answers": [
+      "Spielplatz",
+      "Basteln",
+      "Spiele spielen",
+      "Gemeinsam kochen/backen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_072",
+    "mode": "choice",
+    "question": "Wie gehst du am liebsten in den Urlaub?",
+    "answers": [
+      "Mit dem Auto",
+      "Mit dem Flugzeug",
+      "Mit dem Zug",
+      "Mit dem Wohnmobil"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_073",
+    "mode": "choice",
+    "question": "Was ist dein liebstes Fest im Jahr?",
+    "answers": [
+      "Weihnachten",
+      "Geburtstag",
+      "Silvester",
+      "Ostern"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_074",
+    "mode": "choice",
+    "question": "Wie verbringst du am liebsten einen Sonntag?",
+    "answers": [
+      "Aktiv draußen",
+      "Faul zuhause",
+      "Familienbesuch",
+      "Ausschlafen und Zeitung lesen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_075",
+    "mode": "choice",
+    "question": "Was wäre dein Traumberuf als Kind gewesen (rückblickend)?",
+    "answers": [
+      "Etwas Kreatives",
+      "Etwas Technisches",
+      "Etwas mit Tieren",
+      "Etwas Abenteuerliches"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_076",
+    "mode": "choice",
+    "question": "Wie gehst du am liebsten mit alten Erinnerungsstücken um?",
+    "answers": [
+      "Aufheben für immer",
+      "Fotografieren und weggeben",
+      "Regelmäßig aussortieren",
+      "Alles behalten, egal wie viel"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_077",
+    "mode": "choice",
+    "question": "Was ist deine bevorzugte Art von Musik beim Autofahren?",
+    "answers": [
+      "Radio",
+      "Eigene Playlist",
+      "Hörbuch/Podcast",
+      "Stille"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_078",
+    "mode": "choice",
+    "question": "Wie gehst du an eine große Aufgabe heran?",
+    "answers": [
+      "Sofort anfangen",
+      "Erst gründlich planen",
+      "In kleinen Schritten",
+      "Bis kurz vor knapp warten"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_079",
+    "mode": "choice",
+    "question": "Was würdest du dir zuerst kaufen, wenn du eine neue Wohnung beziehst?",
+    "answers": [
+      "Bequemes Sofa",
+      "Gutes Bett",
+      "Küchenausstattung",
+      "Deko"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_080",
+    "mode": "choice",
+    "question": "Wie zeigst du am liebsten, dass dir jemand wichtig ist?",
+    "answers": [
+      "Zeit schenken",
+      "Kleine Geschenke",
+      "Nette Worte",
+      "Praktische Hilfe"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_081",
+    "mode": "choice",
+    "question": "Was ist dein liebster Ort für ein Picknick?",
+    "answers": [
+      "Park",
+      "Wald",
+      "Am See/Fluss",
+      "Eigener Garten"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_082",
+    "mode": "choice",
+    "question": "Wie gehst du am liebsten in den Feierabend über?",
+    "answers": [
+      "Sofort umziehen",
+      "Kurz durchatmen",
+      "Aktivität einplanen",
+      "Handy komplett weglegen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_083",
+    "mode": "choice",
+    "question": "Was ist dein bevorzugter Umgang mit alten Klamotten?",
+    "answers": [
+      "Spenden",
+      "Second Hand verkaufen",
+      "Aufbewahren",
+      "Als Putzlappen weiterverwenden"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_084",
+    "mode": "choice",
+    "question": "Wie würdest du am liebsten einen Preis feiern, den du gewonnen hast?",
+    "answers": [
+      "Groß mit allen teilen",
+      "Still für mich genießen",
+      "Sofort weitergeben/spenden",
+      "Erstmal gar nicht glauben"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_085",
+    "mode": "choice",
+    "question": "Was wäre deine erste Reaktion bei einer Überraschungsparty?",
+    "answers": [
+      "Freudentränen",
+      "Schock und dann Freude",
+      "Sofort mitfeiern",
+      "Peinlich berührt lächeln"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_086",
+    "mode": "choice",
+    "question": "Wie würdest du am ehesten aus einem Fettnäpfchen wieder rauskommen?",
+    "answers": [
+      "Mit Humor überspielen",
+      "Sofort entschuldigen",
+      "So tun als wäre nichts gewesen",
+      "Das Thema wechseln"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_087",
+    "mode": "choice",
+    "question": "Was wäre dein Spruch, wenn du zu spät kommst?",
+    "answers": [
+      "Der Verkehr war schuld",
+      "Ich hab die Zeit vergessen",
+      "Besser spät als nie",
+      "Ich war schon fast pünktlich"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_088",
+    "mode": "choice",
+    "question": "Wie würdest du reagieren, wenn du beim Reden einen Filmzitat-Fehler machst?",
+    "answers": [
+      "Sofort korrigieren lassen",
+      "Stur bei meiner Version bleiben",
+      "Drüber lachen",
+      "So tun, als hätte ich das mit Absicht gesagt"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_089",
+    "mode": "choice",
+    "question": "Was wäre dein Warnsignal, dass du hungrig UND genervt bist?",
+    "answers": [
+      "Ich werde leise",
+      "Ich werde extra laut",
+      "Ich brauche sofort Essen",
+      "Ich ziehe mich zurück"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_090",
+    "mode": "choice",
+    "question": "Wie würdest du reagieren, wenn dein Handy-Akku bei 1% ist?",
+    "answers": [
+      "Panik",
+      "Alles ausschalten außer dem Nötigsten",
+      "Ganz entspannt",
+      "Sofort Ladekabel suchen, egal wo"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_091",
+    "mode": "choice",
+    "question": "Was wäre dein Kommentar, wenn jemand dein Essen probiert ohne zu fragen?",
+    "answers": [
+      "Gar nichts sagen",
+      "Kurz schockiert schauen",
+      "Freundlich Bescheid geben",
+      "Sofort den Teller wegziehen"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_092",
+    "mode": "choice",
+    "question": "Wie würdest du am ehesten ein Geschenk verpacken?",
+    "answers": [
+      "Perfekt mit Schleife",
+      "Schnell in Zeitungspapier",
+      "In einer Tüte",
+      "Ungefähr, Hauptsache zu"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_093",
+    "mode": "choice",
+    "question": "Was wäre dein Trostpflaster nach einem schlechten Tag?",
+    "answers": [
+      "Süßigkeiten",
+      "Serie schauen",
+      "Mit jemandem reden",
+      "Früh ins Bett"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_094",
+    "mode": "choice",
+    "question": "Wie würdest du reagieren, wenn du im Kino niest, während es leise ist?",
+    "answers": [
+      "Peinlich berührt kichern",
+      "Ignorieren und weiterschauen",
+      "Laut Entschuldigung sagen",
+      "So tun als wäre es jemand anders gewesen"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "scale_001",
+    "mode": "scale",
+    "question": "Wie ordentlich hältst du dich selbst?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Absolutes Chaos",
+    "maxLabel": "Extrem ordentlich",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_002",
+    "mode": "scale",
+    "question": "Wie geduldig bist du?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Ungeduldig wie ein Kind",
+    "maxLabel": "Geduld eines Heiligen",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_003",
+    "mode": "scale",
+    "question": "Wie spontan bist du?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Bis ins Detail geplant",
+    "maxLabel": "Total spontan",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_004",
+    "mode": "scale",
+    "question": "Wie sehr magst du Weihnachten?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Kann ich gut drauf verzichten",
+    "maxLabel": "Absolutes Lieblingsfest",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_005",
+    "mode": "scale",
+    "question": "Wie gerne gehst du auf Partys?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Bleibe lieber zuhause",
+    "maxLabel": "Bin immer dabei",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_006",
+    "mode": "scale",
+    "question": "Wie gut kannst du kochen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Verbrenne sogar Wasser",
+    "maxLabel": "Profi-Niveau",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_007",
+    "mode": "scale",
+    "question": "Wie ehrgeizig bist du?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Locker und entspannt",
+    "maxLabel": "Immer im Wettkampfmodus",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_008",
+    "mode": "scale",
+    "question": "Wie schnell bist du beleidigt?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Bringt mich nichts aus der Ruhe",
+    "maxLabel": "Sehr schnell eingeschnappt",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_009",
+    "mode": "scale",
+    "question": "Wie wichtig ist dir Urlaub?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Kann ich auch mal ausfallen lassen",
+    "maxLabel": "Absolut unverzichtbar",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_010",
+    "mode": "scale",
+    "question": "Wie romantisch hältst du dich?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Eher pragmatisch",
+    "maxLabel": "Durch und durch romantisch",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_011",
+    "mode": "scale",
+    "question": "Wie gerne stehst du früh auf?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Absoluter Morgenmuffel",
+    "maxLabel": "Springe fröhlich aus dem Bett",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_012",
+    "mode": "scale",
+    "question": "Wie pünktlich bist du normalerweise?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Meistens zu spät",
+    "maxLabel": "Immer auf die Minute genau",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_013",
+    "mode": "scale",
+    "question": "Wie sehr magst du Reisen ins Unbekannte?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Lieber bekannte Orte",
+    "maxLabel": "Liebe das Abenteuer",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_014",
+    "mode": "scale",
+    "question": "Wie sportlich bist du?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Bewege mich kaum",
+    "maxLabel": "Sehr aktiv und sportlich",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_015",
+    "mode": "scale",
+    "question": "Wie gut kannst du mit Kritik umgehen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Nehme es mir sehr zu Herzen",
+    "maxLabel": "Lässt mich völlig kalt",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_016",
+    "mode": "scale",
+    "question": "Wie technikaffin bist du?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Technik ist nicht meins",
+    "maxLabel": "Absoluter Technik-Fan",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_017",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, im Mittelpunkt zu stehen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Lieber im Hintergrund",
+    "maxLabel": "Liebe die Aufmerksamkeit",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_018",
+    "mode": "scale",
+    "question": "Wie gut kannst du zuhören?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Bin schnell abgelenkt",
+    "maxLabel": "Höre sehr aufmerksam zu",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_019",
+    "mode": "scale",
+    "question": "Wie sehr liebst du Schokolade?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Kann gut darauf verzichten",
+    "maxLabel": "Absolute Schwäche",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_020",
+    "mode": "scale",
+    "question": "Wie gerne planst du im Voraus?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Lebe im Hier und Jetzt",
+    "maxLabel": "Plane alles minutiös",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_021",
+    "mode": "scale",
+    "question": "Wie gut findest du dich in fremden Städten zurecht?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Verlaufe mich sofort",
+    "maxLabel": "Habe ein perfektes Orientierungsgefühl",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_022",
+    "mode": "scale",
+    "question": "Wie sehr magst du Überraschungen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Mag ich gar nicht",
+    "maxLabel": "Liebe Überraschungen",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_023",
+    "mode": "scale",
+    "question": "Wie oft räumst du dein Zimmer/Büro auf?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Selten bis nie",
+    "maxLabel": "Ständig alles aufgeräumt",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_024",
+    "mode": "scale",
+    "question": "Wie gerne redest du vor größeren Gruppen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Vermeide es unbedingt",
+    "maxLabel": "Genieße es sehr",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_025",
+    "mode": "scale",
+    "question": "Wie stark ist dein Orientierungssinn für Zahlen (Kopfrechnen)?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Rechne lieber mit dem Handy",
+    "maxLabel": "Rechne alles im Kopf",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_026",
+    "mode": "scale",
+    "question": "Wie sehr magst du Tiere?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Eher kein Tierfreund",
+    "maxLabel": "Absoluter Tierliebhaber",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_027",
+    "mode": "scale",
+    "question": "Wie gut kannst du Geheimnisse für dich behalten?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Erzähle es schnell weiter",
+    "maxLabel": "Nehme es mit ins Grab",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_028",
+    "mode": "scale",
+    "question": "Wie risikofreudig bist du?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Sehr vorsichtig",
+    "maxLabel": "Gehe gerne Risiken ein",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_029",
+    "mode": "scale",
+    "question": "Wie sehr magst du laute Musik?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Lieber leise und ruhig",
+    "maxLabel": "Je lauter, desto besser",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_030",
+    "mode": "scale",
+    "question": "Wie gut kannst du dich entschuldigen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Fällt mir sehr schwer",
+    "maxLabel": "Sehr leicht und schnell",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_031",
+    "mode": "scale",
+    "question": "Wie sehr liebst du Kaffee?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Trinke keinen Kaffee",
+    "maxLabel": "Ohne Kaffee läuft nichts",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_032",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, neue Rezepte auszuprobieren?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Bleibe bei Bewährtem",
+    "maxLabel": "Probiere ständig Neues",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_033",
+    "mode": "scale",
+    "question": "Wie gut kannst du still sitzen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Muss immer in Bewegung sein",
+    "maxLabel": "Kann stundenlang ruhig sitzen",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_034",
+    "mode": "scale",
+    "question": "Wie sehr liebst du deinen Job/Alltag?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Eher lästige Pflicht",
+    "maxLabel": "Absolute Erfüllung",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_035",
+    "mode": "scale",
+    "question": "Wie sehr magst du kaltes Wetter?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Hasse Kälte",
+    "maxLabel": "Liebe kaltes Wetter",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_036",
+    "mode": "scale",
+    "question": "Wie sehr magst du Camping/Zelten?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Nicht meins",
+    "maxLabel": "Absoluter Camping-Fan",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_037",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, Neues zu lernen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Bleibe lieber bei Bekanntem",
+    "maxLabel": "Bin immer wissbegierig",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_038",
+    "mode": "scale",
+    "question": "Wie sehr magst du Small Talk?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Vermeide ihn wenn möglich",
+    "maxLabel": "Führe ihn sehr gerne",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_039",
+    "mode": "scale",
+    "question": "Wie sehr liebst du Süßspeisen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Bevorzuge Herzhaftes",
+    "maxLabel": "Süßes geht immer",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_040",
+    "mode": "scale",
+    "question": "Wie sehr magst du Videospiele?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Spiele nie",
+    "maxLabel": "Sehr begeisterter Gamer",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_041",
+    "mode": "scale",
+    "question": "Wie sehr magst du Autofahren?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Fahre nur wenn nötig",
+    "maxLabel": "Liebe lange Autofahrten",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_042",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, Gastgeber zu sein?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Lieber zu Gast sein",
+    "maxLabel": "Bin sehr gerne Gastgeber",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_043",
+    "mode": "scale",
+    "question": "Wie sehr magst du Wandern?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Nicht mein Ding",
+    "maxLabel": "Absoluter Wanderfan",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_044",
+    "mode": "scale",
+    "question": "Wie sehr magst du klassische Musik?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Höre ich nie",
+    "maxLabel": "Liebe klassische Musik",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_045",
+    "mode": "scale",
+    "question": "Wie sehr liebst du Gartenarbeit?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Meide sie",
+    "maxLabel": "Verbringe gerne Zeit im Garten",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_046",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, früh schlafen zu gehen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Bin eine Nachteule",
+    "maxLabel": "Gehe immer früh ins Bett",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_047",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, Fotos zu machen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Fotografiere selten",
+    "maxLabel": "Fotografiere ständig alles",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_048",
+    "mode": "scale",
+    "question": "Wie sehr liebst du Brettspiele?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Eher nicht meins",
+    "maxLabel": "Absoluter Brettspiel-Fan",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_049",
+    "mode": "scale",
+    "question": "Wie gut findest du dich mit Anleitungen/Möbelaufbau zurecht?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Brauche immer Hilfe",
+    "maxLabel": "Baue alles problemlos auf",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_050",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, mit dem Fahrrad unterwegs zu sein?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Fahre selten Rad",
+    "maxLabel": "Fahre für mein Leben gerne Rad",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_051",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, allein Zeit zu verbringen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Brauche immer Gesellschaft",
+    "maxLabel": "Genieße Zeit für mich sehr",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_052",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, Regeln zu befolgen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Halte mich nicht so gern daran",
+    "maxLabel": "Halte mich immer genau daran",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_053",
+    "mode": "scale",
+    "question": "Wie sehr liebst du Naschen beim Filmabend?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Brauche keine Snacks",
+    "maxLabel": "Ohne Snacks kein Filmabend",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_054",
+    "mode": "scale",
+    "question": "Wie sehr magst du Wortspiele/Witze?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Eher nicht mein Humor",
+    "maxLabel": "Liebe gute Wortwitze",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_055",
+    "mode": "scale",
+    "question": "Wie viel Angst hast du vor Spinnen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Gar keine",
+    "maxLabel": "Absolute Panik",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_056",
+    "mode": "scale",
+    "question": "Wie viel Angst hast du vor Clowns?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Gar keine",
+    "maxLabel": "Absolute Panik",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_057",
+    "mode": "scale",
+    "question": "Wie sehr redest du mit dir selbst, wenn niemand zuschaut?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Nie",
+    "maxLabel": "Ständig",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_058",
+    "mode": "scale",
+    "question": "Wie dramatisch reagierst du, wenn du dir wehtust?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Ganz stoisch",
+    "maxLabel": "Sehr dramatisch",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_059",
+    "mode": "scale",
+    "question": "Wie sehr singst du mit, wenn dein Lieblingslied läuft?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Halte mich zurück",
+    "maxLabel": "Volle Show, egal wo",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_060",
+    "mode": "scale",
+    "question": "Wie sehr checkst du heimlich dein Spiegelbild in Schaufenstern?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Nie",
+    "maxLabel": "Ständig",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_061",
+    "mode": "scale",
+    "question": "Wie sehr redest du mit deinem Auto/Handy, wenn es nicht funktioniert?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Nie",
+    "maxLabel": "Ständig",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_062",
+    "mode": "scale",
+    "question": "Wie schnell isst du dein Essen normalerweise auf?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Sehr gemütlich",
+    "maxLabel": "Blitzschnell",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_063",
+    "mode": "scale",
+    "question": "Wie oft verlegst du dein Handy, obwohl du es in der Hand hältst?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Nie",
+    "maxLabel": "Ständig",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_064",
+    "mode": "scale",
+    "question": "Wie gut kannst du ein Geheimnis für dich behalten, wenn es richtig spannend ist?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Sehr gut",
+    "maxLabel": "Platze fast",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_065",
+    "mode": "scale",
+    "question": "Wie oft lachst du über deine eigenen Witze?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Nie",
+    "maxLabel": "Ständig",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_066",
+    "mode": "scale",
+    "question": "Wie sehr übertreibst du beim Erzählen von Geschichten?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Bleibe bei den Fakten",
+    "maxLabel": "Erzähle es episch aus",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_067",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, wenn andere dich necken?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Gar nicht",
+    "maxLabel": "Ich necke selbst gerne zurück",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_068",
+    "mode": "scale",
+    "question": "Wie oft checkst du dein Handy, obwohl nichts Neues da ist?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Selten",
+    "maxLabel": "Ständig, aus Gewohnheit",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_069",
+    "mode": "scale",
+    "question": "Wie gut tanzt du, wenn niemand hinschaut?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Eher peinlich",
+    "maxLabel": "Wie ein Weltstar",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_070",
+    "mode": "scale",
+    "question": "Wie oft würdest du zugeben, dass du dich verlaufen hast?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Fast nie",
+    "maxLabel": "Sofort",
+    "tone": "spicy"
+  },
+  {
+    "id": "scale_071",
+    "mode": "scale",
+    "question": "Wie eifersüchtig bist du?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Gar nicht",
+    "maxLabel": "Sehr eifersüchtig",
+    "tone": "spicy"
+  },
+  {
+    "id": "scale_072",
+    "mode": "scale",
+    "question": "Wie gerne hast du das letzte Wort in einer Diskussion?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Ist mir egal",
+    "maxLabel": "Muss ich unbedingt haben",
+    "tone": "spicy"
+  },
+  {
+    "id": "scale_073",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, im Mittelpunkt eines Klatschgesprächs zu stehen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Gar nicht",
+    "maxLabel": "Genieße die Aufmerksamkeit",
+    "tone": "spicy"
+  },
+  {
+    "id": "scale_074",
+    "mode": "scale",
+    "question": "Wie oft übertreibst du bei Ausreden?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Nie",
+    "maxLabel": "Sehr oft",
+    "tone": "spicy"
+  },
+  {
+    "id": "scale_075",
+    "mode": "scale",
+    "question": "Wie stur bist du, wenn du etwas willst?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Gebe schnell nach",
+    "maxLabel": "Absolut unnachgiebig",
+    "tone": "spicy"
+  },
+  {
+    "id": "scale_076",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, Recht zu behalten?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Ist mir nicht wichtig",
+    "maxLabel": "Sehr wichtig",
+    "tone": "spicy"
+  },
+  {
+    "id": "scale_077",
+    "mode": "scale",
+    "question": "Wie schnell verliebst du dich?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Sehr langsam",
+    "maxLabel": "Kopf über Hacken",
+    "tone": "spicy"
+  },
+  {
+    "id": "scale_078",
+    "mode": "scale",
+    "question": "Wie sehr magst du Drama im Freundeskreis?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Halte mich komplett raus",
+    "maxLabel": "Bin gerne mittendrin",
+    "tone": "spicy"
+  },
+  {
+    "id": "scale_079",
+    "mode": "scale",
+    "question": "Wie gut kannst du flirten?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Eher ungeschickt",
+    "maxLabel": "Absoluter Profi",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_001",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten seinen Reisepass vergessen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_002",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten im Lotto gewinnen und trotzdem weiterarbeiten?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_003",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten drei Tage ohne Handy schaffen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_004",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten spontan nach Australien auswandern?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_005",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten bei einer Zombie-Apokalypse überleben?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_006",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten ein Geheimnis ausplaudern?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_007",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten zu spät zu seiner eigenen Hochzeit kommen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_008",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten bei Karaoke komplett eskalieren?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_009",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten aus Versehen einen falschen Zug nehmen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_010",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten um 3 Uhr morgens noch Pizza bestellen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_011",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten eine Woche ohne Internet aushalten?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_012",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten seinen eigenen Geburtstag vergessen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_013",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten seinen Flug verpassen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_014",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten mitten im Gespräch einschlafen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_015",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten ein Haustier heimlich adoptieren?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_016",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten bei einem Quizabend alles gewinnen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_017",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten das beste Weihnachtsessen kochen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_018",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten einen Marathon laufen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_019",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten ein Buch über sein Leben schreiben?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_020",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten als Erstes am Urlaubsort schwimmen gehen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_021",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten ein Musikinstrument perfekt lernen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_022",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die beste Reiseroute planen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_023",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten ein eigenes Unternehmen gründen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_024",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die längste Zeit ohne Süßigkeiten aushalten?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_025",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten als Erstes bei einem Umzug fertig gepackt haben?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_026",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten den besten Kuchen backen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_027",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten ein Vorstellungsgespräch perfekt meistern?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_028",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am längsten wach bleiben können?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_029",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die Familie bei einem Streit schlichten?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_030",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten spontan ein Konzert-Ticket kaufen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_031",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten das beste Geschenk aussuchen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_032",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten den Überblick in einer Chaos-Situation behalten?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_033",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten den besten Reiseleiter abgeben?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_034",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am längsten ohne Auto auskommen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_035",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die beste Rede auf einer Feier halten?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_036",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten als Erster einen Marathon-Serienabend vorschlagen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_037",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten den besten Grillmeister abgeben?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_038",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die meisten Fotos im Urlaub machen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_039",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten das beste Picknick organisieren?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_040",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die ruhigste Person in einer stressigen Situation bleiben?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_041",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten ein Café/Restaurant eröffnen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_042",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten als Kind am meisten Streiche gespielt haben?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_043",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten laut lachen, wenn es unpassend ist?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_044",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten beim Tanzen die meisten Zuschauer anziehen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_045",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten sich selbst im Spiegel erschrecken?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_046",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten aus Versehen die falsche Wohnungstür aufschließen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_047",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten beim Wandern die Gruppe verlieren?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_048",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten mit dem Auto in die falsche Richtung fahren, ohne es zu merken?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_049",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten das Handy im Kühlschrank vergessen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_050",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten beim Fotografieren die Kamera falsch herum halten?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_051",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten aus Versehen zwei linke Schuhe anziehen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_052",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die peinlichste Autokorrektur-Nachricht verschicken?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_053",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten einen kompletten Filmabend verschlafen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_054",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten beim Kochen die Küche in Brand setzen (aus Versehen natürlich)?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_055",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten mit dem falschen Namen jemanden ansprechen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_056",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten beim Packen die wichtigste Sache vergessen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_057",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten mitten im Satz vergessen, was er sagen wollte?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_058",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten bei einem Fotoshooting die meisten Posen drauf haben?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_059",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten aus Versehen im Falschen Chat eine Nachricht senden?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_060",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die meisten offenen Browser-Tabs gleichzeitig haben?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_061",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die dramatischste Reaktion auf eine schlechte Filmempfehlung haben?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_062",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten spontan ein Rap-Battle starten?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_063",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten in einer Reality-Show die meisten Fans bekommen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_064",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am lautesten niesen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_065",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die beste Ausrede für Zuspätkommen erfinden?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_066",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten seine eigene Überraschungsparty verraten?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_067",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am längsten über einen Witz nachlachen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_068",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten aus Versehen zwei Verabredungen gleichzeitig haben?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_069",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am schnellsten wieder Single sein, wenn er/sie wollte?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_070",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten heimlich ein zweites Handy haben?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_071",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am meisten flirten, ohne es zu merken?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_072",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten das dramatischste Liebesleben haben?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_073",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am längsten eine Notlüge durchhalten?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_074",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten einen One-Night-Reality-TV-Skandal auslösen?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_075",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten den Klatsch der Familie am besten kennen?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_076",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am längsten schmollen können?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_077",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die dramatischste Trennung inszenieren?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_078",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am meisten im Streit übertreiben?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_079",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten heimlich der größte Detektiv der Familie sein?",
+    "tone": "spicy"
+  },
+  {
+    "id": "choice_095",
+    "mode": "choice",
+    "question": "Was würdest du an einem Strandtag lieber machen?",
+    "answers": [
+      "Schwimmen",
+      "Sonnen",
+      "Beachvolleyball",
+      "Ein Buch lesen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_096",
+    "mode": "choice",
+    "question": "Wie verbringst du am liebsten eine Zugfahrt?",
+    "answers": [
+      "Schlafen",
+      "Musik hören",
+      "Aus dem Fenster schauen",
+      "Mit dem Sitznachbarn reden"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_097",
+    "mode": "choice",
+    "question": "Was ist dein bevorzugter Belag auf Pizza?",
+    "answers": [
+      "Salami",
+      "Gemüse",
+      "Käse pur",
+      "Etwas Ausgefallenes"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_098",
+    "mode": "choice",
+    "question": "Welches Frühstücksgetränk wählst du?",
+    "answers": [
+      "Kaffee",
+      "Tee",
+      "Orangensaft",
+      "Kakao"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_099",
+    "mode": "choice",
+    "question": "Was würdest du für einen Filmabend wählen?",
+    "answers": [
+      "Komödie",
+      "Action",
+      "Doku",
+      "Klassiker"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_100",
+    "mode": "choice",
+    "question": "Wie feierst du am liebsten einen Erfolg?",
+    "answers": [
+      "Essen gehen",
+      "Mit Freunden feiern",
+      "Allein genießen",
+      "Etwas Schönes kaufen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_101",
+    "mode": "choice",
+    "question": "Was würdest du am ehesten sammeln?",
+    "answers": [
+      "Briefmarken/Münzen",
+      "Reiseandenken",
+      "Bücher",
+      "Nichts, ich sammle nicht"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_102",
+    "mode": "choice",
+    "question": "Wie verbringst du eine Mittagspause am liebsten?",
+    "answers": [
+      "Draußen an der frischen Luft",
+      "Am Schreibtisch weiterarbeiten",
+      "Mit Kollegen essen",
+      "Kurz die Augen schließen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_103",
+    "mode": "choice",
+    "question": "Welches Frühstücksbrot magst du am liebsten?",
+    "answers": [
+      "Vollkorn",
+      "Weißbrot",
+      "Brötchen",
+      "Croissant"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_104",
+    "mode": "choice",
+    "question": "Was ist dein liebstes Streaming-Genre?",
+    "answers": [
+      "Serie mit vielen Staffeln",
+      "Ein guter Film",
+      "Doku",
+      "Reality-TV"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_105",
+    "mode": "choice",
+    "question": "Wie gehst du am liebsten campen/übernachten in der Natur?",
+    "answers": [
+      "Zelt",
+      "Wohnmobil",
+      "Hütte",
+      "Gar nicht, lieber Hotel"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_106",
+    "mode": "choice",
+    "question": "Was wählst du für einen Spieleabend?",
+    "answers": [
+      "Kartenspiel",
+      "Brettspiel",
+      "Quizspiel",
+      "Videospiel"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_107",
+    "mode": "choice",
+    "question": "Wie gehst du am liebsten in den Feierabend?",
+    "answers": [
+      "Sport",
+      "Couch",
+      "Freunde treffen",
+      "Hobby nachgehen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_108",
+    "mode": "choice",
+    "question": "Was würdest du dir zum Geburtstag wünschen?",
+    "answers": [
+      "Reise",
+      "Erlebnis",
+      "Zeit mit der Familie",
+      "Etwas Materielles"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_109",
+    "mode": "choice",
+    "question": "Wie gehst du am liebsten in einen neuen Job/Alltag?",
+    "answers": [
+      "Vorbereitet und geplant",
+      "Offen und flexibel",
+      "Mit gesunder Nervosität",
+      "Ganz entspannt"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_110",
+    "mode": "choice",
+    "question": "Was wäre deine Lieblingsbeschäftigung im Regen?",
+    "answers": [
+      "Puzzeln",
+      "Backen",
+      "Filme schauen",
+      "Lesen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_111",
+    "mode": "choice",
+    "question": "Wie gehst du am liebsten auf Reisen mit Gepäck um?",
+    "answers": [
+      "Minimalistisch, ein Koffer reicht",
+      "Lieber zu viel als zu wenig",
+      "Handgepäck reicht völlig",
+      "Ich packe erst kurz vorher"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_112",
+    "mode": "choice",
+    "question": "Was ist dein liebstes Familien-Ritual?",
+    "answers": [
+      "Gemeinsames Essen",
+      "Spieleabend",
+      "Ausflüge",
+      "Feiertage zusammen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_113",
+    "mode": "choice",
+    "question": "Wie würdest du am liebsten einen freien Samstag verbringen?",
+    "answers": [
+      "Ausschlafen",
+      "Früh raus und was erleben",
+      "Erledigungen machen",
+      "Gar nichts planen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_114",
+    "mode": "choice",
+    "question": "Was ist dein bevorzugter Dessert?",
+    "answers": [
+      "Kuchen",
+      "Eis",
+      "Obst",
+      "Schokolade"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_115",
+    "mode": "choice",
+    "question": "Wie würdest du eine Reise am liebsten dokumentieren?",
+    "answers": [
+      "Fotos",
+      "Tagebuch",
+      "Videos",
+      "Gar nicht, nur erleben"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_116",
+    "mode": "choice",
+    "question": "Was ist dein Lieblingsort für ein gutes Gespräch?",
+    "answers": [
+      "Küchentisch",
+      "Auf dem Sofa",
+      "Im Freien",
+      "Beim Spazieren"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_117",
+    "mode": "choice",
+    "question": "Wie gehst du am liebsten mit Veränderungen um?",
+    "answers": [
+      "Mit offenen Armen",
+      "Erst skeptisch, dann offen",
+      "Brauche Zeit",
+      "Am liebsten bleibt alles wie es ist"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_118",
+    "mode": "choice",
+    "question": "Was ist deine bevorzugte Art, dich zu bewegen?",
+    "answers": [
+      "Spazieren",
+      "Joggen",
+      "Radfahren",
+      "Schwimmen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_119",
+    "mode": "choice",
+    "question": "Wie würdest du am liebsten ein Fest ausrichten?",
+    "answers": [
+      "Im Garten",
+      "Zuhause drinnen",
+      "In einer Location",
+      "Draußen in der Natur"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_120",
+    "mode": "choice",
+    "question": "Was ist deine bevorzugte Art, Nachrichten zu lesen?",
+    "answers": [
+      "Zeitung",
+      "Online-News",
+      "Fernsehen",
+      "Ich verfolge kaum Nachrichten"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_121",
+    "mode": "choice",
+    "question": "Wie gehst du am liebsten mit einem vollen Terminkalender um?",
+    "answers": [
+      "Alles fest einplanen",
+      "Prioritäten setzen",
+      "Durchwursteln",
+      "Termine absagen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_122",
+    "mode": "choice",
+    "question": "Was wäre deine bevorzugte Urlaubsunterkunft?",
+    "answers": [
+      "Hotel",
+      "Ferienwohnung",
+      "Camping",
+      "Bei Freunden/Familie"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_123",
+    "mode": "choice",
+    "question": "Wie gehst du am liebsten mit einem vollen Kühlschrank um?",
+    "answers": [
+      "Alles sinnvoll verplanen",
+      "Erstmal das Nötigste kochen",
+      "Einfach mal reinschauen",
+      "Ich plane vorher genau"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_124",
+    "mode": "choice",
+    "question": "Was ist dein liebster Ort, um nachzudenken?",
+    "answers": [
+      "In der Natur",
+      "Im Auto",
+      "Beim Duschen",
+      "Im Bett"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_125",
+    "mode": "choice",
+    "question": "Was würdest du bei schlechtem Wetter im Urlaub machen?",
+    "answers": [
+      "Museum besuchen",
+      "Im Hotel bleiben",
+      "Shoppen gehen",
+      "Trotzdem raus"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_126",
+    "mode": "choice",
+    "question": "Wie würdest du am liebsten Sport treiben?",
+    "answers": [
+      "Alleine",
+      "In der Gruppe",
+      "Mit einem Trainer",
+      "Ich treibe eher wenig Sport"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_127",
+    "mode": "choice",
+    "question": "Was ist dein Lieblingsgetränk im Sommer?",
+    "answers": [
+      "Limonade",
+      "Eistee",
+      "Wasser mit Zitrone",
+      "Ein kühles Bier/Radler"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_128",
+    "mode": "choice",
+    "question": "Wie gehst du am liebsten mit einem Streit um?",
+    "answers": [
+      "Sofort klären",
+      "Erst abkühlen lassen",
+      "Schriftlich klären",
+      "Zeit verstreichen lassen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_129",
+    "mode": "choice",
+    "question": "Was wäre dein Lieblingsplatz auf einem Konzert?",
+    "answers": [
+      "Ganz vorne",
+      "In der Mitte",
+      "Weiter hinten",
+      "Auf der Tribüne/sitzend"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_130",
+    "mode": "choice",
+    "question": "Wie gehst du am liebsten shoppen für Geschenke?",
+    "answers": [
+      "Frühzeitig und geplant",
+      "Spontan wenn ich was sehe",
+      "In letzter Minute",
+      "Am liebsten online"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_131",
+    "mode": "choice",
+    "question": "Was ist dein bevorzugter Ort für den Morgenkaffee?",
+    "answers": [
+      "Küche",
+      "Balkon/Terrasse",
+      "Unterwegs",
+      "Im Bett"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_132",
+    "mode": "choice",
+    "question": "Wie gehst du am liebsten mit Langeweile um?",
+    "answers": [
+      "Handy zücken",
+      "Ein Buch lesen",
+      "Was unternehmen",
+      "Einfach genießen"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_133",
+    "mode": "choice",
+    "question": "Was wäre deine bevorzugte Art zu reisen: allein oder in Gruppe?",
+    "answers": [
+      "Allein",
+      "Zu zweit",
+      "Kleine Gruppe",
+      "Große Gruppe"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_134",
+    "mode": "choice",
+    "question": "Wie gehst du am liebsten mit neuen Technologien um?",
+    "answers": [
+      "Sofort ausprobieren",
+      "Erstmal abwarten",
+      "Nur wenn nötig",
+      "Lasse mir alles erklären"
+    ],
+    "tone": "casual"
+  },
+  {
+    "id": "choice_135",
+    "mode": "choice",
+    "question": "Was wäre deine erste Reaktion in einer Show mit Publikum?",
+    "answers": [
+      "Sofort mitmachen wollen",
+      "Lieber zuschauen",
+      "Nervös aber neugierig",
+      "Am liebsten ganz hinten sitzen"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_136",
+    "mode": "choice",
+    "question": "Was wäre dein Erkennungslied, wenn du einen Raum betrittst?",
+    "answers": [
+      "Etwas Episches",
+      "Etwas Lustiges",
+      "Etwas Entspanntes",
+      "Ich brauche keine Musik dafür"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_137",
+    "mode": "choice",
+    "question": "Wie würdest du reagieren, wenn dein Navi dich in die Irre führt?",
+    "answers": [
+      "Schimpfen",
+      "Einfach weiterfahren",
+      "Jemanden fragen",
+      "Neu berechnen lassen und Ruhe bewahren"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_138",
+    "mode": "choice",
+    "question": "Was wäre dein Talent bei einer Familien-Talentshow?",
+    "answers": [
+      "Singen",
+      "Tanzen",
+      "Witze erzählen",
+      "Ich schaue lieber zu"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_139",
+    "mode": "choice",
+    "question": "Wie würdest du reagieren, wenn du beim Reden den Faden verlierst?",
+    "answers": [
+      "Einfach improvisieren",
+      "Ehrlich zugeben",
+      "Thema wechseln",
+      "Nachfragen was ich sagen wollte"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_140",
+    "mode": "choice",
+    "question": "Was wäre dein Reflex, wenn ein Foto von dir gemacht wird?",
+    "answers": [
+      "Sofort posieren",
+      "Wegdrehen",
+      "Lächeln wie immer",
+      "Grimasse schneiden"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_141",
+    "mode": "choice",
+    "question": "Wie würdest du am ehesten aus einem langweiligen Meeting/Familientreffen fliehen?",
+    "answers": [
+      "Notiz machen und aufmerksam wirken",
+      "Heimlich aufs Handy schauen",
+      "Vorwand erfinden",
+      "Tapfer durchhalten"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_142",
+    "mode": "choice",
+    "question": "Was wäre deine Reaktion, wenn du im Restaurant das falsche Essen bekommst?",
+    "answers": [
+      "Trotzdem essen",
+      "Höflich reklamieren",
+      "Bestimmt reklamieren",
+      "Einfach tauschen mit jemandem am Tisch"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_143",
+    "mode": "choice",
+    "question": "Wie würdest du reagieren, wenn du merkst, dass du falsch gesungen hast?",
+    "answers": [
+      "Einfach weiter singen",
+      "Laut lachen",
+      "Sofort korrigieren",
+      "So tun als wäre es Absicht"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_144",
+    "mode": "choice",
+    "question": "Was wäre dein Spruch, wenn du beim Spiel verlierst?",
+    "answers": [
+      "Nächstes Mal gewinne ich",
+      "Das war nur Glück (vom Gegner)",
+      "Ich gönne es",
+      "Revanche, sofort!"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_145",
+    "mode": "choice",
+    "question": "Wie würdest du dich verhalten, wenn du eine falsche Antwort im Quiz gibst?",
+    "answers": [
+      "Sofort drüber lachen",
+      "Beharren, ich hätte recht",
+      "Schnell weiterreden",
+      "Betreten schweigen"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_146",
+    "mode": "choice",
+    "question": "Was wäre deine Reaktion beim Anblick eines riesigen Spinnennetzes im Garten?",
+    "answers": [
+      "Bewundern",
+      "Schnell weggehen",
+      "Vorsichtig entfernen",
+      "Jemand anderen holen"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_147",
+    "mode": "choice",
+    "question": "Wie würdest du am ehesten heimlich Süßigkeiten naschen?",
+    "answers": [
+      "Ganz offen, kein Geheimnis",
+      "Heimlich in der Küche",
+      "Nachts wenn alle schlafen",
+      "Ich teile lieber"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_148",
+    "mode": "choice",
+    "question": "Was wäre dein Kommentar, wenn du zum dritten Mal dieselbe Geschichte hörst?",
+    "answers": [
+      "Aufmerksam tun",
+      "Ehrlich sagen, kenne ich schon",
+      "Mitlachen als wäre es neu",
+      "Die Geschichte selbst zu Ende erzählen"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_149",
+    "mode": "choice",
+    "question": "Wie würdest du am ehesten reagieren, wenn ein Familienmitglied laut schnarcht?",
+    "answers": [
+      "Kopfhörer aufsetzen",
+      "Sanft wecken",
+      "Fotos/Videos machen",
+      "Einfach damit leben"
+    ],
+    "tone": "funny"
+  },
+  {
+    "id": "choice_150",
+    "mode": "choice",
+    "question": "Wie würdest du am ehesten mit einem Heiratsantrag umgehen, wenn du überrascht wirst?",
+    "answers": [
+      "Sofort Ja sagen",
+      "Erstmal sprachlos sein",
+      "In Tränen ausbrechen",
+      "Ganz ruhig bleiben"
+    ],
+    "tone": "spicy"
+  },
+  {
+    "id": "choice_151",
+    "mode": "choice",
+    "question": "Was wäre dein Verhalten beim ersten Date?",
+    "answers": [
+      "Ich rede sehr viel",
+      "Ich bin eher zurückhaltend",
+      "Ich stelle viele Fragen",
+      "Ich bin nervös, aber ehrlich"
+    ],
+    "tone": "spicy"
+  },
+  {
+    "id": "choice_152",
+    "mode": "choice",
+    "question": "Wie würdest du am ehesten mit Eifersucht umgehen?",
+    "answers": [
+      "Offen ansprechen",
+      "Für mich behalten",
+      "Kurz grübeln, dann loslassen",
+      "Sofort klären wollen"
+    ],
+    "tone": "spicy"
+  },
+  {
+    "id": "choice_153",
+    "mode": "choice",
+    "question": "Was wäre dein Verhalten, wenn du bei einer Notlüge erwischt wirst?",
+    "answers": [
+      "Sofort zugeben",
+      "Weiter durchziehen",
+      "Mit Humor auflösen",
+      "Rot werden und schweigen"
+    ],
+    "tone": "spicy"
+  },
+  {
+    "id": "choice_154",
+    "mode": "choice",
+    "question": "Wie würdest du reagieren, wenn dich jemand offen anflirtet?",
+    "answers": [
+      "Geschmeichelt lächeln",
+      "Verlegen wegschauen",
+      "Selbstbewusst zurückflirten",
+      "Erstmal gar nicht bemerken"
+    ],
+    "tone": "spicy"
+  },
+  {
+    "id": "scale_080",
+    "mode": "scale",
+    "question": "Wie sehr liebst du Reisen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Bleibe lieber zuhause",
+    "maxLabel": "Ständig unterwegs",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_081",
+    "mode": "scale",
+    "question": "Wie kreativ schätzt du dich ein?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Eher wenig kreativ",
+    "maxLabel": "Sehr kreativer Kopf",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_082",
+    "mode": "scale",
+    "question": "Wie stressresistent bist du?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Werde schnell gestresst",
+    "maxLabel": "Bleibe immer gelassen",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_083",
+    "mode": "scale",
+    "question": "Wie sehr magst du Ordnung am Arbeitsplatz?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Kreatives Chaos",
+    "maxLabel": "Alles an seinem Platz",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_084",
+    "mode": "scale",
+    "question": "Wie gerne probierst du neues Essen aus?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Bleibe bei Bekanntem",
+    "maxLabel": "Probiere alles einmal",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_085",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, Gastgeschenke mitzubringen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Denke selten dran",
+    "maxLabel": "Bringe immer etwas mit",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_086",
+    "mode": "scale",
+    "question": "Wie zuverlässig bist du bei Verabredungen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Eher spontan/unzuverlässig",
+    "maxLabel": "Absolut zuverlässig",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_087",
+    "mode": "scale",
+    "question": "Wie sehr liebst du Handarbeiten/Basteln?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Nicht mein Ding",
+    "maxLabel": "Verbringe gerne Zeit damit",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_088",
+    "mode": "scale",
+    "question": "Wie gut kannst du mit Zahlen/Finanzen umgehen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Eher schwach darin",
+    "maxLabel": "Sehr sicher im Umgang",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_089",
+    "mode": "scale",
+    "question": "Wie sehr liebst du deine Nachbarschaft?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Kenne kaum jemanden",
+    "maxLabel": "Sehr eng verbunden",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_090",
+    "mode": "scale",
+    "question": "Wie sehr magst du Hörbücher/Podcasts?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Höre nie welche",
+    "maxLabel": "Fast täglich",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_091",
+    "mode": "scale",
+    "question": "Wie gut kannst du delegieren/abgeben?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Mache lieber alles selbst",
+    "maxLabel": "Gebe gerne Aufgaben ab",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_092",
+    "mode": "scale",
+    "question": "Wie sehr magst du Wintersport?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Nicht mein Ding",
+    "maxLabel": "Absoluter Fan",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_093",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, Rezepte genau nachzukochen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Improvisiere lieber",
+    "maxLabel": "Halte mich genau ans Rezept",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_094",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, im Voraus zu packen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Packe erst kurz vorher",
+    "maxLabel": "Packe Wochen im Voraus",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_095",
+    "mode": "scale",
+    "question": "Wie sehr magst du laute Familienfeiern?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Bevorzuge es ruhig",
+    "maxLabel": "Je lauter, desto besser",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_096",
+    "mode": "scale",
+    "question": "Wie sehr magst du Regenwetter?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Mag ich gar nicht",
+    "maxLabel": "Finde es gemütlich",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_097",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, Erinnerungen zu sammeln (Fotos, Souvenirs)?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Eher wenig",
+    "maxLabel": "Sammle sehr viel",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_098",
+    "mode": "scale",
+    "question": "Wie sehr magst du dich um andere kümmern?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Eher zurückhaltend",
+    "maxLabel": "Sehr fürsorglich",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_099",
+    "mode": "scale",
+    "question": "Wie sehr magst du strukturierte Tagesabläufe?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Lebe eher planlos",
+    "maxLabel": "Brauche feste Routinen",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_100",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, Gastgeber für Übernachtungsbesuch zu sein?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Eher ungern",
+    "maxLabel": "Sehr gerne",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_101",
+    "mode": "scale",
+    "question": "Wie sehr magst du klassische Familienspiele wie Mensch ärgere dich nicht?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Eher nicht so",
+    "maxLabel": "Absolut geliebt",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_102",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, im Freien zu übernachten?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Gar nicht meins",
+    "maxLabel": "Liebe es",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_103",
+    "mode": "scale",
+    "question": "Wie sehr magst du Wortspiele bei Tisch?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Nicht so mein Humor",
+    "maxLabel": "Liebe sowas",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_104",
+    "mode": "scale",
+    "question": "Wie oft verplapperst du dich mit einem Geheimnis?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "So gut wie nie",
+    "maxLabel": "Ziemlich oft",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_105",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, bei Regen trotzdem rauszugehen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Auf keinen Fall",
+    "maxLabel": "Total gerne",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_106",
+    "mode": "scale",
+    "question": "Wie oft erzählst du dieselbe Geschichte mehrmals?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Nie",
+    "maxLabel": "Ständig",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_107",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, laut über eigene Missgeschicke zu lachen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Eher peinlich berührt",
+    "maxLabel": "Lache am lautesten selbst",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_108",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, Quatsch mit Kindern/Enkeln zu machen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Eher zurückhaltend",
+    "maxLabel": "Bin sofort dabei",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_109",
+    "mode": "scale",
+    "question": "Wie oft verlegst du deine Schlüssel?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "So gut wie nie",
+    "maxLabel": "Fast jeden Tag",
+    "tone": "funny"
+  },
+  {
+    "id": "scale_110",
+    "mode": "scale",
+    "question": "Wie sehr magst du überraschende Wendungen in Filmen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Mag ich nicht so",
+    "maxLabel": "Liebe sie total",
+    "tone": "casual"
+  },
+  {
+    "id": "scale_111",
+    "mode": "scale",
+    "question": "Wie sehr magst du Diskussionen über Zukunftspläne?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Eher unangenehm",
+    "maxLabel": "Führe sie sehr gerne",
+    "tone": "spicy"
+  },
+  {
+    "id": "scale_112",
+    "mode": "scale",
+    "question": "Wie schnell vergibst du nach einem Streit?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Brauche lange",
+    "maxLabel": "Vergesse es sehr schnell",
+    "tone": "spicy"
+  },
+  {
+    "id": "scale_113",
+    "mode": "scale",
+    "question": "Wie sehr magst du es, im Rampenlicht zu stehen?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Vermeide es",
+    "maxLabel": "Genieße es total",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_080",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die beste Reisebegleitung sein?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_081",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am längsten telefonieren?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_082",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten den besten Rat geben?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_083",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die meisten Wecker brauchen, um aufzuwachen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_084",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten spontan einen Roadtrip vorschlagen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_085",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am längsten in der Sonne bleiben, ohne Sonnencreme?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_086",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die beste Überraschungsparty planen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_087",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am schnellsten einschlafen, egal wo?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_088",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten das schönste Handschriftliche schreiben können?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_089",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die Fernbedienung nie wiederfinden?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_090",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten das beste Gedächtnis für Geburtstage haben?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_091",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die meiste Zeit vor dem Spiegel verbringen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_092",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die beste Wanderroute aussuchen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_093",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten das Auto volltanken vergessen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_094",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die meisten Freunde in einer neuen Stadt finden?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_095",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten mitten im Winter kurze Ärmel tragen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_096",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten den besten Familienfilm-Abend organisieren?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_097",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die dramatischste Reaktion auf einen platten Reifen haben?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_098",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten den besten Trostspender sein?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_099",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten seine Sonnenbrille auf dem Kopf suchen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_100",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten das beste Gedächtnis für alte Geschichten haben?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_101",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten mitten in der Nacht Heißhunger bekommen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_102",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die beste Stimmung in jede Feier bringen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_103",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten aus Versehen zwei verschiedene Socken anziehen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_104",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die meiste Geduld mit kleinen Kindern haben?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_105",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten das dramatischste Gesicht bei schlechtem Wetter machen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_106",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die beste Person sein, um ein Geheimnis anzuvertrauen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_107",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten beim Zelten die meiste Angst vor Geräuschen haben?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_108",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die beste Planung für den nächsten Familienurlaub machen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_109",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten aus Versehen im Pyjama vor die Tür gehen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_110",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten der beste Vermittler bei Familienstreit sein?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_111",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die meiste Zeit brauchen, um sich fertig zu machen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_112",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten das schönste Lächeln auf Fotos haben?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_113",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am lautesten über einen schlechten Witz lachen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_114",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die beste Wahl für einen Ausflugsleiter sein?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_115",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten mitten im Gespräch das Thema vergessen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_116",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten den besten Familienspruch prägen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_117",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten seinen Regenschirm zuhause vergessen, obwohl Regen angesagt ist?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_118",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die beste Wahl für einen Quiz-Moderator sein?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_119",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten das Missgeschick am längsten nacherzählen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_120",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am schnellsten eine neue Sprache lernen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_121",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten seine eigene Party verschlafen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_122",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die beste Wahl sein, um einen Streit zu schlichten?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_123",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten den peinlichsten Tanzmove haben?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_124",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am besten unter Druck bleiben?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_125",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten aus Versehen die Katze/den Hund des Nachbarn füttern?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_126",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am ehrlichsten seine Meinung sagen?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_127",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am schnellsten verliebt sein?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_128",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die meisten Verehrer/Verehrerinnen haben?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_129",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am dramatischsten auf Eifersucht reagieren?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_130",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am besten flirten können, ohne es zu merken?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_131",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die charmanteste Ausrede erfinden?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_132",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am längsten nachtragend sein?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_133",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten heimlich der romantischste in der Runde sein?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_134",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die meisten Bücher gleichzeitig lesen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_135",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten den besten Small Talk führen können?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_136",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten spontan bei einem Flohmarkt zuschlagen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_137",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die beste Wahl für einen Wanderführer sein?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_138",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am längsten an einem Puzzle sitzen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_139",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die meisten Pflanzen zuhause haben?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_140",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten das beste Gespür für gutes Wetter haben?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_141",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die beste Wahl für einen Discjockey auf der Familienfeier sein?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_142",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am längsten an einem Bild malen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_143",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die meiste Geduld beim Angeln haben?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_144",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die beste Wahl für einen Reiseführer im Ausland sein?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_145",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am schnellsten neue Rezepte auswendig können?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_146",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die meiste Energie am Morgen haben?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_147",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die beste Wahl für den Familien-Fotografen sein?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_148",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten den besten Podcast über sein eigenes Leben machen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_149",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die meisten Kissen im Bett haben?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_150",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten heimlich am besten singen können, es aber nie zugeben?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_151",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten aus Versehen zweimal dieselbe Geschichte auf einer Feier erzählen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_152",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten beim Umzug die meisten Kisten mit 'Sonstiges' beschriften?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_153",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten mitten im Satz einschlafen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_154",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die dramatischste Reaktion auf einen verlorenen Parkplatz haben?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_155",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten aus Versehen den falschen Geburtstag gratulieren?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_156",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten seine eigene Wegbeschreibung nicht verstehen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_157",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am längsten im Bad brauchen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_158",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten den peinlichsten Autokorrektur-Fehler haben?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_159",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten aus Versehen den Wecker auf die falsche Uhrzeit stellen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_160",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten beim Fußball/Sport am lautesten von der Seitenlinie anfeuern?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_161",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am meisten Zeit mit Serien-Bingewatching verbringen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_162",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten seine eigene Einkaufsliste vergessen mitzunehmen?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_163",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die beste Wahl sein, um ein Baby zum Lachen zu bringen?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_164",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten das Wetter am genauesten vorhersagen können, ohne App?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_165",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die meisten Ausreden für verpasste Termine parat haben?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_166",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am längsten im Stau die Ruhe bewahren?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_167",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die dramatischste Reaktion beim Geschenkauspacken haben?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_168",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten beim Kartenspielen am meisten schummeln (aus Spaß)?",
+    "tone": "funny"
+  },
+  {
+    "id": "group_169",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten die beste Wahl für einen Familien-Schiedsrichter sein?",
+    "tone": "casual"
+  },
+  {
+    "id": "group_170",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am ehesten heimlich seine Gefühle verstecken?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_171",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am schnellsten eine SMS/Nachricht bereuen?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_172",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am meisten für Liebe riskieren?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_173",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am besten ein Geheimnis wittern, bevor es verraten wird?",
+    "tone": "spicy"
+  },
+  {
+    "id": "group_174",
+    "mode": "group_vote",
+    "question": "Wer würde am ehesten am charmantesten aus einer peinlichen Situation rauskommen?",
+    "tone": "spicy"
+  }
+]
