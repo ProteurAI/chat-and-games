@@ -10,6 +10,9 @@ let pollOptionCount = 2;
 
 let gameTypes = [];
 let gameSessions = [];
+let onlineNames = [];
+let currentParty = null; // { code, hostUserId, members: [{userId,name}], scores: {uid: points} } | null
+let lastPartyGameStarted = null; // most recent party_game_started banner, cleared once acted on
 let myGameSessionId = null;
 let myGameType = null;
 let myGamePlayers = [];
@@ -78,10 +81,13 @@ function showLogin() {
 async function startApp() {
   el("login-screen").hidden = true;
   el("app").hidden = false;
-  el("sidebar-me").textContent = `angemeldet als ${me.name}`;
+  el("global-nav-me").textContent = me.name.slice(0, 1).toUpperCase();
+  el("global-nav-me").title = `Angemeldet als ${me.name}`;
+  el("home-greeting-text").textContent = `Hey ${me.name} 👋`;
   await loadChannels();
   await loadGames();
   connectWebSocket();
+  switchView("home");
 }
 
 // ---------- channels ----------
@@ -200,6 +206,8 @@ function handleWsEvent(data) {
   } else if (data.type === "games_update") {
     gameSessions = data.games;
     renderGameSidebar();
+    if (currentView === "party") renderPartyView();
+    if (currentView === "home") renderHomeView();
   } else if (data.type === "game_joined") {
     myGameSessionId = data.session_id;
     myGameType = data.game_type;
@@ -208,12 +216,72 @@ function handleWsEvent(data) {
   } else if (data.type === "game_state") {
     if (data.session_id === myGameSessionId) updateGameState(data.state);
   } else if (data.type === "game_over") {
-    if (data.session_id === myGameSessionId) showGameOver(data);
+    if (data.session_id === myGameSessionId) {
+      reportPartyScoreIfActive(data);
+      showGameOver(data);
+    }
+  } else if (data.type === "party_update") {
+    currentParty = data.party;
+    if (currentView === "party") renderPartyView();
+  } else if (data.type === "party_error") {
+    toast(data.message || "Party-Fehler");
+  } else if (data.type === "party_game_started") {
+    lastPartyGameStarted = data;
+    if (currentView === "party") renderPartyView();
+    else toast(`🎉 ${data.emoji} ${data.game_name} wurde in deiner Party gestartet`);
   }
 }
 
+// ---------- view navigation (Chat & Games 2.0 app shell) ----------
+// Four top-level views, switched via the desktop global-nav rail or the
+// mobile bottom-nav - both share the same data-view/click-handler wiring.
+// #game-modal / #snap-modal live outside #app entirely (see index.html)
+// so opening a game never interacts with view switching at all.
+const VIEWS = ["home", "chat", "games", "party"];
+let currentView = "home";
+
+function switchView(view) {
+  if (!VIEWS.includes(view)) view = "home";
+  currentView = view;
+  for (const v of VIEWS) {
+    const panel = el(`view-${v}`);
+    if (panel) panel.hidden = v !== view;
+  }
+  for (const btn of document.querySelectorAll("[data-view]")) {
+    btn.classList.toggle("active", btn.dataset.view === view);
+  }
+  positionNavIndicator();
+  closeMobileSidebar();
+  if (view === "home") renderHomeView();
+  else if (view === "games") applyGameFilters();
+  else if (view === "party") renderPartyView();
+}
+
+function positionNavIndicator() {
+  const indicator = el("global-nav-indicator");
+  const activeBtn = document.querySelector(`.global-nav-item[data-view="${currentView}"]`);
+  if (!indicator || !activeBtn) return;
+  indicator.style.transform = `translateY(${activeBtn.offsetTop}px)`;
+  indicator.style.height = `${activeBtn.offsetHeight}px`;
+}
+window.addEventListener("resize", () => positionNavIndicator());
+
+for (const btn of document.querySelectorAll("[data-view]")) {
+  btn.addEventListener("click", () => switchView(btn.dataset.view));
+}
+
+for (const btn of document.querySelectorAll(".quick-action-card[data-action]")) {
+  btn.addEventListener("click", () => {
+    const action = btn.dataset.action;
+    if (action === "start-game") switchView("games");
+    else if (action === "start-party") switchView("party");
+    else if (action === "go-chat") switchView("chat");
+  });
+}
+
 function renderOnline(names) {
-  const list = el("online-list");
+  onlineNames = names;
+  const list = el("home-online-list");
   list.innerHTML = "";
   for (const name of names) {
     const li = document.createElement("li");
@@ -721,34 +789,91 @@ async function loadGames() {
   renderGameSidebar();
 }
 
+// Central "what genre + short blurb does each game get" lookup, used by
+// the Games Library's category pills/search and by the card description
+// line - purely presentational metadata layered on top of the real
+// gameTypes list from the server (see loadGames), never a second source
+// of truth for what games exist or their player counts/host options.
+const GAME_META = {
+  pong: { category: "arcade", desc: "Klassisches 1-gegen-1-Tischtennis." },
+  tictactoe: { category: "brettspiele", desc: "Drei in einer Reihe gewinnt." },
+  lightcycles: { category: "arcade", desc: "Lichtspur-Duell, keine Kollision." },
+  buzzer: { category: "party", desc: "Wer klickt als Erstes richtig?" },
+  battleship: { category: "brettspiele", desc: "Finde und versenke die Flotte." },
+  uno: { category: "brettspiele", desc: "Der Kartenklassiker für alle." },
+  ludo: { category: "brettspiele", desc: "Mensch ärgere dich nicht." },
+  estimate: { category: "wissen", desc: "Schätzfragen gegen die Gruppe." },
+  tankbattle: { category: "arcade", desc: "Twin-Stick-Panzerduell." },
+  dodgearena: { category: "arcade", desc: "Weiche Hindernissen aus." },
+  whoami: { category: "party", desc: "Errate deine geheime Identität." },
+  knowme: { category: "party", desc: "Wie gut kennt ihr euch wirklich?" },
+  majority: { category: "party", desc: "Errate, was die Mehrheit wählt." },
+  timliner: { category: "solo", desc: "Entspanntes Solo-Zeichenspiel." },
+};
+const GAME_CATEGORIES = [
+  { key: "all", label: "Alle" },
+  { key: "party", label: "Party" },
+  { key: "arcade", label: "Arcade" },
+  { key: "brettspiele", label: "Brettspiele" },
+  { key: "wissen", label: "Wissen" },
+  { key: "solo", label: "Solo" },
+];
+let activeGameCategory = "all";
+let gameSearchQuery = "";
+
+// Shared by the Games Library card, Home's "Zuletzt gespielt" chips and the
+// Party game launcher - the one place that knows how each game type needs
+// to be kicked off (some need a host-options modal first).
+function launchGameByType(gameType) {
+  if (gameType === "timliner") { openTimLinerGame(); return; }
+  if (gameType === "estimate") { window.EstimateGame.openHostOptionsModal((options) => startGame("estimate", options)); return; }
+  if (gameType === "whoami") { window.WhoAmI.openHostOptionsModal((options) => startGame("whoami", options)); return; }
+  if (gameType === "knowme") { window.KnowMe.openHostOptionsModal((options) => startGame("knowme", options)); return; }
+  if (gameType === "majority") { window.MajorityGame.openHostOptionsModal((options) => startGame("majority", options)); return; }
+  startGame(gameType);
+}
+
 function renderGameSidebar() {
   const iAmInSession = gameSessions.some((s) => s.players.some((p) => p.id === me.id));
 
   const typeList = el("game-type-list");
   typeList.innerHTML = "";
   for (const gt of gameTypes) {
+    const meta = GAME_META[gt.game_type] || { category: "party", desc: "" };
     const li = document.createElement("li");
     li.className = "game-type-item";
+    li.dataset.category = meta.category;
+    li.dataset.searchText = `${gt.name} ${meta.desc}`.toLowerCase();
+
+    const icon = document.createElement("span");
+    icon.className = "game-type-icon";
+    icon.textContent = gt.emoji;
+    const info = document.createElement("div");
+    info.className = "game-type-info";
     const label = document.createElement("span");
-    label.textContent = `${gt.emoji} ${gt.name}`;
+    label.className = "game-type-name";
+    label.textContent = gt.name;
+    info.appendChild(label);
+    if (meta.desc) {
+      const desc = document.createElement("span");
+      desc.className = "game-type-desc";
+      desc.textContent = meta.desc;
+      info.appendChild(desc);
+    }
+    const badge = document.createElement("span");
+    badge.className = "game-type-badge";
+    badge.textContent = `${gt.max_players === 1 ? "Solo" : `bis ${gt.max_players}`}`;
+    info.appendChild(badge);
+
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.textContent = "Starten";
+    btn.className = "game-type-play-btn";
+    btn.textContent = "▶ Starten";
     btn.disabled = iAmInSession;
-    btn.addEventListener("click", () => {
-      if (gt.game_type === "estimate") {
-        window.EstimateGame.openHostOptionsModal((options) => startGame("estimate", options));
-      } else if (gt.game_type === "whoami") {
-        window.WhoAmI.openHostOptionsModal((options) => startGame("whoami", options));
-      } else if (gt.game_type === "knowme") {
-        window.KnowMe.openHostOptionsModal((options) => startGame("knowme", options));
-      } else if (gt.game_type === "majority") {
-        window.MajorityGame.openHostOptionsModal((options) => startGame("majority", options));
-      } else {
-        startGame(gt.game_type);
-      }
-    });
-    li.appendChild(label);
+    btn.addEventListener("click", () => launchGameByType(gt.game_type));
+
+    li.appendChild(icon);
+    li.appendChild(info);
     li.appendChild(btn);
     typeList.appendChild(li);
   }
@@ -757,20 +882,43 @@ function renderGameSidebar() {
   // session at all), so it isn't part of the server-driven `gameTypes`
   // list above - it's just one more static entry here that opens the
   // game modal directly instead of sending game_create over the WS.
+  const tlMeta = GAME_META.timliner;
   const timlinerLi = document.createElement("li");
   timlinerLi.className = "game-type-item";
-  const timlinerLabel = document.createElement("span");
-  timlinerLabel.textContent = "🛷 TimLiner";
+  timlinerLi.dataset.category = tlMeta.category;
+  timlinerLi.dataset.searchText = `timliner ${tlMeta.desc}`.toLowerCase();
+  const tlIcon = document.createElement("span");
+  tlIcon.className = "game-type-icon";
+  tlIcon.textContent = "🛷";
+  const tlInfo = document.createElement("div");
+  tlInfo.className = "game-type-info";
+  const tlLabel = document.createElement("span");
+  tlLabel.className = "game-type-name";
+  tlLabel.textContent = "TimLiner";
+  const tlDesc = document.createElement("span");
+  tlDesc.className = "game-type-desc";
+  tlDesc.textContent = tlMeta.desc;
+  const tlBadge = document.createElement("span");
+  tlBadge.className = "game-type-badge";
+  tlBadge.textContent = "Solo";
+  tlInfo.appendChild(tlLabel);
+  tlInfo.appendChild(tlDesc);
+  tlInfo.appendChild(tlBadge);
   const timlinerBtn = document.createElement("button");
   timlinerBtn.type = "button";
-  timlinerBtn.textContent = "Spielen";
+  timlinerBtn.className = "game-type-play-btn";
+  timlinerBtn.textContent = "▶ Spielen";
   timlinerBtn.addEventListener("click", openTimLinerGame);
-  timlinerLi.appendChild(timlinerLabel);
+  timlinerLi.appendChild(tlIcon);
+  timlinerLi.appendChild(tlInfo);
   timlinerLi.appendChild(timlinerBtn);
   typeList.appendChild(timlinerLi);
 
+  applyGameFilters();
+
   const lobbyList = el("game-lobby-list");
   lobbyList.innerHTML = "";
+  el("games-lobby-section").hidden = gameSessions.length === 0;
   for (const s of gameSessions) {
     const amIIn = s.players.some((p) => p.id === me.id);
     const li = document.createElement("li");
@@ -813,6 +961,279 @@ function renderGameSidebar() {
 
     lobbyList.appendChild(li);
   }
+}
+
+// ---------- games library: category pills + search ----------
+function applyGameFilters() {
+  const items = document.querySelectorAll("#game-type-list .game-type-item");
+  let anyVisible = false;
+  for (const li of items) {
+    const matchesCategory = activeGameCategory === "all" || li.dataset.category === activeGameCategory;
+    const matchesSearch = !gameSearchQuery || (li.dataset.searchText || "").includes(gameSearchQuery);
+    const visible = matchesCategory && matchesSearch;
+    li.hidden = !visible;
+    if (visible) anyVisible = true;
+  }
+  const hint = el("games-empty-hint");
+  if (hint) hint.hidden = anyVisible || items.length === 0;
+}
+
+function renderGameCategoryPills() {
+  const wrap = el("games-category-pills");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  for (const cat of GAME_CATEGORIES) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "games-category-pill" + (cat.key === activeGameCategory ? " active" : "");
+    btn.textContent = cat.label;
+    btn.addEventListener("click", () => {
+      activeGameCategory = cat.key;
+      renderGameCategoryPills();
+      applyGameFilters();
+    });
+    wrap.appendChild(btn);
+  }
+}
+renderGameCategoryPills();
+el("games-search").addEventListener("input", (e) => {
+  gameSearchQuery = e.target.value.trim().toLowerCase();
+  applyGameFilters();
+});
+
+// ---------- home view ----------
+const RECENT_GAMES_KEY = "cg_recent_games";
+const RECENT_GAMES_MAX = 8;
+
+function recordRecentlyPlayed(gameType, gameName, emoji) {
+  let recent = [];
+  try { recent = JSON.parse(localStorage.getItem(RECENT_GAMES_KEY) || "[]"); } catch (e) { recent = []; }
+  recent = recent.filter((r) => r.gameType !== gameType);
+  recent.unshift({ gameType, gameName, emoji, at: Date.now() });
+  recent = recent.slice(0, RECENT_GAMES_MAX);
+  try { localStorage.setItem(RECENT_GAMES_KEY, JSON.stringify(recent)); } catch (e) { /* ignore */ }
+}
+
+function loadRecentlyPlayed() {
+  try { return JSON.parse(localStorage.getItem(RECENT_GAMES_KEY) || "[]"); } catch (e) { return []; }
+}
+
+function renderHomeView() {
+  const runningSection = el("home-running-section");
+  const runningList = el("home-running-list");
+  const playingSessions = gameSessions.filter((s) => s.status === "playing");
+  runningList.innerHTML = "";
+  for (const s of playingSessions) {
+    const hostName = s.players[0] ? s.players[0].name : "Jemand";
+    const li = document.createElement("li");
+    li.className = "home-running-item";
+    li.innerHTML = `<span class="hri-emoji">${s.emoji}</span><span class="hri-text">${escapeHtml(hostName)} spielt ${escapeHtml(s.game_name)}</span><span class="hri-count">${s.player_count}/${s.max_players}</span>`;
+    runningList.appendChild(li);
+  }
+  runningSection.hidden = playingSessions.length === 0;
+
+  const recentSection = el("home-recent-section");
+  const recentList = el("home-recent-list");
+  const recent = loadRecentlyPlayed().filter((r) => r.gameType === "timliner" || gameTypes.some((gt) => gt.game_type === r.gameType));
+  recentList.innerHTML = "";
+  for (const r of recent) {
+    const li = document.createElement("li");
+    li.className = "home-recent-chip";
+    li.innerHTML = `<span>${r.emoji} ${escapeHtml(r.gameName)}</span>`;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "Nochmal spielen";
+    btn.addEventListener("click", () => launchGameByType(r.gameType));
+    li.appendChild(btn);
+    recentList.appendChild(li);
+  }
+  recentSection.hidden = recent.length === 0;
+}
+
+// ---------- party mode ----------
+// Deliberately thin: creating/joining a party never touches game sessions
+// at all - it's just a named group + a code, tracked server-side in
+// backend/party.py. Starting a game from the Party view calls the exact
+// same startGame()/launchGameByType() every other entry point uses; the
+// only Party-specific behavior is (a) other members get a one-tap "join"
+// prompt via party_game_started, and (b) closeGameModal() below returns
+// to the Party view instead of wherever the player came from.
+const PARTY_PLACEMENT_POINTS = [100, 75, 50, 25];
+
+function partyPointsForPlacement(placement) {
+  if (placement == null) return 0;
+  if (placement <= PARTY_PLACEMENT_POINTS.length) return PARTY_PLACEMENT_POINTS[placement - 1];
+  return 10;
+}
+
+// Best-effort, game-agnostic placement guess: the four party games built
+// this session (Schaetzmeister/Wer-bin-ich/Kennst-du-mich/Mehrheitsmeister)
+// all share the same details.leaderboard shape, so those get an accurate
+// rank; every other (mostly 1v1/small) game falls back to a simple
+// winner/non-winner split. This is intentionally the "optional, simple"
+// tally the brief asked for, not a second scoring engine.
+function computePartyPlacement(data) {
+  if (!data) return null;
+  if (data.details && Array.isArray(data.details.leaderboard)) {
+    const idx = data.details.leaderboard.findIndex((e) => e.userId === me.id);
+    if (idx >= 0) return idx + 1;
+    return null;
+  }
+  if (data.winner_user_id === me.id) return 1;
+  if (data.winner_user_id != null) return 2;
+  return null;
+}
+
+function reportPartyScoreIfActive(data) {
+  if (!currentParty) return;
+  const placement = computePartyPlacement(data);
+  const points = partyPointsForPlacement(placement);
+  if (points <= 0) return;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "party_report_score", points }));
+  }
+}
+
+function createParty() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "party_create" }));
+  }
+}
+function joinPartyByCode(code) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "party_join", code }));
+  }
+}
+function leaveParty() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "party_leave" }));
+  }
+  currentParty = null;
+  renderPartyView();
+}
+
+function renderPartyView() {
+  const root = el("party-inner");
+  if (!root) return;
+
+  if (!currentParty) {
+    root.innerHTML = `
+      <div class="party-empty">
+        <div class="party-empty-emoji">🎉</div>
+        <h2>Party starten oder beitreten</h2>
+        <p class="party-empty-sub">Eine Party bleibt über mehrere Spiele hinweg bestehen - erstelle einen Code oder tritt mit einem bei.</p>
+        <button type="button" class="primary-btn" id="party-create-btn">🎉 Neue Party erstellen</button>
+        <form id="party-join-form" class="party-join-form">
+          <input type="text" id="party-join-code" placeholder="CODE eingeben" maxlength="8" autocomplete="off" />
+          <button type="submit" class="ghost-btn">Beitreten</button>
+        </form>
+      </div>
+    `;
+    el("party-create-btn").addEventListener("click", createParty);
+    el("party-join-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const code = el("party-join-code").value.trim();
+      if (code) joinPartyByCode(code);
+    });
+    return;
+  }
+
+  const isHost = currentParty.members[0] && currentParty.members[0].userId === me.id;
+  const scoreEntries = currentParty.members
+    .map((m) => ({ ...m, points: currentParty.scores[String(m.userId)] || 0 }))
+    .sort((a, b) => b.points - a.points);
+
+  const banner = lastPartyGameStarted ? `
+    <div class="party-game-banner">
+      <span>${lastPartyGameStarted.emoji} <strong>${escapeHtml(lastPartyGameStarted.game_name)}</strong> wurde gestartet</span>
+      <button type="button" class="primary-btn" id="party-join-game-btn">Jetzt beitreten</button>
+    </div>
+  ` : "";
+
+  // If I (the party host, usually) just created a manual-start game's
+  // session, it sits in "waiting" until someone clicks "Jetzt starten" -
+  // surface that exact same lobby control here too, so the flow never
+  // silently strands the host after clicking a party-game-btn. Reuses the
+  // same startGameNow()/leaveGame() every other lobby entry point calls.
+  const myPendingSession = gameSessions.find((s) => s.id === myGameSessionId && s.status === "waiting");
+  const pendingCard = myPendingSession ? `
+    <div class="party-pending-card">
+      <span>${myPendingSession.emoji} <strong>${escapeHtml(myPendingSession.game_name)}</strong> wartet - ${myPendingSession.player_count}/${myPendingSession.max_players} Spieler</span>
+      <div class="party-pending-actions">
+        ${myPendingSession.manual_start && myPendingSession.players[0] && myPendingSession.players[0].id === me.id
+          ? `<button type="button" class="primary-btn" id="party-pending-start-btn" ${myPendingSession.player_count < myPendingSession.min_players ? "disabled" : ""}>▶ Jetzt starten</button>`
+          : `<span class="party-pending-wait">Warte auf den Host …</span>`}
+        <button type="button" class="ghost-btn" id="party-pending-cancel-btn">Abbrechen</button>
+      </div>
+    </div>
+  ` : "";
+
+  root.innerHTML = `
+    <div class="party-active">
+      <div class="party-code-card">
+        <div class="party-code-label">PARTY-CODE</div>
+        <div class="party-code-value" id="party-code-value">${escapeHtml(currentParty.code)}</div>
+        <button type="button" class="ghost-btn" id="party-copy-btn">📋 Code kopieren</button>
+      </div>
+      ${banner}
+      ${pendingCard}
+      <div class="party-section">
+        <div class="home-section-title">MITGLIEDER (${currentParty.members.length})</div>
+        <ul class="party-member-list">
+          ${currentParty.members.map((m) => `<li>${m.userId === currentParty.members[0].userId ? "👑 " : ""}${escapeHtml(m.name)}${m.userId === me.id ? " (du)" : ""}</li>`).join("")}
+        </ul>
+      </div>
+      <div class="party-section">
+        <div class="home-section-title">SPIEL STARTEN</div>
+        <div class="party-game-grid" id="party-game-grid"></div>
+      </div>
+      ${scoreEntries.some((e) => e.points > 0) ? `
+        <div class="party-section">
+          <div class="home-section-title">🏆 PARTY-PUNKTE</div>
+          <ol class="party-score-list">
+            ${scoreEntries.map((e, i) => `<li><span>${i + 1}.</span><span>${escapeHtml(e.name)}</span><span>${e.points}</span></li>`).join("")}
+          </ol>
+        </div>
+      ` : ""}
+      <button type="button" class="ghost-btn party-leave-btn" id="party-leave-btn">Party verlassen</button>
+    </div>
+  `;
+
+  const grid = el("party-game-grid");
+  for (const gt of gameTypes) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "party-game-btn";
+    const tooBig = currentParty.members.length > gt.max_players;
+    btn.disabled = tooBig;
+    btn.title = tooBig ? `Maximal ${gt.max_players} Spieler` : "";
+    btn.innerHTML = `<span>${gt.emoji}</span><span>${escapeHtml(gt.name)}</span>`;
+    btn.addEventListener("click", () => launchGameByType(gt.game_type));
+    grid.appendChild(btn);
+  }
+
+  const pendingStartBtn = el("party-pending-start-btn");
+  if (pendingStartBtn) pendingStartBtn.addEventListener("click", () => startGameNow(myPendingSession.id));
+  const pendingCancelBtn = el("party-pending-cancel-btn");
+  if (pendingCancelBtn) pendingCancelBtn.addEventListener("click", () => leaveGame(myPendingSession.id));
+
+  const joinBtn = el("party-join-game-btn");
+  if (joinBtn) {
+    joinBtn.addEventListener("click", () => {
+      if (lastPartyGameStarted) joinGame(lastPartyGameStarted.session_id);
+      lastPartyGameStarted = null;
+      renderPartyView();
+    });
+  }
+  el("party-copy-btn").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(currentParty.code);
+      toast("Party-Code kopiert 📋");
+    } catch (e) {
+      toast(currentParty.code);
+    }
+  });
+  el("party-leave-btn").addEventListener("click", leaveParty);
 }
 
 // Shared by every realtime game module (TankBattle, DodgeArena, ...) that
@@ -906,6 +1327,9 @@ function openGameModal(data) {
   myGameSessionId = data.session_id;
   myGameType = data.game_type;
   myGamePlayers = data.players;
+
+  const gt = gameTypes.find((g) => g.game_type === data.game_type);
+  recordRecentlyPlayed(data.game_type, gt ? gt.name : data.game_type, gt ? gt.emoji : "🎮");
 
   el("game-overlay-msg").hidden = true;
   el("game-rematch-btn").hidden = true;
@@ -1058,6 +1482,7 @@ function openTimLinerGame() {
   myGameSessionId = null;
   myGameType = "timliner";
   myGamePlayers = [];
+  recordRecentlyPlayed("timliner", "TimLiner", "🛷");
 
   el("game-overlay-msg").hidden = true;
   el("game-rematch-btn").hidden = true;
@@ -1116,6 +1541,11 @@ function closeGameModal() {
   myGamePlayers = [];
   el("game-chat-messages").innerHTML = "";
   MobileGameChat.reset();
+  // "Zurueck zur Party" - if the player is in an active party, every
+  // "leave/close game" path (this function is the one place they all
+  // funnel through) returns them to the Party view instead of wherever
+  // they came from, so the group can pick the next game together.
+  if (currentParty) switchView("party");
 }
 
 el("game-close-btn").addEventListener("click", closeGameModal);
@@ -2395,12 +2825,16 @@ function toast(text) {
   toastTimer = setTimeout(() => (box.hidden = true), 3500);
 }
 
-// ---------- mobile sidebar ----------
-el("sidebar-toggle").addEventListener("click", () => {
-  el("sidebar").classList.toggle("open");
+// ---------- mobile channel picker (Chat view only) ----------
+// Scoped entirely to the Chat view's own #channel-sidebar now - the old
+// app-wide hamburger sidebar is gone, replaced by the global-nav/bottom-nav
+// view switcher below. This is just "pick a channel" on narrow screens,
+// same slide-in mechanic as before but narrower in scope.
+el("mobile-channels-toggle").addEventListener("click", () => {
+  el("channel-sidebar").classList.toggle("open");
 });
 function closeMobileSidebar() {
-  el("sidebar").classList.remove("open");
+  el("channel-sidebar").classList.remove("open");
 }
 
 // ---------- boot ----------
