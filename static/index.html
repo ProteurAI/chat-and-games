@@ -59,183 +59,175 @@
   </form>
 </div>
 
-<!-- APP SHELL 2.0 - global-nav (desktop rail) / bottom-nav (mobile) switch
-     between four top-level views. Everything below #app-views is new for
-     2.0; #game-modal / #snap-modal / #toast are SIBLINGS of #app further
-     down this file and are completely untouched by this restructure - the
-     whole Operation-Smartphone game-chat-drawer system lives there and
-     never needed to move. -->
+<!-- APP SHELL 2.1 - CHAT-FIRST. Chat is the permanent, dominant center
+     surface; a left channel sidebar and a right games panel flank it on
+     desktop (both collapsible/drawer-ized on mobile). There is no more
+     Home/Chat/Games/Party "view switcher" - Games Library and Party are
+     overlays that open above the chat and return to it when closed.
+     #game-modal / #snap-modal / #toast are SIBLINGS of #app further down
+     this file and are completely untouched by this restructure - the whole
+     Operation-Smartphone game-chat-drawer system lives there and never
+     needed to move. -->
 <div id="app" class="screen" hidden>
-  <nav id="global-nav" class="global-nav" aria-label="Hauptnavigation">
-    <div class="global-nav-brand" role="img" aria-label="Chat & Games">
-      <svg class="wordmark-glyph" viewBox="0 0 22 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect class="wg-bubble" x="1" y="1" width="20" height="13" rx="6.5"/>
-        <path class="wg-bubble" d="M6 14 L6 19 L11 14 Z"/>
-        <circle class="wg-pip" cx="7" cy="6.2" r="1.4"/>
-        <circle class="wg-pip" cx="11" cy="7.7" r="1.4"/>
-        <circle class="wg-pip" cx="15" cy="9.6" r="1.4"/>
-      </svg>
-    </div>
-    <div class="global-nav-items" id="global-nav-items">
-      <div class="global-nav-indicator" id="global-nav-indicator" aria-hidden="true"></div>
-      <button type="button" class="global-nav-item" data-view="home" aria-label="Home">
-        <span class="gni-icon">🏠</span><span class="gni-label">Home</span>
-      </button>
-      <button type="button" class="global-nav-item" data-view="chat" aria-label="Chat">
-        <span class="gni-icon">💬</span><span class="gni-label">Chat</span>
-      </button>
-      <button type="button" class="global-nav-item" data-view="games" aria-label="Games">
-        <span class="gni-icon">🎮</span><span class="gni-label">Games</span>
-      </button>
-      <button type="button" class="global-nav-item" data-view="party" aria-label="Party">
-        <span class="gni-icon">🎉</span><span class="gni-label">Party</span>
-      </button>
-    </div>
-    <div class="global-nav-footer">
-      <button type="button" id="theme-toggle" class="icon-btn global-nav-theme-toggle" title="Theme wechseln" aria-label="Theme wechseln" data-tooltip="Theme wechseln">
-        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <circle cx="12" cy="12" r="4.5"/>
-          <path d="M12 2.5v3M12 18.5v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2.5 12h3M18.5 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke-linecap="round"/>
+
+  <!-- MOBILE HEADER - only rendered (display:flex) below the 900px
+       breakpoint; hidden entirely on desktop where the sidebar/panel are
+       permanent columns instead. -->
+  <header id="mobile-header" class="mobile-header">
+    <button type="button" id="mobile-menu-btn" class="icon-btn" aria-label="Menü öffnen">☰</button>
+    <span id="mobile-header-channel" class="mobile-header-channel">#</span>
+    <button type="button" id="mobile-games-btn" class="icon-btn mobile-games-btn" aria-label="Spiele öffnen">
+      🎮<span id="mobile-games-badge" class="mobile-games-badge" hidden>0</span>
+    </button>
+  </header>
+
+  <div id="app-body" class="app-body">
+    <div id="drawer-backdrop" class="drawer-backdrop"></div>
+
+    <!-- LEFT: channel sidebar. Desktop = permanent column. Mobile = drawer
+         opened by the ☰ button, closed by backdrop tap / Escape / picking
+         a channel. -->
+    <aside id="left-sidebar" class="left-sidebar">
+      <div class="sidebar-brand" role="img" aria-label="Chat & Games">
+        <svg class="wordmark-glyph" viewBox="0 0 22 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect class="wg-bubble" x="1" y="1" width="20" height="13" rx="6.5"/>
+          <path class="wg-bubble" d="M6 14 L6 19 L11 14 Z"/>
+          <circle class="wg-pip" cx="7" cy="6.2" r="1.4"/>
+          <circle class="wg-pip" cx="11" cy="7.7" r="1.4"/>
+          <circle class="wg-pip" cx="15" cy="9.6" r="1.4"/>
         </svg>
-        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.8 6.8 0 0 0 10.5 10.5Z"/>
-        </svg>
-      </button>
-      <div class="global-nav-me" id="global-nav-me" title=""></div>
-    </div>
-  </nav>
-
-  <div id="app-views" class="app-views">
-
-    <!-- HOME VIEW -->
-    <section id="view-home" class="app-view" data-view-panel="home">
-      <div class="view-scroll">
-        <div class="view-inner view-inner--home">
-          <div class="home-greeting">
-            <h1 id="home-greeting-text">Hey 👋</h1>
-            <p class="home-greeting-sub">Was möchtest du als Nächstes tun?</p>
-          </div>
-
-          <div class="home-quick-actions">
-            <button type="button" class="quick-action-card" data-action="start-game">
-              <span class="qac-icon">🎮</span>
-              <span class="qac-label">Spiel starten</span>
-            </button>
-            <button type="button" class="quick-action-card" data-action="start-party">
-              <span class="qac-icon">🎉</span>
-              <span class="qac-label">Party starten</span>
-            </button>
-            <button type="button" class="quick-action-card" data-action="go-chat">
-              <span class="qac-icon">💬</span>
-              <span class="qac-label">Zum Chat</span>
-            </button>
-          </div>
-
-          <div class="home-section" id="home-running-section" hidden>
-            <div class="home-section-title">GERADE LÄUFT</div>
-            <ul id="home-running-list" class="home-running-list"></ul>
-          </div>
-
-          <div class="home-section" id="home-recent-section" hidden>
-            <div class="home-section-title">ZULETZT GESPIELT</div>
-            <ul id="home-recent-list" class="home-recent-list"></ul>
-          </div>
-
-          <div class="home-section">
-            <div class="home-section-title">ONLINE</div>
-            <ul id="home-online-list" class="online-list"></ul>
-          </div>
-
-          <p class="ephemeral-hint">ℹ️ Nachrichtenverlauf kann bei Inaktivität zurückgesetzt werden</p>
-        </div>
+        <span class="sidebar-brand-text">Chat & Games</span>
       </div>
-    </section>
 
-    <!-- CHAT VIEW -->
-    <section id="view-chat" class="app-view" data-view-panel="chat" hidden>
-      <button id="mobile-channels-toggle" class="mobile-channels-toggle" aria-label="Kanäle">☰</button>
-      <aside id="channel-sidebar" class="channel-sidebar">
+      <div class="sidebar-scroll">
         <div class="channel-sidebar-title">Kanäle</div>
         <ul id="channel-list" class="channel-list"></ul>
         <form id="new-channel-form" class="new-channel-form">
           <input id="new-channel-input" type="text" placeholder="neuer-kanal" maxlength="32" />
           <button type="submit">+</button>
         </form>
-      </aside>
 
-      <main class="main">
-        <header class="chat-header">
-          <span id="current-channel-name">#</span>
-        </header>
+        <div class="channel-sidebar-title sidebar-online-title">Online</div>
+        <ul id="online-list" class="online-list"></ul>
 
-        <div id="messages" class="messages"></div>
+        <p class="ephemeral-hint">ℹ️ Nachrichtenverlauf kann bei Inaktivität zurückgesetzt werden</p>
+      </div>
 
-        <div id="poll-composer" class="poll-composer" hidden>
-          <div class="poll-composer-head">
-            <strong>Neue Umfrage</strong>
-            <button type="button" id="poll-close-btn" class="icon-btn">✕</button>
-          </div>
-          <input id="poll-question" type="text" placeholder="Frage..." maxlength="300" />
-          <div id="poll-options"></div>
-          <button type="button" id="poll-add-option" class="ghost-btn">+ Option</button>
-          <button type="button" id="poll-submit" class="primary-btn">Umfrage posten</button>
+      <div class="sidebar-footer">
+        <button type="button" id="theme-toggle" class="icon-btn" title="Theme wechseln" aria-label="Theme wechseln" data-tooltip="Theme wechseln">
+          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="4.5"/>
+            <path d="M12 2.5v3M12 18.5v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2.5 12h3M18.5 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke-linecap="round"/>
+          </svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.8 6.8 0 0 0 10.5 10.5Z"/>
+          </svg>
+        </button>
+        <div class="sidebar-me" id="sidebar-me" title=""></div>
+      </div>
+    </aside>
+
+    <!-- CENTER: CHAT - always the dominant flex:1 surface. -->
+    <main id="chat-main" class="chat-main">
+      <header class="chat-header">
+        <span id="current-channel-name">#</span>
+      </header>
+
+      <div id="messages" class="messages"></div>
+
+      <div id="poll-composer" class="poll-composer" hidden>
+        <div class="poll-composer-head">
+          <strong>Neue Umfrage</strong>
+          <button type="button" id="poll-close-btn" class="icon-btn">✕</button>
+        </div>
+        <input id="poll-question" type="text" placeholder="Frage..." maxlength="300" />
+        <div id="poll-options"></div>
+        <button type="button" id="poll-add-option" class="ghost-btn">+ Option</button>
+        <button type="button" id="poll-submit" class="primary-btn">Umfrage posten</button>
+      </div>
+
+      <form id="message-form" class="message-form">
+        <button type="button" id="snap-btn" class="icon-btn" title="Snap aufnehmen" data-tooltip="Snap aufnehmen">📸</button>
+        <button type="button" id="attach-btn" class="icon-btn" title="Bild senden" data-tooltip="Bild senden">📷</button>
+        <button type="button" id="poll-btn" class="icon-btn" title="Umfrage erstellen" data-tooltip="Umfrage erstellen">📊</button>
+        <input id="message-input" type="text" placeholder="Nachricht schreiben..." autocomplete="off" maxlength="4000" />
+        <button type="submit" id="send-btn" class="send-btn">Senden</button>
+        <input type="file" id="file-input" accept="image/png,image/jpeg,image/gif,image/webp" hidden />
+      </form>
+    </main>
+
+    <!-- RIGHT: compact Games Panel. Desktop = permanent, collapsible
+         column. Mobile = bottom-sheet drawer opened by the header's 🎮
+         button. -->
+    <aside id="games-panel" class="games-panel">
+      <div class="games-panel-drag-handle" aria-hidden="true"></div>
+      <div class="games-panel-header">
+        <span class="games-panel-title">🎮 Games</span>
+        <button type="button" id="games-panel-close-btn" class="icon-btn games-panel-close-btn" aria-label="Schließen">✕</button>
+        <button type="button" id="games-panel-collapse-btn" class="icon-btn games-panel-collapse-btn" aria-label="Games-Panel einklappen" data-tooltip="Einklappen">‹</button>
+      </div>
+      <div class="games-panel-scroll">
+        <div id="games-panel-party-card" class="games-panel-party-card"></div>
+
+        <div class="games-panel-section" id="games-panel-recent-section" hidden>
+          <div class="home-section-title">ZULETZT GESPIELT</div>
+          <div id="games-panel-recent-list" class="gp-recent-list"></div>
         </div>
 
-        <form id="message-form" class="message-form">
-          <button type="button" id="snap-btn" class="icon-btn" title="Snap aufnehmen">📸</button>
-          <button type="button" id="attach-btn" class="icon-btn" title="Bild senden">📷</button>
-          <button type="button" id="poll-btn" class="icon-btn" title="Umfrage erstellen">📊</button>
-          <input id="message-input" type="text" placeholder="Nachricht schreiben..." autocomplete="off" maxlength="4000" />
-          <button type="submit" id="send-btn" class="send-btn">Senden</button>
-          <input type="file" id="file-input" accept="image/png,image/jpeg,image/gif,image/webp" hidden />
-        </form>
-      </main>
-    </section>
-
-    <!-- GAMES VIEW -->
-    <section id="view-games" class="app-view" data-view-panel="games" hidden>
-      <div class="view-scroll">
-        <div class="view-inner view-inner--games">
-          <div class="games-toolbar">
-            <div class="games-search-wrap">
-              <span class="games-search-icon" aria-hidden="true">🔍</span>
-              <input id="games-search" type="search" placeholder="Spiel suchen…" class="games-search-input" aria-label="Spiel suchen" />
-            </div>
-            <div id="games-category-pills" class="games-category-pills"></div>
-          </div>
-          <ul id="game-type-list" class="game-type-list"></ul>
-          <p id="games-empty-hint" class="games-empty-hint" hidden>Kein Spiel gefunden.</p>
-          <div class="games-lobby-section" id="games-lobby-section" hidden>
-            <div class="home-section-title">LAUFENDE LOBBYS</div>
-            <ul id="game-lobby-list" class="game-lobby-list"></ul>
-          </div>
+        <div class="games-panel-section" id="games-panel-lobby-section" hidden>
+          <div class="home-section-title">OFFENE SPIELE</div>
+          <ul id="games-panel-lobby-list" class="game-lobby-list game-lobby-list--compact"></ul>
         </div>
-      </div>
-    </section>
 
-    <!-- PARTY VIEW -->
-    <section id="view-party" class="app-view" data-view-panel="party" hidden>
-      <div class="view-scroll">
-        <div class="view-inner view-inner--party" id="party-inner"></div>
-      </div>
-    </section>
+        <div id="games-panel-categories"></div>
 
+        <button type="button" id="open-games-library-btn" class="ghost-btn games-panel-alle-btn">🗂️ Alle Spiele</button>
+      </div>
+    </aside>
+
+    <!-- Desktop-only rail button shown when the games panel is collapsed -->
+    <button type="button" id="games-rail-btn" class="games-rail-btn" aria-label="Games-Panel öffnen" data-tooltip="Games öffnen">🎮</button>
   </div>
 
-  <nav id="bottom-nav" class="bottom-nav" aria-label="Hauptnavigation">
-    <button type="button" class="bottom-nav-item" data-view="home" aria-label="Home">
-      <span class="bni-icon">🏠</span><span class="bni-label">Home</span>
-    </button>
-    <button type="button" class="bottom-nav-item" data-view="chat" aria-label="Chat">
-      <span class="bni-icon">💬</span><span class="bni-label">Chat</span>
-    </button>
-    <button type="button" class="bottom-nav-item" data-view="games" aria-label="Games">
-      <span class="bni-icon">🎮</span><span class="bni-label">Games</span>
-    </button>
-    <button type="button" class="bottom-nav-item" data-view="party" aria-label="Party">
-      <span class="bni-icon">🎉</span><span class="bni-label">Party</span>
-    </button>
-  </nav>
+  <!-- GAMES LIBRARY OVERLAY - the full searchable/filterable game list,
+       reachable via the games panel's "Alle Spiele" button. Secondary to
+       the chat, not a main navigation destination. -->
+  <div id="games-library-overlay" class="games-library-overlay" hidden>
+    <div class="overlay-head">
+      <button type="button" id="games-library-back-btn" class="icon-btn" aria-label="Zurück">←</button>
+      <span class="overlay-title">Alle Spiele</span>
+      <span class="overlay-head-spacer"></span>
+    </div>
+    <div class="view-scroll">
+      <div class="view-inner">
+        <div class="games-toolbar">
+          <div class="games-search-wrap">
+            <span class="games-search-icon" aria-hidden="true">🔍</span>
+            <input id="games-search" type="search" placeholder="Spiel suchen…" class="games-search-input" aria-label="Spiel suchen" />
+          </div>
+          <div id="games-category-pills" class="games-category-pills"></div>
+        </div>
+        <ul id="game-type-list" class="game-type-list"></ul>
+        <p id="games-empty-hint" class="games-empty-hint" hidden>Kein Spiel gefunden.</p>
+        <div class="games-lobby-section" id="games-lobby-section" hidden>
+          <div class="home-section-title">LAUFENDE LOBBYS</div>
+          <ul id="game-lobby-list" class="game-lobby-list"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PARTY OVERLAY -->
+  <div id="party-overlay" class="party-overlay" hidden>
+    <div class="overlay-head">
+      <button type="button" id="party-overlay-close-btn" class="icon-btn" aria-label="Schließen">✕</button>
+      <span class="overlay-title">🎉 Party</span>
+      <span class="overlay-head-spacer"></span>
+    </div>
+    <div class="view-scroll">
+      <div class="view-inner" id="party-inner"></div>
+    </div>
+  </div>
 </div>
 
 <!-- SNAP MODAL -->

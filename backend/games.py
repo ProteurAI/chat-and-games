@@ -1095,7 +1095,7 @@ class GameManager:
 
     def game_types(self):
         return [
-            {"game_type": t, "name": e.name, "emoji": e.emoji, "max_players": e.max_players}
+            {"game_type": t, "name": e.name, "emoji": e.emoji, "min_players": e.min_players, "max_players": e.max_players}
             for t, e in GAME_ENGINES.items()
         ]
 

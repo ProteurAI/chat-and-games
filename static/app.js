@@ -81,13 +81,13 @@ function showLogin() {
 async function startApp() {
   el("login-screen").hidden = true;
   el("app").hidden = false;
-  el("global-nav-me").textContent = me.name.slice(0, 1).toUpperCase();
-  el("global-nav-me").title = `Angemeldet als ${me.name}`;
-  el("home-greeting-text").textContent = `Hey ${me.name} 👋`;
+  el("sidebar-me").textContent = me.name.slice(0, 1).toUpperCase();
+  el("sidebar-me").title = `Angemeldet als ${me.name}`;
+  restoreGamesPanelCollapsed();
   await loadChannels();
   await loadGames();
   connectWebSocket();
-  switchView("home");
+  renderGamesPanel();
 }
 
 // ---------- channels ----------
@@ -123,6 +123,7 @@ function renderChannelList() {
 function showNoChannelsState() {
   currentChannelId = null;
   el("current-channel-name").textContent = "#";
+  el("mobile-header-channel").textContent = "#";
   el("messages").innerHTML = "";
   const hint = document.createElement("div");
   hint.className = "msg-system";
@@ -142,7 +143,9 @@ async function selectChannel(id) {
   setComposerEnabled(true);
   renderChannelList();
   const ch = channels.find((c) => c.id === id);
-  el("current-channel-name").textContent = ch ? `#${ch.name}` : "#";
+  const label = ch ? `#${ch.name}` : "#";
+  el("current-channel-name").textContent = label;
+  el("mobile-header-channel").textContent = label;
   el("messages").innerHTML = "";
   const msgs = await api(`/api/channels/${id}/messages`);
   if (!msgs.length) {
@@ -154,7 +157,7 @@ async function selectChannel(id) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "join", channel_id: id }));
   }
-  closeMobileSidebar();
+  closeDrawers();
 }
 
 el("new-channel-form").addEventListener("submit", async (e) => {
@@ -206,8 +209,8 @@ function handleWsEvent(data) {
   } else if (data.type === "games_update") {
     gameSessions = data.games;
     renderGameSidebar();
-    if (currentView === "party") renderPartyView();
-    if (currentView === "home") renderHomeView();
+    renderGamesPanel();
+    if (!el("party-overlay").hidden) renderPartyView();
   } else if (data.type === "game_joined") {
     myGameSessionId = data.session_id;
     myGameType = data.game_type;
@@ -222,66 +225,116 @@ function handleWsEvent(data) {
     }
   } else if (data.type === "party_update") {
     currentParty = data.party;
-    if (currentView === "party") renderPartyView();
+    if (!el("party-overlay").hidden) renderPartyView();
+    renderGamesPanel();
   } else if (data.type === "party_error") {
     toast(data.message || "Party-Fehler");
   } else if (data.type === "party_game_started") {
     lastPartyGameStarted = data;
-    if (currentView === "party") renderPartyView();
+    if (!el("party-overlay").hidden) renderPartyView();
     else toast(`🎉 ${data.emoji} ${data.game_name} wurde in deiner Party gestartet`);
+    renderGamesPanel();
   }
 }
 
-// ---------- view navigation (Chat & Games 2.0 app shell) ----------
-// Four top-level views, switched via the desktop global-nav rail or the
-// mobile bottom-nav - both share the same data-view/click-handler wiring.
-// #game-modal / #snap-modal live outside #app entirely (see index.html)
-// so opening a game never interacts with view switching at all.
-const VIEWS = ["home", "chat", "games", "party"];
-let currentView = "home";
+// ---------- app shell 2.1 (chat-first) ----------
+// Chat is the permanent center surface - there is no "view switcher"
+// anymore. The left channel sidebar and right games panel are permanent
+// columns on desktop (the games panel is collapsible) and slide-in/slide-up
+// drawers on mobile, opened from the mobile header's ☰ / 🎮 buttons. Games
+// Library and Party are full overlays above the chat, opened from the
+// games panel and closed back to the chat. #game-modal/#snap-modal live
+// entirely outside #app (see index.html) so none of this touches the
+// Operation-Smartphone game-chat-drawer system at all.
 
-function switchView(view) {
-  if (!VIEWS.includes(view)) view = "home";
-  currentView = view;
-  for (const v of VIEWS) {
-    const panel = el(`view-${v}`);
-    if (panel) panel.hidden = v !== view;
-  }
-  for (const btn of document.querySelectorAll("[data-view]")) {
-    btn.classList.toggle("active", btn.dataset.view === view);
-  }
-  positionNavIndicator();
-  closeMobileSidebar();
-  if (view === "home") renderHomeView();
-  else if (view === "games") applyGameFilters();
-  else if (view === "party") renderPartyView();
+function drawersOpen() {
+  return el("left-sidebar").classList.contains("open") || el("games-panel").classList.contains("open");
 }
 
-function positionNavIndicator() {
-  const indicator = el("global-nav-indicator");
-  const activeBtn = document.querySelector(`.global-nav-item[data-view="${currentView}"]`);
-  if (!indicator || !activeBtn) return;
-  indicator.style.transform = `translateY(${activeBtn.offsetTop}px)`;
-  indicator.style.height = `${activeBtn.offsetHeight}px`;
-}
-window.addEventListener("resize", () => positionNavIndicator());
-
-for (const btn of document.querySelectorAll("[data-view]")) {
-  btn.addEventListener("click", () => switchView(btn.dataset.view));
+function syncScrollLock() {
+  const anyOpen = drawersOpen() || !el("games-library-overlay").hidden || !el("party-overlay").hidden;
+  document.body.classList.toggle("scroll-locked", anyOpen);
 }
 
-for (const btn of document.querySelectorAll(".quick-action-card[data-action]")) {
-  btn.addEventListener("click", () => {
-    const action = btn.dataset.action;
-    if (action === "start-game") switchView("games");
-    else if (action === "start-party") switchView("party");
-    else if (action === "go-chat") switchView("chat");
-  });
+function closeDrawers() {
+  el("left-sidebar").classList.remove("open");
+  el("games-panel").classList.remove("open");
+  el("drawer-backdrop").classList.remove("open");
+  syncScrollLock();
 }
+
+function openLeftSidebarMobile() {
+  closeDrawers();
+  el("left-sidebar").classList.add("open");
+  el("drawer-backdrop").classList.add("open");
+  syncScrollLock();
+}
+
+function openGamesPanelMobile() {
+  closeDrawers();
+  el("games-panel").classList.add("open");
+  el("drawer-backdrop").classList.add("open");
+  syncScrollLock();
+  renderGamesPanel();
+}
+
+const GAMES_PANEL_COLLAPSED_KEY = "cg_games_panel_collapsed";
+
+function setGamesPanelCollapsed(collapsed) {
+  el("app-body").classList.toggle("games-panel-collapsed", collapsed);
+  try { localStorage.setItem(GAMES_PANEL_COLLAPSED_KEY, collapsed ? "1" : "0"); } catch (e) { /* ignore */ }
+}
+
+function restoreGamesPanelCollapsed() {
+  try {
+    if (localStorage.getItem(GAMES_PANEL_COLLAPSED_KEY) === "1") setGamesPanelCollapsed(true);
+  } catch (e) { /* ignore */ }
+}
+
+function toggleGamesPanelDesktop() {
+  setGamesPanelCollapsed(!el("app-body").classList.contains("games-panel-collapsed"));
+}
+
+function openGamesLibrary() {
+  el("games-library-overlay").hidden = false;
+  applyGameFilters();
+  syncScrollLock();
+}
+function closeGamesLibrary() {
+  el("games-library-overlay").hidden = true;
+  syncScrollLock();
+}
+
+function openPartyOverlay() {
+  el("party-overlay").hidden = false;
+  renderPartyView();
+  syncScrollLock();
+}
+function closePartyOverlay() {
+  el("party-overlay").hidden = true;
+  syncScrollLock();
+}
+
+el("mobile-menu-btn").addEventListener("click", openLeftSidebarMobile);
+el("mobile-games-btn").addEventListener("click", openGamesPanelMobile);
+el("drawer-backdrop").addEventListener("click", closeDrawers);
+el("games-panel-close-btn").addEventListener("click", closeDrawers);
+el("games-panel-collapse-btn").addEventListener("click", toggleGamesPanelDesktop);
+el("games-rail-btn").addEventListener("click", () => setGamesPanelCollapsed(false));
+el("open-games-library-btn").addEventListener("click", openGamesLibrary);
+el("games-library-back-btn").addEventListener("click", closeGamesLibrary);
+el("party-overlay-close-btn").addEventListener("click", closePartyOverlay);
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!el("games-library-overlay").hidden) closeGamesLibrary();
+  else if (!el("party-overlay").hidden) closePartyOverlay();
+  else if (drawersOpen()) closeDrawers();
+});
 
 function renderOnline(names) {
   onlineNames = names;
-  const list = el("home-online-list");
+  const list = el("online-list");
   list.innerHTML = "";
   for (const name of names) {
     const li = document.createElement("li");
@@ -1001,7 +1054,7 @@ el("games-search").addEventListener("input", (e) => {
   applyGameFilters();
 });
 
-// ---------- home view ----------
+// ---------- recently played (localStorage) ----------
 const RECENT_GAMES_KEY = "cg_recent_games";
 const RECENT_GAMES_MAX = 8;
 
@@ -1018,36 +1071,186 @@ function loadRecentlyPlayed() {
   try { return JSON.parse(localStorage.getItem(RECENT_GAMES_KEY) || "[]"); } catch (e) { return []; }
 }
 
-function renderHomeView() {
-  const runningSection = el("home-running-section");
-  const runningList = el("home-running-list");
-  const playingSessions = gameSessions.filter((s) => s.status === "playing");
-  runningList.innerHTML = "";
-  for (const s of playingSessions) {
-    const hostName = s.players[0] ? s.players[0].name : "Jemand";
-    const li = document.createElement("li");
-    li.className = "home-running-item";
-    li.innerHTML = `<span class="hri-emoji">${s.emoji}</span><span class="hri-text">${escapeHtml(hostName)} spielt ${escapeHtml(s.game_name)}</span><span class="hri-count">${s.player_count}/${s.max_players}</span>`;
-    runningList.appendChild(li);
-  }
-  runningSection.hidden = playingSessions.length === 0;
+// ---------- games panel (compact, always reachable next to chat) ----------
+// A smaller, secondary sibling of the Games Library below - same
+// gameTypes/GAME_META data, just grouped into compact cards instead of a
+// full searchable grid. "Alle Spiele" hands off to the real Games Library
+// overlay for the full list; nothing here is a second source of truth for
+// which games exist.
+const QUICK_START_TYPES = ["estimate", "whoami", "tankbattle"];
 
-  const recentSection = el("home-recent-section");
-  const recentList = el("home-recent-list");
-  const recent = loadRecentlyPlayed().filter((r) => r.gameType === "timliner" || gameTypes.some((gt) => gt.game_type === r.gameType));
-  recentList.innerHTML = "";
-  for (const r of recent) {
-    const li = document.createElement("li");
-    li.className = "home-recent-chip";
-    li.innerHTML = `<span>${r.emoji} ${escapeHtml(r.gameName)}</span>`;
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = "Nochmal spielen";
-    btn.addEventListener("click", () => launchGameByType(r.gameType));
-    li.appendChild(btn);
-    recentList.appendChild(li);
+function allKnownGameEntries() {
+  const entries = gameTypes.slice();
+  // TimLiner is single-player, purely client-side, and never part of the
+  // server-driven gameTypes list (see renderGameSidebar) - add it once
+  // more here so it still shows up in the panel's category groups.
+  entries.push({ game_type: "timliner", name: "TimLiner", emoji: "🛷", min_players: 1, max_players: 1 });
+  return entries;
+}
+
+function buildCompactGameCard(gt) {
+  const iAmInSession = gameSessions.some((s) => s.players.some((p) => p.id === me.id));
+  const card = document.createElement("div");
+  card.className = "gp-card";
+  const icon = document.createElement("span");
+  icon.className = "gp-card-icon";
+  icon.textContent = gt.emoji;
+  const info = document.createElement("div");
+  info.className = "gp-card-info";
+  const name = document.createElement("span");
+  name.className = "gp-card-name";
+  name.textContent = gt.name;
+  const count = document.createElement("span");
+  count.className = "gp-card-count";
+  count.textContent = gt.max_players === 1 ? "Solo" : gt.min_players === gt.max_players ? `${gt.max_players} Spieler` : `${gt.min_players}–${gt.max_players} Spieler`;
+  info.appendChild(name);
+  info.appendChild(count);
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "gp-card-play";
+  btn.textContent = "▶";
+  btn.setAttribute("aria-label", `${gt.name} starten`);
+  btn.disabled = iAmInSession;
+  btn.addEventListener("click", () => launchGameByType(gt.game_type));
+  card.appendChild(icon);
+  card.appendChild(info);
+  card.appendChild(btn);
+  return card;
+}
+
+function renderGamesPanelPartyCard() {
+  const box = el("games-panel-party-card");
+  if (!currentParty) {
+    box.innerHTML = `<button type="button" class="primary-btn games-panel-party-start-btn" id="gp-party-start-btn">🎉 Party starten</button>`;
+    el("gp-party-start-btn").addEventListener("click", () => {
+      createParty();
+      openPartyOverlay();
+    });
+    return;
   }
-  recentSection.hidden = recent.length === 0;
+  box.innerHTML = `
+    <div class="games-panel-party-active">
+      <div class="gp-party-info"><strong>🎉 Deine Party</strong><span>${currentParty.members.length} Spieler</span></div>
+      <button type="button" class="ghost-btn" id="gp-party-open-btn">Öffnen</button>
+    </div>`;
+  el("gp-party-open-btn").addEventListener("click", openPartyOverlay);
+}
+
+function renderGamesPanelRecent() {
+  const section = el("games-panel-recent-section");
+  const list = el("games-panel-recent-list");
+  const recent = loadRecentlyPlayed()
+    .filter((r) => r.gameType === "timliner" || gameTypes.some((gt) => gt.game_type === r.gameType))
+    .slice(0, 4);
+  list.innerHTML = "";
+  for (const r of recent) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "gp-recent-chip";
+    chip.textContent = `${r.emoji} ${r.gameName}`;
+    chip.addEventListener("click", () => launchGameByType(r.gameType));
+    list.appendChild(chip);
+  }
+  section.hidden = recent.length === 0;
+}
+
+function renderGamesPanelLobbies() {
+  const section = el("games-panel-lobby-section");
+  const list = el("games-panel-lobby-list");
+  const iAmInSession = gameSessions.some((s) => s.players.some((p) => p.id === me.id));
+  list.innerHTML = "";
+  for (const s of gameSessions) {
+    const amIIn = s.players.some((p) => p.id === me.id);
+    const li = document.createElement("li");
+    li.className = "game-lobby-item";
+    const hostName = s.players[0] ? s.players[0].name : "Jemand";
+    const title = document.createElement("div");
+    title.className = "game-lobby-title";
+    title.textContent = amIIn ? `${s.emoji} ${s.game_name}` : `${s.emoji} ${hostName} · ${s.game_name}`;
+    li.appendChild(title);
+    const count = document.createElement("div");
+    count.className = "game-lobby-count";
+    count.textContent = `${s.player_count}/${s.max_players} Spieler`;
+    li.appendChild(count);
+    if (amIIn && s.status === "waiting") {
+      const isHost = s.players[0] && s.players[0].id === me.id;
+      if (s.manual_start && isHost) {
+        const startBtn = document.createElement("button");
+        startBtn.type = "button";
+        startBtn.textContent = "▶ Jetzt starten";
+        startBtn.disabled = s.player_count < s.min_players;
+        startBtn.addEventListener("click", () => startGameNow(s.id));
+        li.appendChild(startBtn);
+      }
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ghost-btn";
+      btn.textContent = "Abbrechen";
+      btn.addEventListener("click", () => leaveGame(s.id));
+      li.appendChild(btn);
+    } else if (!amIIn && !iAmInSession && s.status === "waiting" && s.player_count < s.max_players) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = "Beitreten";
+      btn.addEventListener("click", () => joinGame(s.id));
+      li.appendChild(btn);
+    }
+    list.appendChild(li);
+  }
+  section.hidden = gameSessions.length === 0;
+}
+
+function renderGamesPanelCategories() {
+  const wrap = el("games-panel-categories");
+  wrap.innerHTML = "";
+  const entries = allKnownGameEntries();
+
+  const quickEntries = QUICK_START_TYPES.map((t) => entries.find((e) => e.game_type === t)).filter(Boolean);
+  if (quickEntries.length) {
+    const section = document.createElement("div");
+    section.className = "games-panel-section";
+    const title = document.createElement("div");
+    title.className = "home-section-title";
+    title.textContent = "SCHNELLSTART";
+    section.appendChild(title);
+    const cardsWrap = document.createElement("div");
+    cardsWrap.className = "gp-card-list";
+    for (const gt of quickEntries) cardsWrap.appendChild(buildCompactGameCard(gt));
+    section.appendChild(cardsWrap);
+    wrap.appendChild(section);
+  }
+
+  for (const cat of GAME_CATEGORIES) {
+    if (cat.key === "all") continue;
+    const catEntries = entries.filter((e) => (GAME_META[e.game_type] || {}).category === cat.key);
+    if (!catEntries.length) continue;
+    const section = document.createElement("div");
+    section.className = "games-panel-section";
+    const title = document.createElement("div");
+    title.className = "home-section-title";
+    title.textContent = cat.label.toUpperCase();
+    section.appendChild(title);
+    const cardsWrap = document.createElement("div");
+    cardsWrap.className = "gp-card-list";
+    for (const gt of catEntries) cardsWrap.appendChild(buildCompactGameCard(gt));
+    section.appendChild(cardsWrap);
+    wrap.appendChild(section);
+  }
+}
+
+function updateGamesBadge() {
+  const badge = el("mobile-games-badge");
+  const n = gameSessions.length;
+  badge.textContent = String(n);
+  badge.hidden = n === 0;
+}
+
+function renderGamesPanel() {
+  renderGamesPanelPartyCard();
+  renderGamesPanelRecent();
+  renderGamesPanelLobbies();
+  renderGamesPanelCategories();
+  updateGamesBadge();
 }
 
 // ---------- party mode ----------
@@ -1543,9 +1746,9 @@ function closeGameModal() {
   MobileGameChat.reset();
   // "Zurueck zur Party" - if the player is in an active party, every
   // "leave/close game" path (this function is the one place they all
-  // funnel through) returns them to the Party view instead of wherever
-  // they came from, so the group can pick the next game together.
-  if (currentParty) switchView("party");
+  // funnel through) reopens the Party overlay instead of wherever they
+  // came from, so the group can pick the next game together.
+  if (currentParty) openPartyOverlay();
 }
 
 el("game-close-btn").addEventListener("click", closeGameModal);
@@ -2823,18 +3026,6 @@ function toast(text) {
   box.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (box.hidden = true), 3500);
-}
-
-// ---------- mobile channel picker (Chat view only) ----------
-// Scoped entirely to the Chat view's own #channel-sidebar now - the old
-// app-wide hamburger sidebar is gone, replaced by the global-nav/bottom-nav
-// view switcher below. This is just "pick a channel" on narrow screens,
-// same slide-in mechanic as before but narrower in scope.
-el("mobile-channels-toggle").addEventListener("click", () => {
-  el("channel-sidebar").classList.toggle("open");
-});
-function closeMobileSidebar() {
-  el("channel-sidebar").classList.remove("open");
 }
 
 // ---------- boot ----------

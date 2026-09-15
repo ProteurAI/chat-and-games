@@ -190,8 +190,7 @@ select:focus-visible, [tabindex]:focus-visible, .icon-btn:focus-visible,
 }
 /* Rounder controls (pills, circular icon buttons, cards) want a matching
    rounder ring instead of the generic sm radius above. */
-.games-category-pill:focus-visible, .channel-list li:focus-visible,
-.global-nav-item:focus-visible, .bottom-nav-item:focus-visible { outline-offset: -2px; }
+.games-category-pill:focus-visible, .channel-list li:focus-visible { outline-offset: -2px; }
 
 /* ===== TOOLTIPS =====
    Opt-in via data-tooltip="..." (kept separate from the native title
@@ -215,8 +214,8 @@ select:focus-visible, [tabindex]:focus-visible, .icon-btn:focus-visible,
   [data-tooltip]:hover::after, [data-tooltip]:focus-visible::after {
     opacity: 1; transform: translate(-50%, 0); transition-delay: 450ms;
   }
-  .global-nav [data-tooltip]::after { left: calc(100% + 10px); bottom: auto; top: 50%; transform: translate(-4px, -50%); }
-  .global-nav [data-tooltip]:hover::after, .global-nav [data-tooltip]:focus-visible::after { transform: translate(0, -50%); }
+  .sidebar-footer [data-tooltip]::after { left: calc(100% + 10px); bottom: auto; top: 50%; transform: translate(-4px, -50%); }
+  .sidebar-footer [data-tooltip]:hover::after, .sidebar-footer [data-tooltip]:focus-visible::after { transform: translate(0, -50%); }
 }
 
 /* ===== REDUCED MOTION =====
@@ -338,104 +337,134 @@ select:focus-visible, [tabindex]:focus-visible, .icon-btn:focus-visible,
 .login-error { color: var(--danger); font-size: var(--text-sm); margin-top: var(--space-3); }
 
 /* ============================================================================
-   CHAT & GAMES 2.0 APP SHELL
-   Four views (Home/Chat/Games/Party) switched by a desktop nav rail or a
-   mobile bottom nav - see switchView() in app.js. #game-modal/#snap-modal
-   live OUTSIDE #app entirely (see index.html) so none of this touches the
-   Operation-Smartphone game-chat-drawer system at all.
+   CHAT & GAMES 2.1 APP SHELL — CHAT-FIRST
+   Chat is the permanent, dominant center surface. A left channel sidebar
+   and a right (collapsible) games panel flank it on desktop; both become
+   drawers on mobile, opened from the mobile header. Games Library and
+   Party are full overlays above the chat, not "views" in a switcher.
+   #game-modal/#snap-modal live OUTSIDE #app entirely (see index.html) so
+   none of this touches the Operation-Smartphone game-chat-drawer system.
    ============================================================================ */
-#app { display: flex; height: 100vh; height: 100dvh; }
+#app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 
-.global-nav {
-  width: 76px; flex-shrink: 0; background: var(--elevation-1); border-right: 1px solid var(--border);
-  display: flex; flex-direction: column; align-items: center; padding: var(--space-4) 0; z-index: var(--z-nav);
+.mobile-header { display: none; }
+
+.app-body { flex: 1; min-height: 0; display: flex; position: relative; background: var(--elevation-0); }
+.drawer-backdrop { display: none; }
+
+/* ---------- LEFT SIDEBAR (channels + online) ---------- */
+.left-sidebar {
+  width: 264px; flex-shrink: 0; background: var(--elevation-1); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; min-height: 0;
 }
-.global-nav-brand { padding: var(--space-2) 0 var(--space-5); }
-.global-nav-brand .wordmark-glyph { width: 30px; height: 27px; }
-.global-nav-items { position: relative; display: flex; flex-direction: column; gap: var(--space-2); width: 100%; padding: 0 var(--space-2); flex: 1; }
-.global-nav-indicator {
-  position: absolute; left: var(--space-2); right: var(--space-2); top: 0; height: 56px; border-radius: var(--radius-md);
-  background: var(--accent-soft); z-index: 0;
-  transition: transform var(--motion-normal) var(--ease-emphasized);
+.sidebar-brand { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-5) var(--space-4) var(--space-4); }
+.sidebar-brand .wordmark-glyph { width: 24px; height: 22px; }
+.sidebar-brand-text { font-family: var(--font-display); font-weight: var(--font-semibold); font-size: var(--text-sm); color: var(--text-primary); }
+.sidebar-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--space-4) var(--space-4); }
+.sidebar-online-title { margin-top: var(--space-5); }
+.sidebar-footer {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+  padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border);
 }
-.global-nav-item {
-  position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  width: 100%; min-height: 56px; background: none; border: none; border-radius: var(--radius-md);
-  color: var(--text-secondary); font-size: var(--text-xs); font-weight: var(--font-semibold);
-  transition: color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
-}
-.global-nav-item .gni-icon { font-size: 22px; line-height: 1; }
-.global-nav-item.active { color: var(--accent-strong); }
-@media (hover: hover) and (pointer: fine) {
-  .global-nav-item:hover:not(.active) { color: var(--text-primary); transform: translateY(-1px); }
-}
-.global-nav-item:active { transform: scale(0.96); }
-.global-nav-footer { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); padding-top: var(--space-3); }
-.global-nav-theme-toggle { min-width: 40px; min-height: 40px; }
-.global-nav-me {
+.sidebar-me {
   width: 32px; height: 32px; border-radius: var(--radius-full); background: var(--accent); color: white;
-  display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: var(--font-bold);
+  display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: var(--font-bold); flex-shrink: 0;
 }
+.ephemeral-hint { margin: var(--space-4) 0 0; font-size: var(--text-xs); color: var(--text-secondary); text-align: center; line-height: 1.4; opacity: 0.8; }
 
-.app-views { flex: 1; min-width: 0; height: 100%; position: relative; background: var(--elevation-0); }
-.app-view { position: absolute; inset: 0; display: flex; animation: view-in var(--motion-normal) var(--ease-standard); }
-@keyframes view-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-@media (prefers-reduced-motion: reduce) { .app-view { animation: none; } }
-.view-scroll { flex: 1; min-width: 0; overflow-y: auto; height: 100%; }
-.view-inner { max-width: 880px; margin: 0 auto; padding: var(--space-7) var(--space-6) var(--space-7); }
+/* ---------- CENTER: CHAT ---------- */
+.chat-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg-app); }
 
-.bottom-nav { display: none; }
+/* ---------- RIGHT: GAMES PANEL ---------- */
+.games-panel {
+  width: 300px; flex-shrink: 0; background: var(--elevation-1); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; min-height: 0;
+}
+.games-panel-drag-handle { display: none; }
+.games-panel-header {
+  flex: 0 0 auto; display: flex; align-items: center; gap: var(--space-2); padding: var(--space-4) var(--space-4) var(--space-3);
+}
+.games-panel-title { flex: 1; font-weight: var(--font-bold); color: var(--text-primary); font-size: var(--text-base); }
+.games-panel-close-btn { display: none; }
+.games-panel-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--space-4) var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); }
+.app-body.games-panel-collapsed .games-panel { display: none; }
+.games-rail-btn {
+  display: none; flex-shrink: 0; width: 44px; align-self: flex-start; margin: var(--space-4) var(--space-3) 0 0;
+  border: 1px solid var(--border); background: var(--elevation-2); color: var(--text-primary); border-radius: var(--radius-md);
+  min-height: 44px; font-size: var(--text-lg); box-shadow: var(--shadow-sm);
+  transition: transform var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
+}
+@media (hover: hover) and (pointer: fine) { .games-rail-btn:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); } }
+.games-rail-btn:active { transform: translateY(0) scale(0.95); }
+.app-body.games-panel-collapsed .games-rail-btn { display: flex; align-items: center; justify-content: center; }
 
-/* ---------- HOME VIEW ---------- */
-.home-greeting h1 { font-family: var(--font-display); font-size: var(--text-xl); margin: 0 0 var(--space-1); color: var(--text-primary); }
-.home-greeting-sub { color: var(--text-secondary); margin: 0 0 var(--space-6); font-size: var(--text-sm); }
-.home-quick-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-4); margin-bottom: var(--space-7); }
-.quick-action-card {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-2);
-  background: var(--elevation-2); border: 1px solid var(--border); border-radius: var(--radius-lg);
-  padding: var(--space-6) var(--space-4); box-shadow: var(--shadow-sm); min-height: 112px;
+/* party card inside the games panel */
+.games-panel-party-start-btn { width: 100%; }
+.games-panel-party-active {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); background: var(--accent-soft);
+  border: 1px solid var(--accent); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4);
+}
+.gp-party-info { display: flex; flex-direction: column; gap: 2px; font-size: var(--text-sm); color: var(--text-primary); }
+.gp-party-info span { color: var(--text-secondary); font-size: var(--text-xs); }
+
+.games-panel-section { display: flex; flex-direction: column; gap: var(--space-2); }
+.gp-recent-list { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.gp-recent-chip {
+  border: 1px solid var(--border); background: var(--elevation-2); border-radius: var(--radius-full);
+  padding: var(--space-1) var(--space-3); font-size: var(--text-xs); font-weight: var(--font-semibold); color: var(--text-primary); min-height: 30px;
+  transition: transform var(--motion-fast) var(--ease-standard), background-color var(--motion-fast) var(--ease-standard);
+}
+@media (hover: hover) and (pointer: fine) { .gp-recent-chip:hover { transform: translateY(-1px); background: var(--accent-soft); } }
+.gp-recent-chip:active { transform: translateY(0) scale(0.95); }
+
+.game-lobby-list--compact { grid-template-columns: 1fr; gap: var(--space-2); }
+
+.gp-card-list { display: flex; flex-direction: column; gap: var(--space-2); }
+.gp-card {
+  display: flex; align-items: center; gap: var(--space-3); background: var(--elevation-2); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); box-shadow: var(--shadow-sm);
   transition: transform var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
 }
-.qac-icon { font-size: 30px; }
-.qac-label { font-weight: var(--font-semibold); color: var(--text-primary); font-size: var(--text-sm); }
-@media (hover: hover) and (pointer: fine) {
-  .quick-action-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: var(--accent); }
+@media (hover: hover) and (pointer: fine) { .gp-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--accent); } }
+.gp-card-icon { font-size: 22px; line-height: 1; flex-shrink: 0; }
+.gp-card-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.gp-card-name { font-weight: var(--font-semibold); color: var(--text-primary); font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gp-card-count { color: var(--text-secondary); font-size: 11px; }
+.gp-card-play {
+  flex-shrink: 0; width: 32px; height: 32px; border-radius: var(--radius-full); border: none;
+  background: var(--accent-cool); color: white; font-size: var(--text-sm);
+  transition: transform var(--motion-fast) var(--ease-standard), background-color var(--motion-fast) var(--ease-standard);
 }
-.quick-action-card:active { transform: translateY(-1px) scale(0.99); }
+@media (hover: hover) and (pointer: fine) { .gp-card-play:hover:not(:disabled) { background: var(--accent-cool-strong); transform: scale(1.08); } }
+.gp-card-play:active:not(:disabled) { transform: scale(0.94); }
+.gp-card-play:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.home-section { margin-bottom: var(--space-6); }
+.games-panel-alle-btn { width: 100%; }
+
+/* ---------- OVERLAYS (Games Library, Party) ----------
+   Full-screen overlays above the chat, not part of the app-body flex row -
+   opened/closed purely via [hidden] + a fade/scale-in animation. */
+.games-library-overlay, .party-overlay {
+  position: fixed; inset: 0; z-index: var(--z-modal); background: var(--elevation-0);
+  display: flex; flex-direction: column; animation: overlay-panel-in var(--motion-normal) var(--ease-emphasized);
+}
+@keyframes overlay-panel-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .games-library-overlay, .party-overlay { animation: none; } }
+.overlay-head {
+  flex: 0 0 auto; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border); background: var(--elevation-1);
+}
+.overlay-title { flex: 1; text-align: center; font-weight: var(--font-bold); font-size: var(--text-base); color: var(--text-primary); }
+.overlay-head-spacer { width: 40px; }
+.view-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.view-inner { max-width: 880px; margin: 0 auto; padding: var(--space-6) var(--space-6) var(--space-7); }
+
+/* generic section-title used by the games panel, games library and party
+   overlay alike */
 .home-section-title { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); font-weight: var(--font-semibold); margin-bottom: var(--space-3); }
-.home-running-list, .home-recent-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
-.home-running-item {
-  display: flex; align-items: center; gap: var(--space-3); background: var(--elevation-2); border: 1px solid var(--border);
-  border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); font-size: var(--text-sm);
-}
-.hri-emoji { font-size: var(--text-lg); }
-.hri-text { flex: 1; color: var(--text-primary); }
-.hri-count { color: var(--text-secondary); font-size: var(--text-xs); }
-.home-recent-list { flex-direction: row; flex-wrap: wrap; }
-.home-recent-chip {
-  display: flex; align-items: center; gap: var(--space-3); background: var(--elevation-2); border: 1px solid var(--border);
-  border-radius: var(--radius-full); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); font-size: var(--text-sm);
-}
-.home-recent-chip button {
-  border: none; background: var(--accent-soft); color: var(--accent-strong); border-radius: var(--radius-full);
-  padding: var(--space-1) var(--space-3); font-size: var(--text-xs); font-weight: var(--font-semibold); min-height: 28px;
-  transition: transform var(--motion-fast) var(--ease-standard);
-}
-@media (hover: hover) and (pointer: fine) { .home-recent-chip button:hover { transform: translateY(-1px); background: var(--accent); color: white; } }
-.home-recent-chip button:active { transform: translateY(0) scale(0.95); }
-
-/* ---------- CHAT VIEW ---------- */
-#view-chat { position: relative; }
-.mobile-channels-toggle { display: none; }
-.channel-sidebar {
-  width: 260px; flex-shrink: 0; background: var(--elevation-1); border-right: 1px solid var(--border);
-  padding: var(--space-5) var(--space-4); overflow-y: auto;
-}
 .channel-sidebar-title { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); font-weight: var(--font-semibold); margin-bottom: var(--space-3); }
 
-/* ---------- GAMES VIEW ---------- */
+/* ---------- GAMES LIBRARY OVERLAY ---------- */
 .games-toolbar { display: flex; flex-direction: column; gap: var(--space-3); margin-bottom: var(--space-5); }
 .games-search-wrap { position: relative; }
 .games-search-icon { position: absolute; left: var(--space-4); top: 50%; transform: translateY(-50%); font-size: var(--text-sm); opacity: 0.6; pointer-events: none; }
@@ -508,47 +537,20 @@ select:focus-visible, [tabindex]:focus-visible, .icon-btn:focus-visible,
 .party-score-list li span:last-child { color: var(--accent-strong); font-weight: var(--font-bold); }
 .party-leave-btn { margin-top: var(--space-2); }
 
-/* ---------- LEGACY (mostly unused after 2.0 - .channel-list/.online-list/
-   .new-channel-form/.game-type-item/.game-lobby-item are still reused
-   inside the new views above, just relocated; .sidebar/.sidebar-toggle/
-   .sidebar-section*/.brand/.sidebar-me have no HTML referencing them
-   anymore and are inert) ---------- */
-#app-legacy-unused-marker { display: none; }
-
-.sidebar-toggle {
-  display: none;
-  position: fixed; top: var(--space-3); left: var(--space-3); z-index: var(--z-sidebar-toggle);
-  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  width: 44px; height: 44px; font-size: var(--text-lg); box-shadow: var(--shadow-md); color: var(--text-primary);
-}
-
-.sidebar {
-  width: 284px; flex-shrink: 0; background: var(--bg-sidebar);
-  border-right: 1px solid var(--border);
-  display: flex; flex-direction: column; padding: var(--space-5) var(--space-4);
-  height: 100vh; height: 100dvh; overflow-y: auto; position: relative; z-index: var(--z-sidebar);
-}
-
-.brand { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-6); padding: 0 var(--space-1); }
-
-.sidebar-section {
-  margin-bottom: var(--space-5); padding-bottom: var(--space-5); border-bottom: 1px solid var(--border);
-}
-.sidebar-title {
-  font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary);
-  margin-bottom: var(--space-3); font-weight: var(--font-semibold); display: flex; align-items: center; gap: var(--space-2);
-}
-.sidebar-title::before { content: ''; width: 6px; height: 6px; border-radius: var(--radius-full); background: var(--accent); flex-shrink: 0; }
-.sidebar-section-games .sidebar-title::before { background: var(--accent-cool); }
-.sidebar-section-online .sidebar-title::before { background: var(--success); }
-
+/* ---------- SHARED: channel/online lists, game type + lobby cards ----------
+   .channel-list/.online-list/.new-channel-form live in .left-sidebar now;
+   .game-type-item/.game-lobby-item are shared by the Games Library overlay
+   and (compact variant) the games panel. */
 .channel-list, .online-list { list-style: none; margin: 0; padding: 0; }
 .channel-list li {
   padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); cursor: pointer; font-size: var(--text-sm);
   margin-bottom: var(--space-1); color: var(--text-primary); border-left: 3px solid transparent; min-height: 36px;
   display: flex; align-items: center; font-weight: var(--font-normal);
 }
-.channel-list li:hover { background: var(--bg-surface-hover); }
+@media (hover: hover) and (pointer: fine) {
+  .channel-list li:hover:not(.active) { background: var(--bg-surface-hover); color: var(--text-primary); transform: translateX(2px); }
+}
+.channel-list li:active { transform: scale(0.98); }
 .channel-list li.active {
   background: var(--accent-soft); color: var(--accent-strong); font-weight: var(--font-semibold);
   border-left-color: var(--accent); box-shadow: var(--shadow-glow);
@@ -629,16 +631,12 @@ select:focus-visible, [tabindex]:focus-visible, .icon-btn:focus-visible,
 .game-lobby-item button.ghost-btn { background: none; border: 1px dashed var(--border); color: var(--text-secondary); }
 .game-lobby-item button:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.sidebar-me { margin-top: var(--space-4); font-size: var(--text-xs); color: var(--text-secondary); text-align: center; }
-.ephemeral-hint { margin: var(--space-4) 0 0; font-size: var(--text-xs); color: var(--text-secondary); text-align: center; line-height: 1.4; opacity: 0.8; }
-
-.main { flex: 1; display: flex; flex-direction: column; height: 100vh; height: 100dvh; min-width: 0; background: var(--bg-app); }
 .chat-header {
   padding: var(--space-4) var(--space-6); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-sm);
   font-size: var(--text-lg); font-weight: var(--font-semibold); background: var(--bg-surface); position: relative; z-index: var(--z-header);
 }
 
-.messages { flex: 1; overflow-y: auto; padding: var(--space-5) var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
+.messages { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-5) var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
 
 /* friendly empty state so an unused channel never looks dead */
 .chat-empty-state {
@@ -1524,7 +1522,6 @@ body.scroll-locked { overflow: hidden; }
 
 /* ---------- MOBILE (breakpoint 768px) ---------- */
 @media (max-width: 767px) {
-  .chat-header { padding-left: 62px; }
   .msg { max-width: 88%; }
   .bubble img.chat-image { max-width: 200px; }
   .snap-frame img.snap-image { max-width: 200px; }
@@ -1539,46 +1536,78 @@ body.scroll-locked { overflow: hidden; }
   .message-form { padding: var(--space-3) var(--space-4); }
 }
 
-/* ---------- CHAT & GAMES 2.0 APP SHELL - MOBILE ----------
+/* ---------- CHAT & GAMES 2.1 APP SHELL - MOBILE ----------
    #game-modal/#snap-modal are outside #app (see index.html) so none of
    this touches Operation Smartphone's game-chat-drawer, joystick, D-pad,
    pointercancel-safety-net etc. code at all - this is purely the outer
-   Home/Chat/Games/Party navigation shell. */
-@media (max-width: 899px) {
-  .global-nav { display: none; }
-  #app { flex-direction: column; }
-  .app-views { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
-  .bottom-nav {
-    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-bottom-nav);
-    background: var(--elevation-1); border-top: 1px solid var(--border);
-    padding: var(--space-1) var(--space-2) max(var(--space-1), env(safe-area-inset-bottom));
-    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06);
+   chat-first shell: a header (☰ / channel name / 🎮) replaces the desktop
+   sidebar+chat-header, and the left sidebar / games panel become drawers.
+   Deliberately no arbitrary "100vh - Npx" math anywhere below: #app is the
+   one element with an explicit height (100dvh, set above, outside this
+   query), everything else sizes itself purely via flex (flex:1 +
+   min-height:0), so the message list's own overflow-y is what scrolls -
+   never the page - and the composer is never anything but the last flex
+   item in that column. Compound breakpoint (width OR short-height-with-
+   coarse-pointer) matches the same one already used for the Operation-
+   Smartphone game-chat-drawer, so a landscape phone (e.g. 932x430) still
+   gets the mobile shell instead of falling through to the desktop layout
+   just because its width happens to exceed 899px. */
+@media (max-width: 899px), (max-height: 480px) and (pointer: coarse) {
+  .chat-header { display: none; }
+
+  .mobile-header {
+    display: flex; align-items: center; gap: var(--space-2); flex: 0 0 auto;
+    padding: max(var(--space-3), env(safe-area-inset-top)) var(--space-3) var(--space-2);
+    background: var(--elevation-1); border-bottom: 1px solid var(--border); position: relative; z-index: var(--z-header);
   }
-  .bottom-nav-item {
-    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-    min-height: 56px; background: none; border: none; border-radius: var(--radius-md); color: var(--text-secondary);
-    font-size: 11px; font-weight: var(--font-semibold); transition: color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
+  .mobile-header-channel { flex: 1; min-width: 0; text-align: center; font-weight: var(--font-semibold); font-size: var(--text-base); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-games-btn { position: relative; }
+  .mobile-games-badge {
+    position: absolute; top: 2px; right: 2px; background: var(--danger); color: white; border-radius: var(--radius-full);
+    font-size: 10px; font-weight: var(--font-bold); min-width: 16px; height: 16px; padding: 0 4px;
+    display: flex; align-items: center; justify-content: center; line-height: 1;
   }
-  .bottom-nav-item .bni-icon { font-size: 22px; line-height: 1.1; }
-  .bottom-nav-item.active { color: var(--accent-strong); }
-  .bottom-nav-item:active { transform: scale(0.94); }
+
+  .app-body { position: relative; }
+
+  /* Shared dimmed backdrop for the two drawers below - same recipe as the
+     Operation-Smartphone game-chat-drawer's own backdrop (fade via a class,
+     never [hidden], so opacity can actually transition). */
+  .drawer-backdrop {
+    display: block; position: fixed; inset: 0; background: rgba(10, 12, 18, 0.5); z-index: var(--z-sidebar-toggle);
+    opacity: 0; pointer-events: none; transition: opacity var(--transition-slow);
+  }
+  .drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+
+  /* left sidebar -> classic slide-in-from-left drawer. z-index must sit
+     ABOVE .drawer-backdrop (--z-sidebar-toggle) - otherwise the backdrop
+     intercepts clicks meant for controls inside the open drawer. */
+  .left-sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: var(--z-dropdown); transform: translateX(-100%);
+    transition: transform var(--transition-slow); width: 84%; max-width: 320px; box-shadow: var(--shadow-lg);
+    padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+  }
+  .left-sidebar.open { transform: translateX(0); }
+
+  /* games panel -> bottom sheet, same visual mechanic as the game-chat
+     drawer (position:fixed to the true viewport, translateY(100%) closed) */
+  .games-panel {
+    position: fixed; inset: auto 0 0 0; z-index: var(--z-dropdown); width: 100%;
+    height: min(88%, 720px); border-radius: var(--radius-lg) var(--radius-lg) 0 0; box-shadow: var(--shadow-lg);
+    transform: translateY(100%); transition: transform var(--transition-slow);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .games-panel.open { transform: translateY(0); }
+  .games-panel-drag-handle {
+    display: block; width: 36px; height: 4px; border-radius: var(--radius-full); background: var(--border);
+    margin: var(--space-2) auto 0;
+  }
+  .games-panel-close-btn { display: inline-flex; min-width: 44px; min-height: 44px; }
+  .games-panel-collapse-btn { display: none; }
+  .games-rail-btn { display: none !important; }
 
   .view-inner { padding: var(--space-5) var(--space-4); }
-  .home-quick-actions { grid-template-columns: 1fr 1fr; }
-  .home-quick-actions .quick-action-card:last-child { grid-column: 1 / -1; }
-
-  #view-chat { flex-direction: column; }
-  .mobile-channels-toggle {
-    display: block; position: fixed; top: var(--space-3); left: var(--space-3); z-index: var(--z-sidebar-toggle);
-    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
-    width: 44px; height: 44px; font-size: var(--text-lg); box-shadow: var(--shadow-md); color: var(--text-primary);
-  }
-  .channel-sidebar {
-    position: fixed; top: 0; left: 0; bottom: 0; z-index: var(--z-sidebar); transform: translateX(-100%);
-    transition: transform var(--transition-slow); width: 84%; max-width: 320px; box-shadow: var(--shadow-lg);
-    padding-top: max(var(--space-5), env(safe-area-inset-top));
-  }
-  .channel-sidebar.open { transform: translateX(0); }
+  .overlay-head { padding-top: max(var(--space-4), env(safe-area-inset-top)); }
 
   .games-category-pills { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
   .game-type-list { grid-template-columns: 1fr; }
