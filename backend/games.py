@@ -41,6 +41,7 @@ from .dodge_arena import DodgeArenaEngine
 from .who_am_i import WhoAmIEngine
 from .know_me import KnowMeEngine
 from .majority_game import MajorityGameEngine
+from .drawing_game import DrawingGameEngine
 
 
 # ---------- Pong ----------
@@ -1041,6 +1042,7 @@ GAME_ENGINES = {
     "whoami": WhoAmIEngine,
     "knowme": KnowMeEngine,
     "majority": MajorityGameEngine,
+    "kritzelmeister": DrawingGameEngine,
 }
 
 

@@ -2307,3 +2307,157 @@ body.scroll-locked { overflow: hidden; }
   .mg-bar-name { width: 76px; font-size: var(--text-xs); }
   .mg-mode-banner { font-size: var(--text-sm); padding: var(--space-2) var(--space-4); }
 }
+
+/* ============================================================================
+   KRITZELMEISTER - scoped entirely to .kritzelmeister-mode / .dg-* classes,
+   no other game is touched. Reuses .arcade-mode for the outer modal (a big,
+   explicit-height canvas-dominant dialog - see that rule's own comment) -
+   .dg-root then lays out topbar / canvas / toolbar / guess-area as a flex
+   column filling it exactly like the arcade games' .arc-root does.
+   ============================================================================ */
+.dg-root { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; height: 100%; min-height: 0; }
+
+.dg-topbar { flex: 0 0 auto; display: flex; flex-direction: column; gap: var(--space-2); }
+.dg-topbar-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; justify-content: center; }
+.dg-topbar-label { font-weight: var(--font-semibold); color: var(--text-primary); font-size: var(--text-sm); }
+.dg-word { font-family: var(--font-display); font-weight: var(--font-bold); font-size: var(--text-lg); letter-spacing: 0.04em; }
+.dg-word--own { color: var(--accent-strong); }
+.dg-word--solved { color: var(--success); }
+.dg-word-pattern { font-family: var(--font-display); font-weight: var(--font-bold); font-size: var(--text-lg); letter-spacing: 0.18em; color: var(--text-primary); }
+.dg-timer {
+  font-variant-numeric: tabular-nums; font-weight: var(--font-bold); font-size: var(--text-base); color: var(--text-primary);
+  background: var(--bg-surface-alt); border-radius: var(--radius-full); padding: 2px var(--space-3); min-width: 40px; text-align: center;
+}
+
+.dg-special-banner {
+  align-self: center; display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center;
+  padding: var(--space-2) var(--space-4); border-radius: var(--radius-md); font-size: var(--text-sm); color: white;
+  animation: est-pop 0.3s ease;
+}
+.dg-special-banner span { font-size: var(--text-xs); opacity: 0.9; }
+.dg-special-banner--chaos { background: linear-gradient(120deg, var(--danger), var(--warning)); }
+.dg-special-banner--one_stroke { background: var(--accent-cool); }
+.dg-special-banner--blind { background: #444a5c; }
+
+.dg-canvas-outer { flex: 1; min-height: 0; width: 100%; display: flex; align-items: center; justify-content: center; touch-action: none; }
+.dg-canvas-wrap { position: relative; }
+.dg-canvas {
+  display: block; border-radius: var(--radius-lg); box-shadow: 0 0 0 1px var(--border), var(--shadow-md);
+  /* Deliberately paper-white in BOTH themes (light: pure white; dark: a
+     faint warm off-white, never the app's dark surface) - the seven pen
+     colors below are tuned against a light background and would lose
+     contrast/consistency on a dark canvas. */
+  background: #FFFFFF; touch-action: none; cursor: crosshair;
+}
+[data-theme="dark"] .dg-canvas { background: #FBF8F2; }
+
+.dg-choosing-overlay, .dg-reveal-overlay {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: var(--space-4);
+  background: rgba(10, 12, 18, 0.55); border-radius: var(--radius-lg); animation: overlay-in var(--motion-normal) var(--ease-standard);
+}
+.dg-word-choice, .dg-reveal-card {
+  background: var(--bg-surface); border-radius: var(--radius-lg); padding: var(--space-6) var(--space-5);
+  box-shadow: var(--shadow-lg); width: min(480px, 92vw); text-align: center; max-height: 90%; overflow-y: auto;
+}
+.dg-word-choice-title { font-weight: var(--font-semibold); color: var(--text-primary); margin-bottom: var(--space-4); }
+.dg-word-choice-cards { display: flex; flex-direction: column; gap: var(--space-2); }
+.dg-word-card {
+  display: flex; align-items: center; gap: var(--space-3); background: var(--bg-surface-alt); border: 1.5px solid var(--border);
+  border-radius: var(--radius-md); padding: var(--space-4); font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--text-primary);
+  transition: transform var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+}
+@media (hover: hover) and (pointer: fine) { .dg-word-card:hover:not(:disabled) { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--accent); } }
+.dg-word-card:active:not(:disabled) { transform: translateY(0) scale(0.98); }
+.dg-word-card:disabled { opacity: 0.5; }
+.dg-word-card-diff { font-size: 11px; font-weight: var(--font-bold); padding: 2px var(--space-2); border-radius: var(--radius-full); flex-shrink: 0; }
+.dg-word-card-diff--1 { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success); }
+.dg-word-card-diff--2 { background: color-mix(in srgb, var(--warning) 20%, transparent); color: #92650b; }
+[data-theme="dark"] .dg-word-card-diff--2 { color: var(--warning); }
+.dg-word-card-diff--3 { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+.dg-word-card-text { flex: 1; text-align: left; }
+.dg-choosing-wait { color: white; font-weight: var(--font-semibold); font-size: var(--text-lg); text-align: center; padding: var(--space-5); }
+
+.dg-reveal-label { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-secondary); font-weight: var(--font-semibold); }
+.dg-reveal-word { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: var(--font-bold); color: var(--accent-strong); margin: var(--space-1) 0 var(--space-4); }
+.dg-reveal-note { color: var(--text-secondary); font-size: var(--text-sm); margin: 0 0 var(--space-3); }
+.dg-reveal-points, .dg-standings-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); text-align: left; }
+.dg-reveal-points li, .dg-standings-list li { display: flex; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-3); background: var(--bg-surface-alt); border-radius: var(--radius-sm); font-size: var(--text-sm); font-weight: var(--font-semibold); color: var(--text-primary); }
+
+.dg-toolbar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: var(--space-2); justify-content: center; flex-wrap: wrap;
+  padding: var(--space-2); background: var(--bg-surface-alt); border-radius: var(--radius-md); position: relative;
+}
+.dg-tool-btn {
+  width: 42px; height: 42px; border-radius: var(--radius-md); border: 1.5px solid var(--border); background: var(--bg-surface);
+  color: var(--text-primary); font-size: var(--text-lg); display: flex; align-items: center; justify-content: center;
+  transition: transform var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+}
+@media (hover: hover) and (pointer: fine) { .dg-tool-btn:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); } }
+.dg-tool-btn:active { transform: translateY(0) scale(0.94); }
+.dg-tool-btn--active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); }
+.dg-color-trigger { font-size: var(--text-base); }
+.dg-stroke-budget { font-size: var(--text-xs); font-weight: var(--font-semibold); color: var(--danger); background: var(--bg-surface); border-radius: var(--radius-full); padding: 4px var(--space-3); }
+
+.dg-popover {
+  position: absolute; bottom: calc(100% + var(--space-2)); left: 50%; transform: translateX(-50%);
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+  padding: var(--space-2); display: flex; gap: var(--space-2); z-index: var(--z-dropdown);
+  animation: view-in var(--motion-fast) var(--ease-standard);
+}
+.dg-swatch { width: 30px; height: 30px; border-radius: 50%; border: 2px solid transparent; box-shadow: 0 0 0 1px var(--border); transition: transform var(--motion-fast) var(--ease-standard); }
+.dg-swatch--active { border-color: var(--text-primary); transform: scale(1.12); }
+@media (hover: hover) and (pointer: fine) { .dg-swatch:hover { transform: scale(1.1); } }
+.dg-width-opt { width: 36px; height: 36px; border-radius: var(--radius-sm); border: 1.5px solid var(--border); background: var(--bg-surface-alt); display: flex; align-items: center; justify-content: center; }
+.dg-width-opt span { display: block; border-radius: 50%; background: var(--text-primary); }
+.dg-width-opt--active { border-color: var(--accent); background: var(--accent-soft); }
+
+.dg-guess-area { flex: 0 0 auto; display: flex; flex-direction: column; gap: var(--space-2); }
+.dg-guess-form { display: flex; gap: var(--space-2); }
+.dg-guess-input {
+  flex: 1; min-width: 0; padding: var(--space-3) var(--space-4); border-radius: var(--radius-full); border: 1.5px solid var(--border);
+  background: var(--bg-surface); color: var(--text-primary); font-size: var(--text-base);
+  transition: border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
+}
+.dg-guess-input:focus { outline: none; border-color: var(--accent); box-shadow: var(--shadow-glow); }
+.dg-guess-input:disabled { opacity: 0.6; }
+.dg-guess-submit { border-radius: var(--radius-full); padding: var(--space-3) var(--space-5); }
+.dg-guess-feed { max-height: 96px; overflow-y: auto; display: flex; flex-direction: column-reverse; gap: 2px; font-size: var(--text-sm); }
+.dg-guess-row { padding: var(--space-1) var(--space-2); color: var(--text-secondary); }
+.dg-guess-row strong { color: var(--text-primary); }
+.dg-guess-row--correct { color: var(--success); font-weight: var(--font-semibold); }
+.dg-guess-near { color: var(--warning); font-weight: var(--font-semibold); }
+
+/* ---- Host options modal ---- */
+.dg-options-modal { max-width: 420px; }
+.dg-options-body { display: flex; flex-direction: column; gap: var(--space-4); margin-top: var(--space-3); }
+.dg-options-group { }
+.dg-options-label { font-weight: var(--font-semibold); color: var(--text-primary); margin-bottom: var(--space-2); font-size: var(--text-sm); }
+.dg-options-chips { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.dg-chip { padding: var(--space-2) var(--space-4); border-radius: var(--radius-full); border: 1.5px solid var(--border); background: var(--bg-surface-alt); color: var(--text-primary); font-weight: var(--font-semibold); min-height: 40px; }
+.dg-chip--active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); }
+.dg-options-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-5); }
+
+/* ---- Endscreen ---- */
+.dg-endscreen { width: min(560px, 94vw); padding: var(--space-6) var(--space-5); background: var(--bg-surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); text-align: center; display: flex; flex-direction: column; align-items: center; }
+.dg-root--end { align-items: center; justify-content: center; }
+.dg-endscreen-title { font-family: var(--font-display); font-weight: var(--font-bold); font-size: var(--text-lg); color: var(--text-primary); margin-bottom: var(--space-4); }
+.dg-podium-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); width: 100%; }
+.dg-podium-entry { display: flex; align-items: center; gap: var(--space-3); background: var(--bg-surface-alt); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); }
+.dg-podium-medal { font-size: 26px; }
+.dg-podium-name { flex: 1; font-weight: var(--font-bold); color: var(--text-primary); text-align: left; }
+.dg-podium-score { font-weight: var(--font-bold); color: #B8860B; }
+.dg-rest-list { list-style: none; margin: var(--space-3) 0 0; padding: 0; width: 100%; display: flex; flex-direction: column; gap: var(--space-1); }
+.dg-rest-list li { display: flex; justify-content: space-between; gap: var(--space-3); font-size: var(--text-sm); color: var(--text-secondary); padding: var(--space-2) var(--space-3); }
+.dg-fun-stats { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-4); width: 100%; }
+.dg-fun-stat { background: var(--bg-surface-alt); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); text-align: left; }
+.dg-fun-stat strong { display: block; color: var(--accent-cool-strong); font-size: var(--text-sm); }
+.dg-fun-stat span { font-size: var(--text-sm); color: var(--text-secondary); }
+.dg-endscreen-actions { display: flex; justify-content: center; gap: var(--space-3); margin-top: var(--space-5); flex-wrap: wrap; }
+
+@media (max-width: 767px), (max-height: 480px) and (pointer: coarse) {
+  .dg-word, .dg-word-pattern { font-size: var(--text-base); }
+  .dg-reveal-word { font-size: var(--text-xl); }
+  .dg-tool-btn { width: 38px; height: 38px; }
+  .dg-word-choice, .dg-reveal-card { padding: var(--space-5) var(--space-4); }
+  .dg-guess-feed { max-height: 72px; }
+}

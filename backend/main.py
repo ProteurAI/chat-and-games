@@ -15,6 +15,7 @@ from . import db
 from . import games as games_module
 from . import who_am_i as who_am_i_module
 from . import party as party_module
+from . import drawing_game as drawing_game_module
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT_DIR / "static"
@@ -488,6 +489,24 @@ async def websocket_endpoint(ws: WebSocket, token: Optional[str] = None):
             elif msg_type == "party_report_score":
                 points = raw.get("points")
                 await party_manager.report_score(user, ws, points)
+
+            # Kritzelmeister live drawing - deliberately NOT routed through
+            # game_input/game_state (see backend/drawing_game.py's module
+            # docstring for why): these are high-frequency, so each handler
+            # relays a small delta directly instead of going through the
+            # generic per-tick full-state broadcast every other game uses.
+            elif msg_type == "drawing_stroke_start":
+                await drawing_game_module.handle_stroke_start(game_manager, user, ws, raw)
+            elif msg_type == "drawing_stroke_batch":
+                await drawing_game_module.handle_stroke_batch(game_manager, user, ws, raw)
+            elif msg_type == "drawing_stroke_end":
+                await drawing_game_module.handle_stroke_end(game_manager, user, ws, raw)
+            elif msg_type == "drawing_undo":
+                await drawing_game_module.handle_undo(game_manager, user, ws, raw)
+            elif msg_type == "drawing_clear":
+                await drawing_game_module.handle_clear(game_manager, user, ws, raw)
+            elif msg_type == "drawing_request_sync":
+                await drawing_game_module.handle_request_sync(game_manager, user, ws, raw)
 
     except WebSocketDisconnect:
         pass

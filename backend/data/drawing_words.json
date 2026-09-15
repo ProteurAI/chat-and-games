@@ -1,0 +1,4530 @@
+[
+  {
+    "id": "animals_001",
+    "word": "Hund",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_002",
+    "word": "Katze",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_003",
+    "word": "Maus",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_004",
+    "word": "Pferd",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_005",
+    "word": "Kuh",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_006",
+    "word": "Schwein",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_007",
+    "word": "Schaf",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_008",
+    "word": "Huhn",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_009",
+    "word": "Ente",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_010",
+    "word": "Fisch",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_011",
+    "word": "Vogel",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_012",
+    "word": "Hase",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_013",
+    "word": "Löwe",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_014",
+    "word": "Tiger",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_015",
+    "word": "Bär",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_016",
+    "word": "Elefant",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_017",
+    "word": "Giraffe",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_018",
+    "word": "Affe",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_019",
+    "word": "Frosch",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_020",
+    "word": "Schlange",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 1
+  },
+  {
+    "id": "animals_021",
+    "word": "Fuchs",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_022",
+    "word": "Wolf",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_023",
+    "word": "Eichhörnchen",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_024",
+    "word": "Igel",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_025",
+    "word": "Reh",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_026",
+    "word": "Hirsch",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_027",
+    "word": "Ziege",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_028",
+    "word": "Gans",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_029",
+    "word": "Pinguin",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_030",
+    "word": "Papagei",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_031",
+    "word": "Eule",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_032",
+    "word": "Adler",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_033",
+    "word": "Storch",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_034",
+    "word": "Flamingo",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_035",
+    "word": "Schwan",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_036",
+    "word": "Schildkröte",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_037",
+    "word": "Krokodil",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_038",
+    "word": "Eidechse",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_039",
+    "word": "Hai",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_040",
+    "word": "Delfin",
+    "aliases": [
+      "Delphin"
+    ],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_041",
+    "word": "Wal",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_042",
+    "word": "Krabbe",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_043",
+    "word": "Biene",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_044",
+    "word": "Schmetterling",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_045",
+    "word": "Marienkäfer",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_046",
+    "word": "Spinne",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_047",
+    "word": "Ameise",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_048",
+    "word": "Kamel",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_049",
+    "word": "Zebra",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_050",
+    "word": "Nashorn",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_051",
+    "word": "Gorilla",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_052",
+    "word": "Koala",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_053",
+    "word": "Känguru",
+    "aliases": [
+      "Kaenguru"
+    ],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_054",
+    "word": "Panda",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 2
+  },
+  {
+    "id": "animals_055",
+    "word": "Nilpferd",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_056",
+    "word": "Waschbär",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_057",
+    "word": "Otter",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_058",
+    "word": "Eisbär",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_059",
+    "word": "Oktopus",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_060",
+    "word": "Qualle",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_061",
+    "word": "Seestern",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_062",
+    "word": "Skorpion",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_063",
+    "word": "Chamäleon",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_064",
+    "word": "Faultier",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_065",
+    "word": "Erdmännchen",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_066",
+    "word": "Stachelschwein",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_067",
+    "word": "Seepferdchen",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_068",
+    "word": "Hummer",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_069",
+    "word": "Flusspferd",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_070",
+    "word": "Gepard",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_071",
+    "word": "Lama",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_072",
+    "word": "Alpaka",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_073",
+    "word": "Pelikan",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "animals_074",
+    "word": "Kolibri",
+    "aliases": [],
+    "category": "animals",
+    "difficulty": 3
+  },
+  {
+    "id": "food_001",
+    "word": "Pizza",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 1
+  },
+  {
+    "id": "food_002",
+    "word": "Apfel",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 1
+  },
+  {
+    "id": "food_003",
+    "word": "Banane",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 1
+  },
+  {
+    "id": "food_004",
+    "word": "Brot",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 1
+  },
+  {
+    "id": "food_005",
+    "word": "Käse",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 1
+  },
+  {
+    "id": "food_006",
+    "word": "Ei",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 1
+  },
+  {
+    "id": "food_007",
+    "word": "Milch",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 1
+  },
+  {
+    "id": "food_008",
+    "word": "Kuchen",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 1
+  },
+  {
+    "id": "food_009",
+    "word": "Eiscreme",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 1
+  },
+  {
+    "id": "food_010",
+    "word": "Keks",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 1
+  },
+  {
+    "id": "food_011",
+    "word": "Karotte",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 1
+  },
+  {
+    "id": "food_012",
+    "word": "Tomate",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 1
+  },
+  {
+    "id": "food_013",
+    "word": "Kartoffel",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 1
+  },
+  {
+    "id": "food_014",
+    "word": "Wassermelone",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 1
+  },
+  {
+    "id": "food_015",
+    "word": "Traube",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 1
+  },
+  {
+    "id": "food_016",
+    "word": "Orange",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 1
+  },
+  {
+    "id": "food_017",
+    "word": "Schokolade",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 1
+  },
+  {
+    "id": "food_018",
+    "word": "Honig",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 1
+  },
+  {
+    "id": "food_019",
+    "word": "Hamburger",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_020",
+    "word": "Hotdog",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_021",
+    "word": "Pommes",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_022",
+    "word": "Spaghetti",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_023",
+    "word": "Sushi",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_024",
+    "word": "Döner",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_025",
+    "word": "Brezel",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_026",
+    "word": "Croissant",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_027",
+    "word": "Baguette",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_028",
+    "word": "Speck",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_029",
+    "word": "Erdbeere",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_030",
+    "word": "Ananas",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_031",
+    "word": "Kirsche",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_032",
+    "word": "Zitrone",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_033",
+    "word": "Gurke",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_034",
+    "word": "Zwiebel",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_035",
+    "word": "Paprika",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_036",
+    "word": "Brokkoli",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_037",
+    "word": "Mais",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_038",
+    "word": "Pilz",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_039",
+    "word": "Torte",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_040",
+    "word": "Donut",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_041",
+    "word": "Lutscher",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_042",
+    "word": "Popcorn",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_043",
+    "word": "Waffel",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_044",
+    "word": "Pfannkuchen",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_045",
+    "word": "Sandwich",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_046",
+    "word": "Taco",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_047",
+    "word": "Suppe",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_048",
+    "word": "Salat",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_049",
+    "word": "Butter",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_050",
+    "word": "Kaffee",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_051",
+    "word": "Limonade",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_052",
+    "word": "Marmelade",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 2
+  },
+  {
+    "id": "food_053",
+    "word": "Fondue",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 3
+  },
+  {
+    "id": "food_054",
+    "word": "Sashimi",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 3
+  },
+  {
+    "id": "food_055",
+    "word": "Croissant-Sandwich",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 3
+  },
+  {
+    "id": "food_056",
+    "word": "Zuckerwatte",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 3
+  },
+  {
+    "id": "food_057",
+    "word": "Gewürzgurke",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 3
+  },
+  {
+    "id": "food_058",
+    "word": "Kürbissuppe",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 3
+  },
+  {
+    "id": "food_059",
+    "word": "Weintraubendolde",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 3
+  },
+  {
+    "id": "food_060",
+    "word": "Spiegelei",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 3
+  },
+  {
+    "id": "food_061",
+    "word": "Eintopf",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 3
+  },
+  {
+    "id": "food_062",
+    "word": "Marshmallow",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 3
+  },
+  {
+    "id": "food_063",
+    "word": "Macaron",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 3
+  },
+  {
+    "id": "food_064",
+    "word": "Lebkuchenhaus",
+    "aliases": [],
+    "category": "food",
+    "difficulty": 3
+  },
+  {
+    "id": "home_001",
+    "word": "Stuhl",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_002",
+    "word": "Tisch",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_003",
+    "word": "Bett",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_004",
+    "word": "Lampe",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_005",
+    "word": "Uhr",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_006",
+    "word": "Tür",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_007",
+    "word": "Fenster",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_008",
+    "word": "Schlüssel",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_009",
+    "word": "Tasse",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_010",
+    "word": "Teller",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_011",
+    "word": "Gabel",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_012",
+    "word": "Löffel",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_013",
+    "word": "Messer",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_014",
+    "word": "Buch",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_015",
+    "word": "Stift",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_016",
+    "word": "Schere",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_017",
+    "word": "Kamm",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_018",
+    "word": "Seife",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_019",
+    "word": "Kerze",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_020",
+    "word": "Hut",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 1
+  },
+  {
+    "id": "home_021",
+    "word": "Sofa",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_022",
+    "word": "Fernseher",
+    "aliases": [
+      "TV",
+      "Fernsehgerät"
+    ],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_023",
+    "word": "Computer",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_024",
+    "word": "Handy",
+    "aliases": [
+      "Smartphone"
+    ],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_025",
+    "word": "Tastatur",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_026",
+    "word": "Wecker",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_027",
+    "word": "Spiegel",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_028",
+    "word": "Schloss",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_029",
+    "word": "Regenschirm",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_030",
+    "word": "Brille",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_031",
+    "word": "Mütze",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_032",
+    "word": "Schal",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_033",
+    "word": "Handschuh",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_034",
+    "word": "Socke",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_035",
+    "word": "Schuh",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_036",
+    "word": "Stiefel",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_037",
+    "word": "Tasche",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_038",
+    "word": "Rucksack",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_039",
+    "word": "Koffer",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_040",
+    "word": "Zeitung",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_041",
+    "word": "Kleber",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_042",
+    "word": "Radiergummi",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_043",
+    "word": "Lineal",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_044",
+    "word": "Zahnbürste",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_045",
+    "word": "Handtuch",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_046",
+    "word": "Besen",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_047",
+    "word": "Eimer",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_048",
+    "word": "Topf",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_049",
+    "word": "Pfanne",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_050",
+    "word": "Glühbirne",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_051",
+    "word": "Batterie",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 2
+  },
+  {
+    "id": "home_052",
+    "word": "Staubsauger",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 3
+  },
+  {
+    "id": "home_053",
+    "word": "Bügeleisen",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 3
+  },
+  {
+    "id": "home_054",
+    "word": "Waschmaschine",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 3
+  },
+  {
+    "id": "home_055",
+    "word": "Kühlschrank",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 3
+  },
+  {
+    "id": "home_056",
+    "word": "Toaster",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 3
+  },
+  {
+    "id": "home_057",
+    "word": "Mikrowelle",
+    "aliases": [
+      "Mikrowellenherd"
+    ],
+    "category": "home",
+    "difficulty": 3
+  },
+  {
+    "id": "home_058",
+    "word": "Ventilator",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 3
+  },
+  {
+    "id": "home_059",
+    "word": "Nähmaschine",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 3
+  },
+  {
+    "id": "home_060",
+    "word": "Werkzeugkasten",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 3
+  },
+  {
+    "id": "home_061",
+    "word": "Wäscheklammer",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 3
+  },
+  {
+    "id": "home_062",
+    "word": "Bügelbrett",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 3
+  },
+  {
+    "id": "home_063",
+    "word": "Türklingel",
+    "aliases": [],
+    "category": "home",
+    "difficulty": 3
+  },
+  {
+    "id": "vehicles_001",
+    "word": "Auto",
+    "aliases": [
+      "PKW",
+      "Wagen"
+    ],
+    "category": "vehicles",
+    "difficulty": 1
+  },
+  {
+    "id": "vehicles_002",
+    "word": "Fahrrad",
+    "aliases": [
+      "Rad"
+    ],
+    "category": "vehicles",
+    "difficulty": 1
+  },
+  {
+    "id": "vehicles_003",
+    "word": "Bus",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 1
+  },
+  {
+    "id": "vehicles_004",
+    "word": "Zug",
+    "aliases": [
+      "Eisenbahn"
+    ],
+    "category": "vehicles",
+    "difficulty": 1
+  },
+  {
+    "id": "vehicles_005",
+    "word": "Flugzeug",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 1
+  },
+  {
+    "id": "vehicles_006",
+    "word": "Boot",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 1
+  },
+  {
+    "id": "vehicles_007",
+    "word": "Schiff",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 1
+  },
+  {
+    "id": "vehicles_008",
+    "word": "Roller",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 1
+  },
+  {
+    "id": "vehicles_009",
+    "word": "Taxi",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 1
+  },
+  {
+    "id": "vehicles_010",
+    "word": "Traktor",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 1
+  },
+  {
+    "id": "vehicles_011",
+    "word": "Motorrad",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_012",
+    "word": "Straßenbahn",
+    "aliases": [
+      "Strassenbahn"
+    ],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_013",
+    "word": "U-Bahn",
+    "aliases": [
+      "Ubahn",
+      "Metro"
+    ],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_014",
+    "word": "Hubschrauber",
+    "aliases": [
+      "Helikopter"
+    ],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_015",
+    "word": "Rakete",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_016",
+    "word": "U-Boot",
+    "aliases": [
+      "Uboot"
+    ],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_017",
+    "word": "Segelboot",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_018",
+    "word": "Kanu",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_019",
+    "word": "Lastwagen",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_020",
+    "word": "Kran",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_021",
+    "word": "Feuerwehrauto",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_022",
+    "word": "Krankenwagen",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_023",
+    "word": "Polizeiauto",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_024",
+    "word": "Skateboard",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_025",
+    "word": "Schlitten",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_026",
+    "word": "Fähre",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_027",
+    "word": "Wohnmobil",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_028",
+    "word": "Ruderboot",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_029",
+    "word": "Kinderwagen",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_030",
+    "word": "Rollstuhl",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_031",
+    "word": "Cabrio",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_032",
+    "word": "Limousine",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_033",
+    "word": "Pickup",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_034",
+    "word": "Mofa",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_035",
+    "word": "Tretboot",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_036",
+    "word": "Golfwagen",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_037",
+    "word": "Müllauto",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 2
+  },
+  {
+    "id": "vehicles_038",
+    "word": "Heißluftballon",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 3
+  },
+  {
+    "id": "vehicles_039",
+    "word": "Bagger",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 3
+  },
+  {
+    "id": "vehicles_040",
+    "word": "Zeppelin",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 3
+  },
+  {
+    "id": "vehicles_041",
+    "word": "Gabelstapler",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 3
+  },
+  {
+    "id": "vehicles_042",
+    "word": "Seilbahn",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 3
+  },
+  {
+    "id": "vehicles_043",
+    "word": "Mülltruck",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 3
+  },
+  {
+    "id": "vehicles_044",
+    "word": "Schneemobil",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 3
+  },
+  {
+    "id": "vehicles_045",
+    "word": "Ufo",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 3
+  },
+  {
+    "id": "vehicles_046",
+    "word": "Raumfähre",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 3
+  },
+  {
+    "id": "vehicles_047",
+    "word": "Kajak",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 3
+  },
+  {
+    "id": "vehicles_048",
+    "word": "Einrad",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 3
+  },
+  {
+    "id": "vehicles_049",
+    "word": "Achterbahnwagen",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 3
+  },
+  {
+    "id": "vehicles_050",
+    "word": "Panzer",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 3
+  },
+  {
+    "id": "vehicles_051",
+    "word": "Segelflugzeug",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 3
+  },
+  {
+    "id": "vehicles_052",
+    "word": "Rennwagen",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 3
+  },
+  {
+    "id": "vehicles_053",
+    "word": "Doppeldeckerbus",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 3
+  },
+  {
+    "id": "vehicles_054",
+    "word": "Amphibienfahrzeug",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 3
+  },
+  {
+    "id": "vehicles_055",
+    "word": "Schneepflug",
+    "aliases": [],
+    "category": "vehicles",
+    "difficulty": 3
+  },
+  {
+    "id": "sport_001",
+    "word": "Fußball",
+    "aliases": [
+      "Fussball"
+    ],
+    "category": "sport",
+    "difficulty": 1
+  },
+  {
+    "id": "sport_002",
+    "word": "Basketball",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 1
+  },
+  {
+    "id": "sport_003",
+    "word": "Tennis",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 1
+  },
+  {
+    "id": "sport_004",
+    "word": "Schwimmen",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 1
+  },
+  {
+    "id": "sport_005",
+    "word": "Boxen",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 1
+  },
+  {
+    "id": "sport_006",
+    "word": "Golf",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 1
+  },
+  {
+    "id": "sport_007",
+    "word": "Skifahren",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 1
+  },
+  {
+    "id": "sport_008",
+    "word": "Angeln",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 1
+  },
+  {
+    "id": "sport_009",
+    "word": "Volleyball",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_010",
+    "word": "Handball",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_011",
+    "word": "Baseball",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_012",
+    "word": "Bowling",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_013",
+    "word": "Tauchen",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_014",
+    "word": "Surfen",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_015",
+    "word": "Snowboarden",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_016",
+    "word": "Eislaufen",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_017",
+    "word": "Eishockey",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_018",
+    "word": "Radfahren",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_019",
+    "word": "Joggen",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_020",
+    "word": "Yoga",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_021",
+    "word": "Klettern",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_022",
+    "word": "Reiten",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_023",
+    "word": "Rudern",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_024",
+    "word": "Segeln",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_025",
+    "word": "Turnen",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_026",
+    "word": "Karate",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_027",
+    "word": "Judo",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_028",
+    "word": "Darts",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_029",
+    "word": "Tischtennis",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_030",
+    "word": "Badminton",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_031",
+    "word": "Wandern",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_032",
+    "word": "Rugby",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_033",
+    "word": "Cricket",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_034",
+    "word": "Skateboarden",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_035",
+    "word": "Kanufahren",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_036",
+    "word": "Squash",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_037",
+    "word": "Bergsteigen",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 2
+  },
+  {
+    "id": "sport_038",
+    "word": "Fechten",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 3
+  },
+  {
+    "id": "sport_039",
+    "word": "Gewichtheben",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 3
+  },
+  {
+    "id": "sport_040",
+    "word": "Bogenschießen",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 3
+  },
+  {
+    "id": "sport_041",
+    "word": "Kegeln",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 3
+  },
+  {
+    "id": "sport_042",
+    "word": "Marathon",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 3
+  },
+  {
+    "id": "sport_043",
+    "word": "Seilspringen",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 3
+  },
+  {
+    "id": "sport_044",
+    "word": "Trampolinspringen",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 3
+  },
+  {
+    "id": "sport_045",
+    "word": "Rhythmische Sportgymnastik",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 3
+  },
+  {
+    "id": "sport_046",
+    "word": "Zehnkampf",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 3
+  },
+  {
+    "id": "sport_047",
+    "word": "Curling",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 3
+  },
+  {
+    "id": "sport_048",
+    "word": "Wasserball",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 3
+  },
+  {
+    "id": "sport_049",
+    "word": "Stabhochsprung",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 3
+  },
+  {
+    "id": "sport_050",
+    "word": "Speerwurf",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 3
+  },
+  {
+    "id": "sport_051",
+    "word": "Ringen",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 3
+  },
+  {
+    "id": "sport_052",
+    "word": "Sportklettern",
+    "aliases": [],
+    "category": "sport",
+    "difficulty": 3
+  },
+  {
+    "id": "nature_001",
+    "word": "Berg",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 1
+  },
+  {
+    "id": "nature_002",
+    "word": "Fluss",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 1
+  },
+  {
+    "id": "nature_003",
+    "word": "See",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 1
+  },
+  {
+    "id": "nature_004",
+    "word": "Meer",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 1
+  },
+  {
+    "id": "nature_005",
+    "word": "Strand",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 1
+  },
+  {
+    "id": "nature_006",
+    "word": "Wald",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 1
+  },
+  {
+    "id": "nature_007",
+    "word": "Sonne",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 1
+  },
+  {
+    "id": "nature_008",
+    "word": "Mond",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 1
+  },
+  {
+    "id": "nature_009",
+    "word": "Stern",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 1
+  },
+  {
+    "id": "nature_010",
+    "word": "Wolke",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 1
+  },
+  {
+    "id": "nature_011",
+    "word": "Baum",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 1
+  },
+  {
+    "id": "nature_012",
+    "word": "Blume",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 1
+  },
+  {
+    "id": "nature_013",
+    "word": "Regen",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 1
+  },
+  {
+    "id": "nature_014",
+    "word": "Schnee",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 1
+  },
+  {
+    "id": "nature_015",
+    "word": "Insel",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 1
+  },
+  {
+    "id": "nature_016",
+    "word": "Vulkan",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_017",
+    "word": "Wasserfall",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_018",
+    "word": "Wüste",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_019",
+    "word": "Wiese",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_020",
+    "word": "Regenbogen",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_021",
+    "word": "Blitz",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_022",
+    "word": "Gewitter",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_023",
+    "word": "Leuchtturm",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_024",
+    "word": "Burg",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_025",
+    "word": "Brücke",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_026",
+    "word": "Windmühle",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_027",
+    "word": "Pyramide",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_028",
+    "word": "Iglu",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_029",
+    "word": "Zelt",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_030",
+    "word": "Höhle",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_031",
+    "word": "Kaktus",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_032",
+    "word": "Bauernhof",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_033",
+    "word": "Flughafen",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_034",
+    "word": "Bahnhof",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_035",
+    "word": "Spielplatz",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 2
+  },
+  {
+    "id": "nature_036",
+    "word": "Gletscher",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 3
+  },
+  {
+    "id": "nature_037",
+    "word": "Oase",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 3
+  },
+  {
+    "id": "nature_038",
+    "word": "Dschungel",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 3
+  },
+  {
+    "id": "nature_039",
+    "word": "Savanne",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 3
+  },
+  {
+    "id": "nature_040",
+    "word": "Nordlicht",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 3
+  },
+  {
+    "id": "nature_041",
+    "word": "Eiszapfen",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 3
+  },
+  {
+    "id": "nature_042",
+    "word": "Geysir",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 3
+  },
+  {
+    "id": "nature_043",
+    "word": "Sanddüne",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 3
+  },
+  {
+    "id": "nature_044",
+    "word": "Korallenriff",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 3
+  },
+  {
+    "id": "nature_045",
+    "word": "Tornado",
+    "aliases": [],
+    "category": "nature",
+    "difficulty": 3
+  },
+  {
+    "id": "film_001",
+    "word": "Roboter",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 1
+  },
+  {
+    "id": "film_002",
+    "word": "Alien",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 1
+  },
+  {
+    "id": "film_003",
+    "word": "Gespenst",
+    "aliases": [
+      "Geist"
+    ],
+    "category": "film",
+    "difficulty": 1
+  },
+  {
+    "id": "film_004",
+    "word": "Ritter",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 1
+  },
+  {
+    "id": "film_005",
+    "word": "Pirat",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 1
+  },
+  {
+    "id": "film_006",
+    "word": "Cowboy",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 1
+  },
+  {
+    "id": "film_007",
+    "word": "Astronaut",
+    "aliases": [
+      "Raumfahrer"
+    ],
+    "category": "film",
+    "difficulty": 1
+  },
+  {
+    "id": "film_008",
+    "word": "Zauberer",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 1
+  },
+  {
+    "id": "film_009",
+    "word": "Superheld",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_010",
+    "word": "Zombie",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_011",
+    "word": "Vampir",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_012",
+    "word": "Werwolf",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_013",
+    "word": "Hexe",
+    "aliases": [
+      "Zauberin"
+    ],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_014",
+    "word": "Ninja",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_015",
+    "word": "Detektiv",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_016",
+    "word": "Filmkamera",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_017",
+    "word": "Kinosaal",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_018",
+    "word": "Mikrofon",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_019",
+    "word": "Comic",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_020",
+    "word": "Kopfhörer",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_021",
+    "word": "Videospiel-Controller",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_022",
+    "word": "Leinwand",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_023",
+    "word": "Agent",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_024",
+    "word": "Spion",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_025",
+    "word": "Gladiator",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_026",
+    "word": "Samurai",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_027",
+    "word": "Wikinger",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_028",
+    "word": "Roboterarm",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 2
+  },
+  {
+    "id": "film_029",
+    "word": "Zeitmaschine",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 3
+  },
+  {
+    "id": "film_030",
+    "word": "Spukhaus",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 3
+  },
+  {
+    "id": "film_031",
+    "word": "Monster-Truck",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 3
+  },
+  {
+    "id": "film_032",
+    "word": "Roboterhund",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 3
+  },
+  {
+    "id": "film_033",
+    "word": "Regisseurstuhl",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 3
+  },
+  {
+    "id": "film_034",
+    "word": "Drehbuch",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 3
+  },
+  {
+    "id": "film_035",
+    "word": "Filmklappe",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 3
+  },
+  {
+    "id": "film_036",
+    "word": "Weltraumstation",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 3
+  },
+  {
+    "id": "film_037",
+    "word": "Comicheld-Umhang",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 3
+  },
+  {
+    "id": "film_038",
+    "word": "Geheimlabor",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 3
+  },
+  {
+    "id": "film_039",
+    "word": "Filmset",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 3
+  },
+  {
+    "id": "film_040",
+    "word": "Special-Effects-Explosion",
+    "aliases": [],
+    "category": "film",
+    "difficulty": 3
+  },
+  {
+    "id": "jobs_001",
+    "word": "Arzt",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 1
+  },
+  {
+    "id": "jobs_002",
+    "word": "Koch",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 1
+  },
+  {
+    "id": "jobs_003",
+    "word": "Lehrer",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 1
+  },
+  {
+    "id": "jobs_004",
+    "word": "Polizist",
+    "aliases": [
+      "Polizistin"
+    ],
+    "category": "jobs",
+    "difficulty": 1
+  },
+  {
+    "id": "jobs_005",
+    "word": "Pilot",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 1
+  },
+  {
+    "id": "jobs_006",
+    "word": "Bauer",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 1
+  },
+  {
+    "id": "jobs_007",
+    "word": "Fischer",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 1
+  },
+  {
+    "id": "jobs_008",
+    "word": "Friseur",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 1
+  },
+  {
+    "id": "jobs_009",
+    "word": "Krankenschwester",
+    "aliases": [
+      "Pfleger",
+      "Pflegerin"
+    ],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_010",
+    "word": "Feuerwehrmann",
+    "aliases": [
+      "Feuerwehrfrau",
+      "Feuerwehr"
+    ],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_011",
+    "word": "Bäcker",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_012",
+    "word": "Mechaniker",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_013",
+    "word": "Elektriker",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_014",
+    "word": "Zahnarzt",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_015",
+    "word": "Anwalt",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_016",
+    "word": "Fotograf",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_017",
+    "word": "Maler",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_018",
+    "word": "Musiker",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_019",
+    "word": "Sänger",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_020",
+    "word": "Tänzer",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_021",
+    "word": "Schauspieler",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_022",
+    "word": "Gärtner",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_023",
+    "word": "Bauarbeiter",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_024",
+    "word": "Metzger",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_025",
+    "word": "Apotheker",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_026",
+    "word": "Tierarzt",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_027",
+    "word": "Richter",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_028",
+    "word": "Kapitän",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_029",
+    "word": "Clown",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_030",
+    "word": "Postbote",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_031",
+    "word": "Kellner",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_032",
+    "word": "Ingenieur",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_033",
+    "word": "Zimmermann",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_034",
+    "word": "Klempner",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_035",
+    "word": "Dachdecker",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_036",
+    "word": "Schornsteinfeger",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_037",
+    "word": "Bibliothekar",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_038",
+    "word": "Imker",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_039",
+    "word": "Winzer",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_040",
+    "word": "Konditor",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 2
+  },
+  {
+    "id": "jobs_041",
+    "word": "Schneider",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 3
+  },
+  {
+    "id": "jobs_042",
+    "word": "Rezeptionist",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 3
+  },
+  {
+    "id": "jobs_043",
+    "word": "Wissenschaftler",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 3
+  },
+  {
+    "id": "jobs_044",
+    "word": "Archäologe",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 3
+  },
+  {
+    "id": "jobs_045",
+    "word": "Dolmetscher",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 3
+  },
+  {
+    "id": "jobs_046",
+    "word": "Uhrmacher",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 3
+  },
+  {
+    "id": "jobs_047",
+    "word": "Astronom",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 3
+  },
+  {
+    "id": "jobs_048",
+    "word": "Kartograph",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 3
+  },
+  {
+    "id": "jobs_049",
+    "word": "Juwelier",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 3
+  },
+  {
+    "id": "jobs_050",
+    "word": "Restaurator",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 3
+  },
+  {
+    "id": "jobs_051",
+    "word": "Falkner",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 3
+  },
+  {
+    "id": "jobs_052",
+    "word": "Glasbläser",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 3
+  },
+  {
+    "id": "jobs_053",
+    "word": "Buchbinder",
+    "aliases": [],
+    "category": "jobs",
+    "difficulty": 3
+  },
+  {
+    "id": "party_001",
+    "word": "Luftballon",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 1
+  },
+  {
+    "id": "party_002",
+    "word": "Geschenk",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 1
+  },
+  {
+    "id": "party_003",
+    "word": "Gitarre",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 1
+  },
+  {
+    "id": "party_004",
+    "word": "Trommel",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 1
+  },
+  {
+    "id": "party_005",
+    "word": "Klavier",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 1
+  },
+  {
+    "id": "party_006",
+    "word": "Schaukel",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 1
+  },
+  {
+    "id": "party_007",
+    "word": "Konfetti",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_008",
+    "word": "Girlande",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_009",
+    "word": "Feuerwerk",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_010",
+    "word": "Karneval",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_011",
+    "word": "Maske",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_012",
+    "word": "Kostüm",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_013",
+    "word": "Weihnachtsbaum",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_014",
+    "word": "Ostereier",
+    "aliases": [
+      "Osterei"
+    ],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_015",
+    "word": "Laterne",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_016",
+    "word": "Lagerfeuer",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_017",
+    "word": "Picknick",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_018",
+    "word": "Rutsche",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_019",
+    "word": "Karussell",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_020",
+    "word": "Riesenrad",
+    "aliases": [
+      "Ferris Wheel",
+      "Riesenkarussell"
+    ],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_021",
+    "word": "Geige",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_022",
+    "word": "Disko-Kugel",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_023",
+    "word": "Kartenspiel",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_024",
+    "word": "Brettspiel",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_025",
+    "word": "Puzzle",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_026",
+    "word": "Schneemann",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_027",
+    "word": "Trampolin",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_028",
+    "word": "Seifenblasen",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_029",
+    "word": "Yoyo",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_030",
+    "word": "Kreisel",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_031",
+    "word": "Drachen",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_032",
+    "word": "Wunderkerze",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_033",
+    "word": "Partyhut",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_034",
+    "word": "Luftschlange",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_035",
+    "word": "Geburtstagskerze",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_036",
+    "word": "Tanzfläche",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_037",
+    "word": "Fotokabine",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 2
+  },
+  {
+    "id": "party_038",
+    "word": "Piñata",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 3
+  },
+  {
+    "id": "party_039",
+    "word": "Achterbahn",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 3
+  },
+  {
+    "id": "party_040",
+    "word": "Kirmes",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 3
+  },
+  {
+    "id": "party_041",
+    "word": "Sandburg",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 3
+  },
+  {
+    "id": "party_042",
+    "word": "Schneeballschlacht",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 3
+  },
+  {
+    "id": "party_043",
+    "word": "Geburtstagstorte mit Kerzen",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 3
+  },
+  {
+    "id": "party_044",
+    "word": "Silvesterrakete",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 3
+  },
+  {
+    "id": "party_045",
+    "word": "Jahrmarkt",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 3
+  },
+  {
+    "id": "party_046",
+    "word": "Feuerschlucker",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 3
+  },
+  {
+    "id": "party_047",
+    "word": "Konfettikanone",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 3
+  },
+  {
+    "id": "party_048",
+    "word": "Geburtstagsumzug",
+    "aliases": [],
+    "category": "party",
+    "difficulty": 3
+  },
+  {
+    "id": "concepts_001",
+    "word": "Lachen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 1
+  },
+  {
+    "id": "concepts_002",
+    "word": "Weinen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 1
+  },
+  {
+    "id": "concepts_003",
+    "word": "Schlafen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 1
+  },
+  {
+    "id": "concepts_004",
+    "word": "Winken",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 1
+  },
+  {
+    "id": "concepts_005",
+    "word": "Tanzen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 1
+  },
+  {
+    "id": "concepts_006",
+    "word": "Singen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 1
+  },
+  {
+    "id": "concepts_007",
+    "word": "Kochen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 1
+  },
+  {
+    "id": "concepts_008",
+    "word": "Backen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 1
+  },
+  {
+    "id": "concepts_009",
+    "word": "Verstecken spielen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_010",
+    "word": "Wettrennen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_011",
+    "word": "Seilziehen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_012",
+    "word": "Sonnenaufgang",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_013",
+    "word": "Sonnenuntergang",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_014",
+    "word": "Vollmond",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_015",
+    "word": "Sternschnuppe",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_016",
+    "word": "Niesen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_017",
+    "word": "Gähnen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_018",
+    "word": "Träumen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_019",
+    "word": "Umarmung",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_020",
+    "word": "Handschlag",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_021",
+    "word": "Putzen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_022",
+    "word": "Einkaufen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_023",
+    "word": "Warteschlange",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_024",
+    "word": "Prüfung",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_025",
+    "word": "Hausaufgaben",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_026",
+    "word": "Ferien",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_027",
+    "word": "Schlittschuhlaufen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_028",
+    "word": "Schneemann bauen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_029",
+    "word": "Drachensteigen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_030",
+    "word": "Zähneputzen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_031",
+    "word": "Anstehen",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 2
+  },
+  {
+    "id": "concepts_032",
+    "word": "Albtraum",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 3
+  },
+  {
+    "id": "concepts_033",
+    "word": "Verliebt sein",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 3
+  },
+  {
+    "id": "concepts_034",
+    "word": "Zeitreise",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 3
+  },
+  {
+    "id": "concepts_035",
+    "word": "Stau",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 3
+  },
+  {
+    "id": "concepts_036",
+    "word": "Umzug",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 3
+  },
+  {
+    "id": "concepts_037",
+    "word": "Baustelle",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 3
+  },
+  {
+    "id": "concepts_038",
+    "word": "Déjà-vu",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 3
+  },
+  {
+    "id": "concepts_039",
+    "word": "Zeltlager",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 3
+  },
+  {
+    "id": "concepts_040",
+    "word": "Schlafwandeln",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 3
+  },
+  {
+    "id": "concepts_041",
+    "word": "Lampenfieber",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 3
+  },
+  {
+    "id": "concepts_042",
+    "word": "Heimweh",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 3
+  },
+  {
+    "id": "concepts_043",
+    "word": "Zeitlupe",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 3
+  },
+  {
+    "id": "concepts_044",
+    "word": "Déjà-vu-Moment",
+    "aliases": [],
+    "category": "concepts",
+    "difficulty": 3
+  },
+  {
+    "id": "fantasy_001",
+    "word": "Drache",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 1
+  },
+  {
+    "id": "fantasy_002",
+    "word": "Einhorn",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 1
+  },
+  {
+    "id": "fantasy_003",
+    "word": "Fee",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 1
+  },
+  {
+    "id": "fantasy_004",
+    "word": "Zwerg",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 1
+  },
+  {
+    "id": "fantasy_005",
+    "word": "Riese",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 1
+  },
+  {
+    "id": "fantasy_006",
+    "word": "Geist",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 1
+  },
+  {
+    "id": "fantasy_007",
+    "word": "Zauberstab",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 1
+  },
+  {
+    "id": "fantasy_008",
+    "word": "Kobold",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 2
+  },
+  {
+    "id": "fantasy_009",
+    "word": "Troll",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 2
+  },
+  {
+    "id": "fantasy_010",
+    "word": "Meerjungfrau",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 2
+  },
+  {
+    "id": "fantasy_011",
+    "word": "Kristallkugel",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 2
+  },
+  {
+    "id": "fantasy_012",
+    "word": "Schatztruhe",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 2
+  },
+  {
+    "id": "fantasy_013",
+    "word": "Zauberbuch",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 2
+  },
+  {
+    "id": "fantasy_014",
+    "word": "Phönix",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 2
+  },
+  {
+    "id": "fantasy_015",
+    "word": "Zauberhut",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 2
+  },
+  {
+    "id": "fantasy_016",
+    "word": "Fliegender Teppich",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 2
+  },
+  {
+    "id": "fantasy_017",
+    "word": "Schatzkarte",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 2
+  },
+  {
+    "id": "fantasy_018",
+    "word": "Ritterrüstung",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 2
+  },
+  {
+    "id": "fantasy_019",
+    "word": "Zauberspruch",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 2
+  },
+  {
+    "id": "fantasy_020",
+    "word": "Elfe",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 2
+  },
+  {
+    "id": "fantasy_021",
+    "word": "Zwergenhöhle",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 2
+  },
+  {
+    "id": "fantasy_022",
+    "word": "Zauberspiegel",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 2
+  },
+  {
+    "id": "fantasy_023",
+    "word": "Königsschloss",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 2
+  },
+  {
+    "id": "fantasy_024",
+    "word": "Thron",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 2
+  },
+  {
+    "id": "fantasy_025",
+    "word": "Fabelwesen",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 3
+  },
+  {
+    "id": "fantasy_026",
+    "word": "Drachenei",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 3
+  },
+  {
+    "id": "fantasy_027",
+    "word": "Kristallhöhle",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 3
+  },
+  {
+    "id": "fantasy_028",
+    "word": "Portal",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 3
+  },
+  {
+    "id": "fantasy_029",
+    "word": "Labyrinth",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 3
+  },
+  {
+    "id": "fantasy_030",
+    "word": "Verlies",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 3
+  },
+  {
+    "id": "fantasy_031",
+    "word": "Drachenhöhle",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 3
+  },
+  {
+    "id": "fantasy_032",
+    "word": "Zaubertrank",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 3
+  },
+  {
+    "id": "fantasy_033",
+    "word": "Zauberportal",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 3
+  },
+  {
+    "id": "fantasy_034",
+    "word": "Runenschwert",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 3
+  },
+  {
+    "id": "fantasy_035",
+    "word": "Zauberkessel",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 3
+  },
+  {
+    "id": "fantasy_036",
+    "word": "Sagenhaftes Reich",
+    "aliases": [],
+    "category": "fantasy",
+    "difficulty": 3
+  },
+  {
+    "id": "crazy_001",
+    "word": "Fliegende Kuh",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 1
+  },
+  {
+    "id": "crazy_002",
+    "word": "Tanzender Roboter",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 1
+  },
+  {
+    "id": "crazy_003",
+    "word": "Riesenfuß",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 1
+  },
+  {
+    "id": "crazy_004",
+    "word": "Sprechender Hund",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 1
+  },
+  {
+    "id": "crazy_005",
+    "word": "Explodierende Pizza",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 2
+  },
+  {
+    "id": "crazy_006",
+    "word": "Spaghetti-Monster",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 2
+  },
+  {
+    "id": "crazy_007",
+    "word": "Wandelnder Kühlschrank",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 2
+  },
+  {
+    "id": "crazy_008",
+    "word": "Dinosaurier im Anzug",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 2
+  },
+  {
+    "id": "crazy_009",
+    "word": "Roboter-Huhn",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 2
+  },
+  {
+    "id": "crazy_010",
+    "word": "Riesenschnecke",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 2
+  },
+  {
+    "id": "crazy_011",
+    "word": "Dreiäugiges Monster",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 2
+  },
+  {
+    "id": "crazy_012",
+    "word": "Fliegendes Auto",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 2
+  },
+  {
+    "id": "crazy_013",
+    "word": "Mondmensch",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 2
+  },
+  {
+    "id": "crazy_014",
+    "word": "Verrückter Wissenschaftler",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 2
+  },
+  {
+    "id": "crazy_015",
+    "word": "Riesenpilz",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 2
+  },
+  {
+    "id": "crazy_016",
+    "word": "Tanzende Kartoffel",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 2
+  },
+  {
+    "id": "crazy_017",
+    "word": "Singender Kaktus",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 2
+  },
+  {
+    "id": "crazy_018",
+    "word": "Niesende Sonne",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 2
+  },
+  {
+    "id": "crazy_019",
+    "word": "Lachender Berg",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 2
+  },
+  {
+    "id": "crazy_020",
+    "word": "Fliegender Elefant",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 2
+  },
+  {
+    "id": "crazy_021",
+    "word": "Roboter-Papagei",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 2
+  },
+  {
+    "id": "crazy_022",
+    "word": "Roboter-Dinosaurier",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 3
+  },
+  {
+    "id": "crazy_023",
+    "word": "Astronauten-Katze",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 3
+  },
+  {
+    "id": "crazy_024",
+    "word": "Fliegender Fisch",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 3
+  },
+  {
+    "id": "crazy_025",
+    "word": "Vulkan-Monster",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 3
+  },
+  {
+    "id": "crazy_026",
+    "word": "Regenbogen-Einhorn-Party",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 3
+  },
+  {
+    "id": "crazy_027",
+    "word": "Außerirdischer Zirkus",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 3
+  },
+  {
+    "id": "crazy_028",
+    "word": "Gummibärchen-Monster",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 3
+  },
+  {
+    "id": "crazy_029",
+    "word": "Zombie-Roboter",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 3
+  },
+  {
+    "id": "crazy_030",
+    "word": "Tanzendes Spiegelei",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 3
+  },
+  {
+    "id": "crazy_031",
+    "word": "Weltraum-Spaghetti-Party",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 3
+  },
+  {
+    "id": "crazy_032",
+    "word": "Riesenkrake im Pool",
+    "aliases": [],
+    "category": "crazy",
+    "difficulty": 3
+  },
+  {
+    "id": "space_001",
+    "word": "Planet",
+    "aliases": [],
+    "category": "space",
+    "difficulty": 1
+  },
+  {
+    "id": "space_002",
+    "word": "Sonnensystem",
+    "aliases": [],
+    "category": "space",
+    "difficulty": 2
+  },
+  {
+    "id": "space_003",
+    "word": "Meteorit",
+    "aliases": [],
+    "category": "space",
+    "difficulty": 2
+  },
+  {
+    "id": "space_004",
+    "word": "Komet",
+    "aliases": [],
+    "category": "space",
+    "difficulty": 2
+  },
+  {
+    "id": "space_005",
+    "word": "Satellit",
+    "aliases": [],
+    "category": "space",
+    "difficulty": 2
+  },
+  {
+    "id": "space_006",
+    "word": "Astronautenhelm",
+    "aliases": [],
+    "category": "space",
+    "difficulty": 2
+  },
+  {
+    "id": "space_007",
+    "word": "Mondlandung",
+    "aliases": [],
+    "category": "space",
+    "difficulty": 2
+  },
+  {
+    "id": "space_008",
+    "word": "Weltraumanzug",
+    "aliases": [],
+    "category": "space",
+    "difficulty": 2
+  },
+  {
+    "id": "space_009",
+    "word": "Milchstraße",
+    "aliases": [],
+    "category": "space",
+    "difficulty": 2
+  },
+  {
+    "id": "space_010",
+    "word": "Marsmännchen",
+    "aliases": [],
+    "category": "space",
+    "difficulty": 2
+  },
+  {
+    "id": "space_011",
+    "word": "Schwarzes Loch",
+    "aliases": [],
+    "category": "space",
+    "difficulty": 3
+  },
+  {
+    "id": "space_012",
+    "word": "Raumstation",
+    "aliases": [],
+    "category": "space",
+    "difficulty": 3
+  },
+  {
+    "id": "space_013",
+    "word": "Galaxie",
+    "aliases": [],
+    "category": "space",
+    "difficulty": 3
+  },
+  {
+    "id": "space_014",
+    "word": "Mondrover",
+    "aliases": [],
+    "category": "space",
+    "difficulty": 3
+  },
+  {
+    "id": "space_015",
+    "word": "Asteroidengürtel",
+    "aliases": [],
+    "category": "space",
+    "difficulty": 3
+  },
+  {
+    "id": "space_016",
+    "word": "Teleskop",
+    "aliases": [],
+    "category": "space",
+    "difficulty": 3
+  },
+  {
+    "id": "space_017",
+    "word": "Sternwarte",
+    "aliases": [],
+    "category": "space",
+    "difficulty": 3
+  },
+  {
+    "id": "music_001",
+    "word": "Trompete",
+    "aliases": [],
+    "category": "music",
+    "difficulty": 1
+  },
+  {
+    "id": "music_002",
+    "word": "Note",
+    "aliases": [],
+    "category": "music",
+    "difficulty": 1
+  },
+  {
+    "id": "music_003",
+    "word": "Radio",
+    "aliases": [],
+    "category": "music",
+    "difficulty": 1
+  },
+  {
+    "id": "music_004",
+    "word": "Schlagzeug",
+    "aliases": [],
+    "category": "music",
+    "difficulty": 2
+  },
+  {
+    "id": "music_005",
+    "word": "Saxophon",
+    "aliases": [],
+    "category": "music",
+    "difficulty": 2
+  },
+  {
+    "id": "music_006",
+    "word": "Cello",
+    "aliases": [],
+    "category": "music",
+    "difficulty": 2
+  },
+  {
+    "id": "music_007",
+    "word": "Harfe",
+    "aliases": [],
+    "category": "music",
+    "difficulty": 2
+  },
+  {
+    "id": "music_008",
+    "word": "Flöte",
+    "aliases": [],
+    "category": "music",
+    "difficulty": 2
+  },
+  {
+    "id": "music_009",
+    "word": "Akkordeon",
+    "aliases": [],
+    "category": "music",
+    "difficulty": 2
+  },
+  {
+    "id": "music_010",
+    "word": "Plattenspieler",
+    "aliases": [],
+    "category": "music",
+    "difficulty": 2
+  },
+  {
+    "id": "music_011",
+    "word": "Konzertbühne",
+    "aliases": [],
+    "category": "music",
+    "difficulty": 2
+  },
+  {
+    "id": "music_012",
+    "word": "Lautsprecher",
+    "aliases": [],
+    "category": "music",
+    "difficulty": 2
+  },
+  {
+    "id": "music_013",
+    "word": "Dirigent",
+    "aliases": [],
+    "category": "music",
+    "difficulty": 3
+  },
+  {
+    "id": "music_014",
+    "word": "Orchestergraben",
+    "aliases": [],
+    "category": "music",
+    "difficulty": 3
+  },
+  {
+    "id": "music_015",
+    "word": "Kirchenorgel",
+    "aliases": [],
+    "category": "music",
+    "difficulty": 3
+  },
+  {
+    "id": "music_016",
+    "word": "Drehleier",
+    "aliases": [],
+    "category": "music",
+    "difficulty": 3
+  },
+  {
+    "id": "music_017",
+    "word": "Dudelsack",
+    "aliases": [],
+    "category": "music",
+    "difficulty": 3
+  }
+]

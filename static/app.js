@@ -234,6 +234,17 @@ function handleWsEvent(data) {
     if (!el("party-overlay").hidden) renderPartyView();
     else toast(`🎉 ${data.emoji} ${data.game_name} wurde in deiner Party gestartet`);
     renderGamesPanel();
+  } else if (
+    data.type === "drawing_stroke_start" || data.type === "drawing_stroke_batch" ||
+    data.type === "drawing_stroke_end" || data.type === "drawing_undo" ||
+    data.type === "drawing_clear" || data.type === "drawing_sync"
+  ) {
+    // Kritzelmeister's live-drawing channel bypasses game_state entirely
+    // (see backend/drawing_game.py) - forward it straight to the mounted
+    // module if we're actually in that game right now.
+    if (myGameType === "kritzelmeister" && kritzelmeisterInstance) {
+      kritzelmeisterInstance.handleDrawingEvent(data);
+    }
   }
 }
 
@@ -862,6 +873,7 @@ const GAME_META = {
   knowme: { category: "party", desc: "Wie gut kennt ihr euch wirklich?" },
   majority: { category: "party", desc: "Errate, was die Mehrheit wählt." },
   timliner: { category: "solo", desc: "Entspanntes Solo-Zeichenspiel." },
+  kritzelmeister: { category: "party", desc: "Zeichnen und in Echtzeit erraten." },
 };
 const GAME_CATEGORIES = [
   { key: "all", label: "Alle" },
@@ -883,6 +895,7 @@ function launchGameByType(gameType) {
   if (gameType === "whoami") { window.WhoAmI.openHostOptionsModal((options) => startGame("whoami", options)); return; }
   if (gameType === "knowme") { window.KnowMe.openHostOptionsModal((options) => startGame("knowme", options)); return; }
   if (gameType === "majority") { window.MajorityGame.openHostOptionsModal((options) => startGame("majority", options)); return; }
+  if (gameType === "kritzelmeister") { window.KritzelmeisterGame.openHostOptionsModal((options) => startGame("kritzelmeister", options)); return; }
   startGame(gameType);
 }
 
@@ -1546,10 +1559,11 @@ function openGameModal(data) {
   dialog.classList.toggle("uno-mode", data.game_type === "uno");
   dialog.classList.toggle("ludo-mode", data.game_type === "ludo");
   dialog.classList.toggle("estimate-mode", data.game_type === "estimate");
-  dialog.classList.toggle("arcade-mode", data.game_type === "tankbattle" || data.game_type === "dodgearena");
+  dialog.classList.toggle("arcade-mode", data.game_type === "tankbattle" || data.game_type === "dodgearena" || data.game_type === "kritzelmeister");
   dialog.classList.toggle("whoami-mode", data.game_type === "whoami");
   dialog.classList.toggle("knowme-mode", data.game_type === "knowme");
   dialog.classList.toggle("majority-mode", data.game_type === "majority");
+  dialog.classList.toggle("kritzelmeister-mode", data.game_type === "kritzelmeister");
 
   const stage = el("game-stage");
   stage.innerHTML = "";
@@ -1643,6 +1657,24 @@ function openGameModal(data) {
       },
       closeGame: () => closeGameModal(),
     });
+  } else if (data.game_type === "kritzelmeister") {
+    kritzelmeisterInstance = window.KritzelmeisterGame.mount(stage, {
+      me,
+      players: data.players,
+      sendInput: gameInputSender(),
+      // Live strokes bypass the generic game_input channel entirely (see
+      // backend/drawing_game.py's module docstring) - this is the one
+      // raw-websocket escape hatch every other game module doesn't need.
+      sendWs: (msg) => {
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+      },
+      sendRematch: () => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "game_rematch", session_id: myGameSessionId }));
+        }
+      },
+      closeGame: () => closeGameModal(),
+    });
   }
   updateGameState(data.state);
   el("game-modal").hidden = false;
@@ -1663,6 +1695,7 @@ const GAME_TITLES = {
   whoami: "🎭 Wer bin ich?",
   knowme: "❤️ Kennst du mich?",
   majority: "👑 Mehrheitsmeister",
+  kritzelmeister: "🎨 Kritzelmeister",
 };
 const REMATCH_GAME_TYPES = ["tictactoe", "buzzer", "uno", "tankbattle", "dodgearena"];
 // tankbattle/dodgearena use their own much larger .arcade-mode sizing
@@ -1680,6 +1713,7 @@ let dodgeArenaInstance = null;
 let whoAmIInstance = null;
 let knowMeInstance = null;
 let majorityGameInstance = null;
+let kritzelmeisterInstance = null;
 
 function openTimLinerGame() {
   myGameSessionId = null;
@@ -1737,7 +1771,11 @@ function closeGameModal() {
     majorityGameInstance.destroy();
     majorityGameInstance = null;
   }
-  document.querySelector(".game-modal").classList.remove("timliner-mode", "estimate-mode", "arcade-mode", "whoami-mode", "knowme-mode", "majority-mode");
+  if (kritzelmeisterInstance) {
+    kritzelmeisterInstance.destroy();
+    kritzelmeisterInstance = null;
+  }
+  document.querySelector(".game-modal").classList.remove("timliner-mode", "estimate-mode", "arcade-mode", "whoami-mode", "knowme-mode", "majority-mode", "kritzelmeister-mode");
   el("game-modal").hidden = true;
   myGameSessionId = null;
   myGameType = null;
@@ -1774,6 +1812,7 @@ function updateGameState(state) {
   else if (myGameType === "whoami") { if (whoAmIInstance) whoAmIInstance.setState(state); }
   else if (myGameType === "knowme") { if (knowMeInstance) knowMeInstance.setState(state); }
   else if (myGameType === "majority") { if (majorityGameInstance) majorityGameInstance.setState(state); }
+  else if (myGameType === "kritzelmeister") { if (kritzelmeisterInstance) kritzelmeisterInstance.setState(state); }
 }
 
 function showGameOver(data) {
@@ -1798,6 +1837,10 @@ function showGameOver(data) {
   }
   if (myGameType === "majority") {
     if (majorityGameInstance) majorityGameInstance.showGameOver(data);
+    return;
+  }
+  if (myGameType === "kritzelmeister") {
+    if (kritzelmeisterInstance) kritzelmeisterInstance.showGameOver(data);
     return;
   }
   let text;
