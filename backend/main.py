@@ -16,6 +16,7 @@ from . import games as games_module
 from . import who_am_i as who_am_i_module
 from . import party as party_module
 from . import drawing_game as drawing_game_module
+from . import kopf_kicker as kopf_kicker_module
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT_DIR / "static"
@@ -507,6 +508,16 @@ async def websocket_endpoint(ws: WebSocket, token: Optional[str] = None):
                 await drawing_game_module.handle_clear(game_manager, user, ws, raw)
             elif msg_type == "drawing_request_sync":
                 await drawing_game_module.handle_request_sync(game_manager, user, ws, raw)
+
+            # KopfKicker selfies - kept out of the generic per-tick
+            # broadcast for the same reason Kritzelmeister's strokes are
+            # (see backend/kopf_kicker.py's module docstring), and NEVER
+            # touch db/UPLOAD_DIR - they live only in that match's
+            # in-memory session.state for as long as the session exists.
+            elif msg_type == "kopf_selfie_set":
+                await kopf_kicker_module.handle_selfie_set(game_manager, user, ws, raw)
+            elif msg_type == "kopf_request_selfie":
+                await kopf_kicker_module.handle_request_selfie(game_manager, user, ws, raw)
 
     except WebSocketDisconnect:
         pass

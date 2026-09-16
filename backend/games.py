@@ -42,6 +42,7 @@ from .who_am_i import WhoAmIEngine
 from .know_me import KnowMeEngine
 from .majority_game import MajorityGameEngine
 from .drawing_game import DrawingGameEngine
+from .kopf_kicker import KopfKickerEngine
 
 
 # ---------- Pong ----------
@@ -1043,6 +1044,7 @@ GAME_ENGINES = {
     "knowme": KnowMeEngine,
     "majority": MajorityGameEngine,
     "kritzelmeister": DrawingGameEngine,
+    "kopfkicker": KopfKickerEngine,
 }
 
 
@@ -1271,7 +1273,20 @@ class GameManager:
             if session.state is not None and hasattr(session.engine, "on_player_left"):
                 session.engine.on_player_left(session.state, leaving_uid)
 
-            if len(session.players) < session.engine.min_players:
+            # allow_below_min_players_grace (opt-in, default False - every
+            # existing engine is unaffected) lets an engine keep its match
+            # alive for a short pause/grace window even though the player
+            # count just dropped below min_players, instead of the generic
+            # instant-teardown below - used by KopfKicker (min_players ==
+            # max_players == 2, so ANY disconnect would otherwise always
+            # hit this branch, making a graceful "match pauses, opponent
+            # has N seconds to reconnect" flow structurally impossible).
+            # The engine's own on_player_left/tick() are fully responsible
+            # for eventually transitioning to a finished state in that case
+            # - the still-running tick loop (never cancelled here) picks
+            # that up exactly like the >min_players case below already did.
+            grace_capable = getattr(session.engine, "allow_below_min_players_grace", False)
+            if len(session.players) < session.engine.min_players and not grace_capable:
                 # Not enough players left to meaningfully continue (always
                 # true for a fixed-2-player game like Pong/Tic-Tac-Toe) ->
                 # end the match now instead of leaving it stuck.
@@ -1289,8 +1304,9 @@ class GameManager:
                         "winner_name": remaining["name"],
                     })
             # else: enough players remain for a >2-player game (Light Cycles,
-            # Buzzer) - the still-running tick loop picks up the engine state
-            # change from on_player_left above and resolves the match
+            # Buzzer), or the engine opted into its own grace handling
+            # (KopfKicker) - the still-running tick loop picks up the engine
+            # state change from on_player_left above and resolves the match
             # normally via check_finished on its next tick.
 
         if not session.players:

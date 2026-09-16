@@ -2461,3 +2461,130 @@ body.scroll-locked { overflow: hidden; }
   .dg-word-choice, .dg-reveal-card { padding: var(--space-5) var(--space-4); }
   .dg-guess-feed { max-height: 72px; }
 }
+
+/* ============================================================================
+   KOPFKICKER - scoped entirely to .kopfkicker-mode / .kk-* classes, no other
+   game is touched. Reuses .arcade-mode for the outer modal (see that rule's
+   own comment) - .kk-root then lays out lobby/match/endscreen exactly like
+   Kritzelmeister's .dg-root does for its own three phases.
+   ============================================================================ */
+.kk-root { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; }
+
+/* ---------- selfie capture flow ---------- */
+.kk-selfie-flow { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); text-align: center; width: 100%; }
+.kk-selfie-title { font-family: var(--font-display); font-weight: var(--font-bold); font-size: var(--text-lg); color: var(--text-primary); }
+.kk-selfie-sub { font-weight: var(--font-semibold); color: var(--text-primary); margin: 0; }
+.kk-selfie-hint { color: var(--text-secondary); font-size: var(--text-sm); margin: 0; max-width: 320px; }
+.kk-selfie-stage { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); width: 100%; min-height: 180px; justify-content: center; }
+.kk-selfie-camera-btn, .kk-selfie-upload-btn { min-width: 220px; }
+
+.kk-selfie-camera-wrap { position: relative; width: 100%; max-width: 320px; aspect-ratio: 1 / 1; border-radius: var(--radius-lg); overflow: hidden; background: #111; box-shadow: var(--shadow-md); }
+.kk-selfie-video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.kk-selfie-face-guide {
+  position: absolute; inset: 10%; border: 3px dashed rgba(255,255,255,0.6); border-radius: 50%; pointer-events: none;
+}
+.kk-selfie-shoot-btn { min-width: 220px; }
+
+.kk-selfie-preview-wrap { width: 100%; max-width: 260px; aspect-ratio: 1 / 1; border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-md); }
+.kk-selfie-preview-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.kk-selfie-preview-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; justify-content: center; }
+
+.kk-selfie-error { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); }
+.kk-selfie-error-icon { font-size: 40px; }
+.kk-selfie-error-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; justify-content: center; }
+
+/* ---------- lobby ---------- */
+.kk-lobby { flex: 1; min-height: 0; overflow-y: auto; display: flex; align-items: center; justify-content: center; padding: var(--space-4); }
+.kk-lobby-card { width: min(640px, 100%); text-align: center; }
+.kk-lobby-title { font-family: var(--font-display); font-weight: var(--font-bold); font-size: var(--text-xl); color: var(--text-primary); margin-bottom: var(--space-5); }
+.kk-lobby-vs { display: grid; grid-template-columns: 1fr auto 1fr; align-items: start; gap: var(--space-3); margin-bottom: var(--space-4); }
+.kk-lobby-vs-label { font-family: var(--font-display); font-weight: var(--font-bold); color: var(--text-secondary); align-self: center; font-size: var(--text-lg); }
+.kk-lobby-side {
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-2); background: var(--bg-surface-alt);
+  border-radius: var(--radius-lg); padding: var(--space-4); min-height: 220px; justify-content: flex-start;
+}
+.kk-lobby-empty { color: var(--text-secondary); font-size: var(--text-sm); padding: var(--space-6) 0; }
+.kk-lobby-name { font-weight: var(--font-bold); color: var(--text-primary); }
+.kk-lobby-photo { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 3px var(--bg-surface), var(--shadow-sm); }
+.kk-lobby-photo--empty { display: flex; align-items: center; justify-content: center; font-size: 32px; background: var(--bg-surface); color: var(--text-secondary); }
+.kk-lobby-status { font-size: var(--text-xs); font-weight: var(--font-semibold); color: var(--text-secondary); }
+.kk-lobby-status--ready { color: var(--success); }
+.kk-lobby-actions, .kk-lobby-capture-host { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; align-items: center; }
+.kk-lobby-mode { font-weight: var(--font-semibold); color: var(--text-secondary); margin-bottom: var(--space-4); }
+.kk-lobby-start-btn { min-width: 240px; }
+
+/* ---------- match: scoreboard, canvas, controls ---------- */
+.kk-match { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.kk-scoreboard {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: var(--space-3);
+  padding: var(--space-2) var(--space-3); background: var(--bg-surface-alt); border-radius: var(--radius-md); flex-wrap: wrap;
+}
+.kk-score-name { font-weight: var(--font-semibold); color: var(--text-primary); font-size: var(--text-sm); max-width: 30vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kk-score-value { font-family: var(--font-display); font-weight: var(--font-bold); font-size: var(--text-lg); color: var(--accent-strong); }
+.kk-score-timer { font-variant-numeric: tabular-nums; font-weight: var(--font-bold); color: var(--text-primary); background: var(--bg-surface); border-radius: var(--radius-full); padding: 2px var(--space-3); }
+.kk-score-timer--golden { color: var(--danger); animation: est-pop 0.6s ease infinite alternate; }
+@media (prefers-reduced-motion: reduce) { .kk-score-timer--golden { animation: none; } }
+
+.kk-canvas-outer { flex: 1; min-height: 0; width: 100%; display: flex; align-items: center; justify-content: center; touch-action: none; }
+.kk-canvas-wrap { position: relative; }
+.kk-canvas { display: block; border-radius: var(--radius-lg); box-shadow: 0 0 0 1px var(--border), var(--shadow-md); }
+
+.kk-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.kk-countdown {
+  font-size: 88px; font-weight: var(--font-bold); color: white; text-shadow: 0 4px 24px rgba(0,0,0,0.5);
+  background: rgba(0,0,0,0.25); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-lg);
+  animation: est-pop 0.3s ease;
+}
+.kk-goal-banner {
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-2); background: rgba(10,12,18,0.72);
+  padding: var(--space-5) var(--space-6); border-radius: var(--radius-lg); animation: kk-goal-in 0.4s var(--ease-emphasized);
+}
+@keyframes kk-goal-in { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .kk-goal-banner, .kk-countdown { animation: none; } }
+.kk-goal-text { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: var(--font-bold); color: white; text-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+.kk-goal-photo { width: 88px; height: 88px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 4px white; }
+.kk-goal-scorer { color: white; font-weight: var(--font-semibold); }
+
+.kk-hint { flex: 0 0 auto; text-align: center; color: var(--text-secondary); font-size: var(--text-xs); margin: 0; }
+
+/* ---------- touch controls (independent pointerId per button - real
+   multitouch, see kopf-kicker.js) ---------- */
+.kk-controls { display: none; }
+@media (pointer: coarse) {
+  .kk-controls { display: flex; align-items: center; justify-content: space-between; flex: 0 0 auto; padding: var(--space-2) 0; gap: var(--space-3); }
+  .kk-hint { display: none; }
+}
+.kk-controls-move, .kk-controls-action { display: flex; gap: var(--space-2); }
+.kk-ctrl-btn {
+  width: 56px; height: 56px; border-radius: var(--radius-md); border: none; background: var(--bg-surface-alt);
+  color: var(--text-primary); font-size: 22px; box-shadow: var(--shadow-sm); touch-action: none; user-select: none;
+  transition: transform var(--motion-fast) var(--ease-standard), background-color var(--motion-fast) var(--ease-standard);
+}
+.kk-ctrl-btn--active { background: var(--accent-soft); color: var(--accent-strong); transform: scale(0.94); }
+.kk-ctrl-btn--jump, .kk-ctrl-btn--kick { width: 64px; height: 64px; }
+
+/* ---------- endscreen ---------- */
+.kk-endscreen { flex: 1; display: flex; align-items: center; justify-content: center; padding: var(--space-4); }
+.kk-endscreen-card { width: min(560px, 100%); background: var(--bg-surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: var(--space-6) var(--space-5); text-align: center; }
+.kk-endscreen-title { font-family: var(--font-display); font-weight: var(--font-bold); font-size: var(--text-lg); color: var(--text-primary); margin-bottom: var(--space-2); }
+.kk-endscreen-result { font-weight: var(--font-bold); font-size: var(--text-base); color: var(--accent-strong); margin-bottom: var(--space-4); }
+.kk-endscreen-photos { display: flex; align-items: center; justify-content: center; gap: var(--space-4); margin-bottom: var(--space-4); }
+.kk-endscreen-photo-col { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); font-weight: var(--font-semibold); color: var(--text-primary); font-size: var(--text-sm); }
+.kk-endscreen-photo { width: 84px; height: 84px; border-radius: 50%; object-fit: cover; box-shadow: var(--shadow-sm); }
+.kk-endscreen-score { font-family: var(--font-display); font-size: var(--text-xl); font-weight: var(--font-bold); color: var(--text-primary); }
+.kk-endscreen-stats { display: flex; flex-direction: column; gap: var(--space-1); margin-bottom: var(--space-5); }
+.kk-endscreen-stat-row { display: grid; grid-template-columns: 1fr auto auto; gap: var(--space-4); padding: var(--space-2) var(--space-3); background: var(--bg-surface-alt); border-radius: var(--radius-sm); font-size: var(--text-sm); color: var(--text-secondary); }
+.kk-endscreen-stat-row span:first-child { text-align: left; color: var(--text-primary); font-weight: var(--font-semibold); }
+.kk-endscreen-actions { display: flex; justify-content: center; gap: var(--space-2); flex-wrap: wrap; }
+
+@media (max-width: 767px), (max-height: 480px) and (pointer: coarse) {
+  .kk-lobby-vs { grid-template-columns: 1fr; }
+  .kk-lobby-vs-label { display: none; }
+  .kk-lobby-photo { width: 72px; height: 72px; }
+  .kk-countdown { font-size: 56px; }
+  .kk-goal-text { font-size: var(--text-lg); }
+  .kk-goal-photo { width: 64px; height: 64px; }
+  .kk-ctrl-btn { width: 48px; height: 48px; font-size: 18px; }
+  .kk-ctrl-btn--jump, .kk-ctrl-btn--kick { width: 56px; height: 56px; }
+  .kk-score-name { max-width: 22vw; }
+}

@@ -245,6 +245,11 @@ function handleWsEvent(data) {
     if (myGameType === "kritzelmeister" && kritzelmeisterInstance) {
       kritzelmeisterInstance.handleDrawingEvent(data);
     }
+  } else if (data.type === "kopf_selfie_photo" || data.type === "kopf_selfie_ack" || data.type === "kopf_selfie_rejected") {
+    if (myGameType === "kopfkicker" && kopfKickerInstance) {
+      if (data.type === "kopf_selfie_photo") kopfKickerInstance.handleSelfieEvent(data);
+      else if (data.type === "kopf_selfie_rejected") toast("Foto konnte nicht verarbeitet werden.");
+    }
   }
 }
 
@@ -874,6 +879,7 @@ const GAME_META = {
   majority: { category: "party", desc: "Errate, was die Mehrheit wählt." },
   timliner: { category: "solo", desc: "Entspanntes Solo-Zeichenspiel." },
   kritzelmeister: { category: "party", desc: "Zeichnen und in Echtzeit erraten." },
+  kopfkicker: { category: "arcade", desc: "Dein Gesicht. Dein Kopf. Dein Tor." },
 };
 const GAME_CATEGORIES = [
   { key: "all", label: "Alle" },
@@ -1559,11 +1565,12 @@ function openGameModal(data) {
   dialog.classList.toggle("uno-mode", data.game_type === "uno");
   dialog.classList.toggle("ludo-mode", data.game_type === "ludo");
   dialog.classList.toggle("estimate-mode", data.game_type === "estimate");
-  dialog.classList.toggle("arcade-mode", data.game_type === "tankbattle" || data.game_type === "dodgearena" || data.game_type === "kritzelmeister");
+  dialog.classList.toggle("arcade-mode", data.game_type === "tankbattle" || data.game_type === "dodgearena" || data.game_type === "kritzelmeister" || data.game_type === "kopfkicker");
   dialog.classList.toggle("whoami-mode", data.game_type === "whoami");
   dialog.classList.toggle("knowme-mode", data.game_type === "knowme");
   dialog.classList.toggle("majority-mode", data.game_type === "majority");
   dialog.classList.toggle("kritzelmeister-mode", data.game_type === "kritzelmeister");
+  dialog.classList.toggle("kopfkicker-mode", data.game_type === "kopfkicker");
 
   const stage = el("game-stage");
   stage.innerHTML = "";
@@ -1675,6 +1682,25 @@ function openGameModal(data) {
       },
       closeGame: () => closeGameModal(),
     });
+  } else if (data.game_type === "kopfkicker") {
+    kopfKickerInstance = window.KopfKicker.mount(stage, {
+      me,
+      players: data.players,
+      sendInput: gameInputSender(),
+      // Selfies bypass the generic game_input channel entirely (see
+      // backend/kopf_kicker.py's module docstring) - same raw-websocket
+      // escape hatch Kritzelmeister's live strokes use.
+      sendRaw: (msg) => {
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+      },
+      sendRematch: () => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "game_rematch", session_id: myGameSessionId }));
+        }
+      },
+      closeGame: () => closeGameModal(),
+    });
+    kopfKickerInstance.requestOpponentSelfieIfNeeded(data.state);
   }
   updateGameState(data.state);
   el("game-modal").hidden = false;
@@ -1696,6 +1722,7 @@ const GAME_TITLES = {
   knowme: "❤️ Kennst du mich?",
   majority: "👑 Mehrheitsmeister",
   kritzelmeister: "🎨 Kritzelmeister",
+  kopfkicker: "⚽ KopfKicker",
 };
 const REMATCH_GAME_TYPES = ["tictactoe", "buzzer", "uno", "tankbattle", "dodgearena"];
 // tankbattle/dodgearena use their own much larger .arcade-mode sizing
@@ -1714,6 +1741,7 @@ let whoAmIInstance = null;
 let knowMeInstance = null;
 let majorityGameInstance = null;
 let kritzelmeisterInstance = null;
+let kopfKickerInstance = null;
 
 function openTimLinerGame() {
   myGameSessionId = null;
@@ -1775,7 +1803,11 @@ function closeGameModal() {
     kritzelmeisterInstance.destroy();
     kritzelmeisterInstance = null;
   }
-  document.querySelector(".game-modal").classList.remove("timliner-mode", "estimate-mode", "arcade-mode", "whoami-mode", "knowme-mode", "majority-mode", "kritzelmeister-mode");
+  if (kopfKickerInstance) {
+    kopfKickerInstance.destroy();
+    kopfKickerInstance = null;
+  }
+  document.querySelector(".game-modal").classList.remove("timliner-mode", "estimate-mode", "arcade-mode", "whoami-mode", "knowme-mode", "majority-mode", "kritzelmeister-mode", "kopfkicker-mode");
   el("game-modal").hidden = true;
   myGameSessionId = null;
   myGameType = null;
@@ -1813,6 +1845,7 @@ function updateGameState(state) {
   else if (myGameType === "knowme") { if (knowMeInstance) knowMeInstance.setState(state); }
   else if (myGameType === "majority") { if (majorityGameInstance) majorityGameInstance.setState(state); }
   else if (myGameType === "kritzelmeister") { if (kritzelmeisterInstance) kritzelmeisterInstance.setState(state); }
+  else if (myGameType === "kopfkicker") { if (kopfKickerInstance) kopfKickerInstance.setState(state); }
 }
 
 function showGameOver(data) {
@@ -1841,6 +1874,10 @@ function showGameOver(data) {
   }
   if (myGameType === "kritzelmeister") {
     if (kritzelmeisterInstance) kritzelmeisterInstance.showGameOver(data);
+    return;
+  }
+  if (myGameType === "kopfkicker") {
+    if (kopfKickerInstance) kopfKickerInstance.showGameOver(data);
     return;
   }
   let text;
