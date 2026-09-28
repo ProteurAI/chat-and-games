@@ -1925,9 +1925,20 @@ body.scroll-locked { overflow: hidden; }
    both "just work" without a separate dark override block here) - explicitly
    NOT another dark arena, per the design brief.
    ============================================================================ */
-.game-modal.whoami-mode .game-stage { flex: 1; min-height: 0; margin-top: var(--space-2); width: 100%; }
+/* Content-sized, NOT viewport-sized. This used to be flex:1 + min-height:0
+   with .wai-root at height:100% and .wai-stage at flex:1/min-height:0 - a
+   chain that pinned .wai-stage to exactly the visible height of
+   .game-content. Whenever the round didn't fit (a phone, or the taller
+   "waiting for answers" panel), the flex column had to shrink its items,
+   and the only ones allowed to shrink below their content were those with
+   overflow != visible (their min-height:auto resolves to 0): the
+   overflow-x:auto others row and the overflow:hidden cards. So exactly
+   the other players' cards were squashed and clipped ("Stevie Wonder"
+   cut in half). Now the stage is as tall as its content, nothing ever
+   shrinks, and .game-content - the one scroll container - scrolls. */
+.game-modal.whoami-mode .game-stage { flex: 1 0 auto; margin-top: var(--space-2); width: 100%; }
 
-.wai-root { display: flex; flex-direction: column; height: 100%; width: 100%; }
+.wai-root { display: flex; flex-direction: column; width: 100%; }
 .wai-topbar { display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-2) var(--space-2); }
 .wai-round-info { font-size: var(--text-sm); color: var(--text-secondary); flex: 1; }
 .wai-sound-toggle { border: none; background: none; font-size: 18px; }
@@ -1935,9 +1946,24 @@ body.scroll-locked { overflow: hidden; }
    ancestor, see the note on .est-stage above for why a second nested
    overflow:auto container is the bug, not the fix. */
 .wai-stage {
-  flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center;
+  flex: none; display: flex; flex-direction: column; align-items: center;
   gap: var(--space-4); padding: var(--space-2) var(--space-2) var(--space-6); width: 100%;
 }
+.wai-stage > *, .wai-col > * { flex-shrink: 0; }
+/* "Me" / "others" column wrappers - flat (one column) except on landscape
+   phones, see the mobile block at the end of this section. While flat,
+   `order` restores the reading order: turn, my card, the others' cards,
+   my action, history. */
+.wai-col { display: contents; }
+.wai-turn-banner { order: 1; }
+.wai-card--own { order: 2; }
+.wai-others-row { order: 3; }
+.wai-action-card { order: 4; }
+.wai-history { order: 5; }
+.wai-card-turn-tag { display: none; }
+.wai-action-head { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); width: 100%; }
+.wai-action-buttons { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; }
+.wai-action-buttons .ghost-btn { margin-right: 0; }
 
 .wai-turn-banner {
   font-family: var(--font-display); font-weight: var(--font-bold); font-size: var(--text-lg);
@@ -1990,13 +2016,16 @@ body.scroll-locked { overflow: hidden; }
   100% { transform: rotateY(0deg) scale(1); }
 }
 
+/* Wraps instead of scrolling sideways: with 6-8 players a horizontal
+   scroller left the last cards hidden off to the right. */
 .wai-others-row {
-  display: flex; gap: var(--space-3); overflow-x: auto; width: 100%; padding: var(--space-1) var(--space-1) var(--space-2);
-  -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-3); width: 100%;
+  padding: var(--space-1) var(--space-1) var(--space-2);
 }
 .wai-card--other {
-  flex: 0 0 auto; width: 128px; padding: var(--space-3); text-align: center; scroll-snap-align: start;
+  flex: 0 0 auto; width: 136px; padding: var(--space-3); text-align: center;
 }
+.wai-card--other .wai-card-identity { overflow-wrap: break-word; hyphens: auto; }
 .wai-card--other .wai-card-name { font-size: var(--text-xs); }
 .wai-card--other .wai-card-identity { font-size: var(--text-sm); margin: var(--space-1) 0 0; }
 .wai-card--turn { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow-md); }
@@ -2099,24 +2128,158 @@ body.scroll-locked { overflow: hidden; }
 .wai-rest-list li { display: flex; justify-content: space-between; gap: var(--space-3); font-size: var(--text-sm); color: var(--text-secondary); padding: var(--space-2) var(--space-3); }
 .wai-endscreen-actions { display: flex; justify-content: center; gap: var(--space-3); margin-top: var(--space-5); }
 
+/* ---- Mobile: its own information hierarchy, not a shrunk desktop ----
+   Order top to bottom: header (✕ | title | 💬) -> one meta line -> turn
+   pill -> my secret card as a compact strip -> the other players' cards
+   (THE information on this screen, so they get the width and the type
+   size) -> the action panel -> the collapsed history. Same breakpoint as
+   the shared mobile game shell above. */
 @media (max-width: 767px), (max-height: 480px) and (pointer: coarse) {
-  .wai-card--own { width: min(220px, 74vw); padding: var(--space-4) var(--space-4); }
-  .wai-card-question { font-size: 40px; margin: var(--space-1) 0; }
-  /* was 104px - too narrow for a name to ever fit without the hard-clip
-     bug this whole block fixes; keep it close to the desktop 128px. */
-  .wai-card--other { width: 124px; }
-  .wai-card--other .wai-card-name { font-size: clamp(10px, 3.2vw, 13px); }
-  .wai-action-card { padding: var(--space-4); }
+  /* Shell: reclaim the stacked desktop paddings. Bottom padding is 0 on
+     purpose: the closed chat drawer sits translateY(100%) just below
+     .game-main, i.e. inside the dialog's bottom padding, where
+     overflow:hidden doesn't clip it - it peeked in as a grey strip. */
+  .game-modal.whoami-mode { padding: var(--space-2) var(--space-3) 0; }
+  .game-modal.whoami-mode .game-chat-panel:not(.open) { box-shadow: none; }
+  .game-modal.whoami-mode .modal-head h2 { font-size: var(--text-base); }
+  .game-modal.whoami-mode .game-main { margin-top: 0; }
+  .game-modal.whoami-mode .game-stage { margin-top: 0; }
+  .wai-topbar { padding: 0 var(--space-1); min-height: 32px; }
+  .wai-round-info { font-size: var(--text-xs); font-weight: var(--font-semibold); }
+  .wai-sound-toggle { font-size: 16px; min-width: 40px; min-height: 32px; padding: 0; }
+
+  .wai-stage {
+    align-items: stretch; gap: var(--space-3);
+    padding: var(--space-1) 0 calc(var(--space-5) + env(safe-area-inset-bottom));
+  }
+  .wai-stage > *, .wai-col > * { width: 100%; max-width: 560px; margin-inline: auto; }
+
+  /* Turn pill: one line, same height whoever is up, so a turn change
+     never shifts the cards below it. */
+  .wai-turn-banner {
+    width: auto; max-width: 100%; align-self: center; font-size: var(--text-sm); letter-spacing: 0.03em;
+    padding: 7px var(--space-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3;
+  }
+
+  /* My own secret card: a compact horizontal strip (? badge | GEHEIM /
+     "Deine Karte · NAME") instead of a 250px sticky note - it carries
+     one bit of information. Same flat markup as desktop, laid out by grid. */
+  .wai-card--own {
+    display: grid; grid-template-columns: 44px minmax(0, 1fr); grid-template-areas: "q secret" "q name";
+    column-gap: var(--space-3); row-gap: 1px; align-items: center; text-align: left;
+    padding: var(--space-2) var(--space-3); transform: none; border-left-width: 1px; border-right-width: 1px; border-bottom-width: 1px; box-shadow: var(--shadow-sm);
+  }
+  .wai-card--own .wai-card-question {
+    grid-area: q; width: 44px; height: 44px; margin: 0; border-radius: var(--radius-sm); background: var(--accent-soft);
+    display: flex; align-items: center; justify-content: center; font-size: 22px;
+  }
+  .wai-card--own .wai-card-secret { grid-area: secret; align-self: end; font-size: var(--text-base); line-height: 1.2; }
+  .wai-card--own .wai-card-name {
+    grid-area: name; align-self: start; font-size: var(--text-xs); font-weight: var(--font-semibold);
+    color: var(--text-secondary); -webkit-line-clamp: 1;
+  }
+  .wai-card--own .wai-card-name::before { content: "Deine Karte · "; text-transform: none; letter-spacing: 0; }
+  .wai-card--own .wai-card-prompt { display: none; }
+  .wai-card--own.wai-card--solved {
+    grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "identity badge" "name badge";
+    padding: var(--space-3) var(--space-4);
+  }
+  .wai-card--own.wai-card--solved .wai-card-identity { grid-area: identity; margin: 0; font-size: var(--text-base); line-height: 1.25; }
+  .wai-card--own.wai-card--solved .wai-card-solved-badge { grid-area: badge; }
+
+  /* Other players. Plain grid - no overflow-x scroller (that is what let
+     the cards get clipped), no fixed card width. Every card: small
+     uppercase player name, then the identity as the big line, both
+     wrapping to at most 2 lines. */
+  .wai-others-row {
+    display: grid; gap: var(--space-2); overflow: visible; padding: 0; scroll-snap-type: none;
+  }
+  .wai-others-row--solo { grid-template-columns: minmax(0, 1fr); }
+  .wai-others-row--grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wai-card--other {
+    width: auto; min-width: 0; text-align: left; padding: var(--space-3);
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name badge" "ident ident";
+    align-content: center; column-gap: var(--space-1); row-gap: 2px; min-height: 68px; box-shadow: var(--shadow-sm);
+  }
+  .wai-card--other .wai-card-name {
+    grid-area: name; align-self: center; font-size: 11px; font-weight: var(--font-bold); letter-spacing: 0.05em; color: var(--text-secondary);
+    padding-right: 12px;
+  }
+  .wai-card--other .wai-card-identity {
+    grid-area: ident; margin: 0; font-family: var(--font-ui); font-weight: 800; font-size: 16px; line-height: 1.25;
+    overflow-wrap: break-word; hyphens: auto;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .wai-card--other .wai-card-solved-badge { grid-area: badge; font-size: var(--text-xs); line-height: 1; }
+  /* "Whose turn" marker is out of flow (absolute), so a turn change can
+     never re-wrap a name and change a card's height: a dot in the grid,
+     a small "am Zug" pill on the wide 2-player card. */
+  .wai-card-turn-tag {
+    display: block; position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; overflow: hidden;
+    border-radius: var(--radius-full); background: var(--accent); font-size: 0; box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  /* 2 players: the one opponent is THE card on the screen - full width,
+     display type, generous height. Never a mini grid cell. */
+  .wai-others-row--solo .wai-card--other { padding: var(--space-3) var(--space-4) var(--space-4); min-height: 84px; row-gap: var(--space-1); }
+  .wai-others-row--solo .wai-card--other .wai-card-name { font-size: var(--text-xs); padding-right: 72px; }
+  .wai-others-row--solo .wai-card-turn-tag {
+    width: auto; height: auto; top: 12px; right: 12px; box-shadow: none; padding: 4px 8px;
+    font-size: 10px; font-weight: var(--font-bold); line-height: 1; background: var(--accent-soft); color: var(--accent-strong); white-space: nowrap;
+  }
+  .wai-others-row--solo .wai-card--other .wai-card-identity { font-family: var(--font-display); font-weight: var(--font-bold); font-size: 22px; }
+  /* 5+ players: denser cells so up to 7 opponents still fit above the fold. */
+  .wai-others-row--dense .wai-card--other { padding: var(--space-2) var(--space-3); min-height: 58px; }
+  .wai-others-row--dense .wai-card--other .wai-card-identity { font-size: 14px; }
+
+  /* Action panel: header row (label | question n/3 · timer), input, then
+     both buttons side by side - about half the old height. */
+  .wai-action-card { align-items: stretch; text-align: left; padding: var(--space-3); gap: var(--space-2); border-radius: var(--radius-lg); }
+  .wai-action-head { flex-direction: row; justify-content: space-between; align-items: baseline; gap: var(--space-2); }
+  .wai-action-label { font-size: var(--text-sm); }
+  .wai-turn-meta { font-size: var(--text-xs); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .wai-waiting-text { font-size: var(--text-sm); }
+  .wai-question-input { font-size: 16px; min-height: 46px; } /* >=16px: no iOS focus zoom */
+  .wai-action-buttons { flex-direction: row; }
+  .wai-ask-btn, .wai-guess-btn {
+    flex: 1 1 0; min-width: 0; min-height: 48px; padding: 0 var(--space-2);
+    font-size: var(--text-xs); line-height: 1.15; white-space: normal;
+  }
+  .wai-question-big { font-size: var(--text-base); line-height: 1.35; }
+  .wai-vote-card .wai-question-big { font-size: 17px; }
   /* 3 equal columns instead of a full-width stack - "JA/NEIN/UNKLAR" are
-     short labels and don't need a whole row each; this both shrinks the
-     buttons to a sane touch size (was reported as "unnötig riesig") and
-     frees vertical space for the rest of the round state above them. */
+     short labels and don't need a whole row each. */
   .wai-vote-buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
-  .wai-vote-btn { min-height: 56px; font-size: var(--text-sm); padding: 0 var(--space-1); }
-  .wai-guess-btn, .wai-ask-btn { min-height: 52px; }
+  .wai-vote-btn { min-height: 52px; font-size: var(--text-sm); padding: 0 var(--space-1); }
+  .wai-vote-status-list { justify-content: flex-start; gap: var(--space-1) var(--space-2); font-size: var(--text-xs); }
+  .wai-vote-status-list li { padding: 3px var(--space-2); border-radius: var(--radius-full); background: var(--bg-surface); border: 1px solid var(--border); }
+  .wai-vote-result-card { align-items: center; text-align: center; }
+  .wai-vote-result-big { font-size: var(--text-xl); }
+
+  /* History: secondary - a quiet collapsed row at the bottom. */
+  .wai-history { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); font-size: var(--text-xs); }
+  .wai-history summary { font-size: var(--text-sm); min-height: 28px; display: flex; align-items: center; justify-content: space-between; list-style: none; }
+  .wai-history summary::-webkit-details-marker { display: none; }
+  .wai-history summary::after { content: "▾"; color: var(--text-secondary); transition: transform var(--transition-fast); }
+  .wai-history[open] summary::after { transform: rotate(180deg); }
+  .wai-history-list li { padding: 2px 0; line-height: 1.35; }
+
+  .wai-endscreen { padding: var(--space-5) var(--space-4); }
   .wai-podium-entry { grid-template-columns: auto 1fr; grid-template-areas: "medal name" "medal identity" "medal score"; }
   .wai-podium-score { justify-self: start; }
   .wai-podium-questions { display: none; }
+}
+
+/* Landscape phone: ~300px of height can't hold the stacked column, so it
+   splits instead of scrolling the cards away - left "me" (turn, my card,
+   my action), right the other players' cards (+ history). */
+@media (max-height: 480px) and (pointer: coarse) and (orientation: landscape) {
+  .wai-stage { flex-direction: row; align-items: flex-start; gap: var(--space-4); max-width: 980px; margin-inline: auto; }
+  .wai-col { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+  .wai-col--me { flex: 1 1 0; }
+  .wai-col--others { flex: 1.25 1 0; }
+  .wai-turn-banner { align-self: flex-start; }
+  .wai-others-row--dense .wai-card--other { min-height: 46px; padding: 6px var(--space-2); row-gap: 0; }
+  .wai-others-row--dense { gap: 6px; }
 }
 
 /* ============================================================================

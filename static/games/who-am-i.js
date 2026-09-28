@@ -244,6 +244,7 @@
     let renderKey = null;
     let lastSeenGuessSeq = 0;
     let guessDialogOpen = false;
+    let historyOpen = false;
 
     function playerName(uid) {
       const s = lastState && lastState.players.find((p) => p.userId === uid);
@@ -281,10 +282,20 @@
       `;
     }
 
+    // Layout variant by how many OTHER players there are - the mobile CSS
+    // gives each its own structure instead of one generic squeezed row:
+    // 1 (a 2-player round) -> one full-width card, 2-3 -> 2-column grid,
+    // 4+ -> the same grid with denser cards.
+    function othersLayoutClass(count) {
+      if (count <= 1) return "wai-others-row--solo";
+      if (count <= 3) return "wai-others-row--grid";
+      return "wai-others-row--grid wai-others-row--dense";
+    }
+
     function renderOtherCards(state) {
       const others = state.players.filter((p) => !p.isSelf);
       return `
-        <div class="wai-others-row">
+        <div class="wai-others-row ${othersLayoutClass(others.length)}">
           ${others.map((p) => {
             const idx = state.players.indexOf(p);
             const isTurn = state.currentAskerId === p.userId;
@@ -293,6 +304,7 @@
                 <div class="wai-card-name">${escapeHtml(p.name)}${!p.active ? " (weg)" : ""}</div>
                 <div class="wai-card-identity">${p.identity ? escapeHtml(p.identity.name) : "?"}</div>
                 ${p.solved ? `<div class="wai-card-solved-badge">✓</div>` : ""}
+                ${isTurn ? `<div class="wai-card-turn-tag">am Zug</div>` : ""}
               </div>
             `;
           }).join("")}
@@ -304,20 +316,26 @@
       if (state.isMyTurn) {
         return `
           <div class="wai-action-card">
-            <p class="wai-action-label">Stelle eine Ja-/Nein-Frage</p>
+            <div class="wai-action-head">
+              <p class="wai-action-label">Stelle eine Ja-/Nein-Frage</p>
+              <div class="wai-turn-meta">Frage ${state.questionNumberThisTurn + 1}/${state.maxQuestionsPerTurn} · <span data-role="timer">${state.secondsLeft}</span>s</div>
+            </div>
             <form class="wai-question-form">
-              <input type="text" class="wai-question-input" maxlength="200" autocomplete="off" placeholder="z.B. Bin ich eine echte Person?" />
-              <button type="submit" class="primary-btn wai-ask-btn">FRAGE STELLEN</button>
+              <input type="text" class="wai-question-input" maxlength="200" autocomplete="off" enterkeyhint="send" placeholder="z.B. Bin ich eine echte Person?" />
+              <div class="wai-action-buttons">
+                <button type="submit" class="primary-btn wai-ask-btn">FRAGE STELLEN</button>
+                <button type="button" class="ghost-btn wai-guess-btn" data-role="open-guess">🎯 ICH WEISS ES</button>
+              </div>
             </form>
-            <div class="wai-turn-meta">Frage ${state.questionNumberThisTurn + 1}/${state.maxQuestionsPerTurn} · <span data-role="timer">${state.secondsLeft}</span>s</div>
-            <button type="button" class="ghost-btn wai-guess-btn" data-role="open-guess">🎯 ICH WEISS ES</button>
           </div>
         `;
       }
       return `
         <div class="wai-action-card wai-action-card--waiting">
-          <p class="wai-waiting-text">${escapeHtml(playerName(state.currentAskerId))} überlegt sich eine Frage …</p>
-          <div class="wai-turn-meta"><span data-role="timer">${state.secondsLeft}</span>s</div>
+          <div class="wai-action-head">
+            <p class="wai-waiting-text">${escapeHtml(playerName(state.currentAskerId))} überlegt sich eine Frage …</p>
+            <div class="wai-turn-meta"><span data-role="timer">${state.secondsLeft}</span>s</div>
+          </div>
         </div>
       `;
     }
@@ -330,36 +348,43 @@
       if (isAsker) {
         return `
           <div class="wai-action-card">
-            <p class="wai-question-echo">Du fragst: „${escapeHtml(state.currentQuestion || "")}“</p>
+            <div class="wai-action-head">
+              <p class="wai-question-echo">Du fragst:</p>
+              <div class="wai-turn-meta"><span data-role="timer">${state.secondsLeft}</span>s</div>
+            </div>
+            <p class="wai-question-big">„${escapeHtml(state.currentQuestion || "")}“</p>
             <p class="wai-waiting-text">Die anderen antworten …</p>
             <ul class="wai-vote-status-list">
               ${voterEntries.map((v) => `<li>${escapeHtml(v.name)} ${v.voted ? "✓" : "…"}</li>`).join("")}
             </ul>
-            <div class="wai-turn-meta"><span data-role="timer">${state.secondsLeft}</span>s</div>
           </div>
         `;
       }
       if (state.votingOpen) {
         return `
           <div class="wai-action-card wai-vote-card">
-            <p class="wai-question-echo">${escapeHtml(playerName(state.currentAskerId))} fragt:</p>
+            <div class="wai-action-head">
+              <p class="wai-question-echo">${escapeHtml(playerName(state.currentAskerId))} fragt:</p>
+              <div class="wai-turn-meta"><span data-role="timer">${state.secondsLeft}</span>s</div>
+            </div>
             <p class="wai-question-big">„${escapeHtml(state.currentQuestion || "")}“</p>
             <div class="wai-vote-buttons">
               <button type="button" class="wai-vote-btn wai-vote-btn--yes" data-choice="yes">✅ JA</button>
               <button type="button" class="wai-vote-btn wai-vote-btn--no" data-choice="no">❌ NEIN</button>
               <button type="button" class="wai-vote-btn wai-vote-btn--unclear" data-choice="unclear">🤷 UNKLAR</button>
             </div>
-            <div class="wai-turn-meta"><span data-role="timer">${state.secondsLeft}</span>s</div>
           </div>
         `;
       }
       return `
         <div class="wai-action-card wai-action-card--waiting">
-          <p class="wai-waiting-text">Du hast abgestimmt. Warte auf die anderen …</p>
+          <div class="wai-action-head">
+            <p class="wai-waiting-text">Du hast abgestimmt. Warte auf die anderen …</p>
+            <div class="wai-turn-meta"><span data-role="timer">${state.secondsLeft}</span>s</div>
+          </div>
           <ul class="wai-vote-status-list">
             ${voterEntries.map((v) => `<li>${escapeHtml(v.name)} ${v.voted ? "✓" : "…"}</li>`).join("")}
           </ul>
-          <div class="wai-turn-meta"><span data-role="timer">${state.secondsLeft}</span>s</div>
         </div>
       `;
     }
@@ -382,7 +407,7 @@
       const rows = state.history.slice().reverse().slice(0, 8);
       const map = { yes: "✅", no: "❌", unclear: "🤷" };
       return `
-        <details class="wai-history">
+        <details class="wai-history"${historyOpen ? " open" : ""}>
           <summary>Verlauf (${state.history.length})</summary>
           <ul class="wai-history-list">
             ${rows.map((h) => `<li><strong>${escapeHtml(playerName(h.askerId))}:</strong> „${escapeHtml(h.question || "")}“ ${map[h.result] || ""}</li>`).join("")}
@@ -391,7 +416,19 @@
       `;
     }
 
+    // .game-content (the shared shell) is the one scroll container. Its
+    // scrollTop survives a re-render, so on a phone - where typing the
+    // question scrolls it down to the input - the next phase used to open
+    // mid-page with the player cards scrolled half out of view. A new phase
+    // or a new asker always starts at the top, where the live state is.
+    const scroller = stageEl.closest(".game-content");
+    const isTouch = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+
     function fullRender(state, justRevealed) {
+      const prevKeyParts = renderKey ? renderKey.split("|") : [];
+      if (scroller && (prevKeyParts[0] !== state.phase || prevKeyParts[1] !== String(state.currentAskerId))) {
+        scroller.scrollTop = 0;
+      }
       renderKey = computeRenderKey(state);
       const self = state.players.find((p) => p.isSelf);
       let actionHtml = "";
@@ -399,27 +436,41 @@
       else if (state.phase === "voting") actionHtml = renderVotingArea(state);
       else if (state.phase === "vote_result") actionHtml = renderVoteResultArea(state);
 
+      // Two logical columns: "me" (who's up, my card, my action) and "the
+      // others" (their cards, history). They're display:contents - one flat
+      // column, ordered banner/own/others/action/history via CSS `order` -
+      // everywhere except landscape phones, where they sit side by side
+      // (see style.css).
       stage.innerHTML = `
-        ${renderTurnBanner(state)}
-        ${renderOwnCard(state, justRevealed)}
-        ${renderOtherCards(state)}
-        ${actionHtml}
-        ${renderHistory(state)}
+        <div class="wai-col wai-col--me">
+          ${renderTurnBanner(state)}
+          ${renderOwnCard(state, justRevealed)}
+          ${actionHtml}
+        </div>
+        <div class="wai-col wai-col--others">
+          ${renderOtherCards(state)}
+          ${renderHistory(state)}
+        </div>
       `;
       roundInfo.textContent = self ? `Fragen: ${self.questionsAsked}` : "";
 
       const form = stage.querySelector(".wai-question-form");
       if (form) {
         const input = form.querySelector(".wai-question-input");
-        input.focus();
+        // No auto-focus on touch: it would pop the keyboard (and scroll the
+        // cards away) every single turn before the player even read the board.
+        if (!isTouch) input.focus();
         form.addEventListener("submit", (e) => {
           e.preventDefault();
           const text = input.value.trim();
           if (!text) return;
+          input.blur();
           sendInput({ action: "ask_question", text });
           sfx.question();
         });
       }
+      const historyEl = stage.querySelector(".wai-history");
+      if (historyEl) historyEl.addEventListener("toggle", () => { historyOpen = historyEl.open; });
       const guessBtn = stage.querySelector('[data-role="open-guess"]');
       if (guessBtn) guessBtn.addEventListener("click", () => openGuessDialog());
 
