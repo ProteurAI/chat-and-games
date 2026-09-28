@@ -2814,3 +2814,27 @@ body.scroll-locked { overflow: hidden; }
   .kk-ctrl-btn--jump, .kk-ctrl-btn--kick { width: 56px; height: 56px; }
   .kk-score-name { max-width: 22vw; }
 }
+
+/* Landscape phone = the best KopfKicker view: the arena gets all the
+   height, movement sits left of it and jump/kick right of it (no control
+   bar under the canvas eating ~80px of a ~390px-high screen), the
+   scoreboard shrinks to one slim line, and the dialog's own paddings go. */
+@media (max-height: 520px) and (pointer: coarse) and (orientation: landscape) {
+  .game-modal.kopfkicker-mode { padding: max(4px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+  .game-modal.kopfkicker-mode .modal-head h2 { font-size: var(--text-sm); }
+  .game-modal.kopfkicker-mode .modal-head .icon-btn, .game-modal.kopfkicker-mode .game-chat-toggle { min-height: 36px; min-width: 40px; padding: 0; font-size: var(--text-base); }
+  .game-modal.kopfkicker-mode .game-main { margin-top: 2px; }
+  .kk-match {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: "score score score" "move canvas action"; column-gap: var(--space-3); row-gap: 4px;
+  }
+  .kk-scoreboard { grid-area: score; padding: 2px var(--space-3); gap: var(--space-2); flex-wrap: nowrap; }
+  .kk-score-value { font-size: var(--text-base); }
+  .kk-score-timer { padding: 0 var(--space-2); font-size: var(--text-xs); }
+  .kk-canvas-outer { grid-area: canvas; }
+  .kk-controls { display: contents; }
+  .kk-controls-move { grid-area: move; align-self: end; padding-bottom: var(--space-2); }
+  .kk-controls-action { grid-area: action; align-self: end; flex-direction: column-reverse; align-items: center; padding-bottom: var(--space-2); }
+  .kk-ctrl-btn { width: 60px; height: 60px; }
+  .kk-ctrl-btn--jump, .kk-ctrl-btn--kick { width: 66px; height: 66px; }
+}

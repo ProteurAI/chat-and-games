@@ -1683,6 +1683,10 @@ function openGameModal(data) {
       closeGame: () => closeGameModal(),
     });
   } else if (data.game_type === "kopfkicker") {
+    // A rematch arrives as a fresh game_started and remounts the module -
+    // tear the previous instance down first, or its render loop and
+    // window key listeners keep running (and double every input).
+    if (kopfKickerInstance) kopfKickerInstance.destroy();
     kopfKickerInstance = window.KopfKicker.mount(stage, {
       me,
       players: data.players,
