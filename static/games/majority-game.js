@@ -141,7 +141,6 @@
     stageEl.innerHTML = `
       <div class="mg-root">
         <div class="mg-topbar">
-          <span class="mg-brand">👑 Mehrheitsmeister</span>
           <span class="mg-round-info" data-role="round-info"></span>
           <button type="button" class="icon-btn mg-sound-toggle" title="Sound an/aus" aria-label="Sound an/aus">${soundEnabled() ? "🔊" : "🔇"}</button>
         </div>

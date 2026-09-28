@@ -255,8 +255,11 @@
 <div id="game-modal" class="modal-overlay" hidden>
   <div class="modal game-modal">
     <div class="modal-head">
-      <h2 id="game-modal-title">🎮 Spiel</h2>
       <button type="button" id="game-close-btn" class="icon-btn" title="Spiel verlassen" aria-label="Spiel verlassen">✕</button>
+      <h2 id="game-modal-title">🎮 Spiel</h2>
+      <button type="button" id="game-chat-toggle" class="game-chat-toggle" title="Chat öffnen" aria-label="Chat öffnen">
+        💬<span id="game-chat-badge" class="game-chat-badge" hidden>0</span>
+      </button>
     </div>
 
     <div class="game-main">
@@ -286,10 +289,6 @@
         </form>
       </aside>
     </div>
-
-    <button type="button" id="game-chat-toggle" class="game-chat-toggle" title="Chat öffnen" aria-label="Chat öffnen">
-      💬 Chat <span id="game-chat-badge" class="game-chat-badge" hidden>0</span>
-    </button>
   </div>
 </div>
 

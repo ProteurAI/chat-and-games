@@ -226,7 +226,6 @@
     stageEl.innerHTML = `
       <div class="wai-root">
         <div class="wai-topbar">
-          <span class="wai-brand">🎭 Wer bin ich?</span>
           <span class="wai-round-info" data-role="round-info"></span>
           <button type="button" class="icon-btn wai-sound-toggle" title="Sound an/aus" aria-label="Sound an/aus">${soundEnabled() ? "🔊" : "🔇"}</button>
         </div>

@@ -140,7 +140,6 @@
     stageEl.innerHTML = `
       <div class="km-root">
         <div class="km-topbar">
-          <span class="km-brand">❤️ Kennst du mich?</span>
           <span class="km-round-info" data-role="round-info"></span>
           <button type="button" class="icon-btn km-sound-toggle" title="Sound an/aus" aria-label="Sound an/aus">${soundEnabled() ? "🔊" : "🔇"}</button>
         </div>

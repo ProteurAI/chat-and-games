@@ -235,7 +235,6 @@
     stageEl.innerHTML = `
       <div class="est-root">
         <div class="est-topbar">
-          <span class="est-brand">🎯 Schätzmeister</span>
           <button type="button" class="icon-btn est-sound-toggle" title="Sound an/aus" aria-label="Sound an/aus">${soundEnabled() ? "🔊" : "🔇"}</button>
         </div>
         <div class="est-stage"></div>
@@ -280,12 +279,24 @@
       if (form) form.hidden = true;
     }
 
+    // A single fixed font-size either wastes space on a short question or
+    // forces a scroll on a long one. clamp() already scales with the
+    // viewport; the length-based upper bound on top of that means a short
+    // question gets to be genuinely large while a long one never grows
+    // past a size that would push the input/submit button below the fold.
+    function questionFontSize(question) {
+      const len = (question || "").length;
+      if (len > 90) return "clamp(18px, 5vw, 22px)";
+      if (len > 50) return "clamp(20px, 5.5vw, 26px)";
+      return "clamp(22px, 6.5vw, 34px)";
+    }
+
     function renderQuestionHeader(state) {
       const cat = state.categoryEmoji ? `${state.categoryEmoji} ${escapeHtml(state.categoryLabel || "")}` : "";
       return `
         <div class="est-round-line">Runde ${state.roundIndex} / ${state.totalRounds}</div>
         <div class="est-category">${cat}</div>
-        <h2 class="est-question">${escapeHtml(state.question || "")}</h2>
+        <h2 class="est-question" style="font-size: ${questionFontSize(state.question)}">${escapeHtml(state.question || "")}</h2>
         ${state.unit ? `<div class="est-unit-hint">Schätzung in ${escapeHtml(state.unit)}</div>` : (state.type === "year" ? `<div class="est-unit-hint">Jahr</div>` : "")}
       `;
     }
