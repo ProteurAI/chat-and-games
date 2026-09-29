@@ -84,6 +84,14 @@ async function startApp() {
   el("sidebar-me").textContent = me.name.slice(0, 1).toUpperCase();
   el("sidebar-me").title = `Angemeldet als ${me.name}`;
   restoreGamesPanelCollapsed();
+  // MultiScreen / Table Mode (static/multiscreen/) - shares this one
+  // websocket; its own "ms_*" messages are routed to it in handleWsEvent.
+  window.MultiScreen.init({
+    send: (msg) => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg)); },
+    getMe: () => me,
+    toast,
+    onLobbyChange: () => renderGamesPanel(),
+  });
   await loadChannels();
   await loadGames();
   connectWebSocket();
@@ -179,6 +187,8 @@ function connectWebSocket() {
   ws.addEventListener("open", () => {
     wsReconnectDelay = 1000;
     if (currentChannelId) ws.send(JSON.stringify({ type: "join", channel_id: currentChannelId }));
+    // re-attaches this device to its MultiScreen session (same tile) after a drop
+    window.MultiScreen.onSocketOpen();
   });
 
   ws.addEventListener("message", (event) => {
@@ -195,6 +205,10 @@ function connectWebSocket() {
 }
 
 function handleWsEvent(data) {
+  if (typeof data.type === "string" && data.type.startsWith("ms_")) {
+    window.MultiScreen.handleMessage(data);
+    return;
+  }
   if (data.type === "message") {
     if (data.message.channel_id === currentChannelId) {
       renderMessage(data.message);
@@ -880,7 +894,13 @@ const GAME_META = {
   timliner: { category: "solo", desc: "Entspanntes Solo-Zeichenspiel." },
   kritzelmeister: { category: "party", desc: "Zeichnen und in Echtzeit erraten." },
   kopfkicker: { category: "arcade", desc: "Dein Gesicht. Dein Kopf. Dein Tor." },
+  mssnake: { category: "multiscreen", desc: "Eine Schlange. Viele Displays." },
 };
+// MultiScreen games aren't GameManager games (device-based sessions, see
+// backend/multiscreen/) - listed statically, launched via window.MultiScreen.
+const MULTISCREEN_ENTRIES = [
+  { game_type: "mssnake", msKey: "snake", name: "MultiScreen Snake", emoji: "🐍", min_players: 2, max_players: 12, multiscreen: true },
+];
 const GAME_CATEGORIES = [
   { key: "all", label: "Alle" },
   { key: "party", label: "Party" },
@@ -888,6 +908,7 @@ const GAME_CATEGORIES = [
   { key: "brettspiele", label: "Brettspiele" },
   { key: "wissen", label: "Wissen" },
   { key: "solo", label: "Solo" },
+  { key: "multiscreen", label: "📱 MultiScreen" },
 ];
 let activeGameCategory = "all";
 let gameSearchQuery = "";
@@ -897,6 +918,12 @@ let gameSearchQuery = "";
 // to be kicked off (some need a host-options modal first).
 function launchGameByType(gameType) {
   if (gameType === "timliner") { openTimLinerGame(); return; }
+  const msEntry = MULTISCREEN_ENTRIES.find((e) => e.game_type === gameType);
+  if (msEntry) {
+    recordRecentlyPlayed(msEntry.game_type, msEntry.name, msEntry.emoji);
+    window.MultiScreen.openEntry(msEntry.msKey);
+    return;
+  }
   if (gameType === "estimate") { window.EstimateGame.openHostOptionsModal((options) => startGame("estimate", options)); return; }
   if (gameType === "whoami") { window.WhoAmI.openHostOptionsModal((options) => startGame("whoami", options)); return; }
   if (gameType === "knowme") { window.KnowMe.openHostOptionsModal((options) => startGame("knowme", options)); return; }
@@ -985,6 +1012,24 @@ function renderGameSidebar() {
   timlinerLi.appendChild(tlInfo);
   timlinerLi.appendChild(timlinerBtn);
   typeList.appendChild(timlinerLi);
+
+  for (const ms of MULTISCREEN_ENTRIES) {
+    const meta = GAME_META[ms.game_type];
+    const li = document.createElement("li");
+    li.className = "game-type-item";
+    li.dataset.category = meta.category;
+    li.dataset.searchText = `${ms.name} multiscreen table ${meta.desc}`.toLowerCase();
+    li.innerHTML = `<span class="game-type-icon">${ms.emoji}</span>
+      <div class="game-type-info"><span class="game-type-name">${ms.name}</span><span class="game-type-desc">${meta.desc}</span>
+      <span class="game-type-badge">${ms.min_players}–${ms.max_players} Geräte · MULTISCREEN</span></div>`;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "game-type-play-btn";
+    btn.textContent = "▶ Starten";
+    btn.addEventListener("click", () => launchGameByType(ms.game_type));
+    li.appendChild(btn);
+    typeList.appendChild(li);
+  }
 
   applyGameFilters();
 
@@ -1104,7 +1149,7 @@ function allKnownGameEntries() {
   // server-driven gameTypes list (see renderGameSidebar) - add it once
   // more here so it still shows up in the panel's category groups.
   entries.push({ game_type: "timliner", name: "TimLiner", emoji: "🛷", min_players: 1, max_players: 1 });
-  return entries;
+  return entries.concat(MULTISCREEN_ENTRIES);
 }
 
 function buildCompactGameCard(gt) {
@@ -1121,7 +1166,13 @@ function buildCompactGameCard(gt) {
   name.textContent = gt.name;
   const count = document.createElement("span");
   count.className = "gp-card-count";
-  count.textContent = gt.max_players === 1 ? "Solo" : gt.min_players === gt.max_players ? `${gt.max_players} Spieler` : `${gt.min_players}–${gt.max_players} Spieler`;
+  count.textContent = gt.max_players === 1 ? "Solo" : gt.min_players === gt.max_players ? `${gt.max_players} Spieler` : `${gt.min_players}–${gt.max_players} ${gt.multiscreen ? "Geräte" : "Spieler"}`;
+  if (gt.multiscreen) {
+    const badge = document.createElement("span");
+    badge.className = "gp-card-badge";
+    badge.textContent = "MULTISCREEN";
+    count.appendChild(badge);
+  }
   info.appendChild(name);
   info.appendChild(count);
   const btn = document.createElement("button");
@@ -1129,7 +1180,7 @@ function buildCompactGameCard(gt) {
   btn.className = "gp-card-play";
   btn.textContent = "▶";
   btn.setAttribute("aria-label", `${gt.name} starten`);
-  btn.disabled = iAmInSession;
+  btn.disabled = iAmInSession && !gt.multiscreen;
   btn.addEventListener("click", () => launchGameByType(gt.game_type));
   card.appendChild(icon);
   card.appendChild(info);
@@ -1159,7 +1210,7 @@ function renderGamesPanelRecent() {
   const section = el("games-panel-recent-section");
   const list = el("games-panel-recent-list");
   const recent = loadRecentlyPlayed()
-    .filter((r) => r.gameType === "timliner" || gameTypes.some((gt) => gt.game_type === r.gameType))
+    .filter((r) => r.gameType === "timliner" || MULTISCREEN_ENTRIES.some((e) => e.game_type === r.gameType) || gameTypes.some((gt) => gt.game_type === r.gameType))
     .slice(0, 4);
   list.innerHTML = "";
   for (const r of recent) {
@@ -1216,7 +1267,21 @@ function renderGamesPanelLobbies() {
     }
     list.appendChild(li);
   }
-  section.hidden = gameSessions.length === 0;
+  // open MultiScreen tables (join without typing the code)
+  const msOpen = window.MultiScreen.lobby().filter((l) => l.joinable && !l.userIds.includes(me.id));
+  for (const l of msOpen) {
+    const li = document.createElement("li");
+    li.className = "game-lobby-item";
+    li.innerHTML = `<div class="game-lobby-title">${l.emoji} ${escapeHtml(l.hostName)} · ${escapeHtml(l.game)}</div>
+      <div class="game-lobby-count">${l.devices} ${l.devices === 1 ? "Gerät" : "Geräte"} · 📱 MultiScreen</div>`;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "Beitreten";
+    btn.addEventListener("click", () => window.MultiScreen.joinCode(l.code));
+    li.appendChild(btn);
+    list.appendChild(li);
+  }
+  section.hidden = gameSessions.length === 0 && msOpen.length === 0;
 }
 
 function renderGamesPanelCategories() {
