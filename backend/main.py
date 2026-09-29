@@ -17,6 +17,7 @@ from . import who_am_i as who_am_i_module
 from . import party as party_module
 from . import drawing_game as drawing_game_module
 from . import kopf_kicker as kopf_kicker_module
+from .multiscreen import session as multiscreen_module
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT_DIR / "static"
@@ -118,6 +119,9 @@ class ConnectionManager:
 manager = ConnectionManager()
 game_manager = games_module.GameManager(manager)
 party_manager = party_module.PartyManager(manager)
+# MultiScreen / Table Mode: device-based sessions (join code, layout,
+# reconnect) - independent of game_manager, see backend/multiscreen/.
+multiscreen_manager = multiscreen_module.MultiScreenManager(manager)
 
 
 # ---------- serialization ----------
@@ -519,11 +523,17 @@ async def websocket_endpoint(ws: WebSocket, token: Optional[str] = None):
             elif msg_type == "kopf_request_selfie":
                 await kopf_kicker_module.handle_request_selfie(game_manager, user, ws, raw)
 
+            # MultiScreen / Table Mode - own "ms_*" namespace, see
+            # backend/multiscreen/session.py for the protocol.
+            elif isinstance(msg_type, str) and msg_type.startswith("ms_"):
+                await multiscreen_module.route(multiscreen_manager, user, ws, raw)
+
     except WebSocketDisconnect:
         pass
     finally:
         await game_manager.handle_disconnect(ws)
         await party_manager.handle_disconnect(ws)
+        await multiscreen_manager.handle_disconnect(ws)
         manager.disconnect(ws)
         await manager.broadcast_all({"type": "presence", "online": manager.online_names()})
 
@@ -539,8 +549,12 @@ async def no_cache_static_assets(request, call_next):
     # revalidate via the existing ETag/Last-Modified on every load, so a
     # changed file is always picked up (an unchanged one is still a cheap
     # 304, not a full re-download).
+    # MultiScreen makes this critical rather than nice-to-have: several
+    # phones on one table must run the SAME client version, so every game/
+    # multiscreen script and stylesheet is revalidated too.
     response = await call_next(request)
-    if request.url.path in ("/", "/app.js", "/style.css", "/mobile-shell.js"):
+    path = request.url.path
+    if path in ("/", "/app.js", "/style.css", "/mobile-shell.js") or path.endswith((".js", ".css")):
         response.headers["Cache-Control"] = "no-cache"
     return response
 
