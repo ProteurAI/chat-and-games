@@ -426,9 +426,12 @@ def desktop_suite(browser, base, user, shots, engine):
        f"{n100} digs in {time.time() - t0:.1f}s, calm {calm} busy {busy}, one dig {per_dig and round(per_dig, 2)} ms, save {size100} B")
     shot(A, shots, "desktop_after100")
 
-    # ---- TEST 9: 500 digs - still valid geometry, no NaN
-    for k in range(20):
-        ang = -2.4 + (k % 10) * 0.52
+    # ---- TEST 9: 500 digs - still valid geometry, no NaN (strokes on stone
+    # move nothing and don't count, so keep going until 500 did)
+    for k in range(40):
+        if st(A)["digs"] >= 500:
+            break
+        ang = -2.4 + (k % 10) * 0.52 + (k // 10) * 0.17
         if A.evaluate(AIM_AT_MOUND, {"ang": ang, "back": 1.3}):
             A.evaluate(DIG_HERE, {"ang": ang, "n": 20})
     total = st(A)["digs"]
@@ -467,8 +470,8 @@ def desktop_suite(browser, base, user, shots, engine):
     dh2 = max(abs(a - b) for a, b in zip(before["h"], again["h"]))
     ok("T10 ... also after a full page reload", again["seed"] == before["seed"] and dh2 < 0.0015, f"max dh {dh2 * 1000:.2f} mm")
     doc = A.evaluate("() => JSON.parse(localStorage.getItem('goldrush.save'))")
-    ok("T10 save document: version 1, seed, money 0, tool hand, timestamps, compact terrain",
-       doc["saveVersion"] == 1 and doc["worldSeed"] == before["seed"] and doc["money"] == 0 and doc["tool"] == "hand"
+    ok("T10 save document: current version, seed, money as integer cents, tool hand, timestamps, compact terrain",
+       doc["saveVersion"] == 2 and doc["worldSeed"] == before["seed"] and isinstance(doc["economy"]["moneyCents"], int) and doc["tool"] == "hand"
        and doc["createdAt"] <= doc["updatedAt"] and doc["terrain"] and "settings" in doc,
        f"{len(json.dumps(doc))} B, terrain keys {list(doc['terrain'].keys())}")
 
