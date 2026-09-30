@@ -10,7 +10,8 @@
 // lobes + fractal detail + rock outcrops), so the same seed always gives
 // the same pile; saves only store what the player changed.
 
-import { fbm2, mulberry32, noise2, ridged2, smoothstep } from "./goldrush-noise.js";
+import { fbm2, hash3, mulberry32, noise2, ridged2, smoothstep } from "./goldrush-noise.js";
+import { MAT } from "./goldrush-materials.js";
 import { MaterialField } from "./goldrush-resources.js";
 import { decodeInt16Rle, encodeInt16Rle } from "./goldrush-save.js";
 
@@ -46,7 +47,11 @@ const PALETTE = {
   fresh: 0x7a5334, freshB: 0x694630, clay: 0x96603a, gravel: 0x857a6b,
   stone: 0x8e8272, stoneDark: 0x61574c, ground: 0xb59f7d, band: 0x8f5a38,
   moist: 0x5e4129, spill: 0x9a7f5d,
+  // per material: weathered surface / fresh cut
+  compactS: 0x7c5436, compactF: 0x684129, gravelS: 0x8a7f71, gravelL: 0xab9d88, gravelD: 0x5d544a, gravelF: 0x776b5d,
+  stoneS: 0x8d857a, stoneD: 0x5f5850, fill: 0x93714f,
 };
+const REC_MAX = 256;                                  // cells one stroke can touch (radius <= 0.9 m)
 
 export class DiggableTerrain {
   /**
@@ -75,7 +80,12 @@ export class DiggableTerrain {
     this.rill = new Float32Array(n);
     this._generate();
     this.height.set(this.base);
-    this.field = new MaterialField(this.seed, this);
+    this.field = new MaterialField(this.seed, this, FLOOR_Y);
+    this.stoneTop = this.field.stoneTop;             // uppermost stone body per column
+    this.stoneBot = this.field.stoneBot;
+    this.consumed = null;                            // set by the mining system (worked-over depth per column)
+    // what the last excavate() did per cell (the mining system books it)
+    this.rec = { n: 0, k: new Int32Array(REC_MAX), before: new Float32Array(REC_MAX), after: new Float32Array(REC_MAX) };
     this.heatmap = false;
     this.stride = 1;
     this.revision = 0;
@@ -223,7 +233,7 @@ export class DiggableTerrain {
           if (i > i0 && H[u - 1] + dd < m) m = H[u - 1] + dd;
           if (i < i1 && H[u + 1] + dd < m) m = H[u + 1] + dd;
         }
-        if (m < H[k] - 1e-7) { removed += H[k] - m; H[k] = m; mark(i, j); }
+        if (m < H[k] - 1e-7 && (m = this._stoneLimit(k, m)) < H[k] - 1e-7) { removed += H[k] - m; H[k] = m; mark(i, j); }
       }
     }
     for (let j = j1; j >= j0; j--) {
@@ -237,10 +247,21 @@ export class DiggableTerrain {
           if (i < i1 && H[d + 1] + dd < m) m = H[d + 1] + dd;
           if (i > i0 && H[d - 1] + dd < m) m = H[d - 1] + dd;
         }
-        if (m < H[k] - 1e-7) { removed += H[k] - m; H[k] = m; mark(i, j); }
+        if (m < H[k] - 1e-7 && (m = this._stoneLimit(k, m)) < H[k] - 1e-7) { removed += H[k] - m; H[k] = m; mark(i, j); }
       }
     }
     return removed;
+  }
+
+  // Lowest height column k may reach from its current height: a surface
+  // inside a stone body is rigid, one above it stops on the stone's top.
+  // (During generation there is no stone data yet.)
+  _stoneLimit(k, target) {
+    const top = this.stoneTop;
+    if (!top) return target;
+    const h = this.height[k];
+    if (h <= top[k] + 1e-4 && h >= this.stoneBot[k]) return h;
+    return h > top[k] && target < top[k] ? top[k] : target;
   }
 
   // ------------------------------------------------------------ meshes
@@ -265,6 +286,7 @@ export class DiggableTerrain {
       for (let cx = 0; cx < this.chunksPerSide; cx++) {
         const n = vpc * vpc;
         const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3), uv = new Float32Array(n * 2);
+        const matw = new Float32Array(n * 2);          // (gravel, stone) weight -> detail textures
         const i0 = cx * cc, j0 = cz * cc;
         for (let j = 0; j < vpc; j++) {
           for (let i = 0; i < vpc; i++) {
@@ -280,6 +302,7 @@ export class DiggableTerrain {
         geom.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
         geom.setAttribute("color", new THREE.BufferAttribute(col, 3));
         geom.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+        geom.setAttribute("aMat", new THREE.BufferAttribute(matw, 2));
         geom.setIndex(this.stride === 2 ? this.indexHalf : this.indexFull);
         const mesh = new THREE.Mesh(geom, this.material);
         mesh.castShadow = true;
@@ -300,6 +323,7 @@ export class DiggableTerrain {
     const j0 = Math.max(gj0, chunk.j0), j1 = Math.min(gj1, chunk.j0 + cc);
     if (i0 > i1 || j0 > j1) return false;
     const pos = chunk.geom.attributes.position.array, nor = chunk.geom.attributes.normal.array, col = chunk.geom.attributes.color.array;
+    const matw = chunk.geom.attributes.aMat.array;
     const last = vps - 1;
     const rgb = [0, 0, 0];
     for (let gj = j0; gj <= j1; gj++) {
@@ -316,41 +340,40 @@ export class DiggableTerrain {
         nor[v * 3 + 1] = inv;
         nor[v * 3 + 2] = nz * inv;
         const curv = (hl + hr + hd + hu - 4 * h) / (c * c);   // >0 concave, <0 ridge
-        this._colorAt(k, this.x0 + gi * c, this.z0 + gj * c, h, inv, curv, rgb);
+        const x = this.x0 + gi * c, z = this.z0 + gj * c;
+        const mat = this.field.materialAt(x, h - 0.02, z, k);
+        this._colorAt(k, x, z, h, inv, curv, mat, rgb);
         col[v * 3] = rgb[0];
         col[v * 3 + 1] = rgb[1];
         col[v * 3 + 2] = rgb[2];
+        matw[v * 2] = mat === MAT.GRAVEL ? 1 : 0;
+        matw[v * 2 + 1] = mat === MAT.STONE ? 1 : 0;
       }
     }
     chunk.geom.attributes.position.needsUpdate = true;
     chunk.geom.attributes.normal.needsUpdate = true;
     chunk.geom.attributes.color.needsUpdate = true;
+    chunk.geom.attributes.aMat.needsUpdate = true;
     chunk.geom.computeBoundingSphere();
     return true;
   }
 
-  _colorAt(k, x, z, h, ny, curv, out) {
+  _colorAt(k, x, z, h, ny, curv, mat, out) {
     const P = this.pal, s = this.seed;
     const mix = (a, b, t) => { out[0] = a[0] + (b[0] - a[0]) * t; out[1] = a[1] + (b[1] - a[1]) * t; out[2] = a[2] + (b[2] - a[2]) * t; };
     const blend = (b, t) => { out[0] += (b[0] - out[0]) * t; out[1] += (b[1] - out[1]) * t; out[2] += (b[2] - out[2]) * t; };
-    if (this.heatmap) {
-      const g = this.field.sample(x, h - 0.05, z, this._sample).goldDensity;
-      const t = Math.min(1, g * 2.2);
-      if (t < 0.5) mix([0.02, 0.05, 0.25], [0.05, 0.6, 0.15], t * 2);
-      else mix([0.05, 0.6, 0.15], [1.0, 0.75, 0.05], (t - 0.5) * 2);
-      return;
-    }
+    if (this.heatmap) { this._heatColor(k, x, z, h, mat, out); return; }
     const dug = this.base[k] - h;
     const n1 = noise2(x * 0.33, z * 0.33, s + 101) * 0.5 + 0.5;
     const n2 = noise2(x * 2.1, z * 2.1, s + 131);
+    const grain = hash3(Math.round(x * 8), 7, Math.round(z * 8), s + 191);     // per-vertex pebble speckle
     const cut = smoothstep(CHANGED_EPS, 0.09, dug);
     if (cut >= 1) {
-      // a fresh cut: moist darker soil, clay deeper down, gravel below ground
-      mix(P.fresh, P.freshB, n1);
-      blend(P.clay, smoothstep(0.35, 1.9, dug) * 0.7);
-      if (h < 0) blend(P.gravel, smoothstep(0, -0.8, h) * 0.75);
-      const st = this.field.sample(x, h - 0.03, z, this._sample).stone;
-      if (st > 0.35) blend(n2 > 0 ? P.stone : P.stoneDark, smoothstep(0.35, 0.8, st) * 0.9);
+      // a fresh cut shows the material itself, still moist
+      if (mat === MAT.STONE) mix(P.stoneS, P.stoneD, 0.35 + n1 * 0.4);
+      else if (mat === MAT.GRAVEL) mix(P.gravelF, grain > 0.5 ? P.gravelL : P.gravelD, Math.abs(grain - 0.5) * 1.3);
+      else if (mat === MAT.COMPACT) { mix(P.compactF, P.clay, smoothstep(0.35, 1.9, dug) * 0.6 * n1); }
+      else { mix(P.fresh, P.freshB, n1); blend(P.clay, smoothstep(0.35, 1.9, dug) * 0.5); }
     } else {
       mix(P.dustA, P.dustB, n1);
       blend(P.band, smoothstep(-0.1, 0.7, noise2(x * 0.11 + h * 0.3, z * 0.11, s + 171)) * 0.4);   // loads of redder soil
@@ -361,17 +384,38 @@ export class DiggableTerrain {
       blend(P.moist, smoothstep(1.8, 0.2, h) * smoothstep(0.02, 0.25, h) * 0.45);  // the toe stays moist and dark
       const specks = noise2(x * 3.7, z * 3.7, s + 161);
       if (specks > 0.62) blend(P.stone, (specks - 0.62) * 1.4);                      // scattered pebbles
-      const r = this.rock[k];
-      if (r > 0.05) blend(n2 > 0.1 ? P.stone : P.stoneDark, Math.min(0.85, r * 1.2) * (0.75 + 0.25 * noise2(x * 6.3, z * 6.3, s + 181)));
+      // what the pile is made of shows through the dust
+      if (mat === MAT.GRAVEL) { blend(P.gravelS, 0.65); blend(grain > 0.5 ? P.gravelL : P.gravelD, Math.abs(grain - 0.5) * 0.9); }
+      else if (mat === MAT.COMPACT) blend(P.compactS, 0.42);
+      else if (mat === MAT.STONE) blend(n2 > 0.1 ? P.stoneS : P.stoneD, 0.88 * (0.8 + 0.2 * noise2(x * 6.3, z * 6.3, s + 181)));
+      else if (this.rock[k] > 0.05) blend(P.stone, Math.min(0.5, this.rock[k]));   // stony, weathered ground
       blend(P.spill, 1 - smoothstep(0.02, 0.22, h));                                // spilled material around the pile
       blend(P.ground, smoothstep(0.02, 0, h) * 0.7);
-      // shallow slides / scraped rims fade into the fresh-cut colour
-      if (cut > 0) blend(P.fresh, cut);
+      if (cut > 0) blend(P.fresh, cut);                                            // shallow slides / scraped rims
     }
+    // worked-over loose fill (slid into a hole): lighter and mixed
+    const C = this.consumed;
+    if (C && h - C[k] > 0.01) blend(P.fill, smoothstep(0.01, 0.06, h - C[k]) * 0.55);
     // cavities darker, crests lighter; fine grain (pits stay readable)
     const shade = Math.min(1.1, Math.max(0.84, 1 - curv * 0.035)) * (1 + n2 * 0.05);
     out[0] *= shade; out[1] *= shade; out[2] *= shade;
   }
+
+  // debug heatmap: gold density of the ground at the surface, in bands
+  _heatColor(k, x, z, h, mat, out) {
+    const y = h - 0.03;
+    const g = mat === MAT.STONE ? -1 : this.field.goldDensityAt(x, y, z, mat, this.base[k] - y);
+    const bands = [[0.04, 0.05, 0.14], [0.05, 0.32, 0.1], [0.62, 0.52, 0.04], [0.95, 0.3, 0.03]];
+    if (g < 0) { out[0] = out[1] = out[2] = 0.035; }
+    else {
+      const t = g < 0.08 ? g / 0.08 * 0.3 : g < 0.2 ? 1 + (g - 0.08) / 0.12 * 0.3 : g < 0.45 ? 2 + (g - 0.2) / 0.25 * 0.3 : 3;
+      const b = bands[Math.floor(t)], f = t - Math.floor(t);
+      out[0] = b[0] * (1 + f); out[1] = b[1] * (1 + f); out[2] = b[2] * (1 + f);
+    }
+    const C = this.consumed;
+    if (C && h - C[k] > 0.01) { out[0] *= 0.45; out[1] *= 0.45; out[2] *= 0.45; }    // worked-over fill: nothing left
+  }
+
 
   _refresh(gi0, gi1, gj0, gj1) {
     const cc = this.chunkCells;
@@ -450,7 +494,15 @@ export class DiggableTerrain {
    * Lower the surface around (x, z) with a smooth kernel.
    * @returns { removed: m^3, cells, chunks } or null when not diggable
    */
-  excavate(x, z, radius, depth) {
+  // One tool stroke at (x, z): lowers a smooth round bite. eff(k, x, y, z)
+  // says how much of the full bite comes off in the material at that cell
+  // (0 = nothing, e.g. stone for the bare hand). Every changed cell lands in
+  // this.rec with its height before and after the stroke (before any
+  // collapse), so the mining system can book exactly what the tool took.
+  // onCut(rec) runs right after the bite, before anything slides.
+  excavate(x, z, radius, depth, eff, onCut) {
+    const rec = this.rec;
+    rec.n = 0;
     if (!this.inDigArea(x, z)) return null;
     const c = this.cell, vps = this.vps, H = this.height, r2 = radius * radius;
     const ci = (x - this.x0) / c, cj = (z - this.z0) / c, rr = Math.ceil(radius / c) + 1;
@@ -459,23 +511,33 @@ export class DiggableTerrain {
     const j0 = Math.max(lo, Math.floor(cj - rr)), j1 = Math.min(hi, Math.ceil(cj + rr));
     let removed = 0, cells = 0;
     for (let j = j0; j <= j1; j++) {
-      const dz = this.z0 + j * c - z;
+      const cz = this.z0 + j * c, dz = cz - z;
       for (let i = i0; i <= i1; i++) {
-        const dx = this.x0 + i * c - x, d2 = dx * dx + dz * dz;
+        const cx = this.x0 + i * c, dx = cx - x, d2 = dx * dx + dz * dz;
         if (d2 >= r2) continue;
         let w = 1 - d2 / r2;
         w *= w;
         const k = j * vps + i, old = H[k];
-        const nh = Math.max(FLOOR_Y, old - depth * w);
-        if (nh < old) { H[k] = nh; removed += old - nh; cells++; }
+        const f = eff ? eff(k, cx, old, cz) : 1;
+        if (!(f > 0)) continue;
+        const nh = Math.max(FLOOR_Y, this._stoneLimit(k, old - depth * w * f));
+        if (nh < old - 1e-6 && rec.n < REC_MAX) {
+          H[k] = nh;
+          rec.k[rec.n] = k; rec.before[rec.n] = old; rec.after[rec.n] = nh; rec.n++;
+          removed += old - nh;
+          cells++;
+        }
       }
     }
     if (!cells) return { removed: 0, cells: 0, chunks: 0 };
+    if (onCut) onCut(rec);
     const win = this._relax(i0, i1, j0, j1);
+    this._quantize(win.i0, win.i1, win.j0, win.j1);
     const chunks = this._refresh(win.i0 - 2, win.i1 + 2, win.j0 - 2, win.j1 + 2);
     this.revision++;
     return { removed: removed * c * c, cells, chunks };
   }
+
 
   // Loose material collapses: walls steeper than the angle of repose come
   // down, and what came down lands in the hole (volume is kept - digging
@@ -566,6 +628,25 @@ export class DiggableTerrain {
   }
 
   // -> true when applied; false when the data doesn't fit this terrain
+  // Changed heights are kept in exactly the form a save stores (original
+  // mound + whole millimetres), so playing on and reloading a save always
+  // continue from the very same numbers - no sub-millimetre drift that could
+  // make a stroke come out differently after a reload.
+  _quantize(i0, i1, j0, j1) {
+    const vps = this.vps;
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const k = j * vps + i;
+      if (this.height[k] !== this.base[k]) this.height[k] = this.restoredHeight(k);
+    }
+  }
+
+  // the height column k will have after serialize() -> deserialize()
+  restoredHeight(k) {
+    const d = Math.round((this.height[k] - this.base[k]) * 1000);
+    const v = d > 32767 ? 32767 : d < -32767 ? -32767 : d;
+    return Math.fround(Math.max(FLOOR_Y, this.base[k] + v / 1000));
+  }
+
   deserialize(t) {
     if (!t || t.gen !== TERRAIN_GEN || t.cols !== this.cols || Math.abs(t.cell - this.cell) > 1e-9 || t.encoding !== "rle-zigzag-varint-b64") return false;
     const q = decodeInt16Rle(t.data, this.height.length);

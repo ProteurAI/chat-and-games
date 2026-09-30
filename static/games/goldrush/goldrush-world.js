@@ -19,7 +19,7 @@ export const MACHINE_ZONES = [
   { id: "B", x: -18.5, z: -9, w: 6, d: 8, label: "ZONE B" },
   { id: "C", x: 15.5, z: 13, w: 7, d: 5, label: "ZONE C" },
 ];
-const SUN_DIR = [-0.74, 0.6, 0.36];                                     // towards the sun (west, low-ish)
+export const SUN_DIR = [-0.74, 0.6, 0.36];                                     // towards the sun (west, low-ish)
 const FOG_COLOR = 0xd3c19f;
 
 // --------------------------------------------------------------- textures
@@ -75,6 +75,54 @@ function soilDetail(ctx, size, seed) {
       ctx.ellipse(x + ox, y + oy, r, r * (0.6 + rng() * 0.4), rng() * 3, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+}
+
+// gravel detail (multiplies the vertex colours where the ground is gravel):
+// packed round pebbles, light and dark, with a little shading each
+function gravelDetail(ctx, size, seed) {
+  const rng = mulberry32(seed);
+  ctx.fillStyle = "rgb(150,146,140)";
+  ctx.fillRect(0, 0, size, size);
+  for (let p = 0; p < 900; p++) {
+    const x = rng() * size, y = rng() * size, r = 1.6 + rng() * rng() * 6.5;
+    const l = 150 + rng() * 105, rot = rng() * 3;
+    for (const [ox, oy] of [[0, 0], [size, 0], [-size, 0], [0, size], [0, -size]]) {
+      ctx.fillStyle = "rgba(40,34,28,0.35)";                              // contact shadow
+      ctx.beginPath(); ctx.ellipse(x + ox + 0.8, y + oy + 1, r, r * 0.75, rot, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = `rgb(${l},${l - 4},${l - 12})`;
+      ctx.beginPath(); ctx.ellipse(x + ox, y + oy, r, r * 0.75, rot, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(255,250,240,0.28)";                          // sun-side highlight
+      ctx.beginPath(); ctx.ellipse(x + ox - r * 0.3, y + oy - r * 0.25, r * 0.45, r * 0.3, rot, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
+// rock detail: grain, a few cracks, pale lichen specks
+function rockDetail(ctx, size, seed) {
+  const img = ctx.createImageData(size, size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size, v = y / size;
+      const g = 196 + (periodicFbm(u, v, 5, seed, 5) - 0.5) * 90;
+      const i = (y * size + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = Math.max(0, Math.min(255, g));
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const rng = mulberry32(seed + 1);
+  ctx.strokeStyle = "rgba(55,48,42,0.55)";
+  for (let c = 0; c < 9; c++) {
+    let x = rng() * size, y = rng() * size;
+    ctx.lineWidth = 0.7 + rng() * 1.3;
+    ctx.beginPath(); ctx.moveTo(x, y);
+    for (let s = 0; s < 7; s++) { x += (rng() - 0.5) * 34; y += (rng() - 0.3) * 26; ctx.lineTo(x, y); }
+    ctx.stroke();
+  }
+  for (let l = 0; l < 140; l++) {
+    ctx.fillStyle = `rgba(235,228,200,${0.2 + rng() * 0.3})`;
+    ctx.beginPath(); ctx.arc(rng() * size, rng() * size, 0.6 + rng() * 1.8, 0, Math.PI * 2); ctx.fill();
   }
 }
 
@@ -152,6 +200,7 @@ export class GoldRushWorld {
     this._props();
     this._machineZones();
     this._boulders();
+    this._pileBoulders();
     this._grass();
     this._distantRidges();
   }
@@ -163,6 +212,8 @@ export class GoldRushWorld {
     const THREE = this.THREE, a = this.assets;
     this.soilTex = a.procedural("tex:soil", () => canvasTexture(THREE, 256, (ctx, s) => soilDetail(ctx, s, this.seed + 7)));
     this.woodTex = a.procedural("tex:wood", () => canvasTexture(THREE, 256, (ctx, s) => woodPlanks(ctx, s, this.seed + 11)));
+    this.gravelTex = a.procedural("tex:gravel", () => canvasTexture(THREE, 256, (ctx, s) => gravelDetail(ctx, s, this.seed + 13)));
+    this.rockTex = a.procedural("tex:rock", () => canvasTexture(THREE, 256, (ctx, s) => rockDetail(ctx, s, this.seed + 17)));
   }
 
   _terrain() {
@@ -170,6 +221,24 @@ export class GoldRushWorld {
     this.terrainMaterial = this.track(new THREE.MeshStandardMaterial({
       vertexColors: true, map: this.soilTex, bumpMap: this.soilTex, bumpScale: 1.4, roughness: 0.97, metalness: 0,
     }));
+    // per-vertex material weights (gravel, stone) pick the detail texture:
+    // soil grain, packed pebbles or cracked rock - the pile shows what it is made of
+    const gravel = this.gravelTex, rock = this.rockTex;
+    this.terrainMaterial.onBeforeCompile = (shader) => {
+      shader.uniforms.uGravel = { value: gravel };
+      shader.uniforms.uRock = { value: rock };
+      shader.vertexShader = shader.vertexShader
+        .replace("#include <common>", "#include <common>\nattribute vec2 aMat;\nvarying vec2 vMat;")
+        .replace("#include <uv_vertex>", "#include <uv_vertex>\nvMat = aMat;");
+      shader.fragmentShader = shader.fragmentShader
+        .replace("#include <common>", "#include <common>\nuniform sampler2D uGravel;\nuniform sampler2D uRock;\nvarying vec2 vMat;")
+        .replace("#include <map_fragment>", `
+          vec3 soilT = texture2D(map, vMapUv).rgb;
+          vec3 gravT = texture2D(uGravel, vMapUv * 1.7).rgb;
+          vec3 rockT = texture2D(uRock, vMapUv * 0.8).rgb;
+          diffuseColor.rgb *= mix(mix(soilT, gravT, clamp(vMat.x, 0.0, 1.0)), rockT, clamp(vMat.y, 0.0, 1.0));`);
+    };
+    this.terrainMaterial.customProgramCacheKey = () => "goldrush-terrain-v2";
     this.terrain = new DiggableTerrain(THREE, {
       seed: this.seed, center: { x: 0, z: -6 }, size: 30, cell: 0.125, chunkCells: 30,
       moundCenter: MOUND_CENTER, material: this.terrainMaterial,
@@ -581,6 +650,77 @@ export class GoldRushWorld {
 
   // ------------------------------------------------------------ runtime
 
+  // boulders sticking out of the pile (from the material field: their
+  // bodies are stone there, the hand cannot dig them out)
+  _pileBoulders() {
+    const THREE = this.THREE, list = this.terrain.field.boulders;
+    if (!list.length) return;
+    const mat = this.track(new THREE.MeshStandardMaterial({ color: 0x9a9185, map: this.rockTex, roughness: 0.92, flatShading: true }));
+    const variants = [0, 1, 2, 3].map((vi) => {
+      const geo = this.track(new THREE.IcosahedronGeometry(1, 2));
+      const p = geo.attributes.position;
+      for (let v = 0; v < p.count; v++) {
+        const x = p.getX(v), y = p.getY(v), z = p.getZ(v);
+        const k = 0.86 + 0.2 * (noise2(x * 1.7 + vi * 5, z * 1.7 + y, this.seed + 311 + vi) * 0.5 + 0.5) + 0.06 * noise2(x * 5 + vi, y * 5 - z, this.seed + 313);
+        p.setXYZ(v, x * k * (1.08 + (vi % 2) * 0.1), y * k * (0.82 + (vi % 3) * 0.06), z * k);
+      }
+      geo.computeVertexNormals();
+      return geo;
+    });
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), pos = new THREE.Vector3();
+    const byVariant = [[], [], [], []];
+    list.forEach((b) => byVariant[b.variant].push(b));
+    this.pileBoulders = [];
+    byVariant.forEach((items, vi) => {
+      if (!items.length) return;
+      const im = new THREE.InstancedMesh(variants[vi], mat, items.length);
+      items.forEach((b, n) => {
+        e.set(0.25 * Math.sin(b.rot * 3), b.rot, 0.2 * Math.cos(b.rot * 2));
+        m.compose(pos.set(b.x, b.y, b.z), q.setFromEuler(e), sc.setScalar(b.r));
+        im.setMatrixAt(n, m);
+        this.colliders.push({ type: "circle", x: b.x, z: b.z, r: b.r * 0.85 });
+      });
+      im.castShadow = true;
+      im.receiveShadow = true;
+      im.name = "pile-boulders";
+      this.scene.add(im);
+      this.pileBoulders.push(im);
+    });
+  }
+
+  // image-based light for metals (gold!): a soft, warm version of this
+  // place - hazy sky, the sun, sunlit sand - pre-filtered once. (The real
+  // deep-blue sky would tint gold green.)
+  buildEnvironment(renderer) {
+    const THREE = this.THREE;
+    const pm = new THREE.PMREMGenerator(renderer);
+    const env = new THREE.Scene();
+    const geo = new THREE.SphereGeometry(100, 32, 16);
+    const mat = new THREE.ShaderMaterial({
+      side: THREE.BackSide, depthWrite: false,
+      uniforms: { uSun: { value: new THREE.Vector3(...SUN_DIR).normalize() } },
+      vertexShader: `varying vec3 vDir; void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `
+        uniform vec3 uSun; varying vec3 vDir;
+        void main() {
+          vec3 d = normalize(vDir);
+          vec3 sky = mix(vec3(0.92, 0.84, 0.7), vec3(0.62, 0.7, 0.8), smoothstep(0.0, 0.9, d.y));
+          vec3 ground = mix(vec3(0.74, 0.6, 0.42), vec3(0.4, 0.3, 0.2), smoothstep(0.0, -0.6, d.y));
+          vec3 col = d.y >= 0.0 ? sky : ground;
+          float s = max(dot(d, uSun), 0.0);
+          col += vec3(1.0, 0.9, 0.7) * (pow(s, 40.0) * 2.5 + pow(s, 400.0) * 20.0);
+          gl_FragColor = vec4(col, 1.0);
+        }`,
+    });
+    env.add(new THREE.Mesh(geo, mat));
+    this.envRT = pm.fromScene(env, 0, 0.1, 1000);
+    this.envMap = this.envRT.texture;
+    geo.dispose();
+    mat.dispose();
+    pm.dispose();
+    return this.envMap;
+  }
+
   applyQuality(q) {
     const sun = this.sun;
     if (sun.shadow.mapSize.x !== q.shadowSize) {
@@ -629,6 +769,7 @@ export class GoldRushWorld {
 
   dispose() {
     if (this.terrain) this.terrain.dispose();
+    if (this.envRT) { this.envRT.dispose(); this.envRT = null; }
     for (const d of this.disposables) { try { d.dispose(); } catch (e) { /* ignore */ } }
     this.disposables = [];
     this.scene.clear();
