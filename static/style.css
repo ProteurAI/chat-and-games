@@ -403,6 +403,7 @@ input, textarea { font-family: inherit; }
   border-radius: var(--radius-sm); background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger);
   font-size: var(--text-sm); font-weight: var(--font-medium); text-align: left;
 }
+.login-error--info { background: color-mix(in srgb, var(--info) 12%, transparent); color: var(--text-primary); }
 .login-foot { margin: 0; color: var(--text-muted); font-size: var(--text-xs); }
 
 /* ============================================================================

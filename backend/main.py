@@ -333,7 +333,11 @@ async def get_upload(filename: str):
 async def websocket_endpoint(ws: WebSocket, token: Optional[str] = None):
     user = get_user_by_token(token)
     if not user:
-        await ws.close(code=4401)
+        # accept first: a close before accept() becomes a failed handshake
+        # (browsers only see 1006, indistinguishable from a network drop),
+        # after accept() the client really receives 4401 = "session invalid"
+        await ws.accept()
+        await ws.close(code=4401, reason="invalid session")
         return
 
     await manager.connect(ws, user)

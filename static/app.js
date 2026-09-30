@@ -1,7 +1,17 @@
 const QUICK_EMOJIS = ["👍", "😂", "❤️", "🔥"];
 
-let token = localStorage.getItem("instachat_token");
-let me = JSON.parse(localStorage.getItem("instachat_user") || "null");
+// Auth: only these keys belong to the login session. Everything else in
+// localStorage (theme, games panel, MultiScreen device id + calibration,
+// D-pad, sound, ...) is a device preference and survives a logout or an
+// expired session.
+const AUTH_STORAGE_KEYS = ["instachat_token", "instachat_user"];
+const SESSION_EXPIRED_FLAG = "cg_session_expired";   // sessionStorage: notice for the next login screen
+const SESSION_EXPIRED_TEXT = "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.";
+function readStored(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+
+let token = readStored("instachat_token");
+let me = (() => { try { return JSON.parse(readStored("instachat_user") || "null"); } catch (e) { return null; } })();
+let sessionEnded = false;          // set once per page: logout or a session the server rejected
 let channels = [];
 let currentChannelId = null;
 let ws = null;
@@ -104,6 +114,13 @@ async function api(path, options = {}) {
   } catch (e) {
     throw new Error(navigator.onLine === false ? "Du bist offline." : "Keine Verbindung zum Server.");
   }
+  if (res.status === 401 && headers["X-Auth-Token"]) {
+    // the server doesn't know this token (any more) - never retry with it
+    handleInvalidSession(`HTTP 401 on ${path}`);
+    const e = new Error(SESSION_EXPIRED_TEXT);
+    e.authError = true;
+    throw e;
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     // FastAPI validation errors come back as a list of objects - never
@@ -122,12 +139,14 @@ el("login-form").addEventListener("submit", async (e) => {
   const errBox = el("login-error");
   const btn = el("login-submit");
   errBox.hidden = true;
+  errBox.classList.remove("login-error--info");
   btn.disabled = true;
   btn.innerHTML = `<span class="spinner" aria-hidden="true"></span>Verbinde …`;
   try {
     const data = await api("/api/login", { method: "POST", body: JSON.stringify({ code, name }) });
     token = data.token;
     me = data.user;
+    sessionEnded = false;
     localStorage.setItem("instachat_token", token);
     localStorage.setItem("instachat_user", JSON.stringify(me));
     await startApp();
@@ -162,21 +181,82 @@ async function startApp() {
     onLobbyChange: () => renderGamesPanel(),
   });
   AppViewport.refresh();
+  await loadInitialData();
+  if (sessionEnded) return;        // the server rejected the stored session
+  connectWebSocket();
+  renderGamesPanel();
+}
+
+// Channels + game list. A network failure here (server asleep, offline)
+// keeps the session and is retried once the socket connects; an auth
+// failure has already ended the session inside api().
+let initialDataLoaded = false;
+async function loadInitialData() {
   try {
     await loadChannels();
     await loadGames();
+    initialDataLoaded = true;
   } catch (err) {
-    toast(err.message, "error");
+    if (!err.authError) toast(err.message, "error");
   }
-  connectWebSocket();
-  renderGamesPanel();
+}
+
+// One exit for a login session: an explicit logout and a session the
+// server no longer accepts (unknown token, e.g. after the database was
+// reset by a redeploy) go the same way. Stops reconnecting for good,
+// closes the socket, removes ONLY the auth keys and starts a clean page -
+// the one state guaranteed to hold nothing of the old session (channels,
+// online list, open game/party/MultiScreen, listeners, timers). Runs once.
+function endSession({ expired = false, reason = "" } = {}) {
+  if (sessionEnded) return;
+  sessionEnded = true;
+  if (reason) console.info(`[session] ended: ${reason}`);
+  clearTimeout(wsReconnectTimer);
+  wsReconnectTimer = null;
+  clearTimeout(connSlowTimer);
+  clearTimeout(connOkTimer);
+  const socket = ws;
+  ws = null;                                   // its close handler must not reconnect
+  if (socket) { try { socket.close(1000, "session ended"); } catch (e) { /* ignore */ } }
+  token = null;
+  me = null;
+  for (const key of AUTH_STORAGE_KEYS) { try { localStorage.removeItem(key); } catch (e) { /* ignore */ } }
+  if (expired) { try { sessionStorage.setItem(SESSION_EXPIRED_FLAG, "1"); } catch (e) { /* ignore */ } }
+  if (AUTH_STORAGE_KEYS.every((key) => readStored(key) === null)) {
+    location.reload();
+  } else {
+    // storage refuses to forget the token: never reload into it again
+    el("app").hidden = true;
+    showLogin();
+    if (expired) showLoginNotice(SESSION_EXPIRED_TEXT);
+  }
+}
+
+function handleInvalidSession(reason) {
+  endSession({ expired: true, reason });
+}
+
+function showLoginNotice(text) {
+  const box = el("login-error");
+  box.textContent = text;
+  box.classList.add("login-error--info");
+  box.hidden = false;
+}
+
+// After an expired session the reload lands here: tell the user why.
+function showExpiredNoticeOnce() {
+  let flagged = false;
+  try {
+    flagged = sessionStorage.getItem(SESSION_EXPIRED_FLAG) === "1";
+    sessionStorage.removeItem(SESSION_EXPIRED_FLAG);
+  } catch (e) { /* ignore */ }
+  if (flagged) showLoginNotice(SESSION_EXPIRED_TEXT);
 }
 
 el("logout-btn").addEventListener("click", async () => {
   const ok = await confirmDialog({ title: "Abmelden?", text: "Du kannst dich jederzeit wieder mit deinem Namen anmelden.", confirmLabel: "Abmelden" });
   if (!ok) return;
-  try { localStorage.removeItem("instachat_token"); localStorage.removeItem("instachat_user"); } catch (e) { /* ignore */ }
-  location.reload();
+  endSession({ reason: "logout" });
 });
 
 // ---------- channels ----------
@@ -396,9 +476,22 @@ function wsIsOpen() { return !!ws && ws.readyState === WebSocket.OPEN; }
 // open for a while and ws.send() would silently buffer into the void.
 function canSend() { return wsIsOpen() && connState !== "offline" && navigator.onLine !== false; }
 
+// A socket that keeps failing is almost always the network or a sleeping
+// server (keep the session, keep retrying) - one cheap REST check tells it
+// apart from a session the server no longer knows (401 -> api() ends it).
+let wsFailures = 0;
+let sessionCheckRunning = false;
+async function verifySession() {
+  if (sessionCheckRunning || sessionEnded || navigator.onLine === false) return;
+  sessionCheckRunning = true;
+  try { await api("/api/me"); } catch (e) { /* network trouble: keep retrying */ }
+  finally { sessionCheckRunning = false; }
+}
+
 function connectWebSocket() {
   clearTimeout(wsReconnectTimer);
   wsReconnectTimer = null;
+  if (!token || sessionEnded) return;
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const socket = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`);
   ws = socket;
@@ -410,6 +503,8 @@ function connectWebSocket() {
   socket.addEventListener("open", () => {
     if (ws !== socket) return;
     wsReconnectDelay = 1000;
+    wsFailures = 0;
+    if (!initialDataLoaded) loadInitialData().then(() => { if (!sessionEnded) renderGamesPanel(); });
     clearTimeout(connSlowTimer);
     const recovered = wsEverOpened;
     wsEverOpened = true;
@@ -427,9 +522,15 @@ function connectWebSocket() {
     handleWsEvent(data);
   });
 
-  socket.addEventListener("close", () => {
+  socket.addEventListener("close", (event) => {
     if (ws !== socket) return;
+    if (event.code === 4401) {           // the server rejected this token: never reconnect with it
+      handleInvalidSession("WebSocket closed with 4401");
+      return;
+    }
     if (wsEverOpened) setConnState(navigator.onLine === false || connState === "offline" ? "offline" : "reconnecting");
+    wsFailures += 1;
+    if (wsFailures >= 2) verifySession();
     wsReconnectTimer = setTimeout(connectWebSocket, wsReconnectDelay);
     wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, 15000);
   });
@@ -3700,7 +3801,7 @@ let toastTimer = null;
 const TOAST_ICONS = { info: "i-info", success: "i-check", warning: "i-alert", error: "i-alert" };
 function toast(text, type = "info", opts = {}) {
   const region = el("toast");
-  if (!region) return;
+  if (!region || sessionEnded) return;
   const kind = TOAST_ICONS[type] ? type : "info";
   const t = document.createElement("div");
   t.className = `toast toast--${kind}`;
@@ -3765,11 +3866,11 @@ window.confirmDialog = confirmDialog;
 
 // ---------- boot ----------
 if (token && me) {
-  startApp().catch(() => {
-    localStorage.removeItem("instachat_token");
-    localStorage.removeItem("instachat_user");
-    showLogin();
-  });
+  // an unexpected failure while starting (not an expired session - that
+  // is handled inside): back to a clean login, like before
+  startApp().catch((err) => { console.error(err); endSession({ reason: `start failed: ${err && err.message}` }); });
 } else {
+  if (token || me) AUTH_STORAGE_KEYS.forEach((key) => { try { localStorage.removeItem(key); } catch (e) { /* ignore */ } });
   showLogin();
+  showExpiredNoticeOnce();
 }
