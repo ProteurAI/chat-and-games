@@ -104,7 +104,8 @@ class GoldRushShell {
           <label class="gr-toggle"><input type="checkbox" data-role="headbob" /><span>Kopfbewegung beim Laufen</span></label>
           <label class="gr-toggle"><input type="checkbox" data-role="reduced" /><span>Reduzierte Bewegung <em>(kein Wippen, kein Rückstoß, keine HUD-Animationen)</em></span></label>
           <div class="gr-sub" data-role="bob-note" hidden>Dein System wünscht reduzierte Bewegung – sie ist hier immer an.</div>
-          <label class="gr-toggle"><input type="checkbox" data-role="sound" disabled /><span>Sound <em>(folgt mit den ersten Werkzeugen)</em></span></label>
+          <label class="gr-toggle"><input type="checkbox" data-role="sound" /><span>Sound</span></label>
+          <label class="gr-toggle" data-role="vibration-row" hidden><input type="checkbox" data-role="vibration" /><span>Vibration <em>(dezent, bei Treffern und Funden)</em></span></label>
           <div class="gr-danger-zone">
             <button type="button" class="ghost-btn gr-reset" data-act="reset">Spielstand zurücksetzen …</button>
             <div class="gr-confirm" hidden>
@@ -159,6 +160,8 @@ class GoldRushShell {
       this.game.settings.headBob = e.target.checked;
       this.game.dirty = true;
     });
+    this.on(root.querySelector("[data-role=sound]"), "change", (e) => { if (this.game) this.game.setSound(e.target.checked); });
+    this.on(root.querySelector("[data-role=vibration]"), "change", (e) => { if (this.game) this.game.setVibration(e.target.checked); });
     this.on(root.querySelector("[data-role=reduced]"), "change", (e) => {
       if (!this.game) return;
       this.game.setReducedMotion(e.target.checked);
@@ -198,7 +201,7 @@ class GoldRushShell {
       return;
     }
     if (this.closed) return;
-    if (!doc) doc = engine.newWorldDoc(newSeed());
+    if (!doc) doc = engine.newWorldDoc(this._testSeed() ?? newSeed());
     this.engine = engine;
     const game = (this.game = new engine.GoldRushGame(this._bridge(), doc, { touch: this.touch, debug: this.debug }));
     try {
@@ -220,6 +223,7 @@ class GoldRushShell {
     if (this.pendingNotice || game.loadNotice) this.notice(this.pendingNotice || game.loadNotice);
     if (this.touch) {
       game.setPaused(false);
+      if (window.matchMedia("(orientation: portrait)").matches) setTimeout(() => { if (!this.closed) this.notice("Tipp: Für mehr Übersicht das Gerät drehen."); }, 1800);
     } else {
       this.el.pauseText.textContent = "Klicke, um zu starten. Die Maus steuert dann den Blick.";
       this.el.pause.querySelector("[data-act=resume]").textContent = "Loslegen";
@@ -232,16 +236,16 @@ class GoldRushShell {
   _bridge() {
     const el = this.el;
     return {
-      root: this.root, canvas: el.canvas, stick: el.stick, knob: el.knob, digBtn: el.digBtn,
-      setMoney: (v) => { el.money.textContent = fmtMoney(v); },
+      root: this.root, canvas: el.canvas, stick: el.stick, knob: el.knob, digBtn: el.digBtn, moneyEl: el.money,
       setCrosshair: (state) => { if (el.crosshair.dataset.state !== state) el.crosshair.dataset.state = state; },
       onDig: () => {
         el.crosshair.classList.remove("is-pulse");
         void el.crosshair.offsetWidth;                // restart the tiny pulse
         el.crosshair.classList.add("is-pulse");
         el.tool.classList.add("is-working");
+        el.digBtn.classList.add("is-stroke");
         clearTimeout(this._toolT);
-        this._toolT = setTimeout(() => el.tool.classList.remove("is-working"), 260);
+        this._toolT = setTimeout(() => { if (this.el) { el.tool.classList.remove("is-working"); el.digBtn.classList.remove("is-stroke"); } }, 120);
       },
       showPauseOverlay: (show, failed) => {
         el.pauseText.textContent = failed
@@ -314,6 +318,10 @@ class GoldRushShell {
     rm.checked = g.reducedMotion;
     rm.disabled = g.systemReducedMotion;
     this.root.querySelector("[data-role=bob-note]").hidden = !g.systemReducedMotion;
+    this.root.querySelector("[data-role=sound]").checked = s.sound !== false;
+    const canVibrate = this.touch && typeof navigator.vibrate === "function";
+    this.root.querySelector("[data-role=vibration-row]").hidden = !canVibrate;
+    this.root.querySelector("[data-role=vibration]").checked = s.vibration !== false;
     this.root.classList.toggle("gr-reduced", g.reducedMotion);
   }
 
@@ -325,6 +333,15 @@ class GoldRushShell {
     this.close();
     current = null;
     open({ onExit });                                 // a fresh mine with a new seed
+  }
+
+  // fixed world seed for automated tests (goldrush.testSeed), never in normal play
+  _testSeed() {
+    if (!(this.debug || navigator.webdriver)) return null;
+    try {
+      const v = localStorage.getItem("goldrush.testSeed");
+      return v != null && /^\d+$/.test(v) ? Number(v) : null;
+    } catch (e) { return null; }
   }
 
   notice(text) {
@@ -383,7 +400,8 @@ class GoldRushShell {
       state: () => ({
         x: g.player.x, y: g.player.y, z: g.player.z, yaw: g.player.yaw, pitch: g.player.pitch, camY: g.camera.position.y,
         paused: g.paused, running: g.running, locked: g.input.locked, free: g.input.free, level: g.level, quality: g.settings.quality,
-        digs: g.digs, money: g.money, seed: g.doc.worldSeed, target: !!g.target, targetDist: g.target ? g.target.distance : null, revision: g.terrain.revision,
+        digs: g.digs, strokes: g.economy.stats.totalDigs, money: g.money, moneyCents: g.economy.moneyCents, seed: g.doc.worldSeed,
+        target: !!g.target, targetDist: g.target ? g.target.distance : null, aim: g.aimState, digHeld: g.input.digHeld, revision: g.terrain.revision,
         headBob: g.settings.headBob, reducedMotion: g.reducedMotion, touch: this.touch,
       }),
       info: () => g.info(),
@@ -400,16 +418,83 @@ class GoldRushShell {
         g.render();
         return !!g.target;
       },
-      digAtCrosshair: (n = 1) => {
-        let done = 0;
-        const t0 = performance.now();
+      // n mining transactions at the crosshair (no hand animation); visuals:false = booked right away
+      digAtCrosshair: (n = 1, opts = {}) => {
+        let done = 0, cents = 0, finds = 0, blocked = 0, best = 0;
+        const t0 = performance.now(), keys = [];
         for (let i = 0; i < n; i++) {
-          g._aim();
-          if (g.target && g.digAt(g.target)) done++;
+          const r = g.strokeAtCrosshair(opts);
+          if (!r) continue;
+          if (r.blocked) blocked++;
+          else if (r.massKg > 0) { done++; cents += r.cents; finds += r.finds; best = Math.max(best, r.best || 0); if (r.keys) keys.push(...r.keys); }
         }
         const ms = performance.now() - t0;
-        g.render();
-        return { done, ms, perDig: done ? ms / done : 0, last: g.lastDig };
+        if (opts.visuals !== false) g.render();
+        return { done, blocked, cents, finds, best, keys, ms, perDig: done ? ms / done : 0, last: g.lastStroke };
+      },
+      economy: () => ({ ...g.economy.serialize(), sessionCents: g.economy.sessionCents, shownCents: g.hud.shown }),
+      probe: () => g.probe(),
+      aim: () => ({ state: g.aimState, material: g.target ? g.target.material : null, distance: g.target ? g.target.distance : g.farTarget ? g.farTarget.distance : null }),
+      hand: () => ({ state: g.hands.state, cycle: g.hands.cycle, inspecting: !!g.hands.inspecting, dirt: g.hands.dirt }),
+      loot: () => ({ active: g.loot.active, glints: g.loot.activeGlints, floats: g.hud.floatsVisible }),
+      flushLoot: () => { g.flushLoot(); return g.economy.moneyCents; },
+      materialAt: (x, y, z) => g.terrain.field.materialAt(x, y, z),
+      goldAt: (x, y, z) => { const f = g.terrain.field, m = f.materialAt(x, y, z); return f.goldDensityAt(x, y, z, m, g.terrain.getBaseHeightAt(x, z) - y); },
+      voxel: (i, j, iy) => ({ ...g.terrain.field.voxel(i, j, iy, {}) }),
+      worked: (x, z) => { const t = g.terrain, i = Math.round((x - t.x0) / t.cell), j = Math.round((z - t.z0) / t.cell); return { slice: g.mining.cidx[j * t.vps + i], level: g.mining.consumed[j * t.vps + i], height: t.height[j * t.vps + i] }; },
+      boulders: () => g.terrain.field.boulders.map((b) => ({ ...b })),
+      // debug/test only: a find of class cls at the crosshair, booked like a real one
+      debugFind: (cls, massUg) => {
+        g._aim();
+        const hit = g.target;
+        if (!hit) return null;
+        const f = { cls, massUg, x: hit.x, y: hit.y, z: hit.z, key: "debug" };
+        const credit = g.economy.credit([f], 1);
+        if (credit.firstNugget) credit.items[0].first = true;
+        g.loot.spawn(credit.items, hit);
+        return credit.cents;
+      },
+      handPose: (pose) => { g.hands.debugPose = pose; g.hands.update(0, { camera: g.camera, sunDir: g.world.sun.position.clone().normalize(), sunVisible: true, walk: 0, bob: 0 }); g.render(); },
+      lootLook: () => { const m = g.loot.goldMat; return { metalness: m.metalness, roughness: m.roughness, envMap: !!m.envMap, color: m.color.getHexString(), shine: g.loot.shine, pointLights: g.world.scene.children.filter((o) => o.isPointLight).length }; },
+      hudState: () => {
+        const q = (sel) => this.root.querySelector(sel);
+        return {
+          toast: q(".gr-toast").hidden ? null : q(".gr-toast").textContent, tip: q(".gr-tip").hidden ? null : q(".gr-tip").textContent,
+          floats: [...this.root.querySelectorAll(".gr-float")].filter((e) => !e.hidden).map((e) => e.textContent),
+          money: q(".gr-money").textContent, sub: q(".gr-money-sub") && !q(".gr-money-sub").hidden ? q(".gr-money-sub").textContent : null,
+          crosshair: q(".gr-crosshair").dataset.state || "idle",
+        };
+      },
+      // exact fingerprints of the world state (save/reload tests)
+      hashes: () => {
+        const h = (arr, scale) => { let v = 0; for (let k = 0; k < arr.length; k++) v = (Math.imul(v, 31) + Math.round(arr[k] * scale)) | 0; return v; };
+        return { height: h(g.terrain.height, 1000), slices: h(g.mining.cidx, 1), money: g.economy.moneyCents, finds: g.economy.stats.finds, seed: g.doc.worldSeed };
+      },
+      sceneStats: () => {
+        const out = { world: {}, hands: 0, shadowCasters: 0 };
+        g.world.scene.traverseVisible((o) => {
+          if (!o.isMesh && !o.isPoints) return;
+          const key = o.name || o.geometry.type || o.type;
+          out.world[key] = (out.world[key] || 0) + 1;
+          if (o.castShadow) out.shadowCasters++;
+        });
+        g.hands.scene.traverseVisible((o) => { if (o.isMesh) out.hands++; });
+        const r = g.renderer, sm = r.shadowMap.autoUpdate;
+        r.info.reset(); r.render(g.world.scene, g.camera); out.worldCalls = r.info.render.calls;
+        r.shadowMap.autoUpdate = false;
+        r.info.reset(); r.render(g.world.scene, g.camera); out.worldCallsNoShadow = r.info.render.calls;
+        r.shadowMap.autoUpdate = sm;
+        r.info.reset(); r.autoClear = false; g.hands.render(r); r.autoClear = true; out.handCalls = r.info.render.calls;
+        return out;
+      },
+      // like pose(), without drawing a frame (fast loops in tests / the economy simulation)
+      aimAt: ({ x, z, yaw, pitch }) => {
+        const p = g.player;
+        p.x = x; p.z = z; p.yaw = yaw; p.pitch = pitch; p.vx = p.vz = 0;
+        p.y = g.world.groundAt(x, z) + 1.62;
+        g._updateCamera();
+        g._aim();
+        return g.target ? g.target.distance : null;
       },
       terrainOk: () => g.terrain.validate(),
       terrain: () => g.terrain,

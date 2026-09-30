@@ -93,41 +93,44 @@ export class DigEffects {
 
   setScale(px) { this.dustMat.uniforms.uScale.value = px; }
 
-  // one dig: a puff at the point, fragments thrown along the surface normal
-  burst(hit, mat, strength = 1) {
+  // one stroke: a puff at the point, fragments thrown along the surface
+  // normal - how much and what kind comes from the material definition
+  // (loose dirt: a brown cloud and clods; gravel: little dust, pebbles;
+  // stone: a few grey chips and a wisp)
+  burst(hit, def, strength = 1) {
     const r = () => this._rand();
-    const stone = mat ? mat.stone : 0;
-    const base = stone > 0.5 ? [0.26, 0.23, 0.19] : [0.3, 0.18, 0.09];     // linear: sunlit soil dust, not white
-    const nDust = Math.round(Math.min(18, this.dustLimit / 8) * strength);
+    const base = def.dustColor;
+    const nDust = Math.round(Math.min(18, this.dustLimit / 8) * strength * def.dustAmount);
     for (let k = 0, placed = 0; k < this.dust.length && placed < nDust; k++) {
       const d = this.dust[k];
       if (d.life > 0) continue;
       d.max = d.life = 0.7 + r() * 0.7;
       d.x = hit.x + (r() - 0.5) * 0.18; d.y = hit.y + 0.04; d.z = hit.z + (r() - 0.5) * 0.18;
-      d.vx = hit.normal.x * 0.45 + (r() - 0.5) * 0.7;
-      d.vy = 0.35 + r() * 0.55;
-      d.vz = hit.normal.z * 0.45 + (r() - 0.5) * 0.7;
+      d.vx = hit.normal.x * 0.55 + (r() - 0.5) * 1.0;
+      d.vy = 0.15 + r() * 0.35;
+      d.vz = hit.normal.z * 0.55 + (r() - 0.5) * 1.0;
       d.s = 0.12 + r() * 0.16;
       d.c = base.map((v) => v * (0.9 + r() * 0.25));
       placed++;
     }
-    const nFrag = Math.round(Math.min(4, 1 + this.fragLimit / 12) * strength);
+    const pebble = def.fragmentType === "pebble", chip = def.fragmentType === "chip";
+    const nFrag = Math.round(Math.min(def.fragmentCount + 1, 1 + this.fragLimit / 12) * Math.min(1, strength + 0.2));
     for (let k = 0, placed = 0; k < this.fragState.length && placed < nFrag; k++) {
       const f = this.fragState[k];
       if (f.life > 0) continue;
       if (k >= this.fragLimit) break;
       f.life = 2.2 + r() * 0.8;
       f.x = hit.x; f.y = hit.y + 0.05; f.z = hit.z;
-      const sp = 1.2 + r() * 1.6;
+      const sp = chip ? 1.6 + r() * 1.4 : 1.2 + r() * 1.6;
       f.vx = hit.normal.x * sp + (r() - 0.5) * 1.4;
-      f.vy = 1.4 + r() * 1.6;
+      f.vy = (chip ? 1.0 : 1.4) + r() * 1.6;
       f.vz = hit.normal.z * sp + (r() - 0.5) * 1.4;
       f.rx = r() * 6; f.ry = r() * 6; f.rz = r() * 6;
       f.sx = (r() - 0.5) * 12; f.sz = (r() - 0.5) * 12;
-      f.s = 0.018 + r() * 0.03;
+      f.s = chip ? 0.008 + r() * 0.01 : pebble ? 0.012 + r() * 0.018 : 0.018 + r() * 0.03;
       f.rest = false;
-      const isStone = r() < 0.25 + stone * 0.6;
-      this._c.setRGB(...(isStone ? [0.33, 0.31, 0.29] : [0.3, 0.2, 0.13]).map((v) => v * (0.85 + r() * 0.3)));
+      const c = def.fragmentColor;
+      this._c.setRGB(c[0] * (0.85 + r() * 0.3), c[1] * (0.85 + r() * 0.3), c[2] * (0.85 + r() * 0.3));
       this.frags.setColorAt(k, this._c);
       placed++;
     }
@@ -143,7 +146,7 @@ export class DigEffects {
       if (d.life > 0) {
         d.life -= dt;
         const drag = Math.exp(-2.2 * dt);
-        d.vx *= drag; d.vz *= drag; d.vy = d.vy * drag + 0.12 * dt;        // warm air lifts it a little
+        d.vx *= drag; d.vz *= drag; d.vy = d.vy * drag - 0.3 * dt;         // a puff that spreads and settles, not a smoke column
         d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
         const t = Math.max(0, d.life / d.max);
         pos[i * 3] = d.x; pos[i * 3 + 1] = d.y; pos[i * 3 + 2] = d.z;

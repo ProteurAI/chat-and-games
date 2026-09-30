@@ -4,16 +4,24 @@
 // ephemeral disk) can't promise persistence, a cloud save can come later
 // on top of the same document. One JSON document per browser:
 //
-//   { saveVersion, worldSeed, createdAt, updatedAt, money, tool,
+//   { saveVersion: 2, worldSeed, createdAt, updatedAt, tool,
 //     player: { x, z, yaw, pitch }, settings: {...},
-//     terrain: { gen, cols, cell, unit, encoding, changed, data } }
+//     economy: { moneyCents, earnedCents, inventory, stats, flags },
+//     terrain: { gen, cols, cell, unit, encoding, changed, data },
+//     resources: { unit, encoding, changed, slices, level } }
 //
 // The terrain is stored as quantised height deltas against the seeded
 // original mound (millimetres, Int16), run-length encoded - untouched
-// ground costs almost nothing, no matter how often it was dug.
+// ground costs almost nothing, no matter how often it was dug. The worked
+// resource slices are stored the same way, relative to the terrain (see
+// goldrush-mining.js) - zero almost everywhere.
 // Every write keeps the previous good document as a backup.
+//
+// Versions: 1 = phase 1 (money as a float, no resources); 2 = integer
+// cents, gold inventory + statistics, worked resource slices. Older
+// documents are upgraded on load (migrate) and written back as 2.
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 export const SAVE_KEY = "goldrush.save";
 export const BACKUP_KEY = "goldrush.save.backup";
 export const CORRUPT_KEY = "goldrush.save.corrupt";
@@ -35,7 +43,12 @@ export function validate(doc) {
     const t = doc.terrain;
     if (!Number.isInteger(t.cols) || !finite(t.cell) || typeof t.data !== "string") return "Geländedaten ungültig";
   }
-  if (!finite(doc.money)) return "Geldstand ungültig";
+  if (doc.saveVersion >= 2) {
+    const e = doc.economy;
+    if (!e || typeof e !== "object" || !Number.isInteger(e.moneyCents) || e.moneyCents < 0) return "Geldstand ungültig";
+    const r = doc.resources;
+    if (r != null && (typeof r.slices !== "string" || typeof r.level !== "string")) return "Ressourcendaten ungültig";
+  } else if (!finite(doc.money)) return "Geldstand ungültig";
   return null;
 }
 
@@ -62,8 +75,27 @@ export function loadSave() {
   return { status: "corrupt", doc: null, error };
 }
 
-// future versions upgrade old documents here, step by step
-function migrate(doc) {
+// upgrade old documents step by step (never throw away progress)
+export function migrate(doc) {
+  if (doc.saveVersion === 1) {
+    const cents = Math.max(0, Math.round((doc.money || 0) * 100));
+    const digs = Math.max(0, Math.round((doc.stats && doc.stats.digs) || 0));
+    doc = {
+      ...doc,
+      saveVersion: 2,
+      economy: {
+        moneyCents: cents, earnedCents: cents,
+        stats: { totalDigs: digs, successfulDigs: digs },
+        flags: { firstNuggetSeen: false },
+      },
+      // no worked slices in v1: everything above today's surface counts as
+      // worked (so nothing dug before hands out loot now)
+      resources: null,
+      migratedFrom: 1,
+    };
+    delete doc.money;
+    delete doc.stats;
+  }
   return doc;
 }
 
