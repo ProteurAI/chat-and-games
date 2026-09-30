@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -33,9 +34,18 @@ if os.environ.get("TEAM_PASSWORD"):
     CONFIG["team_password"] = os.environ["TEAM_PASSWORD"]
 
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+UPLOAD_NAME_RE = re.compile(r"^[0-9a-f]{32}\.(png|jpg|gif|webp)$")
+
+
+def valid_upload_name(name) -> bool:
+    """Chat image/snap messages may only point at a file our own /api/upload
+    produced - never an arbitrary client-chosen path or URL."""
+    return isinstance(name, str) and bool(UPLOAD_NAME_RE.match(name)) and (UPLOAD_DIR / name).is_file()
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+IMAGE_EXTENSIONS = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
 
 app = FastAPI(title="Chat & Games")
+log = logging.getLogger("chat_and_games")
 
 db.init_db(CONFIG.get("default_channels", []))
 
@@ -108,6 +118,15 @@ class ConnectionManager:
     async def broadcast_all(self, payload: dict):
         for ws in list(self.user_of.keys()):
             await self.send_to(ws, payload)
+
+    async def broadcast_channel_activity(self, channel_id: int, user_id: int):
+        """Tiny "something new in #x" ping for everyone who does NOT have
+        that channel open (they get no message payload) - drives the
+        unread badges in the sidebar."""
+        payload = {"type": "channel_activity", "channel_id": channel_id, "user_id": user_id}
+        for ws in list(self.user_of.keys()):
+            if self.current_channel.get(ws) != channel_id:
+                await self.send_to(ws, payload)
 
     def online_names(self) -> list[str]:
         seen = {}
@@ -230,6 +249,7 @@ async def create_channel(payload: dict, user: dict = Depends(get_current_user)):
             "INSERT INTO channels (name, created_at) VALUES (?, ?)", (name, db.now())
         )
         row = conn.execute("SELECT * FROM channels WHERE id = ?", (cur.lastrowid,)).fetchone()
+    await manager.broadcast_all({"type": "channels_update"})
     return db.row_to_dict(row)
 
 
@@ -290,9 +310,9 @@ async def upload_image(file: UploadFile = File(...), user: dict = Depends(get_cu
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=400, detail="Bild zu gross (max 8 MB)")
 
-    ext = mimetypes.guess_extension(content_type) or ".bin"
-    if ext == ".jpe":
-        ext = ".jpg"
+    # fixed extensions (mimetypes' answer depends on the OS / registry and
+    # must match UPLOAD_NAME_RE, which chat messages are validated against)
+    ext = IMAGE_EXTENSIONS[content_type]
     filename = f"{uuid.uuid4().hex}{ext}"
     (UPLOAD_DIR / filename).write_bytes(data)
     return {"image_path": filename, "image_url": f"/uploads/{filename}"}
@@ -321,213 +341,21 @@ async def websocket_endpoint(ws: WebSocket, token: Optional[str] = None):
 
     try:
         while True:
-            raw = await ws.receive_json()
-            msg_type = raw.get("type")
-
-            if msg_type == "join":
-                channel_id = raw.get("channel_id")
-                if isinstance(channel_id, int):
-                    manager.join_channel(ws, channel_id)
-
-            elif msg_type == "message":
-                channel_id = raw.get("channel_id")
-                content = (raw.get("content") or "").strip()
-                if not content or not isinstance(channel_id, int):
-                    continue
-                content = content[:4000]
-                with db.get_conn() as conn:
-                    cur = conn.execute(
-                        "INSERT INTO messages (channel_id, user_id, type, content, created_at) VALUES (?, ?, 'text', ?, ?)",
-                        (channel_id, user["id"], content, db.now()),
-                    )
-                    row = conn.execute("SELECT * FROM messages WHERE id = ?", (cur.lastrowid,)).fetchone()
-                    full = serialize_message(conn, row)
-                await manager.broadcast_channel(channel_id, {"type": "message", "message": full})
-
-            elif msg_type == "image_message":
-                channel_id = raw.get("channel_id")
-                image_path = raw.get("image_path")
-                if not isinstance(channel_id, int) or not image_path:
-                    continue
-                with db.get_conn() as conn:
-                    cur = conn.execute(
-                        "INSERT INTO messages (channel_id, user_id, type, image_path, created_at) VALUES (?, ?, 'image', ?, ?)",
-                        (channel_id, user["id"], image_path, db.now()),
-                    )
-                    row = conn.execute("SELECT * FROM messages WHERE id = ?", (cur.lastrowid,)).fetchone()
-                    full = serialize_message(conn, row)
-                await manager.broadcast_channel(channel_id, {"type": "message", "message": full})
-
-            elif msg_type == "snap_message":
-                channel_id = raw.get("channel_id")
-                image_path = raw.get("image_path")
-                if not isinstance(channel_id, int) or not image_path:
-                    continue
-                with db.get_conn() as conn:
-                    cur = conn.execute(
-                        "INSERT INTO messages (channel_id, user_id, type, image_path, created_at) VALUES (?, ?, 'snap', ?, ?)",
-                        (channel_id, user["id"], image_path, db.now()),
-                    )
-                    row = conn.execute("SELECT * FROM messages WHERE id = ?", (cur.lastrowid,)).fetchone()
-                    full = serialize_message(conn, row)
-                await manager.broadcast_channel(channel_id, {"type": "message", "message": full})
-
-            elif msg_type == "poll_create":
-                channel_id = raw.get("channel_id")
-                question = (raw.get("question") or "").strip()[:300]
-                options = [o.strip()[:120] for o in raw.get("options", []) if o.strip()]
-                if not isinstance(channel_id, int) or not question or not (2 <= len(options) <= 6):
-                    continue
-                with db.get_conn() as conn:
-                    cur = conn.execute(
-                        "INSERT INTO messages (channel_id, user_id, type, content, created_at) VALUES (?, ?, 'poll', ?, ?)",
-                        (channel_id, user["id"], question, db.now()),
-                    )
-                    message_id = cur.lastrowid
-                    for i, opt in enumerate(options):
-                        conn.execute(
-                            "INSERT INTO poll_options (message_id, option_text, position) VALUES (?, ?, ?)",
-                            (message_id, opt, i),
-                        )
-                    row = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
-                    full = serialize_message(conn, row)
-                await manager.broadcast_channel(channel_id, {"type": "message", "message": full})
-
-            elif msg_type == "poll_vote":
-                message_id = raw.get("message_id")
-                option_id = raw.get("option_id")
-                if not isinstance(message_id, int) or not isinstance(option_id, int):
-                    continue
-                with db.get_conn() as conn:
-                    msg_row = conn.execute("SELECT * FROM messages WHERE id = ? AND type = 'poll'", (message_id,)).fetchone()
-                    if not msg_row:
-                        continue
-                    conn.execute(
-                        "INSERT INTO poll_votes (message_id, option_id, user_id) VALUES (?, ?, ?) "
-                        "ON CONFLICT(message_id, user_id) DO UPDATE SET option_id = excluded.option_id",
-                        (message_id, option_id, user["id"]),
-                    )
-                    full = serialize_message(conn, msg_row)
-                    my_vote = conn.execute(
-                        "SELECT option_id FROM poll_votes WHERE message_id = ? AND user_id = ?",
-                        (message_id, user["id"]),
-                    ).fetchone()
-                await manager.broadcast_channel(
-                    msg_row["channel_id"],
-                    {"type": "poll_update", "message_id": message_id, "poll": full["poll"]},
-                )
-
-            elif msg_type == "reaction":
-                message_id = raw.get("message_id")
-                emoji = raw.get("emoji")
-                if not isinstance(message_id, int) or not emoji:
-                    continue
-                with db.get_conn() as conn:
-                    msg_row = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
-                    if not msg_row:
-                        continue
-                    existing = conn.execute(
-                        "SELECT id FROM reactions WHERE message_id = ? AND user_id = ? AND emoji = ?",
-                        (message_id, user["id"], emoji),
-                    ).fetchone()
-                    if existing:
-                        conn.execute("DELETE FROM reactions WHERE id = ?", (existing["id"],))
-                    else:
-                        conn.execute(
-                            "INSERT INTO reactions (message_id, user_id, emoji) VALUES (?, ?, ?)",
-                            (message_id, user["id"], emoji),
-                        )
-                    full = serialize_message(conn, msg_row)
-                await manager.broadcast_channel(
-                    msg_row["channel_id"],
-                    {"type": "reaction_update", "message_id": message_id, "reactions": full["reactions"]},
-                )
-
-            elif msg_type == "game_create":
-                game_type = raw.get("game_type")
-                if isinstance(game_type, str):
-                    await game_manager.create_session(user, ws, game_type, raw.get("options"))
-                    # Party Mode courtesy notification only - never touches
-                    # the session/engine itself, see backend/party.py.
-                    session = game_manager.get_session_for_ws(ws)
-                    if session is not None:
-                        await party_manager.notify_game_started(
-                            ws, session.id, session.game_type, session.engine.name, session.engine.emoji
-                        )
-
-            elif msg_type == "game_join":
-                session_id = raw.get("session_id")
-                if isinstance(session_id, str):
-                    await game_manager.join_session(user, ws, session_id)
-
-            elif msg_type == "game_start_now":
-                session_id = raw.get("session_id")
-                if isinstance(session_id, str):
-                    await game_manager.start_now(user, ws, session_id)
-
-            elif msg_type == "game_input":
-                session_id = raw.get("session_id")
-                if isinstance(session_id, str):
-                    await game_manager.handle_input(user, ws, session_id, raw.get("payload") or {})
-
-            elif msg_type == "game_rematch":
-                session_id = raw.get("session_id")
-                if isinstance(session_id, str):
-                    await game_manager.handle_rematch(user, ws, session_id)
-
-            elif msg_type == "game_leave":
-                session_id = raw.get("session_id")
-                if isinstance(session_id, str):
-                    await game_manager.leave_session(user, ws, session_id)
-
-            elif msg_type == "party_create":
-                await party_manager.create_party(user, ws)
-
-            elif msg_type == "party_join":
-                code = raw.get("code")
-                if isinstance(code, str):
-                    await party_manager.join_party(user, ws, code)
-
-            elif msg_type == "party_leave":
-                await party_manager.leave_party(ws)
-
-            elif msg_type == "party_report_score":
-                points = raw.get("points")
-                await party_manager.report_score(user, ws, points)
-
-            # Kritzelmeister live drawing - deliberately NOT routed through
-            # game_input/game_state (see backend/drawing_game.py's module
-            # docstring for why): these are high-frequency, so each handler
-            # relays a small delta directly instead of going through the
-            # generic per-tick full-state broadcast every other game uses.
-            elif msg_type == "drawing_stroke_start":
-                await drawing_game_module.handle_stroke_start(game_manager, user, ws, raw)
-            elif msg_type == "drawing_stroke_batch":
-                await drawing_game_module.handle_stroke_batch(game_manager, user, ws, raw)
-            elif msg_type == "drawing_stroke_end":
-                await drawing_game_module.handle_stroke_end(game_manager, user, ws, raw)
-            elif msg_type == "drawing_undo":
-                await drawing_game_module.handle_undo(game_manager, user, ws, raw)
-            elif msg_type == "drawing_clear":
-                await drawing_game_module.handle_clear(game_manager, user, ws, raw)
-            elif msg_type == "drawing_request_sync":
-                await drawing_game_module.handle_request_sync(game_manager, user, ws, raw)
-
-            # KopfKicker selfies - kept out of the generic per-tick
-            # broadcast for the same reason Kritzelmeister's strokes are
-            # (see backend/kopf_kicker.py's module docstring), and NEVER
-            # touch db/UPLOAD_DIR - they live only in that match's
-            # in-memory session.state for as long as the session exists.
-            elif msg_type == "kopf_selfie_set":
-                await kopf_kicker_module.handle_selfie_set(game_manager, user, ws, raw)
-            elif msg_type == "kopf_request_selfie":
-                await kopf_kicker_module.handle_request_selfie(game_manager, user, ws, raw)
-
-            # MultiScreen / Table Mode - own "ms_*" namespace, see
-            # backend/multiscreen/session.py for the protocol.
-            elif isinstance(msg_type, str) and msg_type.startswith("ms_"):
-                await multiscreen_module.route(multiscreen_manager, user, ws, raw)
-
+            text = await ws.receive_text()
+            if len(text) > 64_000:
+                continue   # oversized payload: ignore, don't parse
+            try:
+                raw = json.loads(text)
+            except ValueError:
+                continue
+            if not isinstance(raw, dict):
+                continue
+            try:
+                await dispatch_ws_message(user, ws, raw)
+            except WebSocketDisconnect:
+                raise
+            except Exception:
+                log.exception("ws message %r from user %s failed", raw.get("type"), user.get("id"))
     except WebSocketDisconnect:
         pass
     finally:
@@ -536,6 +364,229 @@ async def websocket_endpoint(ws: WebSocket, token: Optional[str] = None):
         await multiscreen_manager.handle_disconnect(ws)
         manager.disconnect(ws)
         await manager.broadcast_all({"type": "presence", "online": manager.online_names()})
+
+
+async def dispatch_ws_message(user: dict, ws: WebSocket, raw: dict):
+    """One client message. Anything malformed simply returns (or raises and
+    is logged by the caller) - it can never take the connection down."""
+    msg_type = raw.get("type")
+
+    if msg_type == "join":
+        channel_id = raw.get("channel_id")
+        if isinstance(channel_id, int):
+            manager.join_channel(ws, channel_id)
+
+    elif msg_type == "message":
+        channel_id = raw.get("channel_id")
+        content = raw.get("content")
+        if not isinstance(content, str) or not isinstance(channel_id, int):
+            return
+        content = content.strip()
+        if not content:
+            return
+        content = content[:4000]
+        with db.get_conn() as conn:
+            cur = conn.execute(
+                "INSERT INTO messages (channel_id, user_id, type, content, created_at) VALUES (?, ?, 'text', ?, ?)",
+                (channel_id, user["id"], content, db.now()),
+            )
+            row = conn.execute("SELECT * FROM messages WHERE id = ?", (cur.lastrowid,)).fetchone()
+            full = serialize_message(conn, row)
+        await manager.broadcast_channel(channel_id, {"type": "message", "message": full})
+        await manager.broadcast_channel_activity(channel_id, user["id"])
+
+    elif msg_type == "image_message":
+        channel_id = raw.get("channel_id")
+        image_path = raw.get("image_path")
+        if not isinstance(channel_id, int) or not valid_upload_name(image_path):
+            return
+        with db.get_conn() as conn:
+            cur = conn.execute(
+                "INSERT INTO messages (channel_id, user_id, type, image_path, created_at) VALUES (?, ?, 'image', ?, ?)",
+                (channel_id, user["id"], image_path, db.now()),
+            )
+            row = conn.execute("SELECT * FROM messages WHERE id = ?", (cur.lastrowid,)).fetchone()
+            full = serialize_message(conn, row)
+        await manager.broadcast_channel(channel_id, {"type": "message", "message": full})
+        await manager.broadcast_channel_activity(channel_id, user["id"])
+
+    elif msg_type == "snap_message":
+        channel_id = raw.get("channel_id")
+        image_path = raw.get("image_path")
+        if not isinstance(channel_id, int) or not valid_upload_name(image_path):
+            return
+        with db.get_conn() as conn:
+            cur = conn.execute(
+                "INSERT INTO messages (channel_id, user_id, type, image_path, created_at) VALUES (?, ?, 'snap', ?, ?)",
+                (channel_id, user["id"], image_path, db.now()),
+            )
+            row = conn.execute("SELECT * FROM messages WHERE id = ?", (cur.lastrowid,)).fetchone()
+            full = serialize_message(conn, row)
+        await manager.broadcast_channel(channel_id, {"type": "message", "message": full})
+        await manager.broadcast_channel_activity(channel_id, user["id"])
+
+    elif msg_type == "poll_create":
+        channel_id = raw.get("channel_id")
+        question = raw.get("question")
+        options = raw.get("options")
+        if not isinstance(question, str) or not isinstance(options, list):
+            return
+        question = question.strip()[:300]
+        options = [o.strip()[:120] for o in options if isinstance(o, str) and o.strip()]
+        if not isinstance(channel_id, int) or not question or not (2 <= len(options) <= 6):
+            return
+        with db.get_conn() as conn:
+            cur = conn.execute(
+                "INSERT INTO messages (channel_id, user_id, type, content, created_at) VALUES (?, ?, 'poll', ?, ?)",
+                (channel_id, user["id"], question, db.now()),
+            )
+            message_id = cur.lastrowid
+            for i, opt in enumerate(options):
+                conn.execute(
+                    "INSERT INTO poll_options (message_id, option_text, position) VALUES (?, ?, ?)",
+                    (message_id, opt, i),
+                )
+            row = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
+            full = serialize_message(conn, row)
+        await manager.broadcast_channel(channel_id, {"type": "message", "message": full})
+        await manager.broadcast_channel_activity(channel_id, user["id"])
+
+    elif msg_type == "poll_vote":
+        message_id = raw.get("message_id")
+        option_id = raw.get("option_id")
+        if not isinstance(message_id, int) or not isinstance(option_id, int):
+            return
+        with db.get_conn() as conn:
+            msg_row = conn.execute("SELECT * FROM messages WHERE id = ? AND type = 'poll'", (message_id,)).fetchone()
+            if not msg_row:
+                return
+            if not conn.execute("SELECT 1 FROM poll_options WHERE id = ? AND message_id = ?", (option_id, message_id)).fetchone():
+                return
+            conn.execute(
+                "INSERT INTO poll_votes (message_id, option_id, user_id) VALUES (?, ?, ?) "
+                "ON CONFLICT(message_id, user_id) DO UPDATE SET option_id = excluded.option_id",
+                (message_id, option_id, user["id"]),
+            )
+            full = serialize_message(conn, msg_row)
+            my_vote = conn.execute(
+                "SELECT option_id FROM poll_votes WHERE message_id = ? AND user_id = ?",
+                (message_id, user["id"]),
+            ).fetchone()
+        await manager.broadcast_channel(
+            msg_row["channel_id"],
+            {"type": "poll_update", "message_id": message_id, "poll": full["poll"]},
+        )
+
+    elif msg_type == "reaction":
+        message_id = raw.get("message_id")
+        emoji = raw.get("emoji")
+        if not isinstance(message_id, int) or not isinstance(emoji, str) or not emoji.strip() or len(emoji) > 16:
+            return
+        with db.get_conn() as conn:
+            msg_row = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
+            if not msg_row:
+                return
+            existing = conn.execute(
+                "SELECT id FROM reactions WHERE message_id = ? AND user_id = ? AND emoji = ?",
+                (message_id, user["id"], emoji),
+            ).fetchone()
+            if existing:
+                conn.execute("DELETE FROM reactions WHERE id = ?", (existing["id"],))
+            else:
+                conn.execute(
+                    "INSERT INTO reactions (message_id, user_id, emoji) VALUES (?, ?, ?)",
+                    (message_id, user["id"], emoji),
+                )
+            full = serialize_message(conn, msg_row)
+        await manager.broadcast_channel(
+            msg_row["channel_id"],
+            {"type": "reaction_update", "message_id": message_id, "reactions": full["reactions"]},
+        )
+
+    elif msg_type == "game_create":
+        game_type = raw.get("game_type")
+        if isinstance(game_type, str):
+            await game_manager.create_session(user, ws, game_type, raw.get("options"))
+            # Party Mode courtesy notification only - never touches
+            # the session/engine itself, see backend/party.py.
+            session = game_manager.get_session_for_ws(ws)
+            if session is not None:
+                await party_manager.notify_game_started(
+                    ws, session.id, session.game_type, session.engine.name, session.engine.emoji
+                )
+
+    elif msg_type == "game_join":
+        session_id = raw.get("session_id")
+        if isinstance(session_id, str):
+            await game_manager.join_session(user, ws, session_id)
+
+    elif msg_type == "game_start_now":
+        session_id = raw.get("session_id")
+        if isinstance(session_id, str):
+            await game_manager.start_now(user, ws, session_id)
+
+    elif msg_type == "game_input":
+        session_id = raw.get("session_id")
+        if isinstance(session_id, str):
+            await game_manager.handle_input(user, ws, session_id, raw.get("payload") or {})
+
+    elif msg_type == "game_rematch":
+        session_id = raw.get("session_id")
+        if isinstance(session_id, str):
+            await game_manager.handle_rematch(user, ws, session_id)
+
+    elif msg_type == "game_leave":
+        session_id = raw.get("session_id")
+        if isinstance(session_id, str):
+            await game_manager.leave_session(user, ws, session_id)
+
+    elif msg_type == "party_create":
+        await party_manager.create_party(user, ws)
+
+    elif msg_type == "party_join":
+        code = raw.get("code")
+        if isinstance(code, str):
+            await party_manager.join_party(user, ws, code)
+
+    elif msg_type == "party_leave":
+        await party_manager.leave_party(ws)
+
+    elif msg_type == "party_report_score":
+        points = raw.get("points")
+        await party_manager.report_score(user, ws, points)
+
+    # Kritzelmeister live drawing - deliberately NOT routed through
+    # game_input/game_state (see backend/drawing_game.py's module
+    # docstring for why): these are high-frequency, so each handler
+    # relays a small delta directly instead of going through the
+    # generic per-tick full-state broadcast every other game uses.
+    elif msg_type == "drawing_stroke_start":
+        await drawing_game_module.handle_stroke_start(game_manager, user, ws, raw)
+    elif msg_type == "drawing_stroke_batch":
+        await drawing_game_module.handle_stroke_batch(game_manager, user, ws, raw)
+    elif msg_type == "drawing_stroke_end":
+        await drawing_game_module.handle_stroke_end(game_manager, user, ws, raw)
+    elif msg_type == "drawing_undo":
+        await drawing_game_module.handle_undo(game_manager, user, ws, raw)
+    elif msg_type == "drawing_clear":
+        await drawing_game_module.handle_clear(game_manager, user, ws, raw)
+    elif msg_type == "drawing_request_sync":
+        await drawing_game_module.handle_request_sync(game_manager, user, ws, raw)
+
+    # KopfKicker selfies - kept out of the generic per-tick
+    # broadcast for the same reason Kritzelmeister's strokes are
+    # (see backend/kopf_kicker.py's module docstring), and NEVER
+    # touch db/UPLOAD_DIR - they live only in that match's
+    # in-memory session.state for as long as the session exists.
+    elif msg_type == "kopf_selfie_set":
+        await kopf_kicker_module.handle_selfie_set(game_manager, user, ws, raw)
+    elif msg_type == "kopf_request_selfie":
+        await kopf_kicker_module.handle_request_selfie(game_manager, user, ws, raw)
+
+    # MultiScreen / Table Mode - own "ms_*" namespace, see
+    # backend/multiscreen/session.py for the protocol.
+    elif isinstance(msg_type, str) and msg_type.startswith("ms_"):
+        await multiscreen_module.route(multiscreen_manager, user, ws, raw)
 
 
 @app.middleware("http")
