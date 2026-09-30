@@ -542,7 +542,7 @@
         ? "Ein Mitspieler hat das Spiel verlassen - die Partie wurde beendet."
         : "Die Partie wurde beendet.";
       stage.innerHTML = `
-        <div class="est-card">
+        <div class="est-card est-endscreen">
           <div class="est-endscreen-title">Spiel beendet</div>
           <p class="est-next-line">${escapeHtml(reasonText)}</p>
           <div class="est-endscreen-actions">

@@ -48,6 +48,26 @@ el("theme-toggle").setAttribute("aria-pressed", document.documentElement.getAttr
 // math: it sets --app-height, and pins the app back to the top when iOS
 // pans the page to reveal a focused input. The game modal's chat drawer
 // keeps its own, separate visualViewport handling (mobile-shell.js).
+// Phone keyboard: the browser only guarantees that the focused field itself
+// stays visible - a game's submit button right below it (Schaetzmeister,
+// Wer bin ich, Kritzelmeister) would end up under the keyboard. Keeps the
+// whole form of the focused field inside its scroll area (the field's top
+// wins if the form is taller than the space left).
+function keepFocusedFormInView() {
+  const field = document.activeElement;
+  if (!field || !field.matches || !field.matches("#game-modal input, #game-modal textarea")) return;
+  const target = field.form || field;
+  let box = target.parentElement;
+  while (box && !/(auto|scroll)/.test(getComputedStyle(box).overflowY)) box = box.parentElement;
+  if (!box) return;
+  const vv = window.visualViewport;
+  const r = target.getBoundingClientRect(), b = box.getBoundingClientRect();
+  const top = Math.max(b.top, vv ? vv.offsetTop : 0);
+  const bottom = Math.min(b.bottom, vv ? vv.offsetTop + vv.height : window.innerHeight);
+  if (r.bottom > bottom - 8) box.scrollTop += Math.max(0, Math.min(r.bottom - bottom + 12, r.top - top - 8));
+  else if (r.top < top + 8) box.scrollTop -= top + 8 - r.top;
+}
+
 const AppViewport = (() => {
   let raf = 0;
   function apply() {
@@ -58,6 +78,7 @@ const AppViewport = (() => {
     const app = document.getElementById("app");
     if (app) app.style.transform = vv && vv.offsetTop > 0 ? `translateY(${Math.round(vv.offsetTop)}px)` : "";
     if (window.scrollY && document.documentElement.classList.contains("app-active")) window.scrollTo(0, 0);
+    keepFocusedFormInView();
   }
   function schedule() { if (!raf) raf = requestAnimationFrame(apply); }
   if (window.visualViewport) {
@@ -2383,6 +2404,19 @@ function closeGameModal() {
 }
 
 el("game-close-btn").addEventListener("click", closeGameModal);
+
+// The game dialog itself never scrolls (its stage scrolls inside
+// .game-content) - but browsers scroll even overflow:hidden boxes to reveal
+// a focused field: the game-chat input while its drawer slides in, or a
+// field the phone keyboard wants to uncover. That pushed the dialog's
+// header (title, close, chat) out of view, sometimes for the rest of the
+// game. Snap it straight back.
+(() => {
+  const dialog = document.querySelector("#game-modal .game-modal");
+  dialog.addEventListener("scroll", () => {
+    if (dialog.scrollTop || dialog.scrollLeft) dialog.scrollTo(0, 0);
+  }, { passive: true });
+})();
 el("game-overlay-close-btn").addEventListener("click", closeGameModal);
 el("game-rematch-btn").addEventListener("click", () => {
   if (myGameSessionId && ws && ws.readyState === WebSocket.OPEN) {

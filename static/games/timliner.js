@@ -971,9 +971,42 @@
     canvas.style.touchAction = "none";
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
+    // A second finger turns the touch into a pan/pinch (see touchmove
+    // below): whatever the first finger had started drawing or erasing is
+    // rolled back, and nothing draws again until every finger has left the
+    // screen - otherwise each pan/zoom left stray lines between the fingers.
+    // (a stroke older than 300 ms was meant: it is kept, only a fresh one -
+    // the first finger of a two-finger touch - is rolled back)
+    const touchPointers = new Set();
+    let multiTouch = false;
+    let strokeStartedAt = 0;
+    function cancelStrokeInProgress() {
+      if (state.currentStroke && performance.now() - strokeStartedAt < 300) {
+        for (const l of state.currentStroke.added) removeLineById(state.track, l.id);
+        for (const l of state.currentStroke.removed) state.track.lines.push(l);
+        state.currentStroke = null;
+        rebuildGridFromTrack();
+      } else if (state.currentStroke) {
+        commitStroke();
+      }
+      lastPoint = null;
+      lineToolStart = null;
+      selectDragLine = null;
+      selectDragOffset = null;
+      startMarkerDrag = false;
+      dragging = false;
+    }
+
     canvas.addEventListener("pointerdown", (e) => {
       if (state.mode !== "edit") return;
-      canvas.setPointerCapture(e.pointerId);
+      if (e.pointerType === "touch") {
+        if (e.isPrimary) { touchPointers.clear(); multiTouch = false; }   // a fresh touch sequence
+        touchPointers.add(e.pointerId);
+        if (touchPointers.size > 1) { multiTouch = true; cancelStrokeInProgress(); return; }
+      }
+      if (multiTouch) return;
+      strokeStartedAt = performance.now();
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* pointer already gone */ }
       const w = pointerWorld(e);
       const tool = e.button === 2 ? "pan" : effectiveTool();
 
@@ -1012,6 +1045,7 @@
     });
 
     canvas.addEventListener("pointermove", (e) => {
+      if (multiTouch) return;
       const w = pointerWorld(e);
       if (state.mode !== "edit") return;
 
@@ -1058,6 +1092,13 @@
     }
 
     function endPointerGesture(e) {
+      if (e && e.pointerType === "touch") touchPointers.delete(e.pointerId);
+      if (multiTouch) {
+        if (touchPointers.size === 0) multiTouch = false;
+        dragging = false;
+        state.panLast = null;
+        return;
+      }
       if (state.mode !== "edit") { dragging = false; return; }
       const tool = effectiveTool();
       if (startMarkerDrag) {
@@ -1523,7 +1564,7 @@
     let pinchLastMid = null;
     canvas.addEventListener("touchmove", (e) => {
       if (e.touches.length === 2) {
-        e.preventDefault();
+        if (e.cancelable) e.preventDefault();
         const [a, b] = e.touches;
         const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
         const mid = { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
