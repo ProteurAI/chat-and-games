@@ -2,7 +2,7 @@
 "phones" against the real server (run from a temp copy - the real database
 is never touched).
 
-    python tests/e2e/multiscreen_e2e.py [--shots DIR]
+    python tests/e2e/multiscreen_e2e.py [--shots DIR] [--browser webkit]
 
 Requires: pip install playwright pillow && python -m playwright install chromium
 """
@@ -18,11 +18,21 @@ from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from games_regression import RECORDER  # noqa: E402
 from kopfkicker_e2e import WS_SPY, login, start_server  # noqa: E402
 
 from backend.multiscreen import geometry as geo  # noqa: E402
 
 RESULTS = []
+
+
+# WebKit reports the (Chrome-Android-only) interactive-widget viewport key
+# as "not recognized and ignored" - a parser notice, not an app error
+NOISE = ("favicon", "WebSocket", 'Viewport argument key "interactive-widget"')
+
+
+def real_errors(page):
+    return [e for e in page.errors if not any(n in e for n in NOISE)]
 
 
 def ok(name, cond, detail=""):
@@ -36,11 +46,14 @@ PHONES = {
 }
 
 
-def phone(browser, base, user, kind):
+def phone(browser, base, user, kind, no_wakelock=False):
     ctx = browser.new_context(**PHONES[kind])
     ctx.add_init_script(f"localStorage.setItem('instachat_token', {json.dumps(user['token'])});"
                         f"localStorage.setItem('instachat_user', {json.dumps(json.dumps(user['user']))});")
+    if no_wakelock:   # TEST 22: a browser without the Wake Lock API
+        ctx.add_init_script("delete Navigator.prototype.wakeLock;")
     ctx.add_init_script(WS_SPY)
+    ctx.add_init_script(RECORDER)
     page = ctx.new_page()
     page.errors = []
     page.on("pageerror", lambda e: page.errors.append(str(e)))
@@ -114,6 +127,57 @@ def swipe(page, direction):
     }""", direction)
 
 
+def glow(page):
+    return page.evaluate("() => { const s = document.querySelector('.ms-stage'); return !!(s && s.classList.contains('ms-stage--active')); }")
+
+
+def latency_handoff(A, pages, name_of, to_local, timeout=16):
+    """Steer the controller towards a neighbour. When the next phone gets
+    BEREIT MACHEN it buffers a legal turn. Meanwhile every phone's
+    controller glow is sampled."""
+    res = {"crossed": False, "buffered": None, "buffered_applied": False, "max_overlap_run": 0}
+    t0, run = time.time(), 0
+    start_active = buffered = None
+    while time.time() - t0 < timeout:
+        g = gs(A)
+        if not g or g.get("paused") or g.get("phase") != "playing":
+            start_active = buffered = None
+            time.sleep(0.05)
+            continue
+        glows = sum(1 for pg in pages.values() if glow(pg))
+        run = run + 1 if glows > 1 else 0
+        res["max_overlap_run"] = max(res["max_overlap_run"], run)
+        active = g["activeDeviceId"]
+        if start_active is None:
+            start_active = active
+            tiles = st(A)["layout"]["tiles"]
+            tile = next(t for t in tiles if t["deviceId"] == active)
+            right_n = any(abs(t["x"] - (tile["x"] + tile["w"])) < 1 for t in tiles if t["deviceId"] != active)
+            want = "right" if right_n else "left"
+            cur, name = g["snake"]["dir"], name_of[active]
+            if cur != want:
+                if cur == {"right": "left", "left": "right"}[want]:
+                    swipe(pages[name], to_local(name, "up"))
+                    time.sleep(0.35)
+                swipe(pages[name], to_local(name, want))
+            continue
+        tgt = g.get("handoffTargetDeviceId")
+        if tgt and not buffered:
+            cur = g["snake"]["dir"]
+            perp = "down" if cur in ("left", "right") else "left"
+            swipe(pages[name_of[tgt]], to_local(name_of[tgt], perp))
+            buffered = (tgt, perp)
+            res["buffered"] = [name_of[tgt], perp]
+        if active != start_active:
+            res["crossed"] = True
+            if buffered and buffered[0] == active:
+                res["buffered_applied"] = bool(wait_for(lambda: ((gs(A) or {}).get("snake") or {}).get("dir") == buffered[1], 2))
+                break
+            start_active, buffered = active, None      # crossed without a prepared turn: try the next crossing
+        time.sleep(0.03)
+    return res
+
+
 def main():
     shots = None
     if "--shots" in sys.argv:
@@ -128,9 +192,11 @@ def main():
     try:
         users = [login(base, n) for n in ("TIM", "SARAH", "MAX")]
         with sync_playwright() as p:
-            browser = p.chromium.launch()
-            (ca, A), (cb, B), (cc, C) = phone(browser, base, users[0], "iphone"), phone(browser, base, users[1], "iphone"), phone(browser, base, users[2], "android")
+            engine = sys.argv[sys.argv.index("--browser") + 1] if "--browser" in sys.argv else "chromium"
+            browser = getattr(p, engine).launch()
+            (ca, A), (cb, B), (cc, C) = phone(browser, base, users[0], "iphone"), phone(browser, base, users[1], "iphone"), phone(browser, base, users[2], "android", no_wakelock=True)
             pages = {"TIM": A, "SARAH": B, "MAX": C}
+            idle0 = {n: pg.evaluate("() => window.__idle()") for n, pg in pages.items()}
 
             # ---------------- geometry parity JS <-> Python ----------------
             rng = random.Random(4)
@@ -354,6 +420,40 @@ def main():
             ok("browser bar resize doesn't pause or reshape the world", not (gs(A) or {}).get("paused") and st(A)["layout"]["tiles"] == st(B)["layout"]["tiles"])
             vp.set_viewport_size(vs)
 
+            # ---------------- wake lock (TEST 22) ----------------
+            wl_tim = A.evaluate("() => !!window.MultiScreen._debug().wakeLock")
+            ok("MAX has no Wake Lock API: no error, plays like everyone else",
+               C.evaluate("() => !('wakeLock' in navigator)") and C.is_visible(".ms-stage") and not real_errors(C))
+
+            # ---------------- latency 100 / 200 ms (TEST 43 / 44) ----------------
+            name_of = {d["deviceId"]: d["name"] for d in st(A)["devices"]}
+            for lat in (100, 200):
+                for pg in pages.values():
+                    pg.evaluate("(l) => { window.__latency = l; }", lat)
+                # a fresh round: full lives, the snake respawns in the middle of the table
+                if A.is_visible(".ms-results"):
+                    A.click(".ms-results [data-act='restart']")
+                else:
+                    A.click(".ms-menu-btn")
+                    A.click(".ms-menu [data-act='restart']")
+                wait_for(lambda: (gs(A) or {}).get("phase") == "playing" and not (gs(A) or {}).get("stats"), 12)
+                res = latency_handoff(A, pages, name_of, world_to_local_dir, timeout=20)
+                ok(f"latency {lat} ms: control hands off, the buffered turn is applied after it", res["crossed"] and res["buffered_applied"], json.dumps(res))
+                ok(f"latency {lat} ms: never two controllers (a glow overlap never outlasts one network hop)", res["max_overlap_run"] <= 1, json.dumps(res))
+                running = not (gs(A) or {}).get("stats")
+                if running:
+                    A.click(".ms-menu-btn")
+                    A.click(".ms-menu [data-act='pause']")
+                time.sleep(1.2)
+                views = {json.dumps([(gs(pg) or {}).get("activeDeviceId"), ((gs(pg) or {}).get("snake") or {}).get("dir"), ((gs(pg) or {}).get("snake") or {}).get("path", [[0]])[0]]) for pg in pages.values()}
+                ok(f"latency {lat} ms: every phone shows the same controller, direction and head", len(views) == 1, str(views))
+                if running:
+                    A.click(".ms-menu-btn")
+                    A.click(".ms-menu [data-act='resume']")
+                    wait_for(lambda: not (gs(A) or {}).get("paused"), 6)
+            for pg in pages.values():
+                pg.evaluate("() => { window.__latency = 0; }")
+
             # ---------------- end -> results -> chat -> close ----------------
             A.click(".ms-menu-btn")
             A.click(".ms-menu [data-act='end']")
@@ -361,13 +461,72 @@ def main():
             ok("game over: results with shared score on every phone", all(pg.wait_for_selector(".ms-results", timeout=5000) for pg in pages.values()))
             shot(A, "15_results_host")
             shot(C, "15_results_guest")
+
+            # ---------------- NOCHMAL x3 (TEST 42) + HANDYS NEU ANORDNEN ----------------
+            layout0 = st(A)["placements"]
+            lis0 = {n: pg.evaluate("() => window.__listeners()") for n, pg in pages.items()}
+            for _ in range(3):
+                A.click(".ms-results [data-act='restart']")
+                wait_for(lambda: (gs(A) or {}).get("phase") in ("intro", "countdown", "playing") and not (gs(A) or {}).get("stats"), 5)
+                time.sleep(0.4)
+                A.click(".ms-menu-btn")
+                try:
+                    A.click(".ms-menu [data-act='end']", timeout=3000)
+                except Exception:
+                    print("  DIAG menu:", A.evaluate("""() => ({ menu: document.querySelector('.ms-menu').outerHTML.slice(0, 400),
+                        phase: (window.MultiScreen._debug().gameState || {}).phase, stats: !!(window.MultiScreen._debug().gameState || {}).stats,
+                        results: !!document.querySelector('.ms-results') })"""), flush=True)
+                    raise
+                A.wait_for_selector(".ms-results", timeout=5000)
+            ok("NOCHMAL x3: same layout, nobody has to re-arrange", st(A)["placements"] == layout0)
+            lis1 = {n: pg.evaluate("() => window.__listeners()") for n, pg in pages.items()}
+            ok("NOCHMAL x3: window/document listeners don't pile up on any phone", all(lis1[n] - lis0[n] <= 2 for n in pages), f"{lis0} -> {lis1}")
+            ok("results offer NOCHMAL + HANDYS NEU ANORDNEN", "NOCHMAL" in A.inner_text(".ms-results") and "HANDYS NEU ANORDNEN" in A.inner_text(".ms-results"))
+            A.click(".ms-results [data-act='back_to_setup']")
+            back = wait_for(lambda: all(st(pg)["phase"] == "setup" for pg in pages.values()) and A.is_visible(".ms-editor .ms-tile"), 5)
+            ok("HANDYS NEU ANORDNEN -> back in the layout editor on every phone", back)
+            A.click("[data-role='test']")
+            A.wait_for_selector(".ms-hostbar [data-role='ok']", timeout=5000)
+            A.click(".ms-hostbar [data-role='ok']")
+            wait_for(lambda: all(st(pg)["phase"] == "ready" for pg in pages.values()), 5)
+            A.click(".ms-hostbar [data-role='start']")
+            wait_for(lambda: (gs(A) or {}).get("phase") in ("countdown", "playing"), 8)
+            A.click(".ms-menu-btn")
+            A.click(".ms-menu [data-act='end']")
+            for pg in pages.values():
+                pg.wait_for_selector(".ms-results", timeout=5000)
             B.click(".ms-results [data-act='chat']")
             ok("after the game the chat is reachable again", B.is_visible("#ms-return-bar") and B.is_visible("#message-input"))
             B.click("#ms-return-bar")
             A.click(".ms-results [data-act='close']")
             ok("host closes the table -> every phone leaves MultiScreen", wait_for(lambda: all(pg.evaluate("() => !window.MultiScreen.isOpen()") for pg in pages.values()), 4))
+            time.sleep(0.5)
+            left = {n: pg.evaluate("() => { const S = window.MultiScreen._debug(); return { raf: S.raf, wakeLock: !!S.wakeLock }; }") for n, pg in pages.items()}
+            idle1 = {n: pg.evaluate("() => window.__idle()") for n, pg in pages.items()}
+            ok("after leaving: no render loop, no wake lock, no running timers on any phone",
+               all(v["raf"] in (None, 0) and not v["wakeLock"] for v in left.values())
+               and all(idle1[n]["rafPerSec"] <= 2 and idle1[n]["intervals"] <= idle0[n]["intervals"] for n in pages),
+               f"{left} {idle0} -> {idle1} (TIM held a wake lock during the game: {wl_tim})")
 
-            errors = [e for pg in pages.values() for e in pg.errors if "favicon" not in e and "WebSocket" not in e]
+            # ---------------- calibration cache (TEST 18) ----------------
+            B.reload()
+            B.wait_for_function("() => typeof ws !== 'undefined' && ws && ws.readyState === 1", timeout=10000)
+            kept = B.evaluate("() => localStorage.getItem('ms_px_per_mm')")
+            B.evaluate("() => window.MultiScreen.openEntry('snake')")
+            B.wait_for_selector(".ms-entry [data-role='create']", timeout=5000)
+            B.click(".ms-entry [data-role='create']")
+            mine = wait_for(lambda: next((d for d in (st(B) or {}).get("devices", []) if d["name"] == "SARAH"), None), 5)
+            ok("calibration survives a reload (stored on the phone)", kept and abs(float(kept) - 6.0) < 1e-6 and mine and mine["calibrated"], f"{kept} {mine and mine['calibrated']}")
+            B.wait_for_selector("[data-role='calib-reset']", timeout=4000)
+            B.click("[data-role='calib-reset']")
+            reset = wait_for(lambda: not next(d for d in st(B)["devices"] if d["name"] == "SARAH")["calibrated"], 4)
+            ok("... and the reset really forgets it", reset and B.evaluate("() => localStorage.getItem('ms_px_per_mm')") is None)
+            B.click(".ms-head [data-role='close']")
+            if B.is_visible(".dialog-overlay"):
+                B.click(".dialog-overlay [data-act='ok']")
+            wait_for(lambda: B.evaluate("() => !window.MultiScreen.isOpen()"), 4)
+
+            errors = [e for pg in pages.values() for e in real_errors(pg)]
             ok("no JS errors on any phone", not errors, "; ".join(errors[:3]))
             browser.close()
     finally:

@@ -468,7 +468,7 @@ def last(cm, ws, type_):
 INFO = {"cssWidth": 390, "cssHeight": 844, "dpr": 3, "capabilities": {"touch": True}}
 
 
-class SessionTest(unittest.TestCase):
+class SessionHelpers:
     def setUp(self):
         self.loop = asyncio.new_event_loop()
 
@@ -493,6 +493,8 @@ class SessionTest(unittest.TestCase):
         self.run_(m.join(ub, b, {"code": code, "deviceId": "devBBBBBBBB", "device": INFO}))
         return cm, m, m.sessions[code], a, b, ua, ub
 
+
+class SessionTest(SessionHelpers, unittest.TestCase):
     def test_auto_row_layout_is_valid_and_locks(self):
         cm, m, s, a, b, ua, ub = self._setup_two()
         st = last(cm, a, "ms_state")["state"]
@@ -637,6 +639,250 @@ class SessionTest(unittest.TestCase):
         self.run_(m.layout_update(a, {"tiles": [{"deviceId": "devAAAAAAAA", "x": 0, "y": 0, "rotation": 45},
                                                 {"deviceId": "devBBBBBBBB", "x": "nan", "y": 0, "rotation": 0}]}))
         self.assertEqual(s.placements, {})
+
+
+# ---------------------------------------------------------------------------
+# Tests 14-44 of the original brief that the tests above didn't pin down yet
+# ---------------------------------------------------------------------------
+
+def quick(css_w, css_h):
+    return geo.device_local_size(css_w, css_h)
+
+
+def turn_on_line(g, d):
+    """Queue a turn from whichever screen may steer right now."""
+    return g.handle_input(g.active, {"dir": d})
+
+
+class AppendixSnakeTest(unittest.TestCase):
+    CELL = SNAKE_CONFIG["cell"]
+
+    def test_16_24_different_sizes_quick_mode_there_and_back(self):
+        # small iPhone (375x667) next to a big Android (412x915), quick mode
+        sw, sh = quick(375, 667)
+        bw, bh = quick(412, 915)
+        self.assertLess(sh, bh)
+        g = snake(T("A", 0, 0, 0, sw, sh), T("B", sw, 0, 0, bw, bh))
+        to_playing(g)
+        place(g, 27, 54, "right", "A")
+        self.assertTrue(run_until(g, lambda: g.active == "B", 3))              # A -> B
+        self.assertTrue(turn_on_line(g, "down"))
+        self.assertTrue(turn_on_line(g, "left"))                               # U-turn one lane lower
+        self.assertTrue(run_until(g, lambda: g.active == "A", 4))              # B -> A: control goes back
+        self.assertEqual(g.phase, "playing")
+        self.assertEqual(g.stats["crossings"], 2)
+        self.assertFalse(g.handle_input("B", {"dir": "up"}))
+        self.assertTrue(g.handle_input("A", {"dir": "up"}))
+
+    def test_26_buffered_180_on_the_next_screen_is_ignored(self):
+        g = snake(T("A", 0, 0), T("B", PW, 0))
+        to_playing(g)
+        place(g, 27, 72, "right", "A")
+        self.assertTrue(run_until(g, lambda: g.handoff_target == "B", 3))
+        self.assertFalse(g.handle_input("B", {"dir": "left"}))   # moving right: left would be a 180
+        self.assertIsNone(g.handoff_buffer)
+        self.assertTrue(run_until(g, lambda: g.active == "B", 3))
+        self.assertEqual(g.dir, "right")
+        self.assertEqual(g.phase, "playing")
+
+    def test_27_one_body_across_three_screens_no_double_segments(self):
+        tiles = (T("A", 0, 0), T("B", PW, 0), T("C", 2 * PW, 0))
+        g = snake(*tiles)
+        to_playing(g)
+        g.path = [[2 * PW + 27, 72], [9, 72]]
+        g.length = 2 * PW + 18
+        g.dir, g.queue, g._last_turn, g.active = "right", [], None, "C"
+        covered = set()
+        (hx, hy), (tx, _) = g.path
+        steps = int(hx - tx)
+        for k in range(steps + 1):
+            x = tx + k
+            if any(abs(x - e) < 0.05 for e in (PW, 2 * PW)):
+                continue   # exactly on a shared edge: belongs to both borders
+            owners = [t.device_id for t in tiles if geo.point_inside(t, x, hy)]
+            self.assertEqual(len(owners), 1, (x, owners))          # each body point on exactly ONE phone
+            covered.add(owners[0])
+            lx, ly = geo.world_to_local(g.world.by_id[owners[0]], x, hy)
+            self.assertTrue(0 <= lx <= PW and 0 <= ly <= PH)       # ... and inside that phone's own glass
+        self.assertEqual(covered, {"A", "B", "C"})
+        run_until(g, lambda: False, 0.3)
+        for (ax, ay), (bx, by) in zip(g.path, g.path[1:]):      # still one axis-aligned polyline
+            self.assertTrue(abs(ax - bx) < 1e-6 or abs(ay - by) < 1e-6)
+
+    def test_29_food_on_a_remote_screen_is_reachable_through_the_world(self):
+        # 2x2 table; head on A, food on D (diagonal - no direct passage):
+        # the snake has to travel A -> B -> D
+        g = snake(T("A", 0, 0), T("B", PW, 0), T("C", 0, PH), T("D", PW, PH))
+        to_playing(g)
+        place(g, 27, 72, "right", "A")
+        fx, fy = 99.0, 207.0
+        self.assertEqual(g.world.get_tile_for_point(fx, fy).device_id, "D")
+        g.food = {"x": fx, "y": fy, "id": 999, "deviceId": "D"}
+        route, queued = ["A"], False
+        for _ in range(30 * 8):
+            hx, hy = g.path[0]
+            if not queued and g.dir == "right" and fx - self.CELL < hx < fx:
+                queued = turn_on_line(g, "down")          # turns exactly on the food's column
+            g.update(1 / 30)
+            if g.active != route[-1]:
+                route.append(g.active)
+            if g.score:
+                break
+        self.assertEqual(g.score, 1, (g.phase, g.crash, g.path[0]))
+        self.assertEqual(route, ["A", "B", "D"])
+
+    def test_41_five_minutes_no_drift(self):
+        # mixed phones, 30 Hz, 5 minutes of game time with an autopilot that
+        # dodges walls; lives are topped up so the run never ends early
+        sizes = [quick(375, 667), quick(412, 915), quick(390, 844), quick(360, 800)]
+        x, tiles = 0.0, []
+        for i, (w, h) in enumerate(sizes):
+            tiles.append(T(f"P{i}", x, 0, 0, w, h))
+            x += w
+        g = snake(*tiles, seed=3)
+        dt, steps = 1 / 30, 30 * 300
+        sizes_seen = set()
+        for n in range(steps):
+            g.lives = 99
+            if g.phase == "playing" and g.active:
+                hx, hy = g.path[0]
+                if g._free_run(hx, hy, g.dir, 2 * self.CELL) < 2 * self.CELL and not g.queue:
+                    options = [d for d in DIRS_ if g._legal_after(g.dir, d)]
+                    best = max(options, key=lambda d: g._free_run(hx, hy, d, 20 * self.CELL))
+                    g.handle_input(g.active, {"dir": best})
+            g.update(dt)
+            self.assertAlmostEqual(g.time, (n + 1) * dt, places=6)        # game time never drifts
+            for px, py in g.path:
+                self.assertTrue(math.isfinite(px) and math.isfinite(py))
+            for (ax, ay), (bx, by) in zip(g.path, g.path[1:]):
+                self.assertTrue(abs(ax - bx) < 1e-6 or abs(ay - by) < 1e-6)
+            if g.phase == "playing":
+                self.assertTrue(geo.point_inside(g.world.by_id[g.active], *g.path[0], eps=0.5))
+            if g.food:
+                self.assertTrue(g.world.contains_point(g.food["x"], g.food["y"]))
+            self.assertLessEqual(g.speed, SNAKE_CONFIG["max_speed"])
+            if n % 300 == 0:
+                sizes_seen.add(len(__import__("json").dumps(g.build_state())) // 500)
+        self.assertGreater(g.stats["playTime"], 60)
+        self.assertGreater(g.stats["crossings"], 3)
+        self.assertLessEqual(len(g.events), SNAKE_CONFIG["max_events"])
+        self.assertLessEqual(max(sizes_seen), 4)   # snapshots stay small (< ~2.5 KB) the whole run
+
+
+DIRS_ = tuple(geo.DIR_VECTORS)
+
+
+class AppendixSessionTest(SessionHelpers, unittest.TestCase):
+    """Session-level parts of tests 14/15/17/21/39/42 (fake sockets)."""
+
+    def test_14_disconnected_tile_blocks_the_start_and_names_the_phone(self):
+        cm, m, s, a, b, ua, ub = self._setup_two()
+        self.run_(m.layout_update(a, {"tiles": [{"deviceId": "devAAAAAAAA", "x": 0, "y": 0, "rotation": 0},
+                                                {"deviceId": "devBBBBBBBB", "x": 400, "y": 400, "rotation": 0}]}))
+        self.run_(m.confirm_layout(a, {}))
+        self.assertEqual(s.phase, "setup")
+        self.assertIn("SARAH", last(cm, a, "ms_error")["message"])
+        self.run_(m.start_game(a, {}))
+        self.assertIsNone(s.game)
+
+    def test_15_overlapping_tiles_block_and_are_marked(self):
+        cm, m, s, a, b, ua, ub = self._setup_two()
+        self.run_(m.layout_update(a, {"tiles": [{"deviceId": "devAAAAAAAA", "x": 0, "y": 0, "rotation": 0},
+                                                {"deviceId": "devBBBBBBBB", "x": 30, "y": 20, "rotation": 0}]}))
+        problems = last(cm, a, "ms_state")["state"]["layout"]["problems"]
+        overlap = [p for p in problems if p["code"] == "overlap"]
+        self.assertTrue(overlap)
+        self.assertEqual(sorted(overlap[0]["devices"]), ["devAAAAAAAA", "devBBBBBBBB"])   # both tiles get marked red
+        self.run_(m.confirm_layout(a, {}))
+        self.assertEqual(s.phase, "setup")
+
+    def test_17_21_precision_calibration_sizes_the_tile_and_survives_a_reconnect(self):
+        cm, m, s, a, b, ua, ub = self._setup_two()
+        self.run_(m.device_info(b, {"device": dict(INFO, pxPerMm=6.3)}))
+        want = geo.device_local_size(390, 844, px_per_mm=6.3)
+        self.assertEqual(tuple(round(v, 2) for v in s.devices["devBBBBBBBB"].size()), tuple(round(v, 2) for v in want))
+        self.run_(m.confirm_layout(a, {}))
+        tile_before = s.build_world().by_id["devBBBBBBBB"]
+
+        async def go():
+            await m.start_game(a, {})
+            await m.handle_disconnect(b)
+            await m.join(ub, object(), {"code": s.code, "deviceId": "devBBBBBBBB", "device": dict(INFO, pxPerMm=6.3)})
+            s.task.cancel()
+        self.run_(go())
+        tile_after = s.build_world().by_id["devBBBBBBBB"]
+        self.assertEqual((tile_after.x, tile_after.y, tile_after.w, tile_after.h, tile_after.rotation),
+                         (tile_before.x, tile_before.y, tile_before.w, tile_before.h, tile_before.rotation))
+
+    def test_39_controller_drops_out_the_snake_stops_at_once(self):
+        cm, m, s, a, b, ua, ub = self._setup_two()
+        self.run_(m.confirm_layout(a, {}))
+
+        async def go():
+            await m.start_game(a, {})
+            s.game._set_phase("playing")
+            ctrl_ws = a if s.game.active == "devAAAAAAAA" else b
+            await asyncio.sleep(0.15)
+            await m.handle_disconnect(ctrl_ws)
+            paused = m._is_paused(s)
+            head = list(s.game.path[0])
+            await asyncio.sleep(0.4)
+            moved = s.game.path[0] != head
+            s.task.cancel()
+            return paused, moved
+        paused, moved = self.run_(go())
+        self.assertTrue(paused)
+        self.assertFalse(moved)                      # no snake running blind
+
+    def test_42_ten_rematches_keep_the_layout_and_one_loop(self):
+        cm, m, s, a, b, ua, ub = self._setup_two()
+        self.run_(m.confirm_layout(a, {}))
+        layout = dict(s.placements)
+
+        async def go():
+            await m.start_game(a, {})
+            live_counts = []
+            for _ in range(10):
+                s.game.force_over()
+                await asyncio.sleep(0.12)                       # the loop notices and ends
+                await m.host_action(a, {"action": "restart"})   # [NOCHMAL]
+                await asyncio.sleep(0.05)
+                runs = [t for t in asyncio.all_tasks() if not t.done() and getattr(t.get_coro(), "__name__", "") == "_run"]
+                live_counts.append(len(runs))
+            same_layout = s.placements == layout and s.phase == "game" and not s.game.over
+            await m.host_action(a, {"action": "end"})
+            await asyncio.sleep(0.12)
+            await m.host_action(a, {"action": "back_to_setup"})  # [HANDYS NEU ANORDNEN]
+            return live_counts, same_layout
+        live_counts, same_layout = self.run_(go())
+        self.assertEqual(live_counts, [1] * 10)
+        self.assertTrue(same_layout)
+        self.assertEqual(s.phase, "setup")
+        self.assertIsNone(s.game)
+
+    def test_mixed_device_matrix_forms_one_valid_row(self):
+        cm, m = FakeCM(), None
+        m = ms.MultiScreenManager(cm)
+        phones = [(375, 667), (390, 844), (393, 852), (430, 932), (360, 800), (412, 915), (844, 390)]
+        sockets = [object() for _ in phones]
+        for i, ((w, h), ws) in enumerate(zip(phones, sockets)):
+            info = dict(INFO, cssWidth=w, cssHeight=h)
+            user = {"id": 10 + i, "name": f"P{i}"}
+            if i == 0:
+                self.run_(m.create(user, ws, {"game": "snake", "deviceId": f"dev{i:08d}", "device": info}))
+                code = next(iter(m.sessions))
+            else:
+                self.run_(m.join(user, ws, {"code": code, "deviceId": f"dev{i:08d}", "device": info}))
+        s = m.sessions[code]
+        world = s.build_world()
+        errors = [p for p in world.validate() if p["severity"] == "error"]
+        self.assertEqual(errors, [])
+        self.assertEqual(len(world.tiles), len(phones))
+        self.assertEqual(len({tuple(sorted((p.a, p.b))) for p in world.passages}), len(phones) - 1)   # (stored once per side)
+        heights = {round(t.h, 1) for t in world.tiles}
+        self.assertGreater(len(heights), 3)            # really different screens, not clones
+        order = walk(world, (5, 60), "right", steps=4000)   # the row is centre-aligned
+        self.assertEqual(len(order), len(phones))     # one straight line crosses every phone
 
 
 if __name__ == "__main__":
