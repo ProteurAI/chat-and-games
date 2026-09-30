@@ -210,6 +210,7 @@
   // DOM
   // ---------------------------------------------------------------------
   let root, shell, head, main, stage, canvas, ctx, stageUi, hostBar, menuBtn, menuEl, dpadWrap, returnBar, calibEl;
+  let stageSize = null;
   function build() {
     if (root) return;
     root = document.createElement("div");
@@ -241,6 +242,11 @@
     head = root.querySelector('[data-role="title"]');
     stage = root.querySelector('[data-role="stage"]');
     canvas = root.querySelector('[data-role="canvas"]');
+    // the stage size is cached here instead of being read in every frame
+    // (a read after the per-frame UI writes would force a layout each frame)
+    if ("ResizeObserver" in window) {
+      new ResizeObserver(() => { stageSize = { w: stage.clientWidth, h: stage.clientHeight }; }).observe(stage);
+    }
     ctx = canvas.getContext("2d");
     stageUi = root.querySelector('[data-role="stage-ui"]');
     hostBar = root.querySelector('[data-role="hostbar"]');
@@ -888,7 +894,8 @@
   // ---------------------------------------------------------------------
   function computeView() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const cssW = stage.clientWidth || window.innerWidth, cssH = stage.clientHeight || window.innerHeight;
+    const cssW = (stageSize && stageSize.w) || stage.clientWidth || window.innerWidth;
+    const cssH = (stageSize && stageSize.h) || stage.clientHeight || window.innerHeight;
     const pw = Math.round(cssW * dpr), ph = Math.round(cssH * dpr);
     if (canvas.width !== pw || canvas.height !== ph) { canvas.width = pw; canvas.height = ph; }
     let tile = myTile();

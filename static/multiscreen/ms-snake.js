@@ -254,7 +254,7 @@
         <div class="ms-fun-list">${fun.join("")}</div>
         ${control ? `<div class="ms-results-control">Am Steuer: ${control}</div>` : ""}
         <div class="ms-results-actions">
-          ${host ? `<button type="button" class="primary-btn" data-act="restart">🔁 NOCHMAL</button><button type="button" class="ghost-btn" data-act="back_to_setup">✎ LAYOUT ÄNDERN</button><button type="button" class="ghost-btn" data-act="close">BEENDEN</button>` : `<span class="ms-results-wait">Der Host entscheidet, wie es weitergeht.</span>`}
+          ${host ? `<button type="button" class="primary-btn" data-act="restart">🔁 NOCHMAL</button><button type="button" class="ghost-btn" data-act="back_to_setup">✎ HANDYS NEU ANORDNEN</button><button type="button" class="ghost-btn" data-act="close">BEENDEN</button>` : `<span class="ms-results-wait">Der Host entscheidet, wie es weitergeht.</span>`}
           <button type="button" class="ghost-btn" data-act="chat">💬 ZUM CHAT</button>
           ${host ? "" : `<button type="button" class="ghost-btn" data-act="leave">VERLASSEN</button>`}
         </div>
