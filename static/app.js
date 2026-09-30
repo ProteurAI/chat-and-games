@@ -31,12 +31,44 @@ const el = (id) => document.getElementById(id);
 // theme - this just wires up the visible toggle button to flip + persist it.
 function setTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
-  localStorage.setItem("cg_theme", theme);
+  try { localStorage.setItem("cg_theme", theme); } catch (e) { /* private mode */ }
+  el("theme-toggle").setAttribute("aria-pressed", theme === "dark" ? "true" : "false");
 }
 el("theme-toggle").addEventListener("click", () => {
   const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
   setTheme(next);
 });
+el("theme-toggle").setAttribute("aria-pressed", document.documentElement.getAttribute("data-theme") === "dark" ? "true" : "false");
+
+// ---------- viewport (mobile keyboard) ----------
+// #app follows the VISUAL viewport. On iOS - and on Android with the
+// default "resizes-visual" keyboard - the layout viewport keeps its full
+// height when the keyboard opens, so a plain 100dvh app would slide its own
+// composer under the keyboard. This is the one place that does viewport
+// math: it sets --app-height, and pins the app back to the top when iOS
+// pans the page to reveal a focused input. The game modal's chat drawer
+// keeps its own, separate visualViewport handling (mobile-shell.js).
+const AppViewport = (() => {
+  let raf = 0;
+  function apply() {
+    raf = 0;
+    const vv = window.visualViewport;
+    const h = vv ? vv.height : window.innerHeight;
+    document.documentElement.style.setProperty("--app-height", `${Math.round(h)}px`);
+    const app = document.getElementById("app");
+    if (app) app.style.transform = vv && vv.offsetTop > 0 ? `translateY(${Math.round(vv.offsetTop)}px)` : "";
+    if (window.scrollY && document.documentElement.classList.contains("app-active")) window.scrollTo(0, 0);
+  }
+  function schedule() { if (!raf) raf = requestAnimationFrame(apply); }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", schedule);
+    window.visualViewport.addEventListener("scroll", schedule);
+  }
+  window.addEventListener("resize", schedule);
+  window.addEventListener("orientationchange", () => setTimeout(schedule, 250));
+  apply();
+  return { refresh: schedule };
+})();
 
 // ---------- api helper ----------
 async function api(path, options = {}) {
@@ -45,10 +77,18 @@ async function api(path, options = {}) {
   if (options.body && !(options.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
   }
-  const res = await fetch(path, { ...options, headers });
+  let res;
+  try {
+    res = await fetch(path, { ...options, headers });
+  } catch (e) {
+    throw new Error(navigator.onLine === false ? "Du bist offline." : "Keine Verbindung zum Server.");
+  }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "Fehler" }));
-    throw new Error(err.detail || "Fehler");
+    const err = await res.json().catch(() => ({}));
+    // FastAPI validation errors come back as a list of objects - never
+    // show "[object Object]" or raw server text to a user
+    const detail = typeof err.detail === "string" ? err.detail : null;
+    throw new Error(detail || (res.status >= 500 ? "Der Server hat gerade ein Problem. Bitte gleich nochmal versuchen." : "Das hat leider nicht geklappt."));
   }
   return res.status === 204 ? null : res.json();
 }
@@ -59,17 +99,23 @@ el("login-form").addEventListener("submit", async (e) => {
   const code = el("login-code").value;
   const name = el("login-name").value.trim();
   const errBox = el("login-error");
+  const btn = el("login-submit");
   errBox.hidden = true;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner" aria-hidden="true"></span>Verbinde …`;
   try {
     const data = await api("/api/login", { method: "POST", body: JSON.stringify({ code, name }) });
     token = data.token;
     me = data.user;
     localStorage.setItem("instachat_token", token);
     localStorage.setItem("instachat_user", JSON.stringify(me));
-    startApp();
+    await startApp();
   } catch (err) {
-    errBox.textContent = err.message;
+    errBox.textContent = err.message === "Falscher Zugangscode" ? "Der Zugangscode stimmt nicht." : err.message;
     errBox.hidden = false;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Los geht's";
   }
 });
 
@@ -81,8 +127,10 @@ function showLogin() {
 async function startApp() {
   el("login-screen").hidden = true;
   el("app").hidden = false;
+  document.documentElement.classList.add("app-active");
   el("sidebar-me").textContent = me.name.slice(0, 1).toUpperCase();
-  el("sidebar-me").title = `Angemeldet als ${me.name}`;
+  el("sidebar-me").style.background = avatarColor(me.name);
+  el("sidebar-me-name").textContent = me.name;
   restoreGamesPanelCollapsed();
   // MultiScreen / Table Mode (static/multiscreen/) - shares this one
   // websocket; its own "ms_*" messages are routed to it in handleWsEvent.
@@ -92,11 +140,23 @@ async function startApp() {
     toast,
     onLobbyChange: () => renderGamesPanel(),
   });
-  await loadChannels();
-  await loadGames();
+  AppViewport.refresh();
+  try {
+    await loadChannels();
+    await loadGames();
+  } catch (err) {
+    toast(err.message, "error");
+  }
   connectWebSocket();
   renderGamesPanel();
 }
+
+el("logout-btn").addEventListener("click", async () => {
+  const ok = await confirmDialog({ title: "Abmelden?", text: "Du kannst dich jederzeit wieder mit deinem Namen anmelden.", confirmLabel: "Abmelden" });
+  if (!ok) return;
+  try { localStorage.removeItem("instachat_token"); localStorage.removeItem("instachat_user"); } catch (e) { /* ignore */ }
+  location.reload();
+});
 
 // ---------- channels ----------
 async function loadChannels() {
@@ -109,34 +169,67 @@ async function loadChannels() {
   }
 }
 
+// Unread counts per channel - fed by the server's lightweight
+// channel_activity events (the full message only goes to sockets that have
+// that channel open).
+const unreadCounts = new Map();
+
 function renderChannelList() {
   const list = el("channel-list");
   list.innerHTML = "";
   if (!channels.length) {
     const li = document.createElement("li");
     li.className = "channel-empty-hint";
-    li.textContent = "Noch keine Kanäle – leg unten den ersten an! 👇";
+    li.textContent = "Noch keine Kanäle – leg unten den ersten an.";
     list.appendChild(li);
     return;
   }
   for (const ch of channels) {
     const li = document.createElement("li");
-    li.textContent = `#${ch.name}`;
-    li.className = ch.id === currentChannelId ? "active" : "";
-    li.addEventListener("click", () => selectChannel(ch.id));
+    const btn = document.createElement("button");
+    btn.type = "button";
+    const n = unreadCounts.get(ch.id) || 0;
+    btn.className = "channel-item" + (ch.id === currentChannelId ? " active" : "") + (n ? " unread" : "");
+    if (ch.id === currentChannelId) btn.setAttribute("aria-current", "page");
+    btn.innerHTML = `<svg class="ico" aria-hidden="true"><use href="#i-hash"/></svg><span class="channel-item-name"></span>`;
+    btn.querySelector(".channel-item-name").textContent = ch.name;
+    if (n) {
+      const badge = document.createElement("span");
+      badge.className = "count-badge";
+      badge.textContent = n > 99 ? "99+" : String(n);
+      btn.appendChild(badge);
+      btn.setAttribute("aria-label", `${ch.name}, ${n} neue Nachrichten`);
+    }
+    btn.addEventListener("click", () => selectChannel(ch.id));
+    li.appendChild(btn);
     list.appendChild(li);
   }
+  el("mobile-unread-dot").hidden = ![...unreadCounts.values()].some(Boolean);
+}
+
+function currentChannelLabel() {
+  const ch = channels.find((c) => c.id === currentChannelId);
+  return ch ? ch.name : "";
+}
+
+function updateChatHeader() {
+  const name = currentChannelLabel();
+  el("current-channel-name").textContent = name || "Chat";
+  el("mobile-header-channel").textContent = name ? `#${name}` : "Chat & Games";
+  const sub = onlineNames.length ? `${onlineNames.length} online` : "";
+  el("chat-header-sub").textContent = sub;
+  el("mobile-header-sub").textContent = sub;
 }
 
 function showNoChannelsState() {
   currentChannelId = null;
-  el("current-channel-name").textContent = "#";
-  el("mobile-header-channel").textContent = "#";
-  el("messages").innerHTML = "";
+  updateChatHeader();
+  const box = el("messages");
+  box.innerHTML = "";
   const hint = document.createElement("div");
   hint.className = "msg-system";
-  hint.textContent = "Noch keine Kanäle vorhanden – leg links deinen ersten Kanal an!";
-  el("messages").appendChild(hint);
+  hint.textContent = "Noch keine Kanäle vorhanden – leg deinen ersten Kanal an!";
+  box.appendChild(hint);
   setComposerEnabled(false);
 }
 
@@ -144,28 +237,87 @@ function setComposerEnabled(enabled) {
   for (const id of ["snap-btn", "attach-btn", "poll-btn", "message-input", "send-btn"]) {
     el(id).disabled = !enabled;
   }
+  updateComposerState();
 }
 
+function showMessagesLoading() {
+  const box = el("messages");
+  box.innerHTML = `<div class="chat-loading" aria-label="Nachrichten werden geladen">${[62, 38, 74].map((w) => `
+    <div class="skeleton-row"><div class="skeleton-avatar"></div><div class="skeleton-lines"><div class="skeleton-line" style="width:28%"></div><div class="skeleton-line" style="width:${w}%"></div></div></div>`).join("")}</div>`;
+}
+
+function showMessagesError(retry) {
+  const box = el("messages");
+  box.innerHTML = "";
+  const wrap = document.createElement("div");
+  wrap.className = "chat-error";
+  wrap.innerHTML = `<div class="chat-empty-bubble"><svg class="ico"><use href="#i-wifi-off"/></svg></div>
+    <div class="chat-empty-title">Nachrichten konnten nicht geladen werden</div>`;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "primary-btn";
+  btn.textContent = "Nochmal versuchen";
+  btn.addEventListener("click", retry);
+  wrap.appendChild(btn);
+  box.appendChild(wrap);
+}
+
+// Each switch gets a sequence number: when the user hops channels faster
+// than the history requests come back, only the LAST switch may render -
+// a slow earlier response must never paint channel A's messages into B.
+let channelLoadSeq = 0;
+
 async function selectChannel(id) {
+  const seq = ++channelLoadSeq;
   currentChannelId = id;
+  unreadCounts.delete(id);
   setComposerEnabled(true);
   renderChannelList();
-  const ch = channels.find((c) => c.id === id);
-  const label = ch ? `#${ch.name}` : "#";
-  el("current-channel-name").textContent = label;
-  el("mobile-header-channel").textContent = label;
-  el("messages").innerHTML = "";
-  const msgs = await api(`/api/channels/${id}/messages`);
-  if (!msgs.length) {
-    showEmptyMessagesState();
-  } else {
-    for (const m of msgs) renderMessage(m);
+  updateChatHeader();
+  hideNewMessagesPill();
+  closeDrawers();
+  showMessagesLoading();
+  let msgs;
+  try {
+    msgs = await api(`/api/channels/${id}/messages`);
+  } catch (err) {
+    if (seq === channelLoadSeq) showMessagesError(() => selectChannel(id));
+    return;
   }
-  scrollToBottom();
+  if (seq !== channelLoadSeq) return;
+  renderHistory(msgs);
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "join", channel_id: id }));
   }
-  closeDrawers();
+}
+
+function renderHistory(msgs) {
+  const box = el("messages");
+  if (messagesGrowthObserver) messagesGrowthObserver.disconnect();
+  box.innerHTML = "";
+  if (!msgs.length) showEmptyMessagesState();
+  else for (const m of msgs) appendMessage(box, m);
+  scrollToBottom();
+  keepPinnedWhileMediaLoads(box, box);
+}
+
+// After a dropped connection: fetch what we missed (messages are only
+// pushed live while connected) without flashing a loading state.
+async function resyncCurrentChannel() {
+  if (!currentChannelId) return;
+  const id = currentChannelId;
+  const seq = channelLoadSeq;
+  try {
+    const msgs = await api(`/api/channels/${id}/messages`);
+    if (seq !== channelLoadSeq || id !== currentChannelId) return;
+    const box = el("messages");
+    const wasNear = isNearBottom(box);
+    const lastId = Math.max(0, ...[...box.querySelectorAll(".msg")].map((m) => +m.dataset.messageId || 0));
+    const missing = msgs.filter((m) => m.id > lastId);
+    if (!box.querySelector(".msg") || missing.length > 40) { renderHistory(msgs); return; }
+    for (const m of missing) renderMessage(m);
+    if (wasNear) scrollToBottom();
+  } catch (err) { /* stays on what we have; the banner already told the user */ }
 }
 
 el("new-channel-form").addEventListener("submit", async (e) => {
@@ -173,36 +325,114 @@ el("new-channel-form").addEventListener("submit", async (e) => {
   const input = el("new-channel-input");
   const name = input.value.trim();
   if (!name) return;
-  const ch = await api("/api/channels", { method: "POST", body: JSON.stringify({ name }) });
-  input.value = "";
-  await loadChannels();
-  selectChannel(ch.id);
+  try {
+    const ch = await api("/api/channels", { method: "POST", body: JSON.stringify({ name }) });
+    input.value = "";
+    await loadChannels();
+    selectChannel(ch.id);
+  } catch (err) {
+    toast(err.message, "error");
+  }
 });
 
-// ---------- websocket ----------
-function connectWebSocket() {
-  const proto = location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+// ---------- websocket + connection state ----------
+// The banner only appears when something is actually wrong (a slow first
+// connect, a drop, being offline) and briefly confirms the recovery.
+let wsEverOpened = false;
+let wsReconnectTimer = null;
+let connState = "connecting";
+let connSlowTimer = null;
+let connOkTimer = null;
 
-  ws.addEventListener("open", () => {
+function setConnState(state) {
+  connState = state;
+  const banner = el("conn-banner");
+  clearTimeout(connOkTimer);
+  const online = state === "online";
+  el("message-form").classList.toggle("is-offline", !online);
+  el("sidebar-me-status").textContent = online ? "Online" : state === "offline" ? "Offline" : "Verbinde …";
+  el("sidebar-me-status").classList.toggle("is-offline", !online);
+  updateComposerState();
+  const show = (cls, icon, text) => {
+    banner.className = `conn-banner ${cls}`;
+    // the icon can itself be a <span> (spinner) - address the text explicitly
+    banner.innerHTML = `${icon}<span class="conn-banner-text"></span>`;
+    banner.querySelector(".conn-banner-text").textContent = text;
+    banner.hidden = false;
+  };
+  if (state === "reconnecting") show("", `<span class="spinner" aria-hidden="true"></span>`, "Verbindung wird wiederhergestellt …");
+  else if (state === "connecting-slow") show("", `<span class="spinner" aria-hidden="true"></span>`, "Verbinde …");
+  else if (state === "offline") show("conn-banner--offline", `<svg class="ico"><use href="#i-wifi-off"/></svg>`, "Du bist offline – Nachrichten können gerade nicht gesendet werden.");
+  else if (state === "restored") {
+    show("conn-banner--ok", `<svg class="ico"><use href="#i-check"/></svg>`, "Wieder verbunden");
+    connOkTimer = setTimeout(() => { banner.hidden = true; }, 2200);
+  } else banner.hidden = true;
+}
+
+function wsIsOpen() { return !!ws && ws.readyState === WebSocket.OPEN; }
+// "Can a message actually leave this device right now?" - an OPEN socket
+// alone isn't enough: after going offline a socket often stays formally
+// open for a while and ws.send() would silently buffer into the void.
+function canSend() { return wsIsOpen() && connState !== "offline" && navigator.onLine !== false; }
+
+function connectWebSocket() {
+  clearTimeout(wsReconnectTimer);
+  wsReconnectTimer = null;
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const socket = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+  ws = socket;
+  if (!wsEverOpened) {
+    clearTimeout(connSlowTimer);
+    connSlowTimer = setTimeout(() => { if (!wsIsOpen()) setConnState("connecting-slow"); }, 1500);
+  }
+
+  socket.addEventListener("open", () => {
+    if (ws !== socket) return;
     wsReconnectDelay = 1000;
-    if (currentChannelId) ws.send(JSON.stringify({ type: "join", channel_id: currentChannelId }));
+    clearTimeout(connSlowTimer);
+    const recovered = wsEverOpened;
+    wsEverOpened = true;
+    setConnState(recovered ? "restored" : "online");
+    if (recovered) setTimeout(() => { if (connState === "restored") connState = "online"; updateComposerState(); }, 0);
+    if (currentChannelId) socket.send(JSON.stringify({ type: "join", channel_id: currentChannelId }));
+    if (recovered) resyncCurrentChannel();
     // re-attaches this device to its MultiScreen session (same tile) after a drop
     window.MultiScreen.onSocketOpen();
   });
 
-  ws.addEventListener("message", (event) => {
-    const data = JSON.parse(event.data);
+  socket.addEventListener("message", (event) => {
+    let data;
+    try { data = JSON.parse(event.data); } catch (e) { return; }
     handleWsEvent(data);
   });
 
-  ws.addEventListener("close", () => {
-    setTimeout(connectWebSocket, wsReconnectDelay);
+  socket.addEventListener("close", () => {
+    if (ws !== socket) return;
+    if (wsEverOpened) setConnState(navigator.onLine === false || connState === "offline" ? "offline" : "reconnecting");
+    wsReconnectTimer = setTimeout(connectWebSocket, wsReconnectDelay);
     wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, 15000);
   });
 
-  ws.addEventListener("error", () => ws.close());
+  socket.addEventListener("error", () => socket.close());
 }
+
+window.addEventListener("offline", () => {
+  if (!token || !me) return;
+  setConnState("offline");
+  // drop the half-open socket now; "online" reconnects immediately
+  try { if (ws && ws.readyState <= WebSocket.OPEN) ws.close(); } catch (e) { /* ignore */ }
+});
+window.addEventListener("online", () => {
+  if (!token || !me) return;
+  if (!wsIsOpen()) { setConnState("reconnecting"); wsReconnectDelay = 1000; connectWebSocket(); }
+});
+// Coming back to a backgrounded tab: don't wait out a long backoff.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && token && me && ws && ws.readyState === WebSocket.CLOSED) {
+    wsReconnectDelay = 1000;
+    connectWebSocket();
+  }
+});
 
 function handleWsEvent(data) {
   if (typeof data.type === "string" && data.type.startsWith("ms_")) {
@@ -211,9 +441,15 @@ function handleWsEvent(data) {
   }
   if (data.type === "message") {
     if (data.message.channel_id === currentChannelId) {
-      renderMessage(data.message);
-      scrollToBottom();
+      if (!document.querySelector(`#messages .msg[data-message-id="${data.message.id}"]`)) renderMessage(data.message);
     }
+  } else if (data.type === "channel_activity") {
+    if (data.channel_id !== currentChannelId && data.user_id !== me.id) {
+      unreadCounts.set(data.channel_id, (unreadCounts.get(data.channel_id) || 0) + 1);
+      renderChannelList();
+    }
+  } else if (data.type === "channels_update") {
+    api("/api/channels").then((list) => { channels = list; renderChannelList(); }).catch(() => {});
   } else if (data.type === "reaction_update") {
     updateReactionsUI(data.message_id, data.reactions);
   } else if (data.type === "poll_update") {
@@ -242,7 +478,7 @@ function handleWsEvent(data) {
     if (!el("party-overlay").hidden) renderPartyView();
     renderGamesPanel();
   } else if (data.type === "party_error") {
-    toast(data.message || "Party-Fehler");
+    toast(data.message || "Das hat mit der Party nicht geklappt.", "error");
   } else if (data.type === "party_game_started") {
     lastPartyGameStarted = data;
     if (!el("party-overlay").hidden) renderPartyView();
@@ -262,7 +498,7 @@ function handleWsEvent(data) {
   } else if (data.type === "kopf_selfie_photo" || data.type === "kopf_selfie_ack" || data.type === "kopf_selfie_rejected") {
     if (myGameType === "kopfkicker" && kopfKickerInstance) {
       if (data.type === "kopf_selfie_photo") kopfKickerInstance.handleSelfieEvent(data);
-      else if (data.type === "kopf_selfie_rejected") toast("Foto konnte nicht verarbeitet werden.");
+      else if (data.type === "kopf_selfie_rejected") toast("Foto konnte nicht verarbeitet werden.", "error");
     }
   }
 }
@@ -286,26 +522,40 @@ function syncScrollLock() {
   document.body.classList.toggle("scroll-locked", anyOpen);
 }
 
+let drawerReturnFocus = null;
+
+function isMobileShell() {
+  return window.matchMedia("(max-width: 899px), (max-height: 480px) and (pointer: coarse)").matches;
+}
+
 function closeDrawers() {
+  const wasOpen = drawersOpen();
   el("left-sidebar").classList.remove("open");
   el("games-panel").classList.remove("open");
   el("drawer-backdrop").classList.remove("open");
   syncScrollLock();
+  if (wasOpen && drawerReturnFocus && document.contains(drawerReturnFocus)) drawerReturnFocus.focus({ preventScroll: true });
+  drawerReturnFocus = null;
 }
 
 function openLeftSidebarMobile() {
   closeDrawers();
+  drawerReturnFocus = el("mobile-menu-btn");
   el("left-sidebar").classList.add("open");
   el("drawer-backdrop").classList.add("open");
   syncScrollLock();
+  const active = el("left-sidebar").querySelector(".channel-item.active") || el("sidebar-close-btn");
+  setTimeout(() => active.focus({ preventScroll: true }), 50);
 }
 
 function openGamesPanelMobile() {
   closeDrawers();
+  drawerReturnFocus = el("mobile-games-btn");
   el("games-panel").classList.add("open");
   el("drawer-backdrop").classList.add("open");
   syncScrollLock();
   renderGamesPanel();
+  setTimeout(() => el("games-panel-close-btn").focus({ preventScroll: true }), 50);
 }
 
 const GAMES_PANEL_COLLAPSED_KEY = "cg_games_panel_collapsed";
@@ -348,6 +598,7 @@ function closePartyOverlay() {
 el("mobile-menu-btn").addEventListener("click", openLeftSidebarMobile);
 el("mobile-games-btn").addEventListener("click", openGamesPanelMobile);
 el("drawer-backdrop").addEventListener("click", closeDrawers);
+el("sidebar-close-btn").addEventListener("click", closeDrawers);
 el("games-panel-close-btn").addEventListener("click", closeDrawers);
 el("games-panel-collapse-btn").addEventListener("click", toggleGamesPanelDesktop);
 el("games-rail-btn").addEventListener("click", () => setGamesPanelCollapsed(false));
@@ -356,21 +607,57 @@ el("games-library-back-btn").addEventListener("click", closeGamesLibrary);
 el("party-overlay-close-btn").addEventListener("click", closePartyOverlay);
 
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
-  if (!el("games-library-overlay").hidden) closeGamesLibrary();
+  if (e.key !== "Escape" || document.querySelector(".dialog-overlay")) return;
+  if (!el("snap-modal").hidden) closeSnapModal();
+  else if (!el("games-library-overlay").hidden) closeGamesLibrary();
   else if (!el("party-overlay").hidden) closePartyOverlay();
   else if (drawersOpen()) closeDrawers();
+  else if (!el("poll-composer").hidden) el("poll-composer").hidden = true;
 });
+
+// same hues as before, each dark enough for white initials (>= 4.5:1)
+const AVATAR_COLORS = ["#6F5EF1", "#CB4A16", "#1A8556", "#2870E3", "#C74379", "#9B6B09", "#268275", "#8B58D7"];
+function avatarColor(key) {
+  let h = 0;
+  for (const ch of String(key)) h = (h * 31 + ch.charCodeAt(0)) | 0;
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+}
+
+const ONLINE_VISIBLE = 8;
+let onlineExpanded = false;
 
 function renderOnline(names) {
   onlineNames = names;
   const list = el("online-list");
   list.innerHTML = "";
-  for (const name of names) {
+  const sorted = [...names].sort((a, b) => (a === me.name ? -1 : b === me.name ? 1 : a.localeCompare(b, "de")));
+  const shown = onlineExpanded ? sorted : sorted.slice(0, ONLINE_VISIBLE);
+  for (const name of shown) {
     const li = document.createElement("li");
-    li.textContent = name;
+    if (name === me.name) li.className = "is-me";
+    const av = document.createElement("span");
+    av.className = "avatar avatar--sm";
+    av.style.background = avatarColor(name);
+    av.textContent = name.slice(0, 1).toUpperCase();
+    const label = document.createElement("span");
+    label.className = "online-name";
+    label.textContent = name === me.name ? `${name} (du)` : name;
+    li.appendChild(av);
+    li.appendChild(label);
     list.appendChild(li);
   }
+  if (sorted.length > ONLINE_VISIBLE) {
+    const li = document.createElement("li");
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "online-more";
+    more.textContent = onlineExpanded ? "Weniger anzeigen" : `+${sorted.length - ONLINE_VISIBLE} weitere`;
+    more.addEventListener("click", () => { onlineExpanded = !onlineExpanded; renderOnline(onlineNames); });
+    li.appendChild(more);
+    list.appendChild(li);
+  }
+  el("online-count").textContent = names.length ? String(names.length) : "";
+  updateChatHeader();
 }
 
 // ---------- rendering messages ----------
@@ -385,10 +672,101 @@ function withMentions(text) {
   return escaped.replace(/@([A-Za-z0-9_.\-]{2,32})/g, '<span class="mention">@$1</span>');
 }
 
+// Message text -> DOM, built from text nodes only (never innerHTML), with
+// clickable http(s) links and @mentions.
+const RICH_TEXT_RE = /(https?:\/\/[^\s<>"]+|www\.[^\s<>"]+|@[A-Za-z0-9_.\-]{2,32})/g;
+function renderRichText(container, text) {
+  let last = 0;
+  for (const m of text.matchAll(RICH_TEXT_RE)) {
+    let token = m[0];
+    const start = m.index;
+    if (start > last) container.appendChild(document.createTextNode(text.slice(last, start)));
+    if (token.startsWith("@")) {
+      const span = document.createElement("span");
+      span.className = "mention";
+      span.textContent = token;
+      container.appendChild(span);
+    } else {
+      let trail = "";
+      while (/[.,;:!?)\]]$/.test(token)) { trail = token.slice(-1) + trail; token = token.slice(0, -1); }
+      let href = null;
+      try {
+        const url = new URL(token.startsWith("www.") ? `https://${token}` : token);
+        if (url.protocol === "http:" || url.protocol === "https:") href = url.href;
+      } catch (e) { /* not a real URL */ }
+      if (href) {
+        const a = document.createElement("a");
+        a.href = href;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer nofollow";
+        a.textContent = token;
+        container.appendChild(a);
+      } else {
+        container.appendChild(document.createTextNode(token));
+      }
+      if (trail) container.appendChild(document.createTextNode(trail));
+    }
+    last = start + m[0].length;
+  }
+  if (last < text.length) container.appendChild(document.createTextNode(text.slice(last)));
+}
+
+// Scroll following: the list stays pinned to the bottom only while the
+// reader is at the bottom (tracked on scroll); images that finish loading
+// later keep it pinned. Scrolled up = a "Neue Nachrichten" pill instead of
+// yanking the view away from what they're reading.
+// Only the reader moving UP releases the pin: the scroll event of our own
+// programmatic scroll can land a frame late, after an image grew the list
+// below us - that must not count as "scrolled away".
+function trackStickiness(box) {
+  box._stuck = true;
+  box._lastTop = box.scrollTop;
+  box.addEventListener("scroll", () => {
+    const movedUp = box.scrollTop < box._lastTop - 1;
+    box._lastTop = box.scrollTop;
+    if (isNearBottom(box)) box._stuck = true;
+    else if (movedUp) box._stuck = false;
+    else if (box._stuck) pinToBottom(box);   // content grew under a pinned list
+    if (box._stuck && box.id === "messages") hideNewMessagesPill();
+  }, { passive: true });
+  // the list itself shrinking (on-screen keyboard, a banner, the poll
+  // composer) must not push the newest message out of view either
+  if ("ResizeObserver" in window) new ResizeObserver(() => { if (box._stuck) pinToBottom(box); }).observe(box);
+}
+
+function pinToBottom(box) {
+  box.scrollTop = box.scrollHeight;
+  box._lastTop = box.scrollTop;
+}
+
 function scrollToBottom() {
   const box = el("messages");
-  box.scrollTop = box.scrollHeight;
+  pinToBottom(box);
+  box._stuck = true;
+  hideNewMessagesPill();
 }
+
+function keepPinnedWhileMediaLoads(node, box) {
+  for (const img of node.querySelectorAll("img")) {
+    if (img.complete) continue;
+    img.addEventListener("load", () => { if (box._stuck !== false) pinToBottom(box); }, { once: true });
+  }
+}
+
+// Load events alone miss height changes that come later (the web font
+// swapping in and re-wrapping every line, an image decoding after
+// `complete`, a poll growing): every message in the main list is observed
+// and the list re-pins while the reader is at the bottom. Re-armed on each
+// full re-render, so detached nodes never stay observed.
+const messagesGrowthObserver = "ResizeObserver" in window
+  ? new ResizeObserver(() => {
+      const box = el("messages");
+      if (box._stuck !== false) pinToBottom(box);
+    })
+  : null;
+
+function showNewMessagesPill() { el("new-messages-pill").hidden = false; }
+function hideNewMessagesPill() { el("new-messages-pill").hidden = true; }
 
 // Whether `box` is already scrolled (close enough) to its own bottom - used
 // so the game-chat panel only auto-follows new messages when the user
@@ -402,13 +780,13 @@ function showEmptyMessagesState() {
   wrap.className = "chat-empty-state";
   const bubble = document.createElement("div");
   bubble.className = "chat-empty-bubble";
-  bubble.textContent = "💬";
+  bubble.innerHTML = `<svg class="ico"><use href="#i-chat"/></svg>`;
   const title = document.createElement("div");
   title.className = "chat-empty-title";
   title.textContent = "Noch keine Nachrichten";
   const sub = document.createElement("div");
   sub.className = "chat-empty-sub";
-  sub.textContent = "Starte die Unterhaltung – schreib einfach los.";
+  sub.textContent = "Sag Hallo 👋 – die erste Nachricht gehört dir.";
   wrap.appendChild(bubble);
   wrap.appendChild(title);
   wrap.appendChild(sub);
@@ -418,10 +796,12 @@ function showEmptyMessagesState() {
 // Pure builder: returns a fresh DOM node for `msg` with all its own event
 // listeners attached, appended nowhere yet. Called once per *container* a
 // message needs to appear in (main chat, and - while a game is open - the
-// game-chat panel too), rather than building one node and reusing it in two
-// places, since a DOM node can only ever have a single parent and
-// cloneNode() would silently drop the reaction/snap/poll click handlers.
-function buildMessageElement(msg) {
+// game-chat panel too). `prev` is the node it will follow, for grouping:
+// the same person writing again within a few minutes continues their
+// group (no repeated avatar / name / time).
+const GROUP_WINDOW_MS = 5 * 60 * 1000;
+
+function buildMessageElement(msg, prev) {
   if (msg.type === "system") {
     const div = document.createElement("div");
     div.className = "msg-system";
@@ -430,12 +810,19 @@ function buildMessageElement(msg) {
   }
 
   const mine = msg.user_id === me.id;
+  const ts = new Date(msg.created_at).getTime() || Date.now();
+  const cont = !!(prev && prev.classList && prev.classList.contains("msg") && prev.dataset.userId === String(msg.user_id)
+    && ts - (+prev.dataset.ts || 0) < GROUP_WINDOW_MS && ts >= (+prev.dataset.ts || 0));
   const wrap = document.createElement("div");
-  wrap.className = "msg" + (mine ? " mine" : "");
+  wrap.className = "msg" + (mine ? " mine" : "") + (cont ? " msg--cont" : " msg--first");
   wrap.dataset.messageId = msg.id;
+  wrap.dataset.userId = msg.user_id;
+  wrap.dataset.ts = ts;
 
   const avatar = document.createElement("div");
   avatar.className = "msg-avatar";
+  avatar.setAttribute("aria-hidden", "true");
+  avatar.style.background = avatarColor(msg.user_name || "?");
   avatar.textContent = (msg.user_name || "?").slice(0, 1).toUpperCase();
 
   const body = document.createElement("div");
@@ -443,32 +830,29 @@ function buildMessageElement(msg) {
 
   const meta = document.createElement("div");
   meta.className = "msg-meta";
-  const time = new Date(msg.created_at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-  meta.textContent = `${msg.user_name || "?"} · ${time}`;
+  const author = document.createElement("span");
+  author.className = "msg-author";
+  author.textContent = msg.user_name || "?";
+  const time = document.createElement("time");
+  time.dateTime = msg.created_at;
+  time.textContent = new Date(msg.created_at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  meta.appendChild(author);
+  meta.appendChild(time);
 
   const bubble = document.createElement("div");
-  bubble.className = "bubble";
-
-  const quickbar = document.createElement("div");
-  quickbar.className = "reaction-quickbar";
-  for (const emoji of QUICK_EMOJIS) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = emoji;
-    btn.addEventListener("click", () => sendReaction(msg.id, emoji));
-    quickbar.appendChild(btn);
-  }
-  bubble.appendChild(quickbar);
+  bubble.className = "bubble" + (msg.type === "image" || msg.type === "snap" ? " bubble--media" : "");
 
   if (msg.type === "text") {
     const content = document.createElement("div");
-    content.innerHTML = withMentions(msg.content || "");
+    content.className = "bubble-text";
+    renderRichText(content, msg.content || "");
     bubble.appendChild(content);
   } else if (msg.type === "image") {
     const img = document.createElement("img");
     img.className = "chat-image";
     img.src = msg.image_url;
-    img.alt = "Bild";
+    img.alt = `Bild von ${msg.user_name || "?"}`;
+    img.decoding = "async";
     bubble.appendChild(img);
   } else if (msg.type === "poll") {
     bubble.appendChild(buildPollElement(msg));
@@ -476,17 +860,49 @@ function buildMessageElement(msg) {
     bubble.appendChild(buildSnapElement(msg));
   }
 
+  const quickbar = document.createElement("div");
+  quickbar.className = "reaction-quickbar";
+  for (const emoji of QUICK_EMOJIS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = emoji;
+    btn.setAttribute("aria-label", `Mit ${emoji} reagieren`);
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      sendReaction(msg.id, emoji);
+      wrap.classList.remove("msg--actions");
+    });
+    quickbar.appendChild(btn);
+  }
+
   const reactions = document.createElement("div");
   reactions.className = "reactions";
   reactions.dataset.role = "reactions";
   renderReactionPills(reactions, msg.reactions || []);
-  bubble.appendChild(reactions);
 
   body.appendChild(meta);
   body.appendChild(bubble);
+  body.appendChild(reactions);
   wrap.appendChild(avatar);
   wrap.appendChild(body);
+  wrap.appendChild(quickbar);
+
+  // touch: tap a message to show its reaction bar (there is no hover)
+  bubble.addEventListener("click", (e) => {
+    if (!window.matchMedia("(hover: none)").matches) return;
+    if (e.target.closest("a, .poll-option, .snap-clickable")) return;
+    const open = wrap.classList.contains("msg--actions");
+    document.querySelectorAll(".msg.msg--actions").forEach((m) => m.classList.remove("msg--actions"));
+    if (!open) wrap.classList.add("msg--actions");
+  });
   return wrap;
+}
+
+function appendMessage(container, msg) {
+  const node = buildMessageElement(msg, container.lastElementChild);
+  container.appendChild(node);
+  if (messagesGrowthObserver && container.id === "messages") messagesGrowthObserver.observe(node);
+  return node;
 }
 
 // Renders `msg` into the main chat, and - if a game is currently open, so
@@ -494,21 +910,34 @@ function buildMessageElement(msg) {
 // simply two views of the exact same message data (same WS event, same
 // underlying DB row); nothing here sends anything or stores anything twice.
 function renderMessage(msg) {
-  const emptyState = el("messages").querySelector(".chat-empty-state");
+  const box = el("messages");
+  const isMine = msg.user_id === me.id;
+  const emptyState = box.querySelector(".chat-empty-state");
   if (emptyState) emptyState.remove();
-  el("messages").appendChild(buildMessageElement(msg));
+  const stick = box._stuck !== false || isMine;
+  const node = appendMessage(box, msg);
+  if (stick) {
+    scrollToBottom();
+    keepPinnedWhileMediaLoads(node, box);
+  } else {
+    showNewMessagesPill();
+  }
 
   const gameBox = el("game-chat-messages");
-  if (gameBox) {
+  if (gameBox && !el("game-modal").hidden) {
     const wasAtBottom = isNearBottom(gameBox);
-    const isMine = msg.user_id === me.id;
-    gameBox.appendChild(buildMessageElement(msg));
+    const gnode = appendMessage(gameBox, msg);
     if (wasAtBottom || isMine) {
       gameBox.scrollTop = gameBox.scrollHeight; // own message always scrolls into view
+      keepPinnedWhileMediaLoads(gnode, gameBox);
     }
     if (!isMine) bumpGameChatUnread();
   }
 }
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".msg")) document.querySelectorAll(".msg.msg--actions").forEach((m) => m.classList.remove("msg--actions"));
+});
 
 function renderReactionPills(container, reactions) {
   container.innerHTML = "";
@@ -518,6 +947,8 @@ function renderReactionPills(container, reactions) {
     const mine = r.user_ids && r.user_ids.includes(me.id);
     pill.className = "reaction-pill" + (mine ? " mine" : "");
     pill.textContent = `${r.emoji} ${r.count}`;
+    pill.setAttribute("aria-pressed", mine ? "true" : "false");
+    pill.setAttribute("aria-label", `${r.emoji} ${r.count} – ${mine ? "Reaktion entfernen" : "auch reagieren"}`);
     pill.addEventListener("click", () => {
       const messageEl = container.closest(".msg");
       sendReaction(parseInt(messageEl.dataset.messageId, 10), r.emoji);
@@ -573,11 +1004,13 @@ function renderPollOptions(pollBox, poll) {
 
   for (const opt of poll.options) {
     const pct = poll.total_votes ? Math.round((opt.votes / poll.total_votes) * 100) : 0;
-    const row = document.createElement("div");
+    const row = document.createElement("button");
+    row.type = "button";
     row.className = "poll-option" + (opt.id === poll.my_option_id ? " voted" : "");
+    row.setAttribute("aria-pressed", opt.id === poll.my_option_id ? "true" : "false");
     row.innerHTML = `
-      <div class="poll-option-label"><span>${escapeHtml(opt.text)}</span><span>${pct}%</span></div>
-      <div class="poll-bar-track"><div class="poll-bar-fill" style="width:${pct}%"></div></div>
+      <span class="poll-option-label"><span>${escapeHtml(opt.text)}</span><span>${pct}%</span></span>
+      <span class="poll-bar-track"><span class="poll-bar-fill" style="display:block;width:${pct}%"></span></span>
     `;
     row.addEventListener("click", () => {
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -598,11 +1031,14 @@ function updatePollUI(messageId, poll) {
 }
 
 el("poll-btn").addEventListener("click", () => {
-  el("poll-composer").hidden = false;
+  const composer = el("poll-composer");
+  if (!composer.hidden) { composer.hidden = true; return; }
+  composer.hidden = false;
   el("poll-options").innerHTML = "";
   pollOptionCount = 0;
   addPollOption();
   addPollOption();
+  el("poll-question").focus();
 });
 el("poll-close-btn").addEventListener("click", () => (el("poll-composer").hidden = true));
 
@@ -613,6 +1049,8 @@ function addPollOption() {
   input.type = "text";
   input.placeholder = `Option ${pollOptionCount}`;
   input.maxLength = 120;
+  input.className = "input";
+  input.setAttribute("aria-label", `Option ${pollOptionCount}`);
   input.dataset.pollOption = "1";
   el("poll-options").appendChild(input);
 }
@@ -624,12 +1062,14 @@ el("poll-submit").addEventListener("click", () => {
     .map((i) => i.value.trim())
     .filter(Boolean);
   if (!question || options.length < 2) {
-    toast("Frage + mind. 2 Optionen nötig");
+    toast("Eine Frage und mindestens 2 Optionen, bitte.", "warning");
     return;
   }
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "poll_create", channel_id: currentChannelId, question, options }));
+  if (!canSend()) {
+    toast("Keine Verbindung – die Umfrage wurde nicht gesendet.", "warning");
+    return;
   }
+  ws.send(JSON.stringify({ type: "poll_create", channel_id: currentChannelId, question, options }));
   el("poll-composer").hidden = true;
   el("poll-question").value = "";
 });
@@ -734,19 +1174,48 @@ function buildSnapElement(msg) {
 // just two inputs that submit into the same channel over the same, single
 // WebSocket connection. Each form has exactly one submit listener, so a
 // given Enter/click only ever triggers one send.
+// Never loses what was typed: without a connection the text stays in the
+// field and the user is told, instead of silently vanishing.
 function sendChatMessage(input) {
   const content = input.value.trim();
-  if (!content) return;
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "message", channel_id: currentChannelId, content }));
+  if (!content || !currentChannelId) return false;
+  if (!canSend()) {
+    toast("Keine Verbindung – deine Nachricht wurde nicht gesendet.", "warning");
+    return false;
   }
+  ws.send(JSON.stringify({ type: "message", channel_id: currentChannelId, content }));
   input.value = "";
+  if (input.id === "message-input") autoGrowComposer();
+  return true;
 }
+
+const COMPOSER_MAX_H = 132;
+function autoGrowComposer() {
+  const input = el("message-input");
+  input.style.height = "auto";
+  input.style.height = `${Math.min(input.scrollHeight, COMPOSER_MAX_H)}px`;
+  updateComposerState();
+}
+function updateComposerState() {
+  const input = el("message-input");
+  el("message-form").classList.toggle("is-empty", !input.value.trim());
+  el("send-btn").disabled = input.disabled || (!!token && wsEverOpened && connState !== "online" && connState !== "restored");
+}
+el("message-input").addEventListener("input", autoGrowComposer);
+el("message-input").addEventListener("keydown", (e) => {
+  // Enter sends, Shift+Enter makes a new line (IME composition untouched)
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    el("message-form").requestSubmit();
+  }
+});
 
 el("message-form").addEventListener("submit", (e) => {
   e.preventDefault();
   sendChatMessage(el("message-input"));
 });
+el("new-messages-pill").addEventListener("click", scrollToBottom);
+trackStickiness(el("messages"));
 
 el("game-chat-form").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -777,11 +1246,13 @@ async function uploadAndSendImage(file) {
     const form = new FormData();
     form.append("file", file);
     const result = await api("/api/upload", { method: "POST", body: form });
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    if (canSend()) {
       ws.send(JSON.stringify({ type: "image_message", channel_id: currentChannelId, image_path: result.image_path }));
+    } else {
+      toast("Keine Verbindung – das Bild wurde nicht gesendet.", "warning");
     }
   } catch (err) {
-    toast(err.message);
+    toast(err.message, "error");
   }
 }
 
@@ -804,7 +1275,9 @@ async function openSnapModal() {
     snapStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
     el("snap-video").srcObject = snapStream;
   } catch (err) {
-    el("snap-error").textContent = "Kein Kamerazugriff: " + err.message;
+    el("snap-error").textContent = err && err.name === "NotAllowedError"
+      ? "Kein Kamerazugriff – bitte erlaube die Kamera in den Browser-Einstellungen."
+      : "Die Kamera konnte nicht geöffnet werden.";
     el("snap-error").hidden = false;
   }
 }
@@ -813,6 +1286,12 @@ function closeSnapModal() {
   el("snap-modal").hidden = true;
   stopSnapStream();
   resetSnapUI();
+}
+el("snap-modal").addEventListener("click", (e) => { if (e.target === el("snap-modal")) closeSnapModal(); });
+
+let snapPreviewUrl = null;
+function revokeSnapPreview() {
+  if (snapPreviewUrl) { URL.revokeObjectURL(snapPreviewUrl); snapPreviewUrl = null; }
 }
 
 function stopSnapStream() {
@@ -824,6 +1303,7 @@ function stopSnapStream() {
 
 function resetSnapUI() {
   snapBlob = null;
+  revokeSnapPreview();
   el("snap-video").hidden = false;
   el("snap-preview-img").hidden = true;
   el("snap-capture-btn").hidden = false;
@@ -840,7 +1320,9 @@ function captureSnap() {
   canvas.toBlob((blob) => {
     if (!blob) return;
     snapBlob = blob;
-    el("snap-preview-img").src = URL.createObjectURL(blob);
+    revokeSnapPreview();
+    snapPreviewUrl = URL.createObjectURL(blob);
+    el("snap-preview-img").src = snapPreviewUrl;
     el("snap-video").hidden = true;
     el("snap-preview-img").hidden = false;
     el("snap-capture-btn").hidden = true;
@@ -855,12 +1337,14 @@ async function sendSnap() {
     const form = new FormData();
     form.append("file", snapBlob, "snap.jpg");
     const result = await api("/api/upload", { method: "POST", body: form });
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "snap_message", channel_id: currentChannelId, image_path: result.image_path }));
+    if (!canSend()) {
+      toast("Keine Verbindung – der Snap wurde nicht gesendet.", "warning");
+      return;
     }
+    ws.send(JSON.stringify({ type: "snap_message", channel_id: currentChannelId, image_path: result.image_path }));
     closeSnapModal();
   } catch (err) {
-    toast(err.message);
+    toast(err.message, "error");
   }
 }
 
@@ -961,13 +1445,14 @@ function renderGameSidebar() {
     }
     const badge = document.createElement("span");
     badge.className = "game-type-badge";
-    badge.textContent = `${gt.max_players === 1 ? "Solo" : `bis ${gt.max_players}`}`;
+    badge.textContent = gt.max_players === 1 ? "Solo" : gt.min_players === gt.max_players ? `${gt.max_players} Spieler` : `${gt.min_players}–${gt.max_players} Spieler`;
     info.appendChild(badge);
 
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "game-type-play-btn";
-    btn.textContent = "▶ Starten";
+    btn.textContent = "Spielen";
+    btn.setAttribute("aria-label", `${gt.name} starten`);
     btn.disabled = iAmInSession;
     btn.addEventListener("click", () => launchGameByType(gt.game_type));
 
@@ -1006,7 +1491,8 @@ function renderGameSidebar() {
   const timlinerBtn = document.createElement("button");
   timlinerBtn.type = "button";
   timlinerBtn.className = "game-type-play-btn";
-  timlinerBtn.textContent = "▶ Spielen";
+  timlinerBtn.textContent = "Spielen";
+  timlinerBtn.setAttribute("aria-label", "TimLiner starten");
   timlinerBtn.addEventListener("click", openTimLinerGame);
   timlinerLi.appendChild(tlIcon);
   timlinerLi.appendChild(tlInfo);
@@ -1025,7 +1511,8 @@ function renderGameSidebar() {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "game-type-play-btn";
-    btn.textContent = "▶ Starten";
+    btn.textContent = "Spielen";
+    btn.setAttribute("aria-label", `${ms.name} starten`);
     btn.addEventListener("click", () => launchGameByType(ms.game_type));
     li.appendChild(btn);
     typeList.appendChild(li);
@@ -1141,7 +1628,7 @@ function loadRecentlyPlayed() {
 // full searchable grid. "Alle Spiele" hands off to the real Games Library
 // overlay for the full list; nothing here is a second source of truth for
 // which games exist.
-const QUICK_START_TYPES = ["estimate", "whoami", "tankbattle"];
+const QUICK_START_TYPES = ["kritzelmeister", "estimate", "whoami", "kopfkicker", "uno"];
 
 function allKnownGameEntries() {
   const entries = gameTypes.slice();
@@ -1178,7 +1665,7 @@ function buildCompactGameCard(gt) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "gp-card-play";
-  btn.textContent = "▶";
+  btn.innerHTML = `<svg class="ico" aria-hidden="true"><use href="#i-play"/></svg>`;
   btn.setAttribute("aria-label", `${gt.name} starten`);
   btn.disabled = iAmInSession && !gt.multiscreen;
   btn.addEventListener("click", () => launchGameByType(gt.game_type));
@@ -1188,22 +1675,37 @@ function buildCompactGameCard(gt) {
   return card;
 }
 
+// Feature entries at the top of the panel: Party mode and MultiScreen -
+// visible and special, but compact (the chat stays the main surface).
 function renderGamesPanelPartyCard() {
   const box = el("games-panel-party-card");
-  if (!currentParty) {
-    box.innerHTML = `<button type="button" class="primary-btn games-panel-party-start-btn" id="gp-party-start-btn">🎉 Party starten</button>`;
-    el("gp-party-start-btn").addEventListener("click", () => {
-      createParty();
-      openPartyOverlay();
-    });
-    return;
-  }
-  box.innerHTML = `
-    <div class="games-panel-party-active">
-      <div class="gp-party-info"><strong>🎉 Deine Party</strong><span>${currentParty.members.length} Spieler</span></div>
-      <button type="button" class="ghost-btn" id="gp-party-open-btn">Öffnen</button>
-    </div>`;
-  el("gp-party-open-btn").addEventListener("click", openPartyOverlay);
+  box.innerHTML = "";
+  const party = document.createElement("button");
+  party.type = "button";
+  party.className = "gp-feature gp-feature--party" + (currentParty ? " gp-feature--active" : "");
+  party.innerHTML = `<span class="gp-feature-icon" aria-hidden="true">🎉</span>
+    <span class="gp-feature-text"><span class="gp-feature-title"></span><span class="gp-feature-sub"></span></span>
+    <svg class="ico" aria-hidden="true"><use href="#i-chevron-right"/></svg>`;
+  party.querySelector(".gp-feature-title").textContent = currentParty ? "Deine Party" : "Party starten";
+  party.querySelector(".gp-feature-sub").textContent = currentParty
+    ? `${currentParty.members.length} ${currentParty.members.length === 1 ? "Spieler" : "Spieler"} · Code ${currentParty.code}`
+    : "Mehrere Spiele, eine Punktewertung";
+  party.addEventListener("click", () => {
+    if (!currentParty) createParty();
+    openPartyOverlay();
+  });
+  if (currentParty) party.id = "gp-party-open-btn"; else party.id = "gp-party-start-btn";
+  box.appendChild(party);
+
+  const ms = document.createElement("button");
+  ms.type = "button";
+  ms.className = "gp-feature gp-feature--ms";
+  ms.id = "gp-multiscreen-btn";
+  ms.innerHTML = `<span class="gp-feature-icon" aria-hidden="true"><svg class="ico"><use href="#i-phones"/></svg></span>
+    <span class="gp-feature-text"><span class="gp-feature-title">MultiScreen</span><span class="gp-feature-sub">Mehrere Handys – eine Spielwelt</span></span>
+    <svg class="ico" aria-hidden="true"><use href="#i-chevron-right"/></svg>`;
+  ms.addEventListener("click", () => launchGameByType("mssnake"));
+  box.appendChild(ms);
 }
 
 function renderGamesPanelRecent() {
@@ -1218,6 +1720,7 @@ function renderGamesPanelRecent() {
     chip.type = "button";
     chip.className = "gp-recent-chip";
     chip.textContent = `${r.emoji} ${r.gameName}`;
+    chip.setAttribute("aria-label", `${r.gameName} starten`);
     chip.addEventListener("click", () => launchGameByType(r.gameType));
     list.appendChild(chip);
   }
@@ -1284,42 +1787,25 @@ function renderGamesPanelLobbies() {
   section.hidden = gameSessions.length === 0 && msOpen.length === 0;
 }
 
+// The panel is a launcher, not a catalogue: quick start only. Every game
+// (with search + categories) lives in the "Alle Spiele" library.
 function renderGamesPanelCategories() {
   const wrap = el("games-panel-categories");
   wrap.innerHTML = "";
   const entries = allKnownGameEntries();
-
   const quickEntries = QUICK_START_TYPES.map((t) => entries.find((e) => e.game_type === t)).filter(Boolean);
-  if (quickEntries.length) {
-    const section = document.createElement("div");
-    section.className = "games-panel-section";
-    const title = document.createElement("div");
-    title.className = "home-section-title";
-    title.textContent = "SCHNELLSTART";
-    section.appendChild(title);
-    const cardsWrap = document.createElement("div");
-    cardsWrap.className = "gp-card-list";
-    for (const gt of quickEntries) cardsWrap.appendChild(buildCompactGameCard(gt));
-    section.appendChild(cardsWrap);
-    wrap.appendChild(section);
-  }
-
-  for (const cat of GAME_CATEGORIES) {
-    if (cat.key === "all") continue;
-    const catEntries = entries.filter((e) => (GAME_META[e.game_type] || {}).category === cat.key);
-    if (!catEntries.length) continue;
-    const section = document.createElement("div");
-    section.className = "games-panel-section";
-    const title = document.createElement("div");
-    title.className = "home-section-title";
-    title.textContent = cat.label.toUpperCase();
-    section.appendChild(title);
-    const cardsWrap = document.createElement("div");
-    cardsWrap.className = "gp-card-list";
-    for (const gt of catEntries) cardsWrap.appendChild(buildCompactGameCard(gt));
-    section.appendChild(cardsWrap);
-    wrap.appendChild(section);
-  }
+  if (!quickEntries.length) return;
+  const section = document.createElement("div");
+  section.className = "games-panel-section";
+  const title = document.createElement("div");
+  title.className = "section-title";
+  title.textContent = "Schnellstart";
+  section.appendChild(title);
+  const cardsWrap = document.createElement("div");
+  cardsWrap.className = "gp-card-list";
+  for (const gt of quickEntries) cardsWrap.appendChild(buildCompactGameCard(gt));
+  section.appendChild(cardsWrap);
+  wrap.appendChild(section);
 }
 
 function updateGamesBadge() {
@@ -1515,7 +2001,7 @@ function renderPartyView() {
   el("party-copy-btn").addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText(currentParty.code);
-      toast("Party-Code kopiert 📋");
+      toast("Party-Code kopiert", "success");
     } catch (e) {
       toast(currentParty.code);
     }
@@ -1596,8 +2082,10 @@ async function initGameChatPanel() {
   if (!currentChannelId) return;
   try {
     const msgs = await api(`/api/channels/${currentChannelId}/messages`);
-    for (const m of msgs) box.appendChild(buildMessageElement(m));
+    for (const m of msgs) appendMessage(box, m);
     box.scrollTop = box.scrollHeight;
+    box._stuck = true;
+    keepPinnedWhileMediaLoads(box, box);
   } catch (err) {
     // non-fatal - the game itself still works without chat history loaded
   }
@@ -1611,6 +2099,10 @@ function bumpGameChatUnread() {
 }
 
 function openGameModal(data) {
+  // a game can start while the channel/games drawer is open (e.g. joining
+  // from the games sheet) - never leave a drawer + scroll lock stranded
+  // underneath the game
+  closeDrawers();
   myGameSessionId = data.session_id;
   myGameType = data.game_type;
   myGamePlayers = data.players;
@@ -3169,13 +3661,73 @@ function renderLudo(state) {
 
 // ---------- toast ----------
 let toastTimer = null;
-function toast(text) {
-  const box = el("toast");
-  box.textContent = text;
-  box.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (box.hidden = true), 3500);
+// One toast system for the whole app (games and MultiScreen call it too):
+// typed, stacked (max 3), announced to screen readers, never raw errors.
+const TOAST_ICONS = { info: "i-info", success: "i-check", warning: "i-alert", error: "i-alert" };
+function toast(text, type = "info", opts = {}) {
+  const region = el("toast");
+  if (!region) return;
+  const kind = TOAST_ICONS[type] ? type : "info";
+  const t = document.createElement("div");
+  t.className = `toast toast--${kind}`;
+  if (kind === "error") t.setAttribute("role", "alert");
+  t.innerHTML = `<svg class="ico" aria-hidden="true"><use href="#${TOAST_ICONS[kind]}"/></svg><span></span>`;
+  t.querySelector("span").textContent = String(text == null ? "" : text);
+  region.appendChild(t);
+  while (region.children.length > 3) region.firstElementChild.remove();
+  const ms = opts.duration || (kind === "error" ? 5000 : 3500);
+  setTimeout(() => {
+    t.classList.add("is-leaving");
+    setTimeout(() => t.remove(), 240);
+  }, ms);
 }
+
+// Replacement for window.confirm(): same one-question-two-buttons idea, but
+// in the app's design, keyboard-complete (Esc / Enter / Tab stays inside),
+// above every other layer (incl. the MultiScreen stage), focus restored.
+function confirmDialog({ title, text = "", confirmLabel = "OK", cancelLabel = "Abbrechen", danger = false } = {}) {
+  return new Promise((resolve) => {
+    const prevFocus = document.activeElement;
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay dialog-overlay";
+    overlay.innerHTML = `
+      <div class="modal dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlg-title" aria-describedby="dlg-text">
+        <h2 class="dialog-title" id="dlg-title"></h2>
+        <p class="dialog-text" id="dlg-text"></p>
+        <div class="dialog-actions">
+          <button type="button" class="ghost-btn" data-act="cancel"></button>
+          <button type="button" class="primary-btn${danger ? " danger-btn" : ""}" data-act="ok"></button>
+        </div>
+      </div>`;
+    overlay.querySelector(".dialog-title").textContent = title || "";
+    overlay.querySelector(".dialog-text").textContent = text;
+    overlay.querySelector(".dialog-text").hidden = !text;
+    const okBtn = overlay.querySelector('[data-act="ok"]');
+    const cancelBtn = overlay.querySelector('[data-act="cancel"]');
+    okBtn.textContent = confirmLabel;
+    cancelBtn.textContent = cancelLabel;
+    function close(result) {
+      document.removeEventListener("keydown", onKey, true);
+      overlay.remove();
+      if (prevFocus && document.contains(prevFocus)) prevFocus.focus({ preventScroll: true });
+      resolve(result);
+    }
+    function onKey(e) {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(false); }
+      else if (e.key === "Tab") {
+        e.preventDefault();
+        (document.activeElement === okBtn ? cancelBtn : okBtn).focus();
+      }
+    }
+    okBtn.addEventListener("click", () => close(true));
+    cancelBtn.addEventListener("click", () => close(false));
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) close(false); });
+    document.addEventListener("keydown", onKey, true);
+    document.body.appendChild(overlay);
+    okBtn.focus();
+  });
+}
+window.confirmDialog = confirmDialog;
 
 // ---------- boot ----------
 if (token && me) {

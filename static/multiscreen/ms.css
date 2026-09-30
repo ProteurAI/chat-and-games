@@ -9,7 +9,7 @@
 body.ms-open { overflow: hidden; overscroll-behavior: none; }
 
 .ms-overlay {
-  position: fixed; inset: 0; z-index: 120; background: var(--bg-app); color: var(--text-primary);
+  position: fixed; inset: 0; z-index: var(--z-immersive); background: var(--bg-app); color: var(--text-primary);
   display: flex; flex-direction: column;
 }
 .ms-overlay--stage { background: #070a12; }
@@ -57,7 +57,7 @@ body.ms-open { overflow: hidden; overscroll-behavior: none; }
   padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--border);
   background: var(--bg-surface); color: var(--text-primary); font-weight: var(--font-semibold); text-align: left;
 }
-.ms-open-count { color: var(--accent-strong); font-size: var(--text-sm); white-space: nowrap; }
+.ms-open-count { color: var(--accent-text); font-size: var(--text-sm); white-space: nowrap; }
 
 /* ---- identity (name + colour + number) ---- */
 .ms-identity { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
@@ -80,7 +80,7 @@ body.ms-open { overflow: hidden; overscroll-behavior: none; }
 /* ---- host setup / layout editor ---- */
 .ms-code-card { text-align: center; background: var(--bg-surface-alt); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-3) var(--space-4); }
 .ms-code-label { font-size: var(--text-xs); color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; }
-.ms-code { font-family: var(--font-display); font-weight: var(--font-bold); font-size: clamp(30px, 10vw, 44px); letter-spacing: 0.18em; color: var(--accent-strong); }
+.ms-code { font-family: var(--font-display); font-weight: var(--font-bold); font-size: clamp(30px, 10vw, 44px); letter-spacing: 0.18em; color: var(--accent-text); }
 .ms-code-hint { font-size: var(--text-xs); color: var(--text-secondary); }
 .ms-dev-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: center; }
 .ms-dev-chip {
@@ -125,7 +125,7 @@ body.ms-open { overflow: hidden; overscroll-behavior: none; }
   min-width: 48px; min-height: 48px; border-radius: var(--radius-md); border: 1.5px solid var(--border);
   background: var(--bg-surface); color: var(--text-primary); font-size: 20px; font-weight: var(--font-bold);
 }
-.ms-tool--rot { color: var(--accent-strong); }
+.ms-tool--rot { color: var(--accent-text); }
 .ms-tray { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .ms-tray-label { font-size: var(--text-sm); color: var(--text-secondary); }
 .ms-tray-item { min-height: 40px; padding: 0 var(--space-3); border-radius: var(--radius-full); border: 1.5px dashed var(--dev); background: var(--bg-surface); color: var(--text-primary); font-weight: var(--font-semibold); }
@@ -272,10 +272,10 @@ body.ms-open { overflow: hidden; overscroll-behavior: none; }
 /* "back to MultiScreen" pill while the setup is minimised to the chat
    (never shown during a running game - the overlay can't be minimised then) */
 .ms-return-bar {
-  position: fixed; z-index: 90; top: calc(max(8px, env(safe-area-inset-top)) + 52px); left: 50%; transform: translateX(-50%);
+  position: fixed; z-index: var(--z-dropdown); top: calc(max(8px, env(safe-area-inset-top)) + 58px); left: 50%; transform: translateX(-50%);
   min-height: 40px; padding: 0 var(--space-4); border-radius: var(--radius-full); border: none;
-  background: var(--accent); color: white; font-weight: var(--font-semibold); box-shadow: var(--shadow-md);
+  background: var(--accent-fill); color: var(--text-on-accent); font-weight: var(--font-semibold); box-shadow: var(--shadow-md);
 }
 
 /* games panel extras */
-.gp-card-badge { font-size: 10px; font-weight: var(--font-bold); letter-spacing: 0.06em; color: var(--accent-strong); background: var(--accent-soft); border-radius: var(--radius-full); padding: 1px 6px; margin-left: 4px; }
+.gp-card-badge { font-size: 10px; font-weight: var(--font-bold); letter-spacing: 0.06em; color: var(--accent-text); background: var(--accent-soft); border-radius: var(--radius-full); padding: 1px 6px; margin-left: 4px; }

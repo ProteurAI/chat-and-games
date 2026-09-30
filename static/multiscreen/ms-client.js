@@ -66,6 +66,10 @@
   }
 
   function send(msg) { if (S.send) S.send(msg); }
+  // the app's own confirm dialog (sits above this overlay); native as fallback
+  function ask(title, text, confirmLabel) {
+    return window.confirmDialog ? window.confirmDialog({ title, text, confirmLabel }) : Promise.resolve(window.confirm(title));
+  }
   function serverNow() { return Date.now() / 1000 + (S.offset || 0); }
   function me() { return S.state ? S.state.devices.find((d) => d.deviceId === S.deviceId) : null; }
   function isHost() { return !!S.state && S.state.hostDeviceId === S.deviceId; }
@@ -254,8 +258,8 @@
     returnBar.addEventListener("click", () => { S.minimized = false; render(); });
     document.body.appendChild(returnBar);
 
-    root.querySelector('[data-role="close"]').addEventListener("click", () => {
-      if (S.code && !confirm("MultiScreen verlassen?")) return;
+    root.querySelector('[data-role="close"]').addEventListener("click", async () => {
+      if (S.code && !(await ask("MultiScreen verlassen?", "Dein Handy verlässt die gemeinsame Spielfläche.", "Verlassen"))) return;
       leave();
     });
     root.querySelector('[data-role="minimize"]').addEventListener("click", () => { S.minimized = true; render(); });
@@ -840,7 +844,7 @@
       else if (a === "dpad") { store(DPAD_KEY, load(DPAD_KEY) === "1" ? "0" : "1"); if (S.dpad) { S.dpad.destroy(); S.dpad = null; } renderStageChrome(); }
       else if (a === "sound") store(SOUND_KEY, soundOn() ? "0" : "1");
       else if (a === "fs") toggleFullscreen();
-      else if (a === "leave") { if (confirm("Spiel verlassen? Die anderen müssen dann pausieren.")) leave(); }
+      else if (a === "leave") { ask("Spiel verlassen?", "Die anderen müssen dann pausieren.", "Verlassen").then((ok) => { if (ok) leave(); }); }
     });
   }
 

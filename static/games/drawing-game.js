@@ -358,9 +358,14 @@
     }
     function requestClear() {
       if (!iAmDrawing()) return;
-      if (!confirm("Zeichnung wirklich löschen?")) return;
-      clearStrokes();
-      send("drawing_clear", {});
+      const ask = window.confirmDialog
+        ? window.confirmDialog({ title: "Zeichnung löschen?", text: "Alles, was du gezeichnet hast, wird entfernt.", confirmLabel: "Löschen", danger: true })
+        : Promise.resolve(window.confirm("Zeichnung wirklich löschen?"));
+      ask.then((ok) => {
+        if (!ok || !iAmDrawing()) return;
+        clearStrokes();
+        send("drawing_clear", {});
+      });
     }
 
     // ---------------------------------------------------------------------
