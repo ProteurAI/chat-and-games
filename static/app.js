@@ -517,6 +517,9 @@ function connectWebSocket() {
   });
 
   socket.addEventListener("message", (event) => {
+    // a socket that was ended (logout) or replaced can still deliver what
+    // was already in flight - never act on it with the new state
+    if (ws !== socket) return;
     let data;
     try { data = JSON.parse(event.data); } catch (e) { return; }
     handleWsEvent(data);
