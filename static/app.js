@@ -732,7 +732,8 @@ el("games-library-back-btn").addEventListener("click", closeGamesLibrary);
 el("party-overlay-close-btn").addEventListener("click", closePartyOverlay);
 
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || document.querySelector(".dialog-overlay")) return;
+  // GoldRush owns the keyboard while it is open (its own Escape handling)
+  if (e.key !== "Escape" || document.querySelector(".dialog-overlay") || document.documentElement.classList.contains("goldrush-active")) return;
   if (!el("snap-modal").hidden) closeSnapModal();
   else if (!el("games-library-overlay").hidden) closeGamesLibrary();
   else if (!el("party-overlay").hidden) closePartyOverlay();
@@ -1504,7 +1505,14 @@ const GAME_META = {
   kritzelmeister: { category: "party", desc: "Zeichnen und in Echtzeit erraten." },
   kopfkicker: { category: "arcade", desc: "Dein Gesicht. Dein Kopf. Dein Tor." },
   mssnake: { category: "multiscreen", desc: "Eine Schlange. Viele Displays." },
+  goldrush: { category: "simulation", desc: "Vom Goldstaub zur Großmine." },
 };
+// Single-player games that live entirely in the browser (no GameManager
+// session). GoldRush runs in its own immersive 3D layer
+// (static/games/goldrush/), loaded on demand.
+const CLIENT_GAME_ENTRIES = [
+  { game_type: "goldrush", name: "GoldRush", emoji: "⛏️", min_players: 1, max_players: 1, badge: "Solo · 3D" },
+];
 // MultiScreen games aren't GameManager games (device-based sessions, see
 // backend/multiscreen/) - listed statically, launched via window.MultiScreen.
 const MULTISCREEN_ENTRIES = [
@@ -1517,6 +1525,7 @@ const GAME_CATEGORIES = [
   { key: "brettspiele", label: "Brettspiele" },
   { key: "wissen", label: "Wissen" },
   { key: "solo", label: "Solo" },
+  { key: "simulation", label: "Simulation" },
   { key: "multiscreen", label: "📱 MultiScreen" },
 ];
 let activeGameCategory = "all";
@@ -1527,6 +1536,7 @@ let gameSearchQuery = "";
 // to be kicked off (some need a host-options modal first).
 function launchGameByType(gameType) {
   if (gameType === "timliner") { openTimLinerGame(); return; }
+  if (gameType === "goldrush") { openGoldRush(); return; }
   const msEntry = MULTISCREEN_ENTRIES.find((e) => e.game_type === gameType);
   if (msEntry) {
     recordRecentlyPlayed(msEntry.game_type, msEntry.name, msEntry.emoji);
@@ -1623,6 +1633,25 @@ function renderGameSidebar() {
   timlinerLi.appendChild(tlInfo);
   timlinerLi.appendChild(timlinerBtn);
   typeList.appendChild(timlinerLi);
+
+  for (const cg of CLIENT_GAME_ENTRIES) {
+    const meta = GAME_META[cg.game_type];
+    const li = document.createElement("li");
+    li.className = "game-type-item";
+    li.dataset.category = meta.category;
+    li.dataset.searchText = `${cg.name} ${meta.desc} 3d mining gold`.toLowerCase();
+    li.innerHTML = `<span class="game-type-icon">${cg.emoji}</span>
+      <div class="game-type-info"><span class="game-type-name">${cg.name}</span><span class="game-type-desc">${meta.desc}</span>
+      <span class="game-type-badge">${cg.badge}</span></div>`;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "game-type-play-btn";
+    btn.textContent = "Spielen";
+    btn.setAttribute("aria-label", `${cg.name} starten`);
+    btn.addEventListener("click", () => launchGameByType(cg.game_type));
+    li.appendChild(btn);
+    typeList.appendChild(li);
+  }
 
   for (const ms of MULTISCREEN_ENTRIES) {
     const meta = GAME_META[ms.game_type];
@@ -1761,7 +1790,7 @@ function allKnownGameEntries() {
   // server-driven gameTypes list (see renderGameSidebar) - add it once
   // more here so it still shows up in the panel's category groups.
   entries.push({ game_type: "timliner", name: "TimLiner", emoji: "🛷", min_players: 1, max_players: 1 });
-  return entries.concat(MULTISCREEN_ENTRIES);
+  return entries.concat(CLIENT_GAME_ENTRIES, MULTISCREEN_ENTRIES);
 }
 
 function buildCompactGameCard(gt) {
@@ -1837,7 +1866,7 @@ function renderGamesPanelRecent() {
   const section = el("games-panel-recent-section");
   const list = el("games-panel-recent-list");
   const recent = loadRecentlyPlayed()
-    .filter((r) => r.gameType === "timliner" || MULTISCREEN_ENTRIES.some((e) => e.game_type === r.gameType) || gameTypes.some((gt) => gt.game_type === r.gameType))
+    .filter((r) => r.gameType === "timliner" || CLIENT_GAME_ENTRIES.some((e) => e.game_type === r.gameType) || MULTISCREEN_ENTRIES.some((e) => e.game_type === r.gameType) || gameTypes.some((gt) => gt.game_type === r.gameType))
     .slice(0, 4);
   list.innerHTML = "";
   for (const r of recent) {
@@ -2428,6 +2457,26 @@ let knowMeInstance = null;
 let majorityGameInstance = null;
 let kritzelmeisterInstance = null;
 let kopfKickerInstance = null;
+
+// GoldRush: its own module graph (three.js included) is only fetched when
+// the game is opened; it runs in its own layer above the app and reports
+// back when the player leaves.
+let goldRushLoading = false;
+async function openGoldRush() {
+  if (goldRushLoading || document.documentElement.classList.contains("goldrush-active")) return;
+  goldRushLoading = true;
+  recordRecentlyPlayed("goldrush", "GoldRush", "⛏️");
+  closeDrawers();
+  try {
+    const mod = await import("/games/goldrush/goldrush.js");
+    mod.open({ onExit: () => { renderGamesPanel(); } });
+  } catch (err) {
+    console.error(err);
+    toast("GoldRush konnte nicht geladen werden. Bitte versuche es gleich noch einmal.", "error");
+  } finally {
+    goldRushLoading = false;
+  }
+}
 
 function openTimLinerGame() {
   myGameSessionId = null;
