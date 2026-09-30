@@ -81,6 +81,17 @@ def listeners(page):
     return page.evaluate("() => window.__listeners()")
 
 
+def online_names(page):
+    return page.evaluate("() => document.getElementById('online-list').textContent")
+
+
+def hit(page, selector):
+    """Whatever is on top at the element's centre is the element itself -
+    no invisible backdrop/overlay swallowing taps."""
+    return page.evaluate("""(s) => { const e = document.querySelector(s); if (!e) return false; const r = e.getBoundingClientRect();
+        const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!t && (t === e || e.contains(t)); }""", selector)
+
+
 def main():
     proc, base, tmp = start_server()
     try:
@@ -100,6 +111,8 @@ def main():
             send(B, "Hi Ana 👋")
             ok("reply arrives, starts a new group", wait(lambda: "Hi Ana 👋" in texts(A), 4) and not last_msg(A)["cont"])
             ok("sent text leaves the composer empty", A.input_value("#message-input") == "")
+            ok("online list: both users see each other", wait(lambda: "Ben" in online_names(A) and "Ana" in online_names(B), 4),
+               f"A: {online_names(A)!r} B: {online_names(B)!r}")
 
             # ---------------- multi-line + links + injection ----------------
             A.fill("#message-input", "Zeile 1")
@@ -204,6 +217,7 @@ def main():
             cb.set_offline(True)
             B.evaluate("() => window.dispatchEvent(new Event('offline'))")
             ok("offline banner", wait(lambda: "offline" in B.inner_text("#conn-banner"), 3))
+            ok("online list: a user who drops off disappears for the others", wait(lambda: "Ben" not in online_names(A), 5), online_names(A))
             B.fill("#message-input", "Das soll nicht verloren gehen")
             B.press("#message-input", "Enter")
             time.sleep(0.4)
@@ -212,6 +226,7 @@ def main():
             cb.set_offline(False)
             B.evaluate("() => window.dispatchEvent(new Event('online'))")
             ok("back online -> reconnects", wait(lambda: B.evaluate("() => ws && ws.readyState === 1"), 8))
+            ok("online list: ...and is back after the reconnect", wait(lambda: "Ben" in online_names(A), 5), online_names(A))
             B.press("#message-input", "Enter")
             ok("...and the kept text can be sent", wait(lambda: "Das soll nicht verloren gehen" in texts(A), 5) and B.input_value("#message-input") == "")
 
@@ -311,6 +326,8 @@ def main():
             time.sleep(0.4)
             ok("20x channel drawer + 20x games drawer: nothing stuck open, no scroll lock",
                B.evaluate("() => !document.querySelector('.left-sidebar.open, .games-panel.open, .drawer-backdrop.open') && !document.body.classList.contains('scroll-locked')"))
+            ok("...and nothing invisible blocks taps (composer, menu, games button)",
+               hit(B, "#message-input") and hit(B, "#mobile-menu-btn") and hit(B, "#mobile-games-btn"))
             ids = A.evaluate("() => channels.map((c) => c.id)")
             base_a = listeners(A)
             for i in range(20):
@@ -325,6 +342,8 @@ def main():
                 wait(lambda: not modal_open(A), 3)
             time.sleep(0.3)
             ok("10x game open/close: window/document listeners don't grow", listeners(A) - base_a <= 4, f"{base_a} -> {listeners(A)}")
+            ok("...no leftover overlay, clicks reach the chat again", hit(A, "#message-input") and hit(A, "#theme-toggle")
+               and not A.evaluate("() => document.body.classList.contains('scroll-locked')"))
             ok("drawers 40x: window/document listeners don't grow", listeners(B) - base_b <= 2, f"{base_b} -> {listeners(B)}")
             # game chat 20x inside a running game
             A.evaluate("() => ws.send(JSON.stringify({ type: 'game_create', game_type: 'tictactoe' }))")
@@ -333,15 +352,20 @@ def main():
             wait(lambda: A.evaluate(f"() => (gameSessions.find((s) => s.id === '{sid}') || {{}}).player_count === 2"), 4)
             A.evaluate(f"() => startGameNow('{sid}')")
             wait(lambda: modal_open(B), 5)
+            base_gc = listeners(B)
             for _ in range(20):
                 B.click("#game-chat-toggle"); time.sleep(0.05)
                 B.click("#game-chat-close-btn"); time.sleep(0.05)
             time.sleep(0.5)
             ok("20x game chat open/close: closed, no backdrop, no scroll lock", B.evaluate(
                 "() => !document.getElementById('game-chat-panel').classList.contains('open') && !document.querySelector('.game-chat-backdrop.open') && !document.body.classList.contains('scroll-locked')"))
+            ok("20x game chat: listeners don't grow, the board is tappable again", listeners(B) - base_gc <= 1 and hit(B, ".ttt-cell"),
+               f"{base_gc} -> {listeners(B)}")
             for p in (B, A):
                 if modal_open(p):
                     p.click("#game-close-btn")
+            time.sleep(0.4)
+            ok("game closed: chat is tappable again on the phone", hit(B, "#message-input") and not B.evaluate("() => document.body.classList.contains('scroll-locked')"))
 
             # ---------------- logout / login ----------------
             B.click("#mobile-menu-btn")

@@ -147,6 +147,52 @@ def modal_inside(page):
         return r.left >= -1 && r.top >= -1 && r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1 && r.width > 200; }""")
 
 
+def phone_sees(p, label, what, selectors):
+    res = {sel: visible_unobstructed(p, sel) for sel in selectors}
+    ok(f"{label} phone: {what} visible, nothing covers it", all(r["ok"] for r in res.values()),
+       json.dumps({k: v["why"] for k, v in res.items() if not v["ok"]}))
+
+
+STICK_JS = """([zone, id, dx, dy]) => { const z = document.querySelector(zone); const r = z.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const ev = (t, x, y) => z.dispatchEvent(new PointerEvent(t, { pointerId: id, bubbles: true, cancelable: true, clientX: x, clientY: y, pointerType: 'touch' }));
+    ev('pointerdown', cx, cy); ev('pointermove', cx + dx / 2, cy + dy / 2); ev('pointermove', cx + dx, cy + dy); }"""
+
+
+def keyboard_check(p, label, inp, btn):
+    """Phone keyboard up (the viewport shrinks to ~480px): the focused input
+    and its submit button stay visible and uncovered."""
+    size = p.viewport_size
+    p.focus(inp)
+    p.set_viewport_size({"width": size["width"], "height": 480})
+    time.sleep(0.5)
+    a, b = visible_unobstructed(p, inp), visible_unobstructed(p, btn)
+    p.set_viewport_size(size)
+    time.sleep(0.35)
+    ok(f"{label} phone keyboard open: input + submit stay visible", a["ok"] and b["ok"], json.dumps({"input": a["why"], "button": b["why"]}))
+
+
+END_UI_JS = """() => {
+    const e = [...document.querySelectorAll('#game-overlay-msg:not([hidden]), .est-endscreen, .wai-endscreen, .km-endscreen, .mg-endscreen, .dg-endscreen')]
+        .find((x) => x.getBoundingClientRect().width > 0);
+    if (!e) return { ok: false, why: 'no end screen' };
+    const r = e.getBoundingClientRect();
+    const text = e.innerText.trim().replace(/\\s+/g, ' ').slice(0, 90);
+    const inside = r.left >= -1 && r.right <= innerWidth + 1 && r.top >= -1 && r.top < innerHeight - 40;
+    const c = document.getElementById('game-close-btn').getBoundingClientRect();
+    const t = document.elementFromPoint(c.left + c.width / 2, c.top + c.height / 2);
+    const closable = !!(t && t.closest('#game-close-btn'));
+    const title = e.querySelector('#game-overlay-text, [class*=endscreen-title], .wai-endscreen-title, p') || e;
+    const tr = title.getBoundingClientRect();
+    const onTop = [0.15, 0.5, 0.85].every((f) => { const h = document.elementFromPoint(tr.left + tr.width * f, tr.top + tr.height / 2); return !!(h && e.contains(h)); });
+    return { ok: inside && text.length > 3 && closable && onTop, text, rect: [r.left, r.top, r.width, r.height].map(Math.round), closable, onTop };
+}"""
+
+CONTROLS_JS = """() => ({ canvases: document.querySelectorAll('#game-stage canvas').length,
+    controls: document.querySelectorAll('#game-stage .touch-dpad-btn, #game-stage .arc-stick-zone, #game-stage .arc-fire-btn').length,
+    sid: myGameSessionId, open: !document.getElementById('game-modal').hidden })"""
+
+
 def my_turn_page(pages, selector, text=("Du bist dran", "Wähle die Startfarbe")):
     for p in pages:
         t = p.evaluate("(s) => { const e = document.querySelector(s); return e ? e.textContent : ''; }", selector)
@@ -191,6 +237,16 @@ def act_lightcycles(A, phones):
         if (b) b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' })); }""")
     time.sleep(0.2)
     pad = any("direction" in m for m in sent_actions(B, n2))
+    # 180 turn: pressing the opposite direction must not reverse the cycle
+    uid = str(B.user["user"]["id"])
+    time.sleep(0.4)
+    d0 = B.evaluate("(u) => { const s = window.__gs; const p = s && s.players && s.players[u]; return p && p.alive ? p.dir : null; }", uid)
+    if d0:
+        opp = {"up": "down", "down": "up", "left": "right", "right": "left"}[d0]
+        B.evaluate("(d) => { const b = document.querySelector('.touch-dpad-btn--' + d); if (b) b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' })); }", opp)
+        time.sleep(0.5)
+        d1 = B.evaluate("(u) => { const s = window.__gs; const p = s && s.players && s.players[u]; return p ? p.dir : null; }", uid)
+        ok("[lightcycles] no 180: the opposite direction is ignored", d1 != opp, f"{d0} -> pressed {opp} -> {d1}")
     return desk and pad, f"keys {desk} dpad {pad}"
 
 
@@ -219,6 +275,7 @@ def act_battleship(A, phones):
     p.click(".bs-cell.bs-target >> nth=12")
     time.sleep(0.4)
     shot = any("cell" in m for m in sent_actions(p, n))
+    phone_sees(phones[0], "[battleship]", "target board + own board", ["#bs-track-block .bs-grid", "#bs-own-grid"])
     return shot, "shot sent"
 
 
@@ -233,6 +290,7 @@ def act_uno(A, phones):
         p = wait(lambda: my_turn_page(pages, "#uno-turn-banner", ("Du bist dran",)), 5)
         if not p:
             return False, "no turn after start colour"
+    phone_sees(phones[0], "[uno]", "hand + draw pile", ["#uno-hand", "#uno-draw-pile"])
     n = sent_count(p)
     p.click("#uno-draw-pile")
     time.sleep(0.4)
@@ -245,17 +303,22 @@ def act_ludo(A, phones):
     p = wait(lambda: my_turn_page(pages, "#ludo-turn-banner"), 6)
     if not p:
         return False, "no turn"
+    phone_sees(phones[0], "[ludo]", "board + dice", [".ludo-board", "#ludo-roll-btn"])
     p.click("#ludo-roll-btn")
     dice = wait(lambda: A.evaluate("() => window.__gs && window.__gs.dice"), 4)
     return bool(dice), f"dice {dice}"
 
 
 def act_estimate(A, phones):
+    if wait(lambda: phones[0].evaluate("() => { const i = document.querySelector('.est-input'); return !!(i && i.offsetParent !== null); }"), 12):
+        phone_sees(phones[0], "[estimate]", "question + timer + input + submit", [".est-question", ".est-timer", ".est-input", ".est-submit-btn"])
     got = []
     for p in [A] + phones:
         vis = wait(lambda: p.evaluate("() => { const i = document.querySelector('.est-input'); return i && i.offsetParent !== null; }"), 12)
         if not vis:
             continue
+        if p.viewport_size["width"] < 900 and not any(r[0].startswith("[estimate] phone keyboard") for r in RESULTS):
+            keyboard_check(p, "[estimate]", ".est-input", ".est-submit-btn")
         n = sent_count(p)
         p.fill(".est-input", "42")
         p.click(".est-submit-btn")
@@ -270,12 +333,20 @@ def act_tankbattle(A, phones):
     A.keyboard.press("Space")
     acts = {m.get("action") for m in sent_actions(A, n)}
     B = phones[0]
+    phone_sees(B, "[tankbattle]", "move stick + aim stick + fire", ['[data-role="movezone"]', '[data-role="aimzone"]', ".arc-fire-btn"])
     n2 = sent_count(B)
+    # multitouch: left thumb drives (pointer 5) while the right thumb fires (pointer 9)
+    B.evaluate(STICK_JS, ['[data-role="movezone"]', 5, 0, -34])
+    time.sleep(0.15)
     B.evaluate("""() => { const b = document.querySelector('.arc-fire-btn');
         if (b) { b.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 9, bubbles: true, pointerType: 'touch' }));
                  b.dispatchEvent(new PointerEvent('pointerup', { pointerId: 9, bubbles: true, pointerType: 'touch' })); } }""")
     time.sleep(0.3)
-    fire = any(m.get("action") == "shoot" for m in sent_actions(B, n2))
+    sent = sent_actions(B, n2)
+    fire = any(m.get("action") == "shoot" for m in sent)
+    drive = any(m.get("action") == "move" and m.get("forward") for m in sent)
+    B.evaluate("""() => document.querySelector('[data-role="movezone"]').dispatchEvent(new PointerEvent('pointerup', { pointerId: 5, bubbles: true, pointerType: 'touch' }))""")
+    ok("[tankbattle] phone multitouch: drive with one thumb while firing with the other", fire and drive, f"fire {fire} drive {drive}")
     return "move" in acts and fire, f"desktop {sorted(a for a in acts if a)} phone fire {fire}"
 
 
@@ -283,6 +354,14 @@ def act_dodgearena(A, phones):
     n = sent_count(A)
     A.keyboard.down("d"); time.sleep(0.3); A.keyboard.up("d")
     acts = {m.get("action") for m in sent_actions(A, n)}
+    B = phones[0]
+    phone_sees(B, "[dodgearena]", "joystick", ['[data-role="movezone"]'])
+    n2 = sent_count(B)
+    B.evaluate(STICK_JS, ['[data-role="movezone"]', 6, 30, 20])
+    time.sleep(0.3)
+    stick = any(m.get("action") == "move" and (m.get("dx") or m.get("dy")) for m in sent_actions(B, n2))
+    B.evaluate("""() => document.querySelector('[data-role="movezone"]').dispatchEvent(new PointerEvent('pointerup', { pointerId: 6, bubbles: true, pointerType: 'touch' }))""")
+    ok("[dodgearena] phone joystick moves the player", stick)
     return "move" in acts, str(sorted(a for a in acts if a))
 
 
@@ -291,30 +370,46 @@ def act_whoami(A, phones):
     asker = wait(lambda: next((p for p in pages if p.evaluate("() => !!document.querySelector('.wai-question-input')")), None), 10)
     if not asker:
         return False, "no question input"
+    if asker is not A:
+        keyboard_check(asker, "[whoami]", ".wai-question-input", ".wai-ask-btn")
     asker.fill(".wai-question-input", "Bin ich eine echte Person?")
     asker.click(".wai-ask-btn")
     voter = wait(lambda: next((p for p in pages if p is not asker and p.evaluate("() => !!document.querySelector('.wai-vote-btn:not([disabled])')")), None), 8)
     if not voter:
         return False, "nobody could vote"
     n = sent_count(voter)
-    voter.click(".wai-vote-btn--yes")
+    voter.click(".wai-vote-btn--no")   # "no" ends the turn (a "yes" lets the asker go on)
     time.sleep(0.3)
     voted = any(m.get("action") == "vote" for m in sent_actions(voter, n))
+    # keyboard on the phone: its own question when it is its turn
+    if asker is A:
+        phone_asker = wait(lambda: next((p for p in phones if p.evaluate(
+            "() => { const i = document.querySelector('.wai-question-input'); return !!(i && i.offsetParent !== null); }")), None), 12)
+        if phone_asker:
+            keyboard_check(phone_asker, "[whoami]", ".wai-question-input", ".wai-ask-btn")
+        else:
+            ok("[whoami] phone keyboard open: input + submit stay visible", False, "the phone never got the question input")
     return voted, "asked + voted"
 
 
 def act_cards(A, phones, selectors, action_prefix):
-    got = 0
-    for p in [A] + phones:
-        sel = wait(lambda: next((s for s in selectors if p.evaluate("(s) => { const e = document.querySelector(s); return !!(e && e.offsetParent !== null && !e.disabled); }", s)), None), 12)
-        if not sel:
-            continue
-        n = sent_count(p)
-        p.click(f"{sel} >> nth=0")
-        time.sleep(0.3)
-        if any(str(m.get("action", "")).startswith(action_prefix) for m in sent_actions(p, n)):
-            got += 1
-    return got >= 2, f"{got} players answered"
+    # passes over all players: whoever can answer right now answers (in
+    # "Kennst du mich?" the target answers first, the guessers only after)
+    pages, answered, t0 = [A] + phones, set(), time.time()
+    while len(answered) < 2 and time.time() - t0 < 25:
+        for p in pages:
+            if id(p) in answered:
+                continue
+            sel = next((s for s in selectors if p.evaluate("(s) => { const e = document.querySelector(s); return !!(e && e.offsetParent !== null && !e.disabled); }", s)), None)
+            if not sel:
+                continue
+            n = sent_count(p)
+            p.click(f"{sel} >> nth=0")
+            time.sleep(0.3)
+            if any(str(m.get("action", "")).startswith(action_prefix) for m in sent_actions(p, n)):
+                answered.add(id(p))
+        time.sleep(0.2)
+    return len(answered) >= 2, f"{len(answered)} players answered"
 
 
 def act_knowme(A, phones):
@@ -331,9 +426,15 @@ def act_kritzelmeister(A, phones):
     if not drawer:
         return False, "no word choice"
     drawer.click(".dg-word-card >> nth=0")
+    draw_phone = drawer if drawer is not A else None
+    if draw_phone and wait(lambda: draw_phone.evaluate("() => { const t = document.querySelector('.dg-toolbar'); return !!(t && t.offsetParent !== null); }"), 5):
+        phone_sees(draw_phone, "[kritzelmeister]", "drawing canvas + toolbar", [".dg-canvas", ".dg-toolbar"])
     guesser = wait(lambda: next((p for p in pages if p is not drawer and p.evaluate("() => { const i = document.querySelector('.dg-guess-input'); return !!(i && i.offsetParent !== null); }")), None), 10)
     if not guesser:
         return False, "no guess input"
+    phone_guesser = guesser if guesser is not A else next((p for p in phones if p is not drawer), None)
+    if phone_guesser:
+        keyboard_check(phone_guesser, "[kritzelmeister]", ".dg-guess-input", ".dg-guess-submit")
     n = sent_count(guesser)
     guesser.fill(".dg-guess-input", "Banane")
     guesser.click(".dg-guess-submit")
@@ -437,8 +538,17 @@ def run_game(key, nplayers, options, control, act, action_game, A, phones_all, s
     for p in pages:
         who = p.user["user"]["name"]
         ok(f"{label} {who}: game dialog inside the viewport, no horizontal overflow", modal_inside(p) and no_h_overflow(p))
-    ctl = visible_unobstructed(pages[1] if control not in (".est-root", ".wai-root", ".km-root", ".mg-root", ".dg-root", ".kk-lobby") else pages[1], control)
-    ok(f"{label} phone: primary control visible and not covered", ctl["ok"], json.dumps(ctl["why"]))
+    ctl = visible_unobstructed(pages[1], control)
+    ok(f"{label} phone 390x844: primary control visible and not covered", ctl["ok"], json.dumps(ctl["why"]))
+    if len(phones) >= 2:
+        c412, fits = visible_unobstructed(phones[1], control), True        # Cem is 412x915
+    else:                                                                  # 2-player game: the same phone at 412x915
+        phones[0].set_viewport_size({"width": 412, "height": 915})
+        time.sleep(0.4)
+        c412, fits = visible_unobstructed(phones[0], control), modal_inside(phones[0]) and no_h_overflow(phones[0])
+        phones[0].set_viewport_size({"width": 390, "height": 844})
+        time.sleep(0.3)
+    ok(f"{label} phone 412x915: dialog fits, primary control visible", c412["ok"] and fits, json.dumps(c412["why"]))
     if shots:
         A.screenshot(path=str(shots / f"{key}_desktop.png"))
         for i, p in enumerate(phones):
@@ -471,11 +581,16 @@ def run_game(key, nplayers, options, control, act, action_game, A, phones_all, s
             print(f"  DIAG [{key}] game chat: sent {sent_actions(B, n)[:3]} B {json.dumps(diag)} arrived later on A: {bool(late)}"
                   f" | A main {text in A.inner_text('#messages')} A game {text in A.inner_text('#game-chat-messages')}", flush=True)
         B.click("#game-chat-close-btn")
-        closed = wait(lambda: B.evaluate("() => !document.getElementById('game-chat-panel').classList.contains('open') && !document.body.classList.contains('scroll-locked')"), 2)
+        closed = wait(lambda: B.evaluate("() => { const p = document.getElementById('game-chat-panel'); return !p.classList.contains('open') && getComputedStyle(p).visibility === 'hidden' && !document.body.classList.contains('scroll-locked'); }"), 2)
         ok(f"{label} game chat: open, send, arrives in chat + game chat, closes cleanly", opened and arrived and closed, f"open {opened} arrived {arrived} closed {closed}")
+        head = B.evaluate("""() => ({ scroll: document.querySelector('#game-modal .game-modal').scrollTop,
+            top: Math.round(document.querySelector('#game-modal .modal-head').getBoundingClientRect().top) })""")
+        ok(f"{label} game chat used: the dialog header (title, close, chat) is still in view", head["scroll"] == 0 and head["top"] >= 0, json.dumps(head))
 
     # --- landscape for action games ---
     if action_game and key != "kopfkicker":
+        before = B.evaluate(CONTROLS_JS)
+        drift = []
         for (w, h) in ((844, 390), (915, 412)):
             B.set_viewport_size({"width": w, "height": h})
             B.evaluate("() => window.dispatchEvent(new Event('orientationchange'))")
@@ -484,10 +599,26 @@ def run_game(key, nplayers, options, control, act, action_game, A, phones_all, s
             ok(f"{label} landscape {w}x{h}: arena visible, dialog fits", c["ok"] and modal_inside(B) and no_h_overflow(B), json.dumps(c["why"]))
             if shots:
                 B.screenshot(path=str(shots / f"{key}_landscape_{w}.png"))
-        B.set_viewport_size({"width": 390, "height": 844})
-        B.evaluate("() => window.dispatchEvent(new Event('orientationchange'))")
-        time.sleep(0.4)
-        ok(f"{label} back to portrait: still one set of controls", B.evaluate("() => document.querySelectorAll('#game-stage canvas').length") >= 1)
+            B.set_viewport_size({"width": 390, "height": 844})
+            B.evaluate("() => window.dispatchEvent(new Event('orientationchange'))")
+            time.sleep(0.45)
+            now = B.evaluate(CONTROLS_JS)
+            if now != before:
+                drift.append(now)
+        ok(f"{label} portrait -> landscape -> portrait (2x): one set of controls, same running session",
+           not drift and before["open"] and before["canvases"] >= 1, f"{before} -> {drift}")
+
+    # --- result / end: everyone else leaves -> the phone gets a clear end screen ---
+    if key != "kopfkicker":   # KopfKicker: grace period + own end screen, covered by kopfkicker_e2e
+        for p in pages:
+            if p is not B and modal_open(p):
+                p.click("#game-close-btn")
+                wait(lambda: not modal_open(p), 3)
+        over = wait(lambda: B.evaluate("() => window.__over"), 6)
+        end = wait(lambda: (lambda r: r if r["ok"] else None)(B.evaluate(END_UI_JS)), 3) or B.evaluate(END_UI_JS)
+        ok(f"{label} phone: result screen ({(over or {}).get('reason')}), inside the viewport, closable", bool(over) and end["ok"], json.dumps(end))
+        if shots:
+            B.screenshot(path=str(shots / f"{key}_result_phone.png"))
 
     # --- leave + cleanup ---
     for p in [B] + [p for p in pages if p is not B]:
@@ -502,6 +633,53 @@ def run_game(key, nplayers, options, control, act, action_game, A, phones_all, s
     ok(f"{label} no console errors", not errs, "; ".join(errs[:3]))
 
 
+def timliner_gestures(p):
+    """Real touch points (CDP) on the TimLiner canvas: two fingers moving =
+    pan, spreading = pinch zoom; then a real one-finger stroke followed by a
+    second finger. Returns camera snapshots + line counts."""
+    # dismiss the first-run hint card like a player would ("Los geht's")
+    if p.evaluate("() => { const b = document.querySelector('.tl-onboard-card [data-role=dismiss]'); return !!(b && b.offsetParent !== null); }"):
+        p.click(".tl-onboard-card [data-role=dismiss]")
+        time.sleep(0.2)
+    cdp = p.context.new_cdp_session(p)
+    left, top, w, h = p.evaluate("() => { const c = document.querySelector('#game-stage canvas').getBoundingClientRect(); return [c.left, c.top, c.width, c.height]; }")
+    at = lambda fx, fy: (left + w * fx, top + h * fy)  # noqa: E731  (fractions of the canvas: its middle band is free of tool bars)
+    st = lambda: p.evaluate("() => timLinerInstance._debugState()")  # noqa: E731
+    touch = lambda t, pts: cdp.send("Input.dispatchTouchEvent", {"type": t, "touchPoints": [{"x": x, "y": y, "id": i} for i, (x, y) in enumerate(pts)]})  # noqa: E731
+    end = lambda: cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})  # noqa: E731
+    probe = [at(0.3, 0.4), at(0.7, 0.4), at(0.25, 0.62), at(0.72, 0.5)]
+    on_canvas = p.evaluate("(pts) => pts.every(([x, y]) => (document.elementFromPoint(x, y) || {}).tagName === 'CANVAS')", probe)
+    s0 = st()
+    touch("touchStart", [at(0.3, 0.4), at(0.6, 0.4)])
+    for i in range(1, 7):
+        touch("touchMove", [at(0.3 + i * 0.02, 0.4 + i * 0.01), at(0.6 + i * 0.02, 0.4 + i * 0.01)])
+        time.sleep(0.02)
+    s1 = st()
+    for i in range(1, 7):
+        touch("touchMove", [at(0.42 - i * 0.02, 0.46), at(0.72 + i * 0.0, 0.46 - i * 0.02)])
+        time.sleep(0.02)
+    s2 = st()
+    end()
+    time.sleep(0.2)
+    after_pan = st()["lineCount"]
+    # a real stroke first, then a second finger lands: the stroke is kept,
+    # the following two-finger pan adds nothing
+    touch("touchStart", [at(0.25, 0.62)])
+    for i in range(1, 9):
+        touch("touchMove", [at(0.25 + i * 0.04, 0.62 + i * 0.005)])
+        time.sleep(0.06)
+    drawn = st()["lineCount"]
+    touch("touchStart", [at(0.57, 0.66), at(0.72, 0.5)])
+    for i in range(1, 5):
+        touch("touchMove", [at(0.57 - i * 0.02, 0.66), at(0.72 - i * 0.02, 0.5)])
+        time.sleep(0.02)
+    end()
+    time.sleep(0.2)
+    cdp.detach()
+    return {"lines": [s0["lineCount"], after_pan], "stroke": [after_pan, drawn, st()["lineCount"]],
+            "cam": [s0["camera"], s1["camera"], s2["camera"]], "on_canvas": on_canvas}
+
+
 def run_timliner(A, B, shots):
     for p, name in ((A, "desktop"), (B, "phone")):
         p.errors.clear()
@@ -513,6 +691,14 @@ def run_timliner(A, B, shots):
                 const ev = (t, x, y) => c.dispatchEvent(new PointerEvent(t, { pointerId: 1, bubbles: true, clientX: r.left + x, clientY: r.top + y, pointerType: 'touch', isPrimary: true }));
                 ev('pointerdown', 40, 60); ev('pointermove', 120, 90); ev('pointermove', 200, 120); ev('pointerup', 200, 120); }""")
             time.sleep(0.3)
+            if name == "phone" and p.context.browser.browser_type.name == "chromium":
+                g = timliner_gestures(p)
+                panned = g["cam"][1]["x"] != g["cam"][0]["x"] or g["cam"][1]["y"] != g["cam"][0]["y"]
+                zoomed = g["cam"][2]["zoom"] != g["cam"][1]["zoom"]
+                ok("[timliner] phone: 1 finger draws, 2 fingers pan, pinch zooms (and draw nothing)",
+                   g["lines"][0] >= 1 and panned and zoomed and g["lines"][1] == g["lines"][0], json.dumps(g))
+                ok("[timliner] phone: a second finger after a real stroke keeps the stroke, adds nothing",
+                   g["stroke"][1] > g["stroke"][0] and g["stroke"][2] == g["stroke"][1], json.dumps(g))
             ok(f"[timliner] {name}: dialog inside viewport", modal_inside(p) and no_h_overflow(p))
             if shots:
                 p.screenshot(path=str(shots / f"timliner_{name}.png"))
