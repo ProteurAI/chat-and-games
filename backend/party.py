@@ -137,7 +137,9 @@ class PartyManager:
             return
         if not isinstance(points, (int, float)) or isinstance(points, bool):
             return
-        points = max(0, min(1000, int(points)))
+        # 100 = first place, the most a single game result can be worth
+        # (PARTY_PLACEMENT_POINTS in app.js) - never more per report
+        points = max(0, min(100, int(points)))
         uid = str(user["id"])
         party["scores"][uid] = party["scores"].get(uid, 0) + points
         await self._broadcast(party)

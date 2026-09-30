@@ -73,7 +73,7 @@ class PongEngine:
     emoji = "🏓"
     min_players = 2
     max_players = 2
-    manual_start = False
+    manual_start = True  # host starts manually - never an auto-start just because the lobby is full
     tick_interval = 1 / 30
 
     @staticmethod
@@ -173,7 +173,7 @@ class TicTacToeEngine:
     emoji = "⭕"
     min_players = 2
     max_players = 2
-    manual_start = False
+    manual_start = True  # host starts manually - never an auto-start just because the lobby is full
     tick_interval = None
 
     @staticmethod
@@ -458,7 +458,7 @@ class BattleshipEngine:
     emoji = "🚢"
     min_players = 2
     max_players = 2
-    manual_start = False  # fixed exactly-2 game, same auto-start pattern as Pong/Tic-Tac-Toe
+    manual_start = True  # host starts manually - never an auto-start just because the lobby is full
     tick_interval = None
 
     @staticmethod
