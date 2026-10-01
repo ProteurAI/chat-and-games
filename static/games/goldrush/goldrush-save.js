@@ -4,24 +4,29 @@
 // ephemeral disk) can't promise persistence, a cloud save can come later
 // on top of the same document. One JSON document per browser:
 //
-//   { saveVersion: 2, worldSeed, createdAt, updatedAt, tool,
+//   { saveVersion: 3, worldSeed, createdAt, updatedAt,
+//     tools: { owned: ["hand", ...], equipped },
 //     player: { x, z, yaw, pitch }, settings: {...},
-//     economy: { moneyCents, earnedCents, inventory, stats, flags },
-//     terrain: { gen, cols, cell, unit, encoding, changed, data },
-//     resources: { unit, encoding, changed, slices, level } }
+//     economy: { moneyCents, earnedCents, inventory, stats, flags, nextId, pending },
+//     terrain: { gen, cols, cell, unit, encoding, changed, data, loose },
+//     resources: { unit, encoding, changed, slices, level, carried },
+//     rocks: { v, count, list } }
 //
-// The terrain is stored as quantised height deltas against the seeded
-// original mound (millimetres, Int16), run-length encoded - untouched
-// ground costs almost nothing, no matter how often it was dug. The worked
-// resource slices are stored the same way, relative to the terrain (see
-// goldrush-mining.js) - zero almost everywhere.
+// The terrain is stored as integer height deltas against the seeded
+// original mound (0.1 mm), run-length encoded - untouched ground costs
+// almost nothing, no matter how often it was dug. The used-up resource
+// slices are stored the same way, relative to the terrain (see
+// goldrush-mining.js) - zero almost everywhere. Boulders only when they
+// moved or took damage (goldrush-rocks.js).
 // Every write keeps the previous good document as a backup.
 //
 // Versions: 1 = phase 1 (money as a float, no resources); 2 = integer
-// cents, gold inventory + statistics, worked resource slices. Older
-// documents are upgraded on load (migrate) and written back as 2.
+// cents, gold inventory + statistics, worked resource slices (5 cm);
+// 3 = owned tools, pending finds, 0.1 mm terrain, 1 cm slices, boulders.
+// Older documents are upgraded on load step by step (1 -> 2 -> 3) and
+// written back as 3. A new game owns only the hand.
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 export const SAVE_KEY = "goldrush.save";
 export const BACKUP_KEY = "goldrush.save.backup";
 export const CORRUPT_KEY = "goldrush.save.corrupt";
@@ -48,7 +53,13 @@ export function validate(doc) {
     if (!e || typeof e !== "object" || !Number.isInteger(e.moneyCents) || e.moneyCents < 0) return "Geldstand ungültig";
     const r = doc.resources;
     if (r != null && (typeof r.slices !== "string" || typeof r.level !== "string")) return "Ressourcendaten ungültig";
+    if (e.pending != null && !Array.isArray(e.pending)) return "Funddaten ungültig";
   } else if (!finite(doc.money)) return "Geldstand ungültig";
+  if (doc.saveVersion >= 3) {
+    const t = doc.tools;
+    if (!t || !Array.isArray(t.owned) || !t.owned.every((id) => typeof id === "string")) return "Werkzeugdaten ungültig";
+    if (doc.rocks != null && (typeof doc.rocks !== "object" || !Array.isArray(doc.rocks.list))) return "Felsdaten ungültig";
+  }
   return null;
 }
 
@@ -95,6 +106,20 @@ export function migrate(doc) {
     };
     delete doc.money;
     delete doc.stats;
+  }
+  if (doc.saveVersion === 2) {
+    // phase 3: tools (only the hand - nothing was ever bought), no pending
+    // finds (v2 booked them at the dig), boulders where the seed put them
+    // (they settle onto the saved ground when the game loads)
+    doc = {
+      ...doc,
+      saveVersion: 3,
+      tools: { owned: ["hand"], equipped: "hand" },
+      economy: { ...doc.economy, pending: [] },
+      rocks: null,
+      migratedFrom: doc.migratedFrom || 2,
+    };
+    delete doc.tool;
   }
   return doc;
 }
@@ -149,9 +174,14 @@ export function encodeInt16Rle(arr) {
   return btoa(bin);
 }
 
-export function decodeInt16Rle(b64, length) {
+// any integer array (Int32 heights in 0.1 mm, Uint8 states, Int16) - same stream format
+export const encodeIntRle = (arr) => encodeInt16Rle(arr);
+
+export function decodeIntRle(b64, length) { return decodeInt16Rle(b64, length, Int32Array); }
+
+export function decodeInt16Rle(b64, length, Type = Int16Array) {
   const bin = atob(b64);
-  const out = new Int16Array(length);
+  const out = new Type(length);
   let p = 0, k = 0;
   const varint = () => {
     let v = 0, shift = 0, b;

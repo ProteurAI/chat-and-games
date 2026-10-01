@@ -1,126 +1,251 @@
-// GoldRush - mining. One tool stroke is ONE transaction, in this order:
+// GoldRush - mining. One tool action is ONE transaction, in this order:
 //
 //   1. valid target?           (the mound, inside the dig area, not under your own feet)
-//   2. within reach?
-//   3. material workable with this tool?   (stone: the hand just bounces off)
-//   4. how much actually comes off         (tool bite x material efficiency, per cell)
-//   5. deform the terrain                  (+ local collapse, see DiggableTerrain)
-//   6. consume the resource                (each 5 cm slice of each column exactly once)
-//   7. which finds were in it              (fixed per slice by the world seed)
+//   2. within the tool's reach?
+//   3. a boulder?              (pickaxe: damage it; hand / shovel: bounce off)
+//   4. material workable with this tool?   (stone: only the pickaxe)
+//   5. how much actually comes off         (tool kernel x material efficiency per cell,
+//                                           loosened ground counts extra)
+//   6. deform the terrain                  (exact 0.1 mm integer heights)
+//   7. consume the resource                (each 1 cm slice of each column exactly once)
+//   8. which finds were in it              (fixed per slice by the world seed)
+//   9. local settling                      (material RELOCATED, never removed)
 //
-// The caller then shows the finds, credits them (economy) and marks the
-// save dirty. There is no second random number anywhere: what a slice holds
-// is decided by the seed, whether it was already worked by `consumed`.
+// Removed and relocated material are kept apart: the result reports the
+// requested volume (what the kernel asked for), the actually removed
+// volume and mass (what left the mountain), the relocated volume (what slid
+// inside it) and the processed resource volume (slices that were checked
+// for gold). Gold only ever comes from removed material.
 //
-// Depletion: `cidx[k]` is the lowest slice of column k a tool has worked
-// through (an integer - exact, also across save/reload), `consumed[k]` the
-// level itself (for the look and the statistics). A slice pays out when a
-// stroke takes the column below its centre - once, whatever order or angle
-// it is dug from. Material that slides into a hole lies ABOVE the worked
-// level and holds nothing (it was already worked or never belonged to this
-// column); material that slid away from a column without being worked keeps
-// its content for when the tool gets there.
+// Depletion: `cidx[k]` is the lowest slice of column k that is used up (an
+// integer - exact, also across save/reload), `consumed[k]` the worked level
+// itself (for the look and the statistics). A slice pays out when a tool
+// takes the column below its centre - once.
+// When settling moves material off a column below its worked level (a cut
+// face slumps), those slices are used up THERE and whatever finds they held
+// travel with the material: they are "carried" in the receiving column at
+// the height they landed, and pay out when a tool later removes that layer.
+// Nothing is lost, nothing pays twice, nothing pays for material that only
+// slid.
 
 import { MAT, MATERIALS } from "./goldrush-materials.js";
 import { FIND, VOXEL_H } from "./goldrush-resources.js";
-import { decodeInt16Rle, encodeInt16Rle } from "./goldrush-save.js";
+import { decodeInt16Rle, decodeIntRle, encodeInt16Rle, encodeIntRle } from "./goldrush-save.js";
 import { FLOOR_Y } from "./goldrush-terrain.js";
+import { toolEfficiency } from "./goldrush-tools.js";
 
 const FEET_RADIUS = 0.45;        // m: no digging straight under your own feet
 // index of the lowest slice whose centre is at or above height h
 const sliceIndex = (h) => Math.ceil((h - FLOOR_Y) / VOXEL_H - 0.5);
-const MAX_FINDS = 16;
+const MAX_FINDS = 32;
+const OLD_VOXEL_H = 0.05;         // phase-2 saves: 5 cm slices
+const Q = 10000;                  // 0.1 mm
 
 export class MiningSystem {
-  constructor(terrain) {
+  constructor(terrain, rocks = null) {
     this.terrain = terrain;
     this.field = terrain.field;
+    this.rocks = rocks;
     this.consumed = new Float32Array(terrain.height.length);
     this.consumed.set(terrain.height);                  // nothing below the surface is worked yet
     this.cidx = new Int16Array(terrain.height.length);
+    this.carried = new Map();                           // column -> [{ cls, massUg, key, y }]
+    this.carriedCount = 0;
     this._resetIndex();
     terrain.consumed = this.consumed;
+    terrain.onRelocate = (a, b, before, after) => this._relocate(a, b, before, after);
     this._vox = {};
-    this._eff = null;
+    this.sliceVolume = VOXEL_H * terrain.cell * terrain.cell;
+    this.totals = { relocatedSlices: 0, carriedPaid: 0 };
     this.result = {
-      ok: false, reason: "", material: MAT.DIRT, blocked: false, cells: 0, chunks: 0,
-      massKg: 0, freshKg: 0, volumeL: 0, massByMat: [0, 0, 0, 0], slices: 0, finds: [],
+      ok: false, reason: "", kind: "", material: MAT.DIRT, blocked: false, cells: 0, chunks: 0,
+      requestedVolume: 0, removedVolume: 0, removedMassKg: 0, relocatedVolume: 0, processedVolume: 0,
+      massKg: 0, freshKg: 0, volumeL: 0, massByMat: [0, 0, 0, 0], slices: 0, finds: [], findCount: 0, rock: null,
     };
     for (let i = 0; i < MAX_FINDS; i++) this.result.finds.push({ cls: 0, massUg: 0, x: 0, y: 0, z: 0, mat: 0, key: "" });
-    this.result.findCount = 0;
+    this._n = { x: 0, y: 1, z: 0 };
+    this._u = { x: 0, y: 0, z: 1 };
   }
 
   _resetIndex() {
     const H = this.terrain.height, I = this.cidx;
     for (let k = 0; k < H.length; k++) I[k] = sliceIndex(H[k]);
+    this.carried.clear();
+    this.carriedCount = 0;
   }
 
   // material at the very surface of a hit (a boulder is always stone)
   materialAtHit(hit) {
     if (hit.boulder != null) return MAT.STONE;
-    return this.field.materialAt(hit.x, hit.y - 0.02, hit.z);
+    return this.field.materialAt(hit.x, hit.y - 0.01, hit.z);
+  }
+
+  looseAtHit(hit) {
+    const t = this.terrain, i = Math.round((hit.x - t.x0) / t.cell), j = Math.round((hit.z - t.z0) / t.cell);
+    if (i < 0 || j < 0 || i >= t.vps || j >= t.vps) return false;
+    return t.loose[j * t.vps + i] > 0;
   }
 
   // is this hit a place the player may work at all? -> "" or the reason
-  check(hit, tool, player) {
+  check(hit, def, player) {
     if (!hit) return "none";
     if (!hit.diggable) return "none";
-    if (hit.distance > tool.reach) return "far";
-    if (player && Math.hypot(hit.x - player.x, hit.z - player.z) < FEET_RADIUS) return "feet";
+    if (hit.distance > def.reach) return "far";
+    if (player && hit.boulder == null && Math.hypot(hit.x - player.x, hit.z - player.z) < FEET_RADIUS) return "feet";
     return "";
   }
 
-  // one stroke of `tool` at `hit` - the whole transaction; returns this.result
-  stroke(hit, tool, player) {
+  // efficiency of `def` right at the hit (crosshair state)
+  efficiencyAtHit(hit, def) {
+    if (hit.boulder != null) return def.rockDamage > 0 ? 1 : 0;
+    return toolEfficiency(def, this.materialAtHit(hit), this.looseAtHit(hit));
+  }
+
+  _push(r, cls, massUg, mat, x, y, z, key) {
+    if (r.findCount >= MAX_FINDS) return;
+    const f = r.finds[r.findCount++];
+    f.cls = cls; f.massUg = massUg; f.mat = mat; f.x = x; f.y = y; f.z = z; f.key = key;
+  }
+
+  /**
+   * One action of tool `def` at `hit` - the whole transaction.
+   * eye: where the stroke comes from (the camera) - sets its direction.
+   * @returns this.result
+   */
+  action(hit, def, player, eye) {
     const r = this.result;
-    r.ok = false; r.blocked = false; r.cells = 0; r.chunks = 0; r.massKg = 0; r.freshKg = 0; r.volumeL = 0;
-    r.massByMat.fill(0); r.slices = 0; r.findCount = 0;
-    r.reason = this.check(hit, tool, player);
+    r.ok = false; r.blocked = false; r.kind = ""; r.cells = 0; r.chunks = 0; r.rock = null;
+    r.requestedVolume = 0; r.removedVolume = 0; r.removedMassKg = 0; r.relocatedVolume = 0; r.processedVolume = 0;
+    r.massKg = 0; r.freshKg = 0; r.volumeL = 0; r.massByMat.fill(0); r.slices = 0; r.findCount = 0;
+    r.reason = this.check(hit, def, player);
     if (r.reason) return r;
     r.ok = true;
     r.material = this.materialAtHit(hit);
-    const def = MATERIALS[r.material];
-    if (!(tool.efficiency(def) > 0) || hit.boulder != null) { r.blocked = true; return r; }
+    // 3. boulders
+    if (hit.boulder != null) {
+      if (def.rockDamage > 0 && this.rocks) {
+        r.kind = "rock";
+        r.rock = this.rocks.hit(hit.boulder, def.rockDamage);
+        if (r.rock && r.rock.broke) this.rocks.settleIn(hit.x - 1.5, hit.z - 1.5, hit.x + 1.5, hit.z + 1.5);
+      } else { r.kind = "blocked"; r.blocked = true; }
+      return r;
+    }
+    // 4. workable at all?
+    if (!(toolEfficiency(def, r.material, this.looseAtHit(hit)) > 0)) { r.kind = "blocked"; r.blocked = true; return r; }
 
-    const t = this.terrain, field = this.field, area = t.cell * t.cell;
-    const eff = (k, x, y, z) => tool.efficiency(MATERIALS[field.materialAt(x, y - 0.02, z, k)]);
+    // 5.-9.
+    const t = this.terrain, field = this.field, area = t.cell * t.cell, vps = t.vps, C = this.consumed, I = this.cidx;
+    const K = this._kernel(hit, def, eye);
+    const eff = (k, x, y, z, mat) => toolEfficiency(def, mat, t.loose[k] > 0);
     const onCut = (rec) => {
-      const C = this.consumed, I = this.cidx, vps = t.vps;
       for (let n = 0; n < rec.n; n++) {
-        const k = rec.k[n], before = rec.before[n], after = rec.after[n];
+        const k = rec.k[n], before = rec.before[n], after = rec.after[n], mat = rec.mat[n];
         const i = k % vps, j = (k - i) / vps, x = t.x0 + i * t.cell, z = t.z0 + j * t.cell;
-        const mat = field.materialAt(x, (before + after) * 0.5, z, k);
         const dens = MATERIALS[mat].density;
         const vol = (before - after) * area;
-        r.volumeL += vol * 1000;
-        r.massKg += vol * dens;
+        r.removedVolume += vol;
         r.massByMat[mat] += vol * dens;
         const c0 = C[k];
         if (after < c0) {
           r.freshKg += (Math.min(before, c0) - after) * area * dens;
           C[k] = after;
         }
-        // slices whose centre the column passes now are worked through
+        // finds that slid here earlier and lie in the removed layer
+        const list = this.carried.get(k);
+        if (list) {
+          for (let q = list.length - 1; q >= 0; q--) {
+            const it = list[q];
+            if (it.y <= after) continue;
+            this._push(r, it.cls, it.massUg, mat, x, Math.min(before, it.y), z, it.key);
+            list.splice(q, 1);
+            this.carriedCount--;
+            this.totals.carriedPaid++;
+          }
+          if (!list.length) this.carried.delete(k);
+        }
+        // slices whose centre the column passes now are used up
         const lo = sliceIndex(after), hi = I[k] - 1;
         if (lo > hi) continue;                                      // only loose, already worked material
         I[k] = lo;
         for (let iy = lo; iy <= hi; iy++) {
           r.slices++;
           const v = field.voxel(i, j, iy, this._vox);
-          if (v.cls !== FIND.NONE && r.findCount < MAX_FINDS) {
-            const f = r.finds[r.findCount++];
-            f.cls = v.cls; f.massUg = v.massUg; f.mat = v.mat;
-            f.x = x; f.y = FLOOR_Y + (iy + 0.5) * VOXEL_H; f.z = z;
-            f.key = `${i}:${j}:${iy}`;
-          }
+          if (v.cls !== FIND.NONE) this._push(r, v.cls, v.massUg, v.mat, x, FLOOR_Y + (iy + 0.5) * VOXEL_H, z, `${i}:${j}:${iy}`);
         }
       }
     };
-    const res = t.excavate(hit.x, hit.z, tool.radius, tool.depth, eff, onCut);
-    if (!res || !res.cells) { r.blocked = true; return r; }          // e.g. stone right under a thin skin
+    const res = t.excavate(hit, K, eff, onCut);
+    r.requestedVolume = res ? res.requested : 0;
+    if (!res || !res.cells) { r.kind = "blocked"; r.blocked = true; return r; }     // e.g. stone right under a thin skin
+    r.kind = "dig";
     r.cells = res.cells;
     r.chunks = res.chunks;
+    r.relocatedVolume = res.relocated;
+    r.removedMassKg = r.massByMat[0] + r.massByMat[1] + r.massByMat[2] + r.massByMat[3];
+    r.massKg = r.removedMassKg;
+    r.volumeL = r.removedVolume * 1000;
+    r.processedVolume = r.slices * this.sliceVolume;
+    // boulders around the bite settle onto the new ground
+    if (this.rocks) {
+      const m = (def.kernel.settleMargin || 0.8) + Math.max(def.kernel.a, def.kernel.b) + 1.2;
+      this.rocks.settleIn(hit.x - m, hit.z - m, hit.x + m, hit.z + m);
+    }
     return r;
+  }
+
+  // the tool's kernel at this hit: oriented in the surface plane, the
+  // stroke running along the view direction
+  _kernel(hit, def, eye) {
+    const n = this._n, u = this._u, src = hit.normal || { x: 0, y: 1, z: 0 };
+    let nl = Math.hypot(src.x, src.y, src.z) || 1;
+    n.x = src.x / nl; n.y = src.y / nl; n.z = src.z / nl;
+    if (n.y < 0.05) { n.y = 0.05; nl = Math.hypot(n.x, n.y, n.z); n.x /= nl; n.y /= nl; n.z /= nl; }
+    let dx = hit.x - (eye ? eye.x : hit.x), dy = hit.y - (eye ? eye.y : hit.y + 1), dz = hit.z - (eye ? eye.z : hit.z - 1);
+    const dn = dx * n.x + dy * n.y + dz * n.z;
+    dx -= dn * n.x; dy -= dn * n.y; dz -= dn * n.z;
+    let ul = Math.hypot(dx, dy, dz);
+    if (ul < 1e-4) {                                      // looking straight at the face: any direction in it
+      dx = -n.z; dy = 0; dz = n.x; ul = Math.hypot(dx, dz) || 1;
+      if (ul < 1e-4) { dx = 1; dz = 0; ul = 1; }
+    }
+    u.x = dx / ul; u.y = dy / ul; u.z = dz / ul;
+    return { ...def.kernel, n, u };
+  }
+
+  // settling moved material from column a (height before -> after) onto b
+  _relocate(a, b, before, after) {
+    const t = this.terrain, I = this.cidx, vps = t.vps;
+    const yTo = t.height[b];
+    // finds riding in the loose material that went
+    const list = this.carried.get(a);
+    if (list) {
+      for (let q = list.length - 1; q >= 0; q--) {
+        if (list[q].y <= after) continue;
+        const it = list.splice(q, 1)[0];
+        it.y = yTo - 0.002;
+        this._carry(b, it);
+        this.carriedCount--;
+      }
+      if (!list.length) this.carried.delete(a);
+    }
+    if (after < this.consumed[a]) this.consumed[a] = after;
+    // unworked slices that slid away are used up here, their finds travel along
+    const lo = sliceIndex(after), hi = I[a] - 1;
+    if (lo > hi) return;
+    I[a] = lo;
+    const i = a % vps, j = (a - i) / vps;
+    for (let iy = lo; iy <= hi; iy++) {
+      this.totals.relocatedSlices++;
+      const v = this.field.voxel(i, j, iy, this._vox);
+      if (v.cls !== FIND.NONE) this._carry(b, { cls: v.cls, massUg: v.massUg, key: `${i}:${j}:${iy}`, y: yTo - 0.002 - (hi - iy) * VOXEL_H * 0.3 });
+    }
+  }
+
+  _carry(k, it) {
+    let list = this.carried.get(k);
+    if (!list) { list = []; this.carried.set(k, list); }
+    list.push(it);
+    this.carriedCount++;
   }
 
   consumedAt(x, z) {
@@ -130,23 +255,26 @@ export class MiningSystem {
     return this.consumed[j * t.vps + i];
   }
 
-  // Saved per column, both as differences to what the terrain save restores
+  // Saved per column, as differences to what the terrain save restores
   // (so they are ~0 almost everywhere and cost a few bytes):
-  //   slices: worked slice index vs. the restored surface - exact integers,
+  //   slices: used-up slice index vs. the restored surface - exact integers,
   //           so a reload can never hand out a slice twice
-  //   level:  worked level below the surface in mm (look + statistics)
+  //   level:  worked level below the surface in 0.1 mm (look + statistics)
+  //   carried: finds travelling in slid material [column, height (0.1 mm
+  //           above the pit floor), class, µg, origin]
   serialize() {
     const t = this.terrain, H = t.height, C = this.consumed, I = this.cidx, n = H.length;
-    const qs = new Int16Array(n), ql = new Int16Array(n);
+    const qs = new Int16Array(n), ql = new Int32Array(n);
     let changed = 0;
     for (let k = 0; k < n; k++) {
       const hq = t.restoredHeight(k);
       qs[k] = sliceIndex(hq) - I[k];
-      const d = Math.round((H[k] - C[k]) * 1000);
-      ql[k] = d > 32767 ? 32767 : d < -32767 ? -32767 : d;
+      ql[k] = Math.max(0, Math.round((H[k] - C[k]) * Q));
       if (qs[k] || ql[k]) changed++;
     }
-    return { unit: "slice+mm", encoding: "rle-zigzag-varint-b64", changed, slices: encodeInt16Rle(qs), level: encodeInt16Rle(ql) };
+    const carried = [];
+    for (const [k, list] of this.carried) for (const it of list) carried.push([k, Math.round((it.y - FLOOR_Y) * Q), it.cls, it.massUg, it.key]);
+    return { unit: "slice1cm+0.1mm", encoding: "rle-zigzag-varint-b64", changed, slices: encodeInt16Rle(qs), level: encodeIntRle(ql), carried };
   }
 
   // call after the terrain got its saved heights; no data (older save) =
@@ -156,12 +284,39 @@ export class MiningSystem {
     C.set(H);
     this._resetIndex();
     if (!d || d.encoding !== "rle-zigzag-varint-b64" || typeof d.slices !== "string" || typeof d.level !== "string") return false;
-    const qs = decodeInt16Rle(d.slices, n), ql = decodeInt16Rle(d.level, n);
-    for (let k = 0; k < n; k++) {
-      I[k] -= qs[k];
-      C[k] = H[k] - ql[k] / 1000;
+    if (d.unit === "slice+mm") {
+      // phase 2: 5 cm slices, millimetres. Everything at and above the
+      // bottom of the lowest used-up 5 cm slice counts as used up now
+      // (never more loot than before), never above today's surface.
+      const qs = decodeInt16Rle(d.slices, n), ql = decodeInt16Rle(d.level, n);
+      for (let k = 0; k < n; k++) {
+        C[k] = Math.min(H[k], H[k] - ql[k] / 1000);
+        if (qs[k] <= 0) continue;                            // nothing below today's surface was used up
+        const old = Math.ceil((H[k] - FLOOR_Y) / OLD_VOXEL_H - 0.5) - qs[k];
+        const yw = FLOOR_Y + old * OLD_VOXEL_H;
+        I[k] = Math.min(sliceIndex(yw), sliceIndex(H[k]));
+      }
+    } else {
+      const qs = decodeInt16Rle(d.slices, n), ql = decodeIntRle(d.level, n);
+      for (let k = 0; k < n; k++) {
+        I[k] -= qs[k];
+        C[k] = H[k] - ql[k] / Q;
+      }
+      if (Array.isArray(d.carried)) {
+        for (const e of d.carried) {
+          if (!Array.isArray(e) || e.length < 5) continue;
+          const [k, yq, cls, massUg, key] = e;
+          if (!Number.isInteger(k) || k < 0 || k >= n || !Number.isFinite(yq) || !(cls >= FIND.TRACE && cls <= FIND.NUGGET) || !(massUg > 0)) continue;
+          this._carry(k, { cls, massUg: Math.round(massUg), key: String(key), y: FLOOR_Y + yq / Q });
+        }
+      }
     }
     this.terrain.refreshAll();
     return true;
+  }
+
+  // gold still in reach of the ground in a box (debug / benchmark), µg
+  stats() {
+    return { carried: this.carriedCount, relocatedSlices: this.totals.relocatedSlices, carriedPaid: this.totals.carriedPaid };
   }
 }

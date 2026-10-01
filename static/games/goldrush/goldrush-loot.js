@@ -3,11 +3,12 @@
 // objects that pop out of the ground, land, catch the sun and are then
 // pulled in (pickup). A nugget ends up in the player's hand for a moment.
 //
-// The money itself is booked in the economy at the moment of the dig (one
-// transaction); this module only presents it. Every shown piece reports
-// back exactly once (onCollect), and nothing is ever dropped: pieces left
-// behind are pulled in after a few seconds, flush() collects all at once
-// (exit, hidden tab). Everything is pooled - no allocation per find.
+// The economy lists every find as PENDING from the moment of the dig and
+// books it when this module reports it collected: every shown piece
+// reports back exactly once (onCollect, with the find's id), and nothing is
+// ever dropped: pieces left behind are pulled in after a few seconds,
+// flush() collects all at once (exit, hidden tab). Everything is pooled -
+// no allocation per find.
 
 import { FIND } from "./goldrush-resources.js";
 import { mulberry32, noise3 } from "./goldrush-noise.js";
