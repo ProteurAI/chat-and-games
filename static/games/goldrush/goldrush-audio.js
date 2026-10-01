@@ -6,15 +6,26 @@
 //   stone                    - a short dull knock: the hand does not get in
 //   gold                     - quiet metallic ticks (inharmonic partials),
 //                              brighter and longer the bigger the piece
+//   shovel / pickaxe         - a deeper scoop with falling soil, a dump; the
+//                              pick's thunk in soil, a metallic clank on
+//                              stone, cracks and a breaking boulder
 // Every call varies pitch, filter and loudness a little, and sounds are
 // panned / attenuated by where they happen. The AudioContext is created on
 // the first user gesture (autoplay rules) and closed on exit.
+//
+// STATUS: provisional. These are synthesised placeholders with checked
+// levels (no clipping, no silence) - nobody has judged them by ear yet.
+// Every call site goes through play(kind), so real recordings can replace
+// them later without touching the game code.
 
 const rv = (a, b) => a + Math.random() * (b - a);
 
 // per sound: make-up gain so the short, band-limited noises reach a sane
 // level (measured offline: peaks around -12 dBFS for digging, quieter glitter)
-const LEVEL = { dirt: 23, compact: 20, gravel: 24, stone: 15, air: 21, dust: 16, flake: 20, tiny: 11, nugget: 15, pickup: 44 };
+const LEVEL = {
+  dirt: 23, compact: 20, gravel: 24, stone: 15, air: 21, dust: 16, flake: 20, tiny: 11, nugget: 15, pickup: 44,
+  shovel: 20, dump: 18, pick: 17, pickStone: 11, crack: 13, break: 14, swing: 12, swap: 16,
+};
 
 export class GoldRushAudio {
   constructor() {
@@ -104,6 +115,7 @@ export class GoldRushAudio {
   }
 
   // kind: dirt | compact | gravel | stone | air | dust | flake | tiny | nugget | pickup
+  //       | shovel | dump | pick | pickStone | crack | break | swing | swap
   play(kind, { pan = 0, dist = 1.5, strength = 1 } = {}) {
     if (!this.ready) return;
     const t = this.ctx.currentTime + 0.005, out = this._out(pan, dist, LEVEL[kind] || 1), s = strength;
@@ -149,6 +161,43 @@ export class GoldRushAudio {
       case "pickup":
         this._noise(out, t, 0.02, { f: rv(2600, 3400), q: 2, gain: 0.06, attack: 0.002 });
         this._tone(out, t + 0.004, rv(1700, 1950), 0.06, 0.025);
+        break;
+      case "shovel":                                   // blade into soil: a deep scrape + crumbling load
+        this._noise(out, t, rv(0.16, 0.2), { f: rv(420, 620), q: 0.8, gain: 0.32 * s, attack: 0.008 });
+        this._tone(out, t, rv(62, 75), 0.09, 0.18 * s, { to: 42 });
+        this._grains(out, t + 0.05, 10 + Math.floor(Math.random() * 5), 0.16, 1200, 2800, 2, 0.04 * s, 0.1 * s);
+        this._noise(out, t, 0.012, { f: rv(3000, 3800), q: 4, gain: 0.05 * s, attack: 0.001 });  // steel edge
+        break;
+      case "dump":                                     // the load slides off and lands
+        this._noise(out, t, rv(0.22, 0.3), { f: rv(500, 750), q: 0.6, gain: 0.16 * s, attack: 0.04 });
+        this._grains(out, t + 0.12, 9 + Math.floor(Math.random() * 4), 0.2, 900, 2200, 2, 0.04 * s, 0.08 * s);
+        this._tone(out, t + 0.16, rv(55, 70), 0.08, 0.12 * s, { to: 40 });
+        break;
+      case "pick":                                     // pick point into soil: a dull thunk
+        this._tone(out, t, rv(95, 120), 0.07, 0.24 * s, { to: 60 });
+        this._noise(out, t, 0.05, { type: "lowpass", f: rv(700, 950), q: 0.9, gain: 0.26 * s, attack: 0.002 });
+        this._grains(out, t + 0.015, 5 + Math.floor(Math.random() * 3), 0.07, 1400, 2600, 2, 0.04 * s, 0.09 * s);
+        break;
+      case "pickStone":                                // steel on rock: a clank with a ring
+        this._noise(out, t, 0.03, { type: "highpass", f: rv(1800, 2400), q: 0.7, gain: 0.22 * s, attack: 0.0008 });
+        this._ting(out, t, rv(1350, 1600), 0.09 * s, 0.22, [1, 2.31, 3.87, 5.2]);
+        this._tone(out, t, rv(160, 190), 0.06, 0.2 * s, { to: 120 });
+        break;
+      case "crack":                                    // the boulder gives a little
+        this._noise(out, t, 0.02, { type: "highpass", f: rv(2500, 3200), q: 0.8, gain: 0.2 * s, attack: 0.0008 });
+        this._noise(out, t + 0.012, 0.08, { type: "lowpass", f: rv(500, 700), q: 1, gain: 0.22 * s, attack: 0.002 });
+        break;
+      case "break":                                    // it breaks: knocks and a spray of chips
+        for (let i = 0; i < 4; i++) this._tone(out, t + i * rv(0.03, 0.06), rv(90, 160), 0.1, 0.2 * s, { to: 60 });
+        this._noise(out, t, 0.25, { type: "lowpass", f: rv(600, 900), q: 0.7, gain: 0.26 * s, attack: 0.003 });
+        this._grains(out, t + 0.04, 14, 0.3, 1600, 4200, 3, 0.05 * s, 0.12 * s);
+        break;
+      case "swing":                                    // a heavy tool through the air
+        this._noise(out, t, rv(0.12, 0.16), { f: rv(380, 520), q: 1.4, gain: 0.08 * s, attack: 0.05 });
+        break;
+      case "swap":                                     // tool taken up
+        this._tone(out, t, rv(180, 220), 0.05, 0.08, { to: 140 });
+        this._noise(out, t + 0.02, 0.05, { f: rv(900, 1300), q: 1, gain: 0.05, attack: 0.004 });
         break;
       default: break;
     }

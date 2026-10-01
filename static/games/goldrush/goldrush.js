@@ -23,7 +23,12 @@ const ICONS = {
   pause: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" fill="none"/></svg>`,
   close: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>`,
   hand: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 11V5.5a1.5 1.5 0 013 0V10m0-1V4a1.5 1.5 0 013 0v6m0-4.5a1.5 1.5 0 013 0V12m0-3a1.5 1.5 0 013 0v5c0 4-2.7 7-6.5 7-2.4 0-4-1-5.3-2.8L4.7 14a1.6 1.6 0 012.4-2L8 13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`,
+  shovel: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.5 3.2l3.3 3.3M19.2 4.9l-8.4 8.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M10.8 13.3l-1.6-1.6c-.5-.5-1.3-.5-1.8 0L4.3 14.8c-1.6 1.6-1.6 4.2 0 5.8s4.2 1.6 5.8 0l3.1-3.1c.5-.5.5-1.3 0-1.8l-1.6-1.6" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" fill="none"/></svg>`,
+  pickaxe: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.2 9.8L4 20" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" fill="none"/><path d="M4.5 7.5c3.9-3.7 10-4.4 14.6-1.6l-1.4 1.4c-.1-.1-3.6-2.5-8.6-.6M16.5 19.5c3.7-3.9 4.4-10 1.6-14.6l-1.4 1.4c.1.1 2.5 3.6.6 8.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`,
 };
+
+// what the dig button says per tool
+const ACTION = { hand: "GRABEN", shovel: "SCHAUFELN", pickaxe: "HACKEN" };
 
 const fmtMoney = (v) => `€ ${v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -69,18 +74,23 @@ class GoldRushShell {
             <button type="button" class="gr-hud-btn" data-act="exit" aria-label="GoldRush verlassen">${ICONS.close}</button>
           </div>
         </div>
-        <div class="gr-chip gr-tool" aria-label="Werkzeug: Hand"><span class="gr-tool-ico">${ICONS.hand}</span><span>Hand</span></div>
+        <button type="button" class="gr-chip gr-tool" aria-label="Werkzeug: Hand – Werkzeuge zeigen" aria-expanded="false" data-act="tools"><span class="gr-tool-ico">${ICONS.hand}</span><span class="gr-tool-name">Hand</span></button>
+        <div class="gr-belt" role="toolbar" aria-label="Werkzeuge">
+          <button type="button" class="gr-slot" data-tool="hand"><span class="gr-slot-key">1</span><span class="gr-slot-ico">${ICONS.hand}</span><span class="gr-slot-label">Hand</span></button>
+          <button type="button" class="gr-slot" data-tool="shovel"><span class="gr-slot-key">2</span><span class="gr-slot-ico">${ICONS.shovel}</span><span class="gr-slot-label">Schaufel</span><span class="gr-lock" aria-hidden="true">🔒</span></button>
+          <button type="button" class="gr-slot" data-tool="pickaxe"><span class="gr-slot-key">3</span><span class="gr-slot-ico">${ICONS.pickaxe}</span><span class="gr-slot-label">Spitzhacke</span><span class="gr-lock" aria-hidden="true">🔒</span></button>
+        </div>
         <div class="gr-crosshair" aria-hidden="true"><span></span></div>
-        <div class="gr-hint">WASD bewegen · Maus umsehen · Linksklick halten: graben · Esc: Pause</div>
+        <div class="gr-hint">WASD bewegen · Maus umsehen · Linksklick halten: graben · 1 2 3 Werkzeug · Esc: Pause</div>
         <div class="gr-notice" role="status" hidden></div>
       </div>
       <div class="gr-stick" aria-hidden="true"><div class="gr-stick-knob"></div></div>
-      <button type="button" class="gr-dig-btn" aria-label="Graben (gedrückt halten)"><span class="gr-dig-ico">${ICONS.hand}</span><span>GRABEN</span></button>
+      <button type="button" class="gr-dig-btn" aria-label="Graben (gedrückt halten)"><span class="gr-dig-ico">${ICONS.hand}</span><span class="gr-dig-label">GRABEN</span></button>
       <div class="gr-overlay gr-pause" hidden>
         <div class="gr-card">
           <div class="gr-card-title">Pausiert</div>
           <p class="gr-card-text" data-role="pause-text">Klicke, um weiterzugraben.</p>
-          <div class="gr-keys"><span><b>WASD</b> bewegen</span><span><b>Maus</b> umsehen</span><span><b>Linksklick</b> graben</span><span><b>Shift</b> schneller</span><span><b>Esc</b> Pause</span></div>
+          <div class="gr-keys"><span><b>WASD</b> bewegen</span><span><b>Maus</b> umsehen</span><span><b>Linksklick</b> graben</span><span><b>1 2 3</b> Werkzeug</span><span><b>Shift</b> schneller</span><span><b>Esc</b> Pause</span></div>
           <div class="gr-actions">
             <button type="button" class="primary-btn primary-btn--lg" data-act="resume">Weiterspielen</button>
             <button type="button" class="ghost-btn" data-act="settings">Einstellungen</button>
@@ -104,7 +114,7 @@ class GoldRushShell {
           <label class="gr-toggle"><input type="checkbox" data-role="headbob" /><span>Kopfbewegung beim Laufen</span></label>
           <label class="gr-toggle"><input type="checkbox" data-role="reduced" /><span>Reduzierte Bewegung <em>(kein Wippen, kein Rückstoß, keine HUD-Animationen)</em></span></label>
           <div class="gr-sub" data-role="bob-note" hidden>Dein System wünscht reduzierte Bewegung – sie ist hier immer an.</div>
-          <label class="gr-toggle"><input type="checkbox" data-role="sound" /><span>Sound</span></label>
+          <label class="gr-toggle"><input type="checkbox" data-role="sound" /><span>Sound <em>(vorläufige Platzhalter-Klänge)</em></span></label>
           <label class="gr-toggle" data-role="vibration-row" hidden><input type="checkbox" data-role="vibration" /><span>Vibration <em>(dezent, bei Treffern und Funden)</em></span></label>
           <div class="gr-danger-zone">
             <button type="button" class="ghost-btn gr-reset" data-act="reset">Spielstand zurücksetzen …</button>
@@ -147,9 +157,17 @@ class GoldRushShell {
       notice: q(".gr-notice"), stick: q(".gr-stick"), knob: q(".gr-stick-knob"), digBtn: q(".gr-dig-btn"),
       pause: q(".gr-pause"), pauseText: q("[data-role=pause-text]"), panel: q(".gr-panel"), loading: q(".gr-loading"),
       loadText: q("[data-role=load-text]"), loadStep: q("[data-role=load-step]"), progress: q(".gr-progress"),
-      dialog: q(".gr-dialog"), debug: q(".gr-debug"), tool: q(".gr-tool"),
+      dialog: q(".gr-dialog"), debug: q(".gr-debug"), tool: q(".gr-tool"), belt: q(".gr-belt"),
+      digLabel: q(".gr-dig-label"), digIco: q(".gr-dig-ico"), toolIco: q(".gr-tool-ico"), toolName: q(".gr-tool-name"),
     };
     this.on(root, "click", (e) => {
+      const slot = e.target.closest("[data-tool]");
+      if (slot && this.game) {
+        this.game.selectTool(slot.dataset.tool);
+        this._toolSheet(false);
+        return;
+      }
+      if (this.touch && this._sheetOpen && !e.target.closest(".gr-tool")) this._toolSheet(false);
       const b = e.target.closest("[data-act]");
       if (b) this._act(b.dataset.act);
       const qb = e.target.closest("[data-q]");
@@ -220,6 +238,7 @@ class GoldRushShell {
     this.el.hud.hidden = false;
     if (this.debug) this.el.debug.hidden = false;
     this._syncSettings();
+    this._renderTools(game.toolState());
     if (this.pendingNotice || game.loadNotice) this.notice(this.pendingNotice || game.loadNotice);
     if (this.touch) {
       game.setPaused(false);
@@ -264,7 +283,38 @@ class GoldRushShell {
       toggleDebug: () => { el.debug.hidden = !el.debug.hidden; },
       panelOpen: () => !el.panel.hidden,
       onQuality: () => this._syncSettings(),
+      onTool: (st) => this._renderTools(st),
     };
+  }
+
+  // toolbelt (desktop: always there; touch: a compact sheet behind the tool chip)
+  _renderTools(st) {
+    const el = this.el;
+    if (!el || !st) return;
+    for (const b of el.belt.querySelectorAll("[data-tool]")) {
+      const t = st.order.find((o) => o.id === b.dataset.tool);
+      const active = t.id === st.equipped;
+      b.classList.toggle("is-active", active);
+      b.classList.toggle("is-locked", !t.usable);
+      b.setAttribute("aria-pressed", String(active));
+      b.setAttribute("aria-label", `${t.label} (${t.key})${t.usable ? "" : " – noch nicht freigeschaltet"}`);
+    }
+    const cur = st.order.find((o) => o.id === st.equipped) || st.order[0];
+    el.toolIco.innerHTML = ICONS[cur.id];
+    el.toolName.textContent = cur.label;
+    el.tool.setAttribute("aria-label", `Werkzeug: ${cur.label} – Werkzeuge zeigen`);
+    el.digIco.innerHTML = ICONS[cur.id];
+    el.digLabel.textContent = ACTION[cur.id];
+    el.digBtn.setAttribute("aria-label", `${ACTION[cur.id].charAt(0)}${ACTION[cur.id].slice(1).toLowerCase()} (gedrückt halten)`);
+    // the chip is a switch only when there is something to switch to
+    el.tool.classList.toggle("has-choice", st.order.filter((o) => o.usable).length > 1);
+  }
+
+  _toolSheet(open) {
+    if (!this.el) return;
+    this._sheetOpen = !!open && this.touch;
+    this.el.belt.classList.toggle("is-open", this._sheetOpen);
+    this.el.tool.setAttribute("aria-expanded", String(this._sheetOpen));
   }
 
   _act(act) {
@@ -276,6 +326,7 @@ class GoldRushShell {
       return;
     }
     if (act === "settings") { this._openSettings(); return; }
+    if (act === "tools") { if (this.touch) this._toolSheet(!this._sheetOpen); return; }
     if (act === "close-settings") { this._closeSettings(); return; }
     if (act === "reset") { this.root.querySelector(".gr-confirm").hidden = false; this.root.querySelector(".gr-reset").hidden = true; return; }
     if (act === "reset-cancel") { this.root.querySelector(".gr-confirm").hidden = true; this.root.querySelector(".gr-reset").hidden = false; return; }
@@ -435,24 +486,63 @@ class GoldRushShell {
       economy: () => ({ ...g.economy.serialize(), sessionCents: g.economy.sessionCents, shownCents: g.hud.shown }),
       probe: () => g.probe(),
       aim: () => ({ state: g.aimState, material: g.target ? g.target.material : null, distance: g.target ? g.target.distance : g.farTarget ? g.farTarget.distance : null }),
-      hand: () => ({ state: g.hands.state, cycle: g.hands.cycle, inspecting: !!g.hands.inspecting, dirt: g.hands.dirt }),
+      hand: () => ({ state: g.tools.state, phase: g.tools.phase, cycle: g.tools.cycles, inspecting: !!g.hands.inspecting, dirt: g.hands.dirt, tool: g.tools.equipped, view: g.tools.view(),
+        soil: g.hands.models.soil.visible, load: g.hands.load, shake: g.hands.shake, kick: g.player.kick, shown: g.hands.tool }),
+      // tool models: size / materials, and how far each glove sits from its grip (m)
+      toolCheck: () => {
+        const out = {};
+        for (const id of ["shovel", "pickaxe"]) {
+          const m = g.hands.models[id];
+          let verts = 0, meshes = 0;
+          const mats = new Set();
+          m.traverse((o) => { if (o.isMesh) { meshes++; verts += o.geometry.attributes.position.count; mats.add(o.material.type + (o.material.map ? "+map" : "") + (o.material.envMap ? "+env" : "")); } });
+          out[id] = { verts, meshes, mats: [...mats] };
+        }
+        out.gripError = g.hands.gripError();
+        out.tool = g.hands.tool;
+        return out;
+      },
+      mining: () => g.mining,
+      economyObj: () => g.economy,
+      // tools: state, switching, the debug/test-only unlock
+      tools: () => ({ ...g.toolState(), state: g.tools.state, phase: g.tools.phase, blocked: g.tools.blocked, cycles: g.tools.cycles, saved: g.tools.serialize() }),
+      selectTool: (id) => g.selectTool(id),
+      // tests / benchmark only: the tool in the hands right away (no lower / raise), if usable
+      equipNow: (id) => { if (!g.tools.canUse(id)) return false; g.tools.equipped = id; g.tools.target = null; g.tools.state = "idle"; g.tools.phase = null; g._aim(); return true; },
+      devUnlock: (on = true) => { g.setDevUnlock(on); return g.toolState(); },
+      toolDefs: () => JSON.parse(JSON.stringify(this.engine.TOOL_INFO())),
+      toolPose: (pose) => { g.hands.debugToolPose = pose; g.hands.update(0, g.tools.view(), { camera: g.camera, sunDir: g.world.sun.position.clone().normalize(), sunVisible: true, walk: 0, bob: 0 }); g.render(); },
+      grips: () => this.engine.GRIPS,
+      toolKeys: () => this.engine.TOOL_KEYS,
+      rocks: () => g.rocks.rocks.map((r) => ({ index: r.index, x: r.x, y: r.y, z: r.z, r: r.r, hp: r.hp, maxHp: r.maxHp, broken: r.broken, stage: g.rocks.stage(r.index), gap: g.rocks.floatGap(r.index), moved: r.moved, collider: r.collider ? r.collider.r : null })),
+      rockStats: () => ({ ...g.rocks.stats, rubble: g.rocks.rubble.count }),
+      volume: () => ({ delta: g.terrain.volumeDelta(), pile: g.terrain.pileVolume() }),
+      lastStroke: () => g.lastStroke,
+      // one full transaction at the crosshair with the tool in the hands (or opts.tool), no animation
+      act: (opts = {}) => g.strokeAtCrosshair(opts),
+      // what a later shop will do: the tool becomes really yours (saved as owned)
+      grant: (id) => g.grantTool(id),
+      starter: () => ({ ...g.terrain.field.starter }),
+      setPaused: (v) => { g.setPaused(!!v); return g.paused; },
+      miningStats: () => g.mining.stats(),
+      pending: () => [...g.economy.pending.values()].map((p) => ({ ...p })),
       loot: () => ({ active: g.loot.active, glints: g.loot.activeGlints, floats: g.hud.floatsVisible }),
       flushLoot: () => { g.flushLoot(); return g.economy.moneyCents; },
       materialAt: (x, y, z) => g.terrain.field.materialAt(x, y, z),
       goldAt: (x, y, z) => { const f = g.terrain.field, m = f.materialAt(x, y, z); return f.goldDensityAt(x, y, z, m, g.terrain.getBaseHeightAt(x, z) - y); },
       voxel: (i, j, iy) => ({ ...g.terrain.field.voxel(i, j, iy, {}) }),
       worked: (x, z) => { const t = g.terrain, i = Math.round((x - t.x0) / t.cell), j = Math.round((z - t.z0) / t.cell); return { slice: g.mining.cidx[j * t.vps + i], level: g.mining.consumed[j * t.vps + i], height: t.height[j * t.vps + i] }; },
-      boulders: () => g.terrain.field.boulders.map((b) => ({ ...b })),
-      // debug/test only: a find of class cls at the crosshair, booked like a real one
+      boulders: () => g.rocks.rocks.map((r) => ({ x: r.x, y: r.y, z: r.z, r: r.r, broken: r.broken })),
+      // debug/test only: a find of class cls at the crosshair, discovered like a real one (pending until collected)
       debugFind: (cls, massUg) => {
         g._aim();
         const hit = g.target;
         if (!hit) return null;
         const f = { cls, massUg, x: hit.x, y: hit.y, z: hit.z, key: "debug" };
-        const credit = g.economy.credit([f], 1);
-        if (credit.firstNugget) credit.items[0].first = true;
-        g.loot.spawn(credit.items, hit);
-        return credit.cents;
+        const disc = g.economy.discover([f], 1);
+        if (disc.firstNugget) disc.items[0].first = true;
+        g.loot.spawn(disc.items, hit);
+        return disc.cents;
       },
       handPose: (pose) => { g.hands.debugPose = pose; g.hands.update(0, { camera: g.camera, sunDir: g.world.sun.position.clone().normalize(), sunVisible: true, walk: 0, bob: 0 }); g.render(); },
       lootLook: () => { const m = g.loot.goldMat; return { metalness: m.metalness, roughness: m.roughness, envMap: !!m.envMap, color: m.color.getHexString(), shine: g.loot.shine, pointLights: g.world.scene.children.filter((o) => o.isPointLight).length }; },
@@ -468,7 +558,8 @@ class GoldRushShell {
       // exact fingerprints of the world state (save/reload tests)
       hashes: () => {
         const h = (arr, scale) => { let v = 0; for (let k = 0; k < arr.length; k++) v = (Math.imul(v, 31) + Math.round(arr[k] * scale)) | 0; return v; };
-        return { height: h(g.terrain.height, 1000), slices: h(g.mining.cidx, 1), money: g.economy.moneyCents, finds: g.economy.stats.finds, seed: g.doc.worldSeed };
+        const rocks = g.rocks.rocks.map((r) => `${Math.round(r.x * 1000)},${Math.round(r.y * 1000)},${Math.round(r.z * 1000)},${r.hp},${r.broken ? 1 : 0}`).join(";");
+        return { height: h(g.terrain.height, 1000), qh: h(g.terrain.qh, 1), slices: h(g.mining.cidx, 1), money: g.economy.moneyCents, finds: g.economy.stats.finds, pending: g.economy.pending.size, carried: g.mining.carriedCount, rocks, tools: g.tools.serialize(), seed: g.doc.worldSeed };
       },
       sceneStats: () => {
         const out = { world: {}, hands: 0, shadowCasters: 0 };

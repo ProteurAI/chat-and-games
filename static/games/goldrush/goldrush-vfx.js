@@ -97,7 +97,7 @@ export class DigEffects {
   // normal - how much and what kind comes from the material definition
   // (loose dirt: a brown cloud and clods; gravel: little dust, pebbles;
   // stone: a few grey chips and a wisp)
-  burst(hit, def, strength = 1) {
+  burst(hit, def, strength = 1, extraFrags = 0) {
     const r = () => this._rand();
     const base = def.dustColor;
     const nDust = Math.round(Math.min(18, this.dustLimit / 8) * strength * def.dustAmount);
@@ -114,7 +114,7 @@ export class DigEffects {
       placed++;
     }
     const pebble = def.fragmentType === "pebble", chip = def.fragmentType === "chip";
-    const nFrag = Math.round(Math.min(def.fragmentCount + 1, 1 + this.fragLimit / 12) * Math.min(1, strength + 0.2));
+    const nFrag = Math.round(Math.min(def.fragmentCount + 1, 1 + this.fragLimit / 12) * Math.min(1, strength + 0.2)) + Math.round(extraFrags * Math.min(1, this.fragLimit / 22));
     for (let k = 0, placed = 0; k < this.fragState.length && placed < nFrag; k++) {
       const f = this.fragState[k];
       if (f.life > 0) continue;
@@ -135,6 +135,42 @@ export class DigEffects {
       placed++;
     }
     if (this.frags.instanceColor) this.frags.instanceColor.needsUpdate = true;
+  }
+
+  // soil sliding off a shovel blade: a few clods dropping from a point
+  // (world space) and a low puff where they land
+  spill(x, y, z, def, strength = 1) {
+    const r = () => this._rand();
+    const nFrag = Math.round(Math.min(6, 2 + this.fragLimit / 8) * strength);
+    for (let k = 0, placed = 0; k < this.fragState.length && placed < nFrag; k++) {
+      const f = this.fragState[k];
+      if (f.life > 0) continue;
+      if (k >= this.fragLimit) break;
+      f.life = 1.4 + r() * 0.6;
+      f.x = x + (r() - 0.5) * 0.12; f.y = y; f.z = z + (r() - 0.5) * 0.12;
+      f.vx = (r() - 0.5) * 0.6; f.vy = -0.2 + r() * 0.5; f.vz = (r() - 0.5) * 0.6;
+      f.rx = r() * 6; f.ry = r() * 6; f.rz = r() * 6;
+      f.sx = (r() - 0.5) * 8; f.sz = (r() - 0.5) * 8;
+      f.s = 0.02 + r() * 0.03;
+      f.rest = false;
+      const c = def.fragmentColor;
+      this._c.setRGB(c[0] * (0.85 + r() * 0.3), c[1] * (0.85 + r() * 0.3), c[2] * (0.85 + r() * 0.3));
+      this.frags.setColorAt(k, this._c);
+      placed++;
+    }
+    if (this.frags.instanceColor) this.frags.instanceColor.needsUpdate = true;
+    const g = this.terrain.getHeightAt(x, z);
+    const nDust = Math.round(Math.min(10, this.dustLimit / 14) * strength * def.dustAmount);
+    for (let k = 0, placed = 0; k < this.dust.length && placed < nDust; k++) {
+      const d = this.dust[k];
+      if (d.life > 0) continue;
+      d.max = d.life = 0.6 + r() * 0.6;
+      d.x = x + (r() - 0.5) * 0.3; d.y = Math.max(g + 0.05, y - 0.3 - r() * 0.3); d.z = z + (r() - 0.5) * 0.3;
+      d.vx = (r() - 0.5) * 0.7; d.vy = 0.05 + r() * 0.2; d.vz = (r() - 0.5) * 0.7;
+      d.s = 0.1 + r() * 0.12;
+      d.c = def.dustColor.map((v) => v * (0.9 + r() * 0.25));
+      placed++;
+    }
   }
 
   update(dt) {

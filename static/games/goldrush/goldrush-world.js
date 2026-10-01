@@ -200,7 +200,6 @@ export class GoldRushWorld {
     this._props();
     this._machineZones();
     this._boulders();
-    this._pileBoulders();
     this._grass();
     this._distantRidges();
   }
@@ -241,7 +240,7 @@ export class GoldRushWorld {
     this.terrainMaterial.customProgramCacheKey = () => "goldrush-terrain-v2";
     this.terrain = new DiggableTerrain(THREE, {
       seed: this.seed, center: { x: 0, z: -6 }, size: 30, cell: 0.125, chunkCells: 30,
-      moundCenter: MOUND_CENTER, material: this.terrainMaterial,
+      moundCenter: MOUND_CENTER, material: this.terrainMaterial, spawn: SPAWN,
     });
     this.scene.add(this.terrain.group);
   }
@@ -650,43 +649,7 @@ export class GoldRushWorld {
 
   // ------------------------------------------------------------ runtime
 
-  // boulders sticking out of the pile (from the material field: their
-  // bodies are stone there, the hand cannot dig them out)
-  _pileBoulders() {
-    const THREE = this.THREE, list = this.terrain.field.boulders;
-    if (!list.length) return;
-    const mat = this.track(new THREE.MeshStandardMaterial({ color: 0x9a9185, map: this.rockTex, roughness: 0.92, flatShading: true }));
-    const variants = [0, 1, 2, 3].map((vi) => {
-      const geo = this.track(new THREE.IcosahedronGeometry(1, 2));
-      const p = geo.attributes.position;
-      for (let v = 0; v < p.count; v++) {
-        const x = p.getX(v), y = p.getY(v), z = p.getZ(v);
-        const k = 0.86 + 0.2 * (noise2(x * 1.7 + vi * 5, z * 1.7 + y, this.seed + 311 + vi) * 0.5 + 0.5) + 0.06 * noise2(x * 5 + vi, y * 5 - z, this.seed + 313);
-        p.setXYZ(v, x * k * (1.08 + (vi % 2) * 0.1), y * k * (0.82 + (vi % 3) * 0.06), z * k);
-      }
-      geo.computeVertexNormals();
-      return geo;
-    });
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), pos = new THREE.Vector3();
-    const byVariant = [[], [], [], []];
-    list.forEach((b) => byVariant[b.variant].push(b));
-    this.pileBoulders = [];
-    byVariant.forEach((items, vi) => {
-      if (!items.length) return;
-      const im = new THREE.InstancedMesh(variants[vi], mat, items.length);
-      items.forEach((b, n) => {
-        e.set(0.25 * Math.sin(b.rot * 3), b.rot, 0.2 * Math.cos(b.rot * 2));
-        m.compose(pos.set(b.x, b.y, b.z), q.setFromEuler(e), sc.setScalar(b.r));
-        im.setMatrixAt(n, m);
-        this.colliders.push({ type: "circle", x: b.x, z: b.z, r: b.r * 0.85 });
-      });
-      im.castShadow = true;
-      im.receiveShadow = true;
-      im.name = "pile-boulders";
-      this.scene.add(im);
-      this.pileBoulders.push(im);
-    });
-  }
+  // (the boulders IN the pile are goldrush-rocks.js: they settle, crack and break)
 
   // image-based light for metals (gold!): a soft, warm version of this
   // place - hazy sky, the sun, sunlit sand - pre-filtered once. (The real

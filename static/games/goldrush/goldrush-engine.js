@@ -1,5 +1,5 @@
-// GoldRush - the running game: renderer, world, player, the hand, mining,
-// finds, money, save, quality, lifecycle. Loaded lazily by goldrush.js
+// GoldRush - the running game: renderer, world, player, the tools in your
+// hands, mining, boulders, finds, money, save, quality, lifecycle. Loaded lazily by goldrush.js
 // (this is the module that pulls in three.js), created once per opened
 // game and fully disposed on exit - no render loop, listener, timer, audio
 // context or GL context survives it.
@@ -8,20 +8,36 @@ import * as THREE from "../../vendor/three/three.module.min.js";
 import { AssetManager } from "./goldrush-assets.js";
 import { GoldRushAudio } from "./goldrush-audio.js";
 import { Economy } from "./goldrush-economy.js";
-import { FirstPersonHands, HAND_STATE } from "./goldrush-hand.js";
+import { FirstPersonHands } from "./goldrush-hand.js";
 import { GoldRushHud } from "./goldrush-hud.js";
 import { GoldRushInput } from "./goldrush-input.js";
 import { LootSystem } from "./goldrush-loot.js";
-import { MAT, MATERIALS, TOOLS } from "./goldrush-materials.js";
+import { MAT, MATERIALS } from "./goldrush-materials.js";
 import { MiningSystem } from "./goldrush-mining.js";
 import { QUALITY, QUALITY_LEVELS, applyRendererQuality, createRenderer, guessQuality, isMobileDevice } from "./goldrush-renderer.js";
 import { FIND, FIND_IDS, VOXEL_H } from "./goldrush-resources.js";
+import { RockSystem } from "./goldrush-rocks.js";
 import { SAVE_VERSION, writeSave } from "./goldrush-save.js";
 import { FLOOR_Y } from "./goldrush-terrain.js";
+import { TOOL_DEFS, TOOL_ORDER, ToolController, cycleSeconds, toolEfficiency } from "./goldrush-tools.js";
 import { DigEffects } from "./goldrush-vfx.js";
 import { GoldRushWorld, SPAWN, SUN_DIR } from "./goldrush-world.js";
 
 export const THREE_REVISION = THREE.REVISION;
+export { GRIPS, TOOL_KEYS } from "./goldrush-hand.js";
+
+// the tool table as plain data (debug panel, tests, benchmark)
+export function TOOL_INFO() {
+  return TOOL_ORDER.map((id) => {
+    const d = TOOL_DEFS[id];
+    return {
+      id, label: d.label, tier: d.tier, key: d.key, defaultOwned: d.defaultOwned, reach: d.reach,
+      materialEfficiency: [...d.materialEfficiency], loosenedBonus: [...d.loosenedBonus], hardnessLimit: d.hardnessLimit,
+      kernel: { ...d.kernel }, massCapacity: d.massCapacity, rockDamage: d.rockDamage, unlockCost: d.unlockCost,
+      cycle: [0, 1, 2, 3].map((m) => +cycleSeconds(d, m).toFixed(3)),
+    };
+  });
+}
 
 const EYE = 1.62;
 const RADIUS = 0.33;
@@ -38,6 +54,12 @@ const MONITOR = { warmup: 3, window: 2, slowMs: 27, cooldown: 8 };
 const GLINTS = { low: 24, medium: 48, high: 64 };
 const INSPECT_S = 1.15;
 const SOUND = ["dirt", "compact", "gravel", "stone"];
+const KICK = { hand: 0.01, shovel: 0.016, pickaxe: 0.022 };     // subtle camera kick per contact (off with reduced motion)
+const STONE_TIP = {
+  hand: "Zu hart für die Hand – hier braucht es eine Spitzhacke.",
+  shovel: "Die Schaufel prallt am Stein ab – dafür braucht es eine Spitzhacke.",
+  pickaxe: "",
+};
 
 const nextFrame = () => new Promise((resolve) => {
   let done = false;
@@ -62,7 +84,12 @@ export class GoldRushGame {
     this.debug = !!debug;
     this.settings = { quality: "auto", headBob: true, reducedMotion: false, sound: true, vibration: true, ...(doc.settings || {}) };
     this.economy = new Economy(doc.economy);
-    this.tool = TOOLS.hand;
+    // finds that were still on their way when the last session ended are
+    // collected now, in one go (they are in the save as pending, not paid)
+    this.restoredPending = this.economy.collectAll().length;
+    const tl = doc.tools || {};
+    this.tools = new ToolController({ owned: Array.isArray(tl.owned) ? tl.owned : ["hand"], equipped: tl.equipped || "hand", dev: false });
+    this._lastPhase = "";
     this.player = {
       x: doc.player.x, z: doc.player.z, yaw: doc.player.yaw, pitch: doc.player.pitch,
       y: 0, vx: 0, vz: 0, bob: 0, kick: 0,
@@ -118,18 +145,21 @@ export class GoldRushGame {
     await step();
     world.buildTerrain();
     this.terrain = world.terrain;
-    this.mining = new MiningSystem(this.terrain);
+    let terrainOk = false;
     if (this.doc.terrain) {
-      let ok = false;
-      try { ok = this.terrain.deserialize(this.doc.terrain); } catch (e) { ok = false; }
-      if (!ok) this.loadNotice = "Die Grabspuren im Spielstand passten nicht mehr – der Berg wurde neu aufgeschüttet.";
-      else {
-        try { this.mining.deserialize(this.doc.resources); } catch (e) { this.mining.deserialize(null); }
-      }
+      try { terrainOk = this.terrain.deserialize(this.doc.terrain); } catch (e) { terrainOk = false; }
+      if (!terrainOk) this.loadNotice = "Die Grabspuren im Spielstand passten nicht mehr – der Berg wurde neu aufgeschüttet.";
+    }
+    this.rocks = new RockSystem(THREE, world.scene, this.terrain, world, { seed: this.doc.worldSeed, rockTex: world.rockTex });
+    this.mining = new MiningSystem(this.terrain, this.rocks);
+    if (terrainOk) {
+      try { this.mining.deserialize(this.doc.resources); } catch (e) { this.mining.deserialize(null); }
+      try { this.rocks.deserialize(this.doc.rocks); } catch (e) { this.rocks.deserialize(null); }
     }
     progress(0.72, "Claim wird aufgebaut …");
     await step();
     world.buildScenery();
+    this.rocks.attachColliders(world.colliders);
     const envMap = world.buildEnvironment(renderer);
 
     const camera = (this.camera = new THREE.PerspectiveCamera(FOV, 1, 0.05, 900));
@@ -141,11 +171,12 @@ export class GoldRushGame {
     this.hands = new FirstPersonHands(THREE, { envMap });
     this.hands.reducedMotion = this.reducedMotion;
     this.hands.dirt = Math.min(0.6, this.economy.stats.successfulDigs / 800);
+    this.hands.update(0, this.tools.view(), { camera, sunDir: SUN_VEC, sunVisible: true, walk: 0, bob: 0 });
     this.audio = new GoldRushAudio();
     this.audio.setEnabled(this.settings.sound !== false);
     this.hud = new GoldRushHud(ui.root, ui.moneyEl, { reducedMotion: this.reducedMotion });
     this.hud.setMoney(this.economy.moneyCents);
-    const ring = new THREE.RingGeometry(this.tool.radius * 0.9, this.tool.radius, 48);
+    const ring = new THREE.RingGeometry(0.88, 1, 48);
     this.reticle = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({
       color: 0xfff3d6, transparent: true, opacity: 0.38, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, fog: false,
     }));
@@ -162,17 +193,24 @@ export class GoldRushGame {
     progress(0.88, "Shader werden vorbereitet …");
     await step();
     this.loot.warmup(true);
+    // every tool model once through the GPU (no hitch at the first switch)
+    const tr = this.hands.toolRoot, vis = [this.hands.models.shovel.visible, this.hands.models.pickaxe.visible, tr.visible];
+    this.hands.models.shovel.visible = this.hands.models.pickaxe.visible = tr.visible = true;
+    this.hands.models.soil.visible = true;
     const held = this.hands.right.held;
     held.geometry = this.loot.geos[5][0];
     held.material = this.loot.goldMat;
     held.visible = true;
     renderer.compile(world.scene, camera);
     renderer.compile(this.hands.scene, this.hands.camera);
+    if (this.rocks.tex) renderer.initTexture(this.rocks.tex);   // no upload hitch when the first boulder comes into view
     this.render();                                        // uploads the gold pieces' buffers too
     renderer.autoClear = false;
     renderer.render(this.hands.scene, this.hands.camera);
     renderer.autoClear = true;
     held.visible = false;
+    [this.hands.models.shovel.visible, this.hands.models.pickaxe.visible, tr.visible] = vis;
+    this.hands.models.soil.visible = false;
     this.loot.warmup(false);
     progress(0.97, "Erster Blick in die Mine …");
     await step();
@@ -219,10 +257,18 @@ export class GoldRushGame {
     const unlock = () => { this.audio.unlock(); this.userActed = true; };
     this.on(ui.root, "pointerdown", unlock);
     this.on(window, "keydown", unlock);
+    // tools: 1 / 2 / 3 (only what you own; a locked slot just says so)
+    this.on(window, "keydown", (e) => {
+      if (this.paused || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+      const i = ["Digit1", "Digit2", "Digit3"].indexOf(e.code);
+      if (i >= 0) this.selectTool(TOOL_ORDER[i]);
+    });
     if (this.debug) {
       this.on(window, "keydown", (e) => {
         if (e.code === "KeyH") this.terrain.setHeatmap(!this.terrain.heatmap);
         if (e.code === "F3") { e.preventDefault(); ui.toggleDebug(); }
+        // debug builds only: every tool usable (never saved as owned)
+        if (e.code === "KeyU" && e.shiftKey) { this.setDevUnlock(!this.tools.dev); ui.notice(this.tools.dev ? "DEV: alle Werkzeuge freigeschaltet (nur Debug, wird nicht gespeichert)." : "DEV-Freischaltung aus."); }
       });
     }
   }
@@ -245,6 +291,42 @@ export class GoldRushGame {
   }
 
   // in-game switch; the system preference always wins
+  // ------------------------------------------------------------ tools
+
+  // switch to a tool (keys 1-3, the toolbelt, the mobile tool sheet)
+  selectTool(id) {
+    if (!TOOL_DEFS[id]) return false;
+    if (!this.tools.canUse(id)) {
+      this.hud.tip(`locked-${id}`, `${TOOL_DEFS[id].label}: noch nicht freigeschaltet.`, 6);
+      return false;
+    }
+    if (id === this.tools.equipped && !this.tools.target) return true;
+    this.tools.equip(id);
+    this.ui.onTool && this.ui.onTool(this.toolState());
+    return true;
+  }
+
+  // for the toolbelt UI
+  toolState() {
+    return { equipped: this.tools.target || this.tools.equipped, owned: this.tools.ownedList(), dev: this.tools.dev, order: TOOL_ORDER.map((id) => ({ id, label: TOOL_DEFS[id].label, key: TOOL_DEFS[id].key, owned: this.tools.owned.has(id), usable: this.tools.canUse(id) })) };
+  }
+
+  // debug / tests only: all tools usable without owning them (not saved as owned)
+  setDevUnlock(on) {
+    this.tools.dev = !!on;
+    if (!on && !this.tools.canUse(this.tools.equipped)) this.tools.equip("hand");
+    this.ui.onTool && this.ui.onTool(this.toolState());
+  }
+
+  // a tool really becomes yours (the shop of a later phase calls this)
+  grantTool(id) {
+    if (!TOOL_DEFS[id]) return false;
+    this.tools.unlock(id);
+    this.dirty = true;
+    this.ui.onTool && this.ui.onTool(this.toolState());
+    return true;
+  }
+
   setReducedMotion(on) {
     this.settings.reducedMotion = !!on;
     this.reducedMotion = this.systemReducedMotion || !!on;
@@ -334,7 +416,7 @@ export class GoldRushGame {
     this.effects.update(dt);
     this.loot.update(dt, this.camera, this.player);
     this._sunCheck(dt);
-    this.hands.update(dt, { camera: this.camera, sunDir: SUN_VEC, sunVisible: this.sunVisible, walk: Math.min(1, Math.hypot(this.player.vx, this.player.vz) / WALK), bob: this.player.bob });
+    this.hands.update(dt, this.tools.view(), { camera: this.camera, sunDir: SUN_VEC, sunVisible: this.sunVisible, walk: Math.min(1, Math.hypot(this.player.vx, this.player.vz) / WALK), bob: this.player.bob });
     this.hud.update(dt);
     this.economy.addPlayTime(dt * 1000);
     this.render();
@@ -407,10 +489,45 @@ export class GoldRushGame {
 
     this._updateCamera(dt);
     this._aim();
-    // the hand: strokes while dig is held and the crosshair is on the ground
+    // the tool: actions while dig is held and the crosshair is on the ground
     const want = input.digHeld && !!this.target;
     if (input.digHeld && !this.target) this._hintNoTarget();
-    if (this.hands.tick(dt, want) === "contact") this._contact();
+    this.tools.blocked = !!this.hands.inspecting;
+    const ev = this.tools.tick(dt, want);
+    if (ev === "contact") this._contact();
+    else if (ev === "swap") this._swapped();
+    this._phaseHooks();
+  }
+
+  // looks and sounds bound to an action's phases (not to the contact)
+  _phaseHooks() {
+    const v = this.tools.view(), sig = `${v.state}:${v.phase}:${v.cycle}`;
+    if (sig === this._lastPhase) return;
+    this._lastPhase = sig;
+    if (v.state !== "action") return;
+    if (v.tool === "shovel" && v.phase === "dump" && this.lastStroke && this.lastStroke.massKg > 0) {
+      // the load goes off the blade, to the right of the player
+      const c = this.camera, p = this.player, fw = this._fw.set(-Math.sin(p.yaw), 0, -Math.cos(p.yaw)), rt = this._rt.set(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
+      const x = c.position.x + fw.x * 0.75 + rt.x * 0.45, z = c.position.z + fw.z * 0.75 + rt.z * 0.45;
+      const y = Math.max(this.terrain.getHeightAt(x, z) + 0.2, c.position.y - 0.55);
+      setTimeout(() => {
+        if (this.disposed) return;
+        this.effects.spill(x, y, z, MATERIALS[this.lastStroke ? this.lastStroke.material : 0] || MATERIALS[0], Math.min(1, 0.4 + (this.lastStroke ? this.lastStroke.massKg : 1) / 3));
+        this.audio.play("dump", { pan: 0.4, dist: 0.6 });
+      }, 120);
+    } else if ((v.tool === "pickaxe" && v.phase === "swing") || (v.tool === "shovel" && v.phase === "thrust")) {
+      this.audio.play("swing", { dist: 0.3, strength: v.tool === "pickaxe" ? 1 : 0.6 });
+    }
+  }
+
+  _fw = new THREE.Vector3();
+  _rt = new THREE.Vector3();
+
+  // the new tool is in the hands now
+  _swapped() {
+    this.audio.play("swap", { dist: 0.3 });
+    this.ui.onTool && this.ui.onTool(this.toolState());
+    this._aim();
   }
 
   // a wall right in front of the eyes (a stone pillar, a pit edge): step back
@@ -440,28 +557,30 @@ export class GoldRushGame {
     const dx = -Math.sin(p.yaw) * cp, dy = Math.sin(p.pitch), dz = -Math.cos(p.yaw) * cp;
     const ox = cam.position.x, oy = cam.position.y, oz = cam.position.z;
     let hit = this.terrain.raycast(ox, oy, oz, dx, dy, dz, SEE);
-    const b = this.terrain.field.raycastBoulders(ox, oy, oz, dx, dy, dz, hit ? hit.distance : SEE, this._hit);
-    if (b) { hit = b; b.diggable = true; }
+    const b = this.rocks.raycast(ox, oy, oz, dx, dy, dz, hit ? hit.distance : SEE, this._hit);
+    if (b) hit = b;
     else if (hit) hit.boulder = null;
     let state = "idle";
     this.target = null;
+    const def = this.tools.def;
     if (hit && hit.diggable) {
-      const why = this.mining.check(hit, this.tool, p);
+      const why = this.mining.check(hit, def, p);
       hit.material = this.mining.materialAtHit(hit);
       if (why === "far") state = "far";
       else if (why === "feet") state = "idle";
       else {
         this.target = hit;
-        state = this.tool.efficiency(MATERIALS[hit.material]) > 0 ? "dig" : "hard";
+        state = this.mining.efficiencyAtHit(hit, def) > 0 ? "dig" : "hard";
       }
       this.farTarget = why === "far" ? hit : null;
     } else this.farTarget = null;
     this.aimState = state;
     const r = this.reticle;
-    if (this.target) {
+    if (this.target && this.target.boulder == null) {
       const n = this.target.normal;
       r.position.set(this.target.x + n.x * 0.012, this.target.y + n.y * 0.012, this.target.z + n.z * 0.012);
       r.quaternion.setFromUnitVectors(ZUP, this._n.set(n.x, n.y, n.z));
+      r.scale.setScalar(Math.max(def.kernel.a, def.kernel.b) * 1.05);
       r.material.color.setHex(state === "hard" ? 0xc9c3ba : 0xfff3d6);
       r.visible = true;
     } else {
@@ -476,81 +595,125 @@ export class GoldRushGame {
     if (this.farTarget) this.hud.tip("far", "Zu weit entfernt – geh näher heran.", 5);
   }
 
-  // the fingers touch the ground now: the whole mining transaction
+  // the tool meets the ground now: the whole mining transaction
   _contact() {
-    this._aim();                                   // what is under the hand at this very moment
-    const hit = this.target;
+    this._aim();                                   // what is under the tool at this very moment
+    const hit = this.target, def = this.tools.def;
     if (!hit) {
-      this.hands.react("air", 0.12);
+      this.tools.react("air");
+      this.hands.contact("air");
       this.audio.play("air");
       return;
     }
-    const r = this.mining.stroke(hit, this.tool, this.player);
-    this.economy.recordStroke(r);
-    const def = MATERIALS[r.material];
+    const r = this.mining.action(hit, def, this.player, this.camera.position);
+    this.economy.recordAction(r, def.id);
     const pan = this._pan(hit), dist = hit.distance;
-    if (!r.ok) { this.hands.react("air", 0.12); return; }
-    if (r.blocked) {
-      this.hands.react("stone", MATERIALS[MAT.STONE].recover);
-      this.effects.burst(hit, MATERIALS[MAT.STONE], 0.6);
-      this.audio.play("stone", { pan, dist });
-      this._haptic(MATERIALS[MAT.STONE].haptic);
-      this.hud.tip("stone", "Zu hart für die Hand – hier braucht es später Werkzeug.", 10);
-      this.ui.crosshairPulse && this.ui.crosshairPulse("hard");
-      this.lastStroke = { material: MAT.STONE, massKg: 0, blocked: true, finds: 0, cents: 0 };
+    if (!r.ok) { this.tools.react("air"); this.hands.contact("air"); return; }
+    const kick = this.reducedMotion ? 0 : KICK[def.id] || 0.01;
+    if (r.kind === "rock") {
+      // the pickaxe on a boulder: chips, a clank, the boulder cracks / breaks
+      const rk = r.rock;
+      this.tools.react("ok", MAT.STONE);
+      this.hands.contact("blocked", MAT.STONE);
+      this.effects.burst(hit, MATERIALS[MAT.STONE], rk && rk.broke ? 1.4 : 0.8, rk && rk.broke ? 6 : 2);
+      this.audio.play("pickStone", { pan, dist });
+      if (rk && rk.broke) this.audio.play("break", { pan, dist });
+      else if (rk && rk.stage !== "intact") this.audio.play("crack", { pan, dist, strength: 0.8 });
+      this._haptic(rk && rk.broke ? [18, 40, 26] : 16);
+      this.player.kick = Math.min(0.04, this.player.kick + kick);
+      if (rk && rk.broke) this.hud.tip("rock-broken", "Felsbrocken zerschlagen – der Weg ist frei.", 20);
+      this.lastStroke = { tool: def.id, kind: "rock", material: MAT.STONE, massKg: 0, rock: rk, finds: 0, cents: 0 };
       this.dirty = true;
       return;
     }
-    this.hands.react("dirt", def.recover);
-    this.effects.burst(hit, def, Math.min(1.2, 0.55 + r.massKg / 5));
-    this.audio.play(SOUND[r.material], { pan, dist, strength: Math.min(1, 0.6 + r.massKg / 6) });
-    this._haptic(def.haptic);
-    this.player.kick = Math.min(0.03, this.player.kick + 0.01);
+    if (r.blocked) {
+      this.tools.react("blocked", MAT.STONE);
+      this.hands.contact("blocked", MAT.STONE);
+      this.effects.burst(hit, MATERIALS[MAT.STONE], 0.6, def.id === "shovel" ? 2 : 0);
+      this.audio.play(def.id === "hand" ? "stone" : "pickStone", { pan, dist, strength: def.id === "hand" ? 1 : 0.7 });
+      this._haptic(MATERIALS[MAT.STONE].haptic);
+      if (STONE_TIP[def.id]) this.hud.tip(`stone-${def.id}`, STONE_TIP[def.id], 10);
+      this.ui.crosshairPulse && this.ui.crosshairPulse("hard");
+      this.player.kick = Math.min(0.03, this.player.kick + kick * 0.5);
+      this.lastStroke = { tool: def.id, kind: "blocked", material: hit.boulder != null ? MAT.STONE : r.material, massKg: 0, blocked: true, finds: 0, cents: 0 };
+      this.dirty = true;
+      return;
+    }
+    const mdef = MATERIALS[r.material];
+    this.tools.react("ok", r.material);
+    if (def.id === "shovel") { const c = mdef.fragmentColor; this.hands.models.soilMat.color.setRGB(c[0] * 1.25, c[1] * 1.25, c[2] * 1.25); }
+    this.hands.contact("ok", r.material, r.removedMassKg);
+    const vfx = def.vfxProfile || { dust: 1, chunks: 1 };
+    this.effects.burst(hit, mdef, Math.min(1.6, (0.55 + r.removedMassKg / 3) * vfx.dust), Math.round(vfx.chunks - 1));
+    if (def.id === "shovel") this.audio.play("shovel", { pan, dist, strength: Math.min(1, 0.6 + r.removedMassKg / 3) });
+    else if (def.id === "pickaxe") this.audio.play(r.material === MAT.STONE ? "pickStone" : "pick", { pan, dist });
+    else this.audio.play(SOUND[r.material], { pan, dist, strength: Math.min(1, 0.6 + r.removedMassKg * 2) });
+    this._haptic(mdef.haptic);
+    this.player.kick = Math.min(0.03, this.player.kick + kick);
     this.ui.onDig && this.ui.onDig();
-    // finds: booked now (economy), shown now (loot), counted in the HUD on pickup
-    const credit = this.economy.credit(r.finds, r.findCount);
-    if (credit.items.length) {
-      if (credit.firstNugget) for (const it of credit.items) if (it.cls === FIND.NUGGET) { it.first = true; break; }
-      this.loot.spawn(credit.items, hit);
-      const best = credit.best;
+    // finds: out of the ground now (pending), shown now (loot), money on pickup
+    const disc = this.economy.discover(r.finds, r.findCount);
+    if (disc.items.length) {
+      if (disc.firstNugget) for (const it of disc.items) if (it.cls === FIND.NUGGET) { it.first = true; break; }
+      this.loot.spawn(disc.items, hit);
+      const best = disc.best;
       this.audio.play(best === FIND.NUGGET ? "nugget" : best === FIND.TINY ? "tiny" : best === FIND.FLAKE ? "flake" : "dust", { pan, dist });
       if (best === FIND.NUGGET) this._haptic([14, 50, 24]);
     }
-    this.lastStroke = {
-      material: r.material, massKg: +r.massKg.toFixed(3), freshKg: +r.freshKg.toFixed(3), slices: r.slices,
-      finds: credit.items.length, cents: credit.cents, best: FIND_IDS[credit.best], cells: r.cells, chunks: r.chunks,
-    };
+    this.lastStroke = this._strokeInfo(def, r, disc);
     this.dirty = true;
   }
 
-  // the transaction without the hand animation (tests, simulation)
-  strokeAtCrosshair({ visuals = true } = {}) {
+  _strokeInfo(def, r, disc) {
+    return {
+      tool: def.id, kind: r.kind, material: r.material, massKg: +r.removedMassKg.toFixed(4), freshKg: +r.freshKg.toFixed(4), slices: r.slices,
+      requestedL: +(r.requestedVolume * 1000).toFixed(4), removedL: +(r.removedVolume * 1000).toFixed(4), relocatedL: +(r.relocatedVolume * 1000).toFixed(4),
+      processedL: +(r.processedVolume * 1000).toFixed(4), finds: disc.items.length, cents: disc.cents, best: FIND_IDS[disc.best], cells: r.cells, chunks: r.chunks,
+    };
+  }
+
+  // the transaction without the animation (tests, simulation); tool = id
+  // (default: the one in the hands; it must be usable)
+  strokeAtCrosshair({ visuals = true, tool = null } = {}) {
     this._aim();
     const hit = this.target;
     if (!hit) return null;
-    const r = this.mining.stroke(hit, this.tool, this.player);
-    this.economy.recordStroke(r);
-    if (!r.ok || r.blocked) { this.dirty = true; return { ok: r.ok, blocked: r.blocked, cents: 0, finds: 0, massKg: 0, material: r.material }; }
-    const credit = this.economy.credit(r.finds, r.findCount);
+    const id = tool && this.tools.canUse(tool) ? tool : this.tools.equipped;
+    const def = TOOL_DEFS[id];
+    if (hit.distance > def.reach) return null;
+    const r = this.mining.action(hit, def, this.player, this.camera.position);
+    this.economy.recordAction(r, def.id);
+    const base = { ok: r.ok, kind: r.kind, blocked: r.blocked, material: r.material, rock: r.rock, cents: 0, finds: 0, massKg: 0 };
+    if (!r.ok || r.blocked || r.kind === "rock") { this.dirty = true; this.lastStroke = { tool: id, kind: r.kind, massKg: 0 }; return base; }
+    const disc = this.economy.discover(r.finds, r.findCount);
     if (visuals) {
       this.effects.burst(hit, MATERIALS[r.material], 1);
-      if (credit.items.length) {
-        if (credit.firstNugget) for (const it of credit.items) if (it.cls === FIND.NUGGET) { it.first = true; break; }
-        this.loot.spawn(credit.items, hit);
+      if (disc.items.length) {
+        if (disc.firstNugget) for (const it of disc.items) if (it.cls === FIND.NUGGET) { it.first = true; break; }
+        this.loot.spawn(disc.items, hit);
       }
-    } else if (credit.items.length) {
-      for (const it of credit.items) this._collected({ cls: it.cls, cents: it.cents, find: it, silent: true });
+    } else if (disc.items.length) {
+      for (const it of disc.items) this._collected({ cls: it.cls, cents: it.cents, find: it, silent: true });
     }
+    this.lastStroke = this._strokeInfo(def, r, disc);
     this.dirty = true;
-    return { ok: true, blocked: false, cents: credit.cents, finds: credit.items.length, best: credit.best, massKg: r.massKg, material: r.material, slices: r.slices, cells: r.cells, keys: credit.items.map((i) => i.key) };
+    return {
+      ...base, cents: disc.cents, finds: disc.items.length, best: disc.best, massKg: r.removedMassKg, massByMat: [...r.massByMat], slices: r.slices, cells: r.cells,
+      requested: r.requestedVolume, removed: r.removedVolume, relocated: r.relocatedVolume, processed: r.processedVolume,
+      keys: disc.items.map((i) => i.key), ids: disc.items.map((i) => i.id),
+    };
   }
 
-  // a piece (or dust) reached the player
+  // a piece (or dust) reached the player: only now it is money
   _collected(item) {
-    this.hud.collected(item.cents, item.cls);
-    if (item.cls === FIND.NUGGET) this.hud.nugget(item.cents, !!(item.find && item.find.first));
+    const f = item.find;
+    const it = f && f.id != null ? this.economy.collect(f.id) : null;
+    if (!it) return;                                     // already booked (never twice)
+    this.hud.collected(it.cents, it.cls);
+    if (it.cls === FIND.NUGGET) this.hud.nugget(it.cents, !!(f && f.first));
+    this.dirty = true;
     if (item.silent) return;
-    if (item.cls >= FIND.FLAKE) {
+    if (it.cls >= FIND.FLAKE) {
       this.audio.play("pickup", { dist: 0.3 });
       this.hands.pickupPulse();
       this._haptic(8);
@@ -565,14 +728,9 @@ export class GoldRushGame {
   // everything still flying / lying around is booked now
   flushLoot() {
     if (!this.loot) return;
-    if (this.hands && this.hands.inspecting) {
-      const done = this.hands.inspecting.done;
-      this.hands.inspecting = null;
-      this.hands.state = HAND_STATE.IDLE;
-      this.hands.right.held.visible = false;
-      if (done) done();
-    }
+    if (this.hands) this.hands.endInspect();
     this.loot.flush();
+    this.economy.collectAll();                          // anything pending that was never shown
     this.hud.settle(this.economy.moneyCents);
   }
 
@@ -645,12 +803,13 @@ export class GoldRushGame {
       worldSeed: this.doc.worldSeed,
       createdAt: this.doc.createdAt,
       updatedAt: Date.now(),
-      tool: this.tool.id,
+      tools: this.tools.serialize(),
       player: { x: round3(p.x), z: round3(p.z), yaw: round3(p.yaw), pitch: round3(p.pitch) },
       settings: { ...this.settings },
       economy: this.economy.serialize(),
       terrain: this.terrain.serialize(),
       resources: this.mining.serialize(),
+      rocks: this.rocks.serialize(),
     };
   }
 
@@ -690,7 +849,7 @@ export class GoldRushGame {
       particles: this.effects.activeDust, fragments: this.effects.activeFrags,
       loot: this.loot.active, glints: this.loot.activeGlints, sceneObjects: this.world.scene.children.length,
       chunks: t.chunks, terrainTriangles: t.triangles, heapMB: mem, level: this.level, dpr: this.dpr, fov: +this.camera.fov.toFixed(1),
-      gpu: this.gpu && this.gpu.gpu, saveBytes: this.lastSaveBytes,
+      gpu: this.gpu && this.gpu.gpu, saveBytes: this.lastSaveBytes, tool: this.tools.equipped, toolState: this.tools.state,
     };
   }
 
@@ -702,8 +861,11 @@ export class GoldRushGame {
     const mat = hit.boulder != null ? MAT.STONE : f.materialAt(hit.x, y, hit.z);
     const t = this.terrain, i = Math.round((hit.x - t.x0) / t.cell), j = Math.round((hit.z - t.z0) / t.cell);
     const k = j * t.vps + i, iy = Math.ceil((y - FLOOR_Y) / VOXEL_H - 0.5) - 1;
+    const def = this.tools.def;
     return {
       material: MATERIALS[mat].id, hardness: MATERIALS[mat].hardness, handEfficiency: MATERIALS[mat].handEfficiency,
+      tool: def.id, toolEfficiency: +toolEfficiency(def, mat, t.loose[k] > 0).toFixed(3), loose: t.loose[k],
+      rock: hit.boulder != null ? this.rocks.stage(hit.boulder) : null,
       gold: +f.goldDensityAt(hit.x, y, hit.z, mat, t.base[k] - y).toFixed(3), depth: +(t.base[k] - hit.y).toFixed(2),
       cell: `${i}:${j}:${iy}`, workedSlice: this.mining.cidx[k], worked: iy >= this.mining.cidx[k],
       distance: +hit.distance.toFixed(2), boulder: hit.boulder,
@@ -718,10 +880,11 @@ export class GoldRushGame {
       `${i.fps} FPS · ${i.frameMs} ms (p95 ${i.p95}) · Seed ${this.doc.worldSeed}`,
       `Draw calls ${i.drawCalls} · Dreiecke ${(i.triangles / 1000).toFixed(0)}k · Partikel ${i.particles}/${i.fragments} · Loot ${i.loot} · Glitzer ${i.glints}`,
       `Qualität ${i.level} · DPR ${i.dpr}` + (i.heapMB != null ? ` · Heap ${i.heapMB} MB` : "") + ` · Save ${(i.saveBytes / 1024).toFixed(1)} KB`,
-      pr ? `Ziel: ${pr.material} (Härte ${pr.hardness}, Hand ${pr.handEfficiency}) · Gold ${pr.gold} · Tiefe ${pr.depth} m · ${pr.distance} m` : "Ziel: –",
+      `Werkzeug ${this.tools.equipped} (${this.tools.state}${this.tools.phase ? " " + this.tools.phase : ""}) · Zyklus ${cycleSeconds(this.tools.def).toFixed(2)} s` + (this.tools.dev ? " · DEV-Freischaltung" : ""),
+      pr ? `Ziel: ${pr.material} (Härte ${pr.hardness}, ${pr.tool} ${pr.toolEfficiency}${pr.loose ? `, gelockert ${pr.loose} cm` : ""}) · Gold ${pr.gold} · Tiefe ${pr.depth} m · ${pr.distance} m${pr.rock ? ` · Fels ${pr.rock}` : ""}` : "Ziel: –",
       pr ? `Zelle ${pr.cell} · bearbeitet ab Scheibe ${pr.workedSlice} (${pr.worked ? "verbraucht" : "frisch"})` : "",
-      ls ? `Letzter Griff: ${ls.blocked ? "Stein – nichts" : `${ls.massKg} kg (${ls.freshKg} frisch), ${ls.slices} Scheiben, ${ls.finds} Fund(e) ${ls.cents} ct`}` : "",
-      `Griffe ${st.totalDigs} · erfolgreich ${st.successfulDigs} · Funde ${st.finds} · Nuggets ${this.economy.inventory.nuggets.count}`,
+      ls ? `Letzte Aktion: ${ls.kind === "rock" ? `Fels ${ls.rock ? ls.rock.stage : ""}` : ls.blocked ? "abgeprallt – nichts" : `${ls.massKg} kg entfernt (${ls.removedL} l, verlagert ${ls.relocatedL} l), ${ls.slices} Scheiben, ${ls.finds} Fund(e) ${ls.cents} ct`}` : "",
+      `Aktionen ${st.totalDigs} · erfolgreich ${st.successfulDigs} · Funde ${st.finds} (+${this.economy.pending.size} unterwegs) · Nuggets ${this.economy.inventory.nuggets.count}`,
       `H = Gold-Heatmap ${this.terrain.heatmap ? "an" : "aus"} · F3 = Overlay`,
     ].filter(Boolean).join("\n"));
   }
@@ -742,6 +905,7 @@ export class GoldRushGame {
     if (this.effects) this.effects.dispose();
     if (this.loot) this.loot.dispose();
     if (this.hands) this.hands.dispose();
+    if (this.rocks) this.rocks.dispose();
     if (this.audio) this.audio.dispose();
     if (this.hud) this.hud.dispose();
     if (this.reticle) { this.reticle.geometry.dispose(); this.reticle.material.dispose(); }
@@ -773,11 +937,12 @@ export function newWorldDoc(seed) {
     worldSeed: seed,
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    tool: "hand",
+    tools: { owned: ["hand"], equipped: "hand" },             // a new game owns ONLY the hand
     player: { x: SPAWN.x, z: SPAWN.z, yaw: SPAWN.yaw, pitch: SPAWN.pitch },
     settings: { quality: "auto", headBob: true, reducedMotion: false, sound: true, vibration: true },
     economy: null,
     terrain: null,
     resources: null,
+    rocks: null,
   };
 }

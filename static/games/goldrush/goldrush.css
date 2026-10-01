@@ -44,6 +44,42 @@ html.goldrush-active, html.goldrush-active body { overflow: hidden; overscroll-b
 }
 .gr-tool-ico svg { width: 18px; height: 18px; display: block; }
 .gr-tool.is-working { transform: scale(1.06); }
+button.gr-tool { border: none; font-family: inherit; cursor: default; }
+.gr-desktop .gr-tool { display: none; }                      /* the belt shows the tool on desktop */
+
+/* toolbelt: three slots, the one in your hands lit; locked ones only hinted */
+.gr-belt {
+  position: absolute; left: 50%; bottom: max(var(--space-4), env(safe-area-inset-bottom)); transform: translateX(-50%);
+  display: flex; gap: 5px; padding: 5px; border-radius: 14px; pointer-events: auto;
+  background: rgba(20, 16, 12, 0.42); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.gr-slot {
+  position: relative; display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 11px 0 8px;
+  border: none; border-radius: 10px; background: rgba(255, 250, 240, 0.1); color: #f6efe2; cursor: pointer;
+  font-family: inherit; font-size: var(--text-xs); font-weight: var(--font-bold);
+  transition: background var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard);
+}
+.gr-slot-key { font-size: 10px; opacity: 0.6; font-variant-numeric: tabular-nums; }
+.gr-slot-ico svg { width: 20px; height: 20px; display: block; }
+.gr-slot.is-active { background: var(--accent-fill); color: var(--text-on-accent); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25); }
+.gr-slot.is-locked { opacity: 0.42; cursor: default; padding-right: 8px; }
+.gr-slot.is-locked .gr-slot-label { display: none; }
+.gr-lock { display: none; font-size: 10px; filter: grayscale(1); }
+.gr-slot.is-locked .gr-lock { display: inline; }
+.gr-slot:focus { outline: none; }
+.gr-slot:focus-visible { outline: 2px solid var(--focus-ring, #fff); outline-offset: 2px; }
+.gr-desktop .gr-hint { bottom: calc(max(var(--space-4), env(safe-area-inset-bottom)) + 60px); }
+/* touch: the tool chip opens a compact sheet with the slots */
+.gr-touch .gr-tool { pointer-events: auto; cursor: pointer; }
+.gr-touch .gr-tool.has-choice::after { content: ""; width: 0; height: 0; margin-left: 2px; border: 4px solid transparent; border-top-color: currentColor; transform: translateY(2px); opacity: 0.7; }
+.gr-touch .gr-belt {
+  display: none; left: max(var(--space-3), env(safe-area-inset-left)); bottom: auto; transform: none; flex-direction: column;
+  top: calc(max(var(--space-3), env(safe-area-inset-top)) + 90px); z-index: 3;
+}
+.gr-touch .gr-belt.is-open { display: flex; }
+.gr-touch .gr-slot { height: 44px; min-width: 156px; }
+.gr-touch .gr-slot-key { display: none; }
+.gr-touch .gr-slot.is-locked .gr-slot-label { display: inline; }
 
 /* crosshair: a small dot; a ring when the hand can dig there */
 .gr-crosshair { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; transform: translate(-50%, -50%); }
@@ -227,7 +263,7 @@ html.goldrush-active, html.goldrush-active body { overflow: hidden; overscroll-b
   .gr-card { padding: var(--space-4); gap: var(--space-3); }
 }
 .gr-reduced .gr-crosshair.is-pulse span { animation: none; }
-.gr-reduced .gr-tool, .gr-reduced .gr-hud-btn { transition: none; }
+.gr-reduced .gr-tool, .gr-reduced .gr-hud-btn, .gr-reduced .gr-slot { transition: none; }
 @media (prefers-reduced-motion: reduce) {
   .gr-pick, .gr-crosshair.is-pulse span { animation: none; }
 }
