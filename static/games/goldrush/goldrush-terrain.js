@@ -13,7 +13,7 @@
 import { fbm2, hash3, mulberry32, noise2, ridged2, smoothstep } from "./goldrush-noise.js";
 import { MAT } from "./goldrush-materials.js";
 import { MaterialField } from "./goldrush-resources.js";
-import { decodeInt16Rle, encodeInt16Rle } from "./goldrush-save.js";
+import { decodeInt16Rle, decodeIntRle, encodeIntRle } from "./goldrush-save.js";
 
 export const FLOOR_Y = -2.5;          // open-pit floor: nobody digs deeper (phase 1)
 // Version of the mound generator. Saves store height deltas against the
@@ -22,13 +22,21 @@ export const FLOOR_Y = -2.5;          // open-pit floor: nobody digs deeper (pha
 // applied to a different mound).
 export const TERRAIN_GEN = 1;
 const EDGE_KEEP = 1.5;                // metres at the border that stay untouched (seam with the ground)
-// A fresh cut in moist soil stands steeper than the dry flank around it; the
-// gap between the two limits decides how far up a toe cut pulls the flank
-// (scarp height ~ depth * tan(wall) / (tan(wall) - tan(flank)) = ~2.7x here).
-const MAX_SLOPE = Math.tan((62 * Math.PI) / 180);   // dug walls steeper than this collapse
-const SETTLE_SLOPE = Math.tan((50 * Math.PI) / 180);  // only noise spikes of the untouched pile are capped
-const RELAX_MARGIN = 12;                               // first collapse window around a dig (cells) ...
-const RELAX_GROW = 16;                                 // ... grown while a collapse still reaches its edge
+const TAN = (deg) => Math.tan((deg * Math.PI) / 180);
+const SETTLE_SLOPE = TAN(50);         // generation: only noise spikes of the untouched pile are capped
+// Heights are kept as "original mound + whole 0.1 mm" (an integer per
+// column): even a single hand scrape (a few tenths of a millimetre at its
+// edge) is stored exactly, every slide moves exact amounts (mass is kept),
+// and a save restores the very same numbers.
+export const HEIGHT_Q = 10000;
+// Slopes after a bite (as tan): the untouched crust of the pile holds a cut
+// face this steep; anything disturbed (dug, slid, loosened) settles to its
+// material's angle of repose - but never flatter than the pile itself was
+// there, so a cut at the toe of a steep flank can't start a slide that runs
+// up the whole mound. Stone never moves.
+const CRUST = TAN(62);
+const REPOSE = [TAN(40), TAN(50), TAN(37), Infinity];      // by MAT: loose dirt, compact, gravel, stone
+const SETTLE_ITER = 16;
 
 // a dumped pile: broad rounded crest, flanks near the angle of repose, a
 // softly spreading toe - never steepest at the bottom and never a pointed
@@ -49,7 +57,7 @@ const PALETTE = {
   moist: 0x5e4129, spill: 0x9a7f5d,
   // per material: weathered surface / fresh cut
   compactS: 0x7c5436, compactF: 0x684129, gravelS: 0x8a7f71, gravelL: 0xab9d88, gravelD: 0x5d544a, gravelF: 0x776b5d,
-  stoneS: 0x8d857a, stoneD: 0x5f5850, fill: 0x93714f,
+  stoneS: 0x8d857a, stoneD: 0x5f5850, fill: 0x93714f, stoneCut: 0xb1a899,
 };
 const REC_MAX = 256;                                  // cells one stroke can touch (radius <= 0.9 m)
 
@@ -76,16 +84,33 @@ export class DiggableTerrain {
     const n = this.vps * this.vps;
     this.base = new Float32Array(n);
     this.height = new Float32Array(n);
+    this.qh = new Int32Array(n);                     // height - base, in 0.1 mm (the stored truth)
+    this.loose = new Uint8Array(n);                  // loosened depth below the surface, cm (pickaxe)
     this.rock = new Float32Array(n);
     this.rill = new Float32Array(n);
+    this.spawn = opts.spawn || null;
     this._generate();
     this.height.set(this.base);
+    this.baseTan = new Float32Array(n);              // steepest slope of the original pile per column (all 8 neighbours)
+    this._lim = new Float32Array(n);                 // settle scratch
+    this._tb = { i0: 0, i1: 0, j0: 0, j1: 0 };       // where the last settle pass moved material
+    this._win = { i0: 0, i1: 0, j0: 0, j1: 0 };      // the window it finally covered
+    const B = this.base, V = this.vps, d1 = this.cell, d2 = this.cell * Math.SQRT2;
+    for (let j = 1; j < V - 1; j++) for (let i = 1; i < V - 1; i++) {
+      const k = j * V + i, b = B[k];
+      this.baseTan[k] = Math.max(
+        Math.abs(b - B[k - 1]) / d1, Math.abs(b - B[k + 1]) / d1, Math.abs(b - B[k - V]) / d1, Math.abs(b - B[k + V]) / d1,
+        Math.abs(b - B[k - V - 1]) / d2, Math.abs(b - B[k - V + 1]) / d2, Math.abs(b - B[k + V - 1]) / d2, Math.abs(b - B[k + V + 1]) / d2);
+    }
+    this.onRelocate = null;                          // (from, to, before, after) - set by the mining system
     this.field = new MaterialField(this.seed, this, FLOOR_Y);
     this.stoneTop = this.field.stoneTop;             // uppermost stone body per column
     this.stoneBot = this.field.stoneBot;
     this.consumed = null;                            // set by the mining system (worked-over depth per column)
     // what the last excavate() did per cell (the mining system books it)
-    this.rec = { n: 0, k: new Int32Array(REC_MAX), before: new Float32Array(REC_MAX), after: new Float32Array(REC_MAX) };
+    this.rec = { n: 0, k: new Int32Array(REC_MAX), before: new Float32Array(REC_MAX), after: new Float32Array(REC_MAX), mat: new Uint8Array(REC_MAX) };
+    this._bite = { n: 0, k: new Int32Array(REC_MAX), w: new Float32Array(REC_MAX) };
+    this.load = new Uint8Array(n);                   // columns a boulder rests on (no crust: they give way)
     this.heatmap = false;
     this.stride = 1;
     this.revision = 0;
@@ -341,7 +366,9 @@ export class DiggableTerrain {
         nor[v * 3 + 2] = nz * inv;
         const curv = (hl + hr + hd + hu - 4 * h) / (c * c);   // >0 concave, <0 ridge
         const x = this.x0 + gi * c, z = this.z0 + gj * c;
-        const mat = this.field.materialAt(x, h - 0.02, z, k);
+        // what shows at the surface: stone only where it really is exposed
+        // (a lens a few cm under the soil stays hidden until dug free)
+        const mat = this.field.materialAt(x, h - 0.006, z, k);
         this._colorAt(k, x, z, h, inv, curv, mat, rgb);
         col[v * 3] = rgb[0];
         col[v * 3 + 1] = rgb[1];
@@ -374,6 +401,8 @@ export class DiggableTerrain {
       else if (mat === MAT.GRAVEL) mix(P.gravelF, grain > 0.5 ? P.gravelL : P.gravelD, Math.abs(grain - 0.5) * 1.3);
       else if (mat === MAT.COMPACT) { mix(P.compactF, P.clay, smoothstep(0.35, 1.9, dug) * 0.6 * n1); }
       else { mix(P.fresh, P.freshB, n1); blend(P.clay, smoothstep(0.35, 1.9, dug) * 0.5); }
+      if (mat === MAT.STONE && this.field.stoneTop0[k] - this.field.stoneTop[k] > 0.004) blend(P.stoneCut, 0.6);   // freshly broken stone
+      else if (this.loose[k] > 2) blend(P.freshB, 0.22);                                                          // loosened, crumbly
     } else {
       mix(P.dustA, P.dustB, n1);
       blend(P.band, smoothstep(-0.1, 0.7, noise2(x * 0.11 + h * 0.3, z * 0.11, s + 171)) * 0.4);   // loads of redder soil
@@ -490,100 +519,231 @@ export class DiggableTerrain {
 
   // ------------------------------------------------------------ digging
 
+  // set column k to an integer height (0.1 mm above/below the original pile)
+  _setQ(k, q) {
+    this.qh[k] = q;
+    this.height[k] = Math.fround(this.base[k] + q / HEIGHT_Q);
+  }
+
+  // lowest integer height column k may take (floor of the pit)
+  _qMin(k) { return Math.ceil((FLOOR_Y - this.base[k]) * HEIGHT_Q); }
+
   /**
-   * Lower the surface around (x, z) with a smooth kernel.
-   * @returns { removed: m^3, cells, chunks } or null when not diggable
+   * One tool action. Removes a thin layer from the surface around the hit,
+   * shaped by the tool's kernel in the surface's OWN plane: on a flat spot
+   * it scrapes down, on a steep face it takes the face back (a heightfield
+   * can only lower, so a face is recessed by lowering each column by
+   * depth / cos(slope) - never a round hole bored straight down).
+   *   K = { a, b: half length (along the stroke) / half width,
+   *         vol: volume of a full bite (m3), tMax: deepest cut (m),
+   *         edge: flat part of the profile, tilt: deeper at the leading
+   *         edge (scoop), n: surface normal, u: stroke direction in the
+   *         plane, cutsStone, loosenCm, loosenR, settleMargin }
+   *   eff(k, x, y, z, material) -> share of the full bite in that cell
+   * The bite is normalised to K.vol over the cells it covers (a small
+   * kernel on the 12.5 cm grid would otherwise take 1 or 4 cells by
+   * chance), so a stroke moves a steady amount: the visible dent and the
+   * moved mass come from the same exact integer heights (0.1 mm).
+   * Every changed cell lands in this.rec (before/after the bite, before any
+   * settling) for the mining system; onCut(rec) runs right after the bite.
+   * @returns { requested, removed, relocated (m3), cells, chunks } or null
    */
-  // One tool stroke at (x, z): lowers a smooth round bite. eff(k, x, y, z)
-  // says how much of the full bite comes off in the material at that cell
-  // (0 = nothing, e.g. stone for the bare hand). Every changed cell lands in
-  // this.rec with its height before and after the stroke (before any
-  // collapse), so the mining system can book exactly what the tool took.
-  // onCut(rec) runs right after the bite, before anything slides.
-  excavate(x, z, radius, depth, eff, onCut) {
+  excavate(hit, K, eff, onCut) {
     const rec = this.rec;
     rec.n = 0;
-    if (!this.inDigArea(x, z)) return null;
-    const c = this.cell, vps = this.vps, H = this.height, r2 = radius * radius;
-    const ci = (x - this.x0) / c, cj = (z - this.z0) / c, rr = Math.ceil(radius / c) + 1;
+    if (!this.inDigArea(hit.x, hit.z)) return null;
+    const c = this.cell, vps = this.vps, H = this.height, field = this.field, area = c * c;
+    const nx = K.n.x, ny = K.n.y, nz = K.n.z, ux = K.u.x, uy = K.u.y, uz = K.u.z;
+    const vx = ny * uz - nz * uy, vy = nz * ux - nx * uz, vz = nx * uy - ny * ux;
+    const R = Math.max(K.a, K.b), cosn = Math.max(0.3, ny);
+    const ci = (hit.x - this.x0) / c, cj = (hit.z - this.z0) / c, rr = Math.ceil(R / c) + 1;
     const lo = this.edgeCells, hi = vps - 1 - this.edgeCells;
     const i0 = Math.max(lo, Math.floor(ci - rr)), i1 = Math.min(hi, Math.ceil(ci + rr));
     const j0 = Math.max(lo, Math.floor(cj - rr)), j1 = Math.min(hi, Math.ceil(cj + rr));
-    let removed = 0, cells = 0;
+    // pass 1: the cells under the kernel and their weights
+    const S = this._bite;
+    S.n = 0;
+    let wsum = 0, near = -1, nearD = Infinity;
     for (let j = j0; j <= j1; j++) {
-      const cz = this.z0 + j * c, dz = cz - z;
+      const cz = this.z0 + j * c, pz = cz - hit.z;
       for (let i = i0; i <= i1; i++) {
-        const cx = this.x0 + i * c, dx = cx - x, d2 = dx * dx + dz * dz;
-        if (d2 >= r2) continue;
-        let w = 1 - d2 / r2;
-        w *= w;
-        const k = j * vps + i, old = H[k];
-        const f = eff ? eff(k, cx, old, cz) : 1;
-        if (!(f > 0)) continue;
-        const nh = Math.max(FLOOR_Y, this._stoneLimit(k, old - depth * w * f));
-        if (nh < old - 1e-6 && rec.n < REC_MAX) {
-          H[k] = nh;
-          rec.k[rec.n] = k; rec.before[rec.n] = old; rec.after[rec.n] = nh; rec.n++;
-          removed += old - nh;
-          cells++;
-        }
+        const cx = this.x0 + i * c, px = cx - hit.x, k = j * vps + i, py = H[k] - hit.y;
+        const dn = px * nx + py * ny + pz * nz;
+        if (dn > R * 0.6 || dn < -R) continue;              // not this face (the far side of a ridge, the bottom of a pit)
+        const du = (px * ux + py * uy + pz * uz) / K.a, dv = (px * vx + py * vy + pz * vz) / K.b;
+        const rho2 = du * du + dv * dv;
+        if (rho2 >= 1.6 || S.n >= REC_MAX) continue;
+        const rho = Math.sqrt(rho2);
+        let w = rho >= 1 ? 0 : rho <= K.edge ? 1 : smoothstep(1, K.edge, rho);
+        if (K.tilt) w *= Math.max(0, 1 + K.tilt * du);
+        if (rho2 < nearD) { nearD = rho2; near = S.n; }
+        S.k[S.n] = k; S.w[S.n] = w; S.n++;
       }
     }
-    if (!cells) return { removed: 0, cells: 0, chunks: 0 };
+    if (near >= 0 && S.w[near] < 0.5) S.w[near] = 0.5;      // the grid point under the hit always takes part
+    for (let s = 0; s < S.n; s++) wsum += S.w[s];
+    if (!(wsum > 0)) return { requested: 0, removed: 0, relocated: 0, cells: 0, chunks: 0 };
+    const t = Math.min(K.tMax || 0.05, (K.vol * cosn) / (wsum * area));    // depth along the normal at the centre
+    // pass 2: cut
+    let requested = 0, removedQ = 0, cells = 0;
+    for (let s = 0; s < S.n; s++) {
+      const w = S.w[s];
+      if (!(w > 0)) continue;
+      const k = S.k[s], i = k % vps, j = (k - i) / vps, cx = this.x0 + i * c, cz = this.z0 + j * c, old = H[k];
+      const want = (t * w) / cosn;                          // lowering that recesses the surface by t along its normal
+      const inStone = old <= this.stoneTop[k] + 1e-4 && old >= this.stoneBot[k];
+      const mat = inStone ? MAT.STONE : field.materialAt(cx, old - 0.01, cz, k);
+      const f = eff(k, cx, old, cz, mat);
+      requested += want;
+      if (!(f > 0) || (inStone && !K.cutsStone)) continue;
+      let target = old - want * f;
+      if (!inStone) target = this._stoneLimit(k, target);  // a bite in soil stops on stone below
+      const q = Math.max(this._qMin(k), Math.ceil((target - this.base[k]) * HEIGHT_Q));
+      if (q >= this.qh[k] || rec.n >= REC_MAX) continue;
+      removedQ += this.qh[k] - q;
+      this._setQ(k, q);
+      if (inStone) field.cutStone(k, H[k]);
+      // loosening (pickaxe) / using it up (any removal)
+      const cm = Math.round((old - H[k]) * 100);
+      let l = Math.max(0, this.loose[k] - cm);
+      if (K.loosenCm && mat !== MAT.STONE) l = Math.min(30, l + Math.round(K.loosenCm * w));
+      this.loose[k] = l;
+      rec.k[rec.n] = k; rec.before[rec.n] = old; rec.after[rec.n] = H[k]; rec.mat[rec.n] = mat; rec.n++;
+      cells++;
+    }
+    // loosening also reaches cells the pick hardly removes from
+    if (K.loosenCm) this._loosen(hit, K, i0, i1, j0, j1);
+    if (!cells) return { requested: requested * area, removed: 0, relocated: 0, cells: 0, chunks: 0 };
     if (onCut) onCut(rec);
-    const win = this._relax(i0, i1, j0, j1);
-    this._quantize(win.i0, win.i1, win.j0, win.j1);
-    const chunks = this._refresh(win.i0 - 2, win.i1 + 2, win.j0 - 2, win.j1 + 2);
+    const m = Math.ceil((K.settleMargin || 0.8) / c);
+    const movedQ = this._settleLocal(Math.max(lo, i0 - m), Math.min(hi, i1 + m), Math.max(lo, j0 - m), Math.min(hi, j1 + m), SETTLE_ITER);
+    const w0 = this._win;
+    const chunks = this._refresh(w0.i0 - 1, w0.i1 + 1, w0.j0 - 1, w0.j1 + 1);
     this.revision++;
-    return { removed: removed * c * c, cells, chunks };
+    return { requested: requested * area, removed: (removedQ / HEIGHT_Q) * area, relocated: (movedQ / HEIGHT_Q) * area, cells, chunks };
   }
 
+  // settle a window again (a boulder pressed on it, a test) - mass-conserving;
+  // returns the relocated volume (m3)
+  settleArea(x0, z0, x1, z1, iterations = SETTLE_ITER) {
+    const c = this.cell, lo = this.edgeCells, hi = this.vps - 1 - this.edgeCells;
+    const i0 = Math.max(lo, Math.floor((x0 - this.x0) / c)), i1 = Math.min(hi, Math.ceil((x1 - this.x0) / c));
+    const j0 = Math.max(lo, Math.floor((z0 - this.z0) / c)), j1 = Math.min(hi, Math.ceil((z1 - this.z0) / c));
+    if (i1 <= i0 || j1 <= j0) return 0;
+    const moved = this._settleLocal(i0, i1, j0, j1, iterations);
+    const w = this._win;
+    if (moved) { this._refresh(w.i0 - 1, w.i1 + 1, w.j0 - 1, w.j1 + 1); this.revision++; }
+    return (moved / HEIGHT_Q) * c * c;
+  }
 
-  // Loose material collapses: walls steeper than the angle of repose come
-  // down, and what came down lands in the hole (volume is kept - digging
-  // at the foot of the pile makes material trickle in from above). A
-  // heightfield can't hold overhangs, so this is also what turns "digging
-  // into the face" into a natural scoop instead of a vertical slot.
-  // Near-critical flanks can slide a long way from a small undercut: the
-  // window grows until the collapse no longer reaches its edge (never a
-  // cliff at an arbitrary window border). Returns the final window.
-  _relax(i0, i1, j0, j1) {
-    const H = this.height, B = this.base, vps = this.vps, maxDiff = this.cell * MAX_SLOPE;
-    const lo = this.edgeCells, hi = vps - 1 - this.edgeCells;
-    const m = RELAX_MARGIN;
-    const win = { i0: Math.max(lo, i0 - m), i1: Math.min(hi, i1 + m), j0: Math.max(lo, j0 - m), j1: Math.min(hi, j1 + m) };
-    let fell = 0;
-    for (let round = 0; round < 10; round++) {
-      fell += this._clampRange(H, win.i0, win.i1, win.j0, win.j1, maxDiff);
-      const b = this._box;
-      const grow = [];
-      if (b.i0 <= win.i0 + 1 && win.i0 > lo) grow.push("i0");
-      if (b.i1 >= win.i1 - 1 && win.i1 < hi) grow.push("i1");
-      if (b.j0 <= win.j0 + 1 && win.j0 > lo) grow.push("j0");
-      if (b.j1 >= win.j1 - 1 && win.j1 < hi) grow.push("j1");
-      if (!grow.length || b.i0 === Infinity) break;
-      for (const side of grow) {
-        if (side === "i0") win.i0 = Math.max(lo, win.i0 - RELAX_GROW);
-        if (side === "i1") win.i1 = Math.min(hi, win.i1 + RELAX_GROW);
-        if (side === "j0") win.j0 = Math.max(lo, win.j0 - RELAX_GROW);
-        if (side === "j1") win.j1 = Math.min(hi, win.j1 + RELAX_GROW);
-      }
+  // total volume above (+) / below (-) the original pile, m3 - exact (integer sum)
+  volumeDelta() {
+    let s = 0;
+    for (let k = 0; k < this.qh.length; k++) s += this.qh[k];
+    return (s / HEIGHT_Q) * this.cell * this.cell;
+  }
+
+  // the pile's volume above the old ground (y = 0) - the "mountain", m3
+  pileVolume() {
+    let s = 0;
+    const H = this.height, c2 = this.cell * this.cell;
+    for (let k = 0; k < H.length; k++) if (H[k] > 0) s += H[k];
+    return s * c2;
+  }
+
+  _loosen(hit, K, i0, i1, j0, j1) {
+    const c = this.cell, vps = this.vps, R = K.loosenR || 0.25, H = this.height;
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const k = j * vps + i, x = this.x0 + i * c, z = this.z0 + j * c;
+      const d = Math.hypot(x - hit.x, z - hit.z, (H[k] - hit.y) * 0.5) / R;
+      if (d >= 1 || (H[k] <= this.stoneTop[k] + 1e-4 && H[k] >= this.stoneBot[k])) continue;
+      this.loose[k] = Math.min(30, Math.max(this.loose[k], Math.round(K.loosenCm * (1 - d * d))));
     }
-    if (fell > 1e-6) {
-      // spread what came down over the dug cells, deeper cells get more
-      let w = 0;
-      for (let j = win.j0; j <= win.j1; j++) for (let i = win.i0; i <= win.i1; i++) { const k = j * vps + i; if (B[k] - H[k] > CHANGED_EPS) w += B[k] - H[k]; }
-      if (w > 0) {
-        for (let j = win.j0; j <= win.j1; j++) {
-          for (let i = win.i0; i <= win.i1; i++) {
-            const k = j * vps + i, depth = B[k] - H[k];
-            if (depth > CHANGED_EPS) H[k] += Math.min(depth, (fell * depth) / w);
+  }
+
+  // tan of the slope column k may keep towards a lower neighbour
+  _reposeTan(k) {
+    const h = this.height[k];
+    if (h <= this.stoneTop[k] + 1e-4 && h >= this.stoneBot[k]) return Infinity;      // stone: rigid
+    if (this.qh[k] === 0 && !this.loose[k] && !this.load[k]) return CRUST;          // the untouched pile
+    const vps = this.vps, i = k % vps, j = (k - i) / vps;
+    let mat = this.field.materialAt(this.x0 + i * this.cell, h - 0.01, this.z0 + j * this.cell, k);
+    if (mat === MAT.COMPACT && this.loose[k]) mat = MAT.DIRT;                         // loosened compact runs like dirt
+    return Math.max(REPOSE[mat], this.baseTan[k] + 0.06);
+  }
+
+  // Local settling after a bite: loose material runs down to its angle of
+  // repose, the crust holds cut faces, stone stays. Pairwise and
+  // mass-conserving (what leaves a column lands on its lower neighbour),
+  // in a window around the bite - no global smoothing, no slide running up
+  // the whole pile. When sliding material reaches the edge of the window,
+  // the window grows (a few times at most), so no cell is left standing
+  // steeper than its limit next to one that was never looked at.
+  // Returns the moved amount (0.1 mm units); this._win = the final window.
+  _settleLocal(i0, i1, j0, j1, iterations) {
+    const lo = this.edgeCells, hi = this.vps - 1 - this.edgeCells;
+    let total = 0;
+    for (let grow = 0; grow < 6; grow++) {
+      const moved = this._settlePass(i0, i1, j0, j1, iterations);
+      total += moved;
+      if (!moved) break;
+      const tb = this._tb;
+      let more = false;
+      if (tb.i0 <= i0 + 1 && i0 > lo) { i0 = Math.max(lo, i0 - 4); more = true; }
+      if (tb.i1 >= i1 - 1 && i1 < hi) { i1 = Math.min(hi, i1 + 4); more = true; }
+      if (tb.j0 <= j0 + 1 && j0 > lo) { j0 = Math.max(lo, j0 - 4); more = true; }
+      if (tb.j1 >= j1 - 1 && j1 < hi) { j1 = Math.min(hi, j1 + 4); more = true; }
+      if (!more) break;
+    }
+    this._win = { i0, i1, j0, j1 };
+    return total;
+  }
+
+  _settlePass(i0, i1, j0, j1, iterations) {
+    const vps = this.vps, lim = this._lim;
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const k = j * vps + i; lim[k] = this._reposeTan(k); }
+    const c = this.cell, cd = c * Math.SQRT2;
+    const tb = this._tb;
+    tb.i0 = tb.j0 = Infinity; tb.i1 = tb.j1 = -Infinity;
+    let total = 0;
+    for (let it = 0; it < iterations; it++) {
+      let moved = 0;
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+          const k = j * vps + i;
+          if (i < i1) moved += this._pair(k, k + 1, c);
+          if (j < j1) {
+            moved += this._pair(k, k + vps, c);
+            if (i < i1) moved += this._pair(k, k + vps + 1, cd);
+            if (i > i0) moved += this._pair(k, k + vps - 1, cd);
           }
         }
-        this._clampRange(H, win.i0, win.i1, win.j0, win.j1, maxDiff);
       }
+      total += moved;
+      if (!moved) break;
     }
-    return win;
+    return total;
+  }
+
+  _pair(p, q, dist) {
+    const H = this.height, lim = this._lim;
+    let a = p, b = q;
+    if (H[q] > H[p]) { a = q; b = p; }
+    const excess = H[a] - H[b] - dist * lim[a];
+    if (!(excess > 2e-4)) return 0;                          // 0.2 mm tolerance (and Infinity for stone)
+    const units = Math.min(this.qh[a] - this._qMin(a), Math.floor(excess * 0.4 * HEIGHT_Q));
+    if (units <= 0) return 0;
+    const before = H[a];
+    this._setQ(a, this.qh[a] - units);
+    this._setQ(b, this.qh[b] + units);
+    if (this.loose[b] < 30) this.loose[b] = Math.min(30, this.loose[b] + Math.round(units / 100));   // slid material is loose (cm, from ~5 mm on)
+    lim[a] = this._reposeTan(a);
+    lim[b] = this._reposeTan(b);
+    const vps = this.vps, tb = this._tb, ia = a % vps, ja = (a - ia) / vps, ib = b % vps, jb = (b - ib) / vps;
+    if (ia < tb.i0) tb.i0 = ia; if (ib < tb.i0) tb.i0 = ib; if (ia > tb.i1) tb.i1 = ia; if (ib > tb.i1) tb.i1 = ib;
+    if (ja < tb.j0) tb.j0 = ja; if (jb < tb.j0) tb.j0 = jb; if (ja > tb.j1) tb.j1 = ja; if (jb > tb.j1) tb.j1 = jb;
+    if (this.onRelocate) this.onRelocate(a, b, before, H[a]);
+    return units;
   }
 
   // ------------------------------------------------------------ quality / debug
@@ -616,41 +776,28 @@ export class DiggableTerrain {
   // ------------------------------------------------------------ persistence
 
   serialize() {
-    const n = this.height.length, q = new Int16Array(n);
     let changed = 0;
-    for (let k = 0; k < n; k++) {
-      const d = Math.round((this.height[k] - this.base[k]) * 1000);
-      const v = d > 32767 ? 32767 : d < -32767 ? -32767 : d;
-      q[k] = v;
-      if (v) changed++;
-    }
-    return { gen: TERRAIN_GEN, cols: this.cols, cell: this.cell, unit: "mm", encoding: "rle-zigzag-varint-b64", changed, data: encodeInt16Rle(q) };
+    for (let k = 0; k < this.qh.length; k++) if (this.qh[k]) changed++;
+    return { gen: TERRAIN_GEN, cols: this.cols, cell: this.cell, unit: "0.1mm", encoding: "rle-zigzag-varint-b64", changed, data: encodeIntRle(this.qh), loose: encodeIntRle(this.loose) };
   }
 
-  // -> true when applied; false when the data doesn't fit this terrain
-  // Changed heights are kept in exactly the form a save stores (original
-  // mound + whole millimetres), so playing on and reloading a save always
-  // continue from the very same numbers - no sub-millimetre drift that could
-  // make a stroke come out differently after a reload.
-  _quantize(i0, i1, j0, j1) {
-    const vps = this.vps;
-    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-      const k = j * vps + i;
-      if (this.height[k] !== this.base[k]) this.height[k] = this.restoredHeight(k);
-    }
-  }
+  // the height column k will have after serialize() -> deserialize(): the
+  // same (heights are always kept in their stored form)
+  restoredHeight(k) { return this.height[k]; }
 
-  // the height column k will have after serialize() -> deserialize()
-  restoredHeight(k) {
-    const d = Math.round((this.height[k] - this.base[k]) * 1000);
-    const v = d > 32767 ? 32767 : d < -32767 ? -32767 : d;
-    return Math.fround(Math.max(FLOOR_Y, this.base[k] + v / 1000));
-  }
-
+  // -> true when applied; false when the data doesn't fit this terrain.
+  // Accepts the phase-2 form (whole millimetres) as well.
   deserialize(t) {
     if (!t || t.gen !== TERRAIN_GEN || t.cols !== this.cols || Math.abs(t.cell - this.cell) > 1e-9 || t.encoding !== "rle-zigzag-varint-b64") return false;
-    const q = decodeInt16Rle(t.data, this.height.length);
-    for (let k = 0; k < q.length; k++) this.height[k] = Math.max(FLOOR_Y, this.base[k] + q[k] / 1000);
+    const n = this.height.length;
+    if (t.unit === "mm") {
+      const q = decodeInt16Rle(t.data, n);
+      for (let k = 0; k < n; k++) this._setQ(k, Math.max(this._qMin(k), q[k] * 10));
+    } else {
+      const q = decodeIntRle(t.data, n);
+      for (let k = 0; k < n; k++) this._setQ(k, Math.max(this._qMin(k), q[k]));
+      if (typeof t.loose === "string") { const l = decodeIntRle(t.loose, n); for (let k = 0; k < n; k++) this.loose[k] = Math.max(0, Math.min(30, l[k])); }
+    }
     this.refreshAll();
     this.revision++;
     return true;

@@ -1,7 +1,7 @@
 // GoldRush - what the ground is made of: ONE table of materials that every
-// tool reads. The bare hand now; shovel, pick and machines later only bring
-// their own efficiency per material (and a bigger bite) - the materials,
-// their densities, hardness and feedback stay the same.
+// tool reads. Hand, shovel, pickaxe (and machines later) only bring their
+// own efficiency per material and their own bite (goldrush-tools.js) - the
+// materials, their densities, hardness and feedback stay the same.
 
 export const MAT = { DIRT: 0, COMPACT: 1, GRAVEL: 2, STONE: 3 };
 
@@ -39,12 +39,5 @@ export const MATERIALS = [
 
 export const materialById = (id) => MATERIALS.find((m) => m.id === id) || MATERIALS[0];
 
-// Tools: the hand only for now. `efficiency(material)` scales the bite in
-// that material (0 = nothing comes off); radius/depth describe one stroke.
-export const TOOLS = {
-  hand: {
-    id: "hand", label: "Hand", reach: 2.2, radius: 0.24, depth: 0.045,
-    windup: 0.11,                                    // s from "go" to the fingers touching the ground
-    efficiency: (m) => m.handEfficiency,
-  },
-};
+// Tools (what they do to which material, how fast, how they move) are
+// defined in goldrush-tools.js - one definition per tool.
