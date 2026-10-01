@@ -1,13 +1,19 @@
-"""GoldRush canonical economy benchmark (phase 3).
+"""GoldRush canonical economy benchmark.
 
-Plays a simulated first-time player (tests/e2e/goldrush_bench.js) on many
-world seeds and reports the distribution - P10 / median / P90 / min / max -
-of: time to the first find, the first flake (or better), the first tiny
-piece (or better), the first nugget, and the money after 1 / 5 / 10 / 20 /
-30 minutes. Runs the server from a temp copy (the real database is never
-touched).
+Plays a simulated player (tests/e2e/goldrush_bench.js) on many world seeds
+and reports the distribution - P10 / median / P90 / min / max:
 
-    python tests/e2e/goldrush_bench.py [--seeds 60] [--minutes 30] [--tool hand] [--json out.json]
+  without a strategy (phase 3): time to the first find / flake / tiny piece /
+  nugget and the gold value dug up after 1 / 5 / 10 / 20 / 30 minutes
+  with --strategy A|B|C|D (phase 4): a whole early game with sales trips to
+  the camp and real purchases - first sale, when the shovel / pickaxe /
+  upgrades are bought, cash and cash earned after 10 / 20 / 30 / 45 / 60 /
+  90 minutes, what is owned at 30 / 60 / 90 minutes, how much of the
+  mountain was moved
+
+Runs the server from a temp copy (the real database is never touched).
+
+    python tests/e2e/goldrush_bench.py [--seeds 60] [--minutes 30] [--tool hand] [--strategy B] [--json out.json]
 
 Requires: pip install playwright && python -m playwright install chromium
 """
@@ -29,6 +35,8 @@ if hasattr(sys.stdout, "reconfigure"):
 
 BOT = open(os.path.join(os.path.dirname(__file__), "goldrush_bench.js"), encoding="utf-8").read()
 CHECK = [60, 300, 600, 1200, 1800]
+CHECK4 = [600, 1200, 1800, 2700, 3600, 5400]
+ITEMS = ["shovel", "pickaxe", "shovel.blade", "shovel.handle", "pickaxe.tip", "pickaxe.head"]
 
 
 def arg(name, default):
@@ -55,7 +63,7 @@ def dist(values, unit=""):
             "min": round(min(got), 2), "max": round(max(got), 2), "n": len(got), "missing": missing}
 
 
-def run_seed(page, seed, minutes, tool):
+def run_seed(page, seed, minutes, tool, strategy=None):
     page.evaluate("(s) => { localStorage.removeItem('goldrush.save'); localStorage.removeItem('goldrush.save.backup'); localStorage.setItem('goldrush.testSeed', String(s)); }", seed)
     gr_open(page)
     gr_ready(page)
@@ -65,7 +73,8 @@ def run_seed(page, seed, minutes, tool):
         # (the game is paused: no lower / raise animation - straight into the hands)
         ok = page.evaluate("(t) => { window.__goldrush.devUnlock(true); return window.__goldrush.equipNow(t); }", tool)
         assert ok, f"tool {tool} not usable"
-    page.evaluate("([s, t]) => window.__grBench.init(s, { tool: t })", [seed, tool])
+    pile = page.evaluate("() => window.__goldrush.volume().pile")
+    page.evaluate("([s, t, st]) => window.__grBench.init(s, { tool: t, strategy: st })", [seed, tool, strategy])
     end = minutes * 60
     t = 0
     while t < end:
@@ -73,6 +82,7 @@ def run_seed(page, seed, minutes, tool):
         page.evaluate("(u) => window.__grBench.run(u)", t)
     res = page.evaluate("() => window.__grBench.result()")
     res["seed"] = seed
+    res["pileM3"] = pile
     page.evaluate("() => { localStorage.removeItem('goldrush.save'); }")
     gr_close(page)
     page.evaluate("() => { localStorage.removeItem('goldrush.save'); localStorage.removeItem('goldrush.save.backup'); }")
@@ -96,10 +106,44 @@ def summarize(results):
     return out
 
 
+def summarize4(results):
+    """strategy runs: milestones, money, equipment, mountain"""
+    def at(c, key):
+        return [((r["snap"].get(str(c)) or r["snap"].get(c) or {}).get(key)) for r in results]
+    out = {
+        "seeds": len(results),
+        "firstSale_s": dist([r["firstSale"] for r in results]),
+        "bought_s": {i: dist([r["bought"].get(i) for r in results]) for i in ITEMS},
+        "shovelToPickaxe_s": dist([(r["bought"].get("pickaxe") - r["bought"]["shovel"]) if r["bought"].get("pickaxe") and r["bought"].get("shovel") else None for r in results]),
+        "cash_cents": {str(c): dist(at(c, "cash")) for c in CHECK4},
+        "earned_cents": {str(c): dist(at(c, "earned")) for c in CHECK4},
+        "owned": {},
+        "kg": {str(c): dist(at(c, "kg")) for c in (1800, 3600, 5400)},
+        "pileShareRemoved_pct": dist([100 * r["removedM3"] / r["pileM3"] for r in results]),
+        "trips": dist([r["trips"] for r in results]),
+        "tripTime_s": dist([r["tripTime"] for r in results]),
+        "biggestNugget_cents": dist([r["biggestNuggetCents"] or None for r in results]),
+        "firstNugget_s": dist([r["first"]["nugget"] for r in results]),
+    }
+    for c in (1800, 3600, 5400):
+        combos = {}
+        for r in results:
+            sn = r["snap"].get(str(c)) or r["snap"].get(c) or {}
+            key = "+".join([t for t in sn.get("owned", []) if t != "hand"] + sn.get("upgrades", [])) or "hand only"
+            combos[key] = combos.get(key, 0) + 1
+        out["owned"][str(c)] = dict(sorted(combos.items(), key=lambda kv: -kv[1]))
+    worth = [r["earned"] + 0 for r in results]
+    out["richest"] = max(results, key=lambda r: r["earned"])["seed"]
+    out["poorest"] = min(results, key=lambda r: r["earned"])["seed"]
+    out["earned_total"] = dist(worth)
+    return out
+
+
 def main():
     seeds = arg("--seeds", 60)
     minutes = arg("--minutes", 30)
     tool = arg("--tool", "hand")
+    strategy = arg("--strategy", "")
     first_seed = arg("--first", 1001)
     proc, base, tmp = start_server()
     results = []
@@ -115,14 +159,18 @@ def main():
             page.wait_for_function("() => typeof ws !== 'undefined' && ws && ws.readyState === 1", timeout=15000)
             for n in range(seeds):
                 seed = first_seed + n * 7
-                r = run_seed(page, seed, minutes, tool)
+                r = run_seed(page, seed, minutes, tool, strategy or None)
                 results.append(r)
                 f = r["first"]
-                print(f"seed {seed}: find {f['find']} flake {f['flake']} tiny {f['tiny']} nugget {f['nugget']} | money {r['money']} | {r['actions']} actions {r['kg']} kg blocked {r['blocked']}", flush=True)
+                if strategy:
+                    print(f"seed {seed} [{strategy}]: sale {r['firstSale']} bought {r['bought']} cash {r['cash']} earned {r['earned']} trips {r['trips']} kg {r['kg']}", flush=True)
+                else:
+                    print(f"seed {seed}: find {f['find']} flake {f['flake']} tiny {f['tiny']} nugget {f['nugget']} | money {r['money']} | {r['actions']} actions {r['kg']} kg blocked {r['blocked']}", flush=True)
             b.close()
     finally:
         proc.terminate()
-    summary = summarize(results)
+    summary = summarize4(results) if strategy else summarize(results)
+    summary["strategy"] = strategy or None
     summary["tool"] = tool
     summary["minutes"] = minutes
     summary["wall_s"] = round(time.time() - t0, 1)

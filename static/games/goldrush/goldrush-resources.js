@@ -49,7 +49,9 @@ const MASS = {
   [FIND.NUGGET]: [10000, 30000, 2.2],  // 1-4 €, most of them small
 };
 // starter zone: gold density held inside this band (fair, not lucky)
-const STARTER = { radius: 6.5, fade: 2.5, depth: 1.6, gMin: 0.18, gMax: 0.32 };
+// (narrow on purpose: early progress should come from steady work, not from
+// whether a seed's first nugget shows up early - see the phase-4 benchmark)
+const STARTER = { radius: 6.5, fade: 2.5, depth: 1.6, gMin: 0.21, gMax: 0.29 };
 
 export class MaterialField {
   constructor(seed, terrain, floorY) {
@@ -171,10 +173,11 @@ export class MaterialField {
     // gravel: 3D blobs and bands, much more of it at the bottom of the pile
     // (the starter faces keep most of their skirt as diggable dirt)
     const gn = noise3(x * 0.42, y * 1.05, z * 0.42, s + 501);
-    if (gn * 0.62 + smoothstep(0.9, -0.3, y) * 0.55 * (1 - 0.75 * sw) > 0.42 + 0.12 * sw) return MAT.GRAVEL;
+    if (gn * 0.62 + smoothstep(0.9, -0.3, y) * 0.55 * (1 - 0.75 * sw) > 0.42 + 0.2 * sw) return MAT.GRAVEL;
     // compact: the inside of the pile and the trodden toe; loose dirt on top
     const cn = noise3(x * 0.28, y * 0.7, z * 0.28, s + 511);
-    if ((depth - 0.35) * 0.9 + cn * 0.6 + smoothstep(1.4, 0.3, base) * 0.35 * (1 - 0.6 * sw) > 0.3) return MAT.COMPACT;
+    // (the starter faces: a thicker loose layer, hardly any trodden toe)
+    if ((depth - 0.35 - 0.45 * sw) * 0.9 + cn * 0.6 + smoothstep(1.4, 0.3, base) * 0.35 * (1 - 0.85 * sw) > 0.3) return MAT.COMPACT;
     return MAT.DIRT;
   }
 
