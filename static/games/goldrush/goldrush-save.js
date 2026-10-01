@@ -4,10 +4,12 @@
 // ephemeral disk) can't promise persistence, a cloud save can come later
 // on top of the same document. One JSON document per browser:
 //
-//   { saveVersion: 3, worldSeed, createdAt, updatedAt,
-//     tools: { owned: ["hand", ...], equipped },
+//   { saveVersion: 4, worldSeed, createdAt, updatedAt,
+//     tools: { owned: ["hand", ...], equipped, upgrades: [...] },
 //     player: { x, z, yaw, pitch }, settings: {...},
-//     economy: { moneyCents, earnedCents, inventory, stats, flags, nextId, pending },
+//     economy: { cashCents, earnedCents, pouch, sold, shop, milestones,
+//                stats, flags (incl. tutorial / first sale / hard rock seen),
+//                nextId, pending },
 //     terrain: { gen, cols, cell, unit, encoding, changed, data, loose },
 //     resources: { unit, encoding, changed, slices, level, carried },
 //     rocks: { v, count, list } }
@@ -22,11 +24,13 @@
 //
 // Versions: 1 = phase 1 (money as a float, no resources); 2 = integer
 // cents, gold inventory + statistics, worked resource slices (5 cm);
-// 3 = owned tools, pending finds, 0.1 mm terrain, 1 cm slices, boulders.
-// Older documents are upgraded on load step by step (1 -> 2 -> 3) and
-// written back as 3. A new game owns only the hand.
+// 3 = owned tools, pending finds, 0.1 mm terrain, 1 cm slices, boulders;
+// 4 = gold is not money: a gold pouch, selling at the assay station, the
+// supply shop (tool upgrades, purchases, milestones).
+// Older documents are upgraded on load step by step (1 -> 2 -> 3 -> 4) and
+// written back as 4. A new game owns only the hand and has € 0,00.
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 export const SAVE_KEY = "goldrush.save";
 export const BACKUP_KEY = "goldrush.save.backup";
 export const CORRUPT_KEY = "goldrush.save.corrupt";
@@ -50,7 +54,8 @@ export function validate(doc) {
   }
   if (doc.saveVersion >= 2) {
     const e = doc.economy;
-    if (!e || typeof e !== "object" || !Number.isInteger(e.moneyCents) || e.moneyCents < 0) return "Geldstand ungültig";
+    const cash = e && (e.cashCents != null ? e.cashCents : e.moneyCents);
+    if (!e || typeof e !== "object" || !Number.isInteger(cash) || cash < 0) return "Geldstand ungültig";
     const r = doc.resources;
     if (r != null && (typeof r.slices !== "string" || typeof r.level !== "string")) return "Ressourcendaten ungültig";
     if (e.pending != null && !Array.isArray(e.pending)) return "Funddaten ungültig";
@@ -59,6 +64,11 @@ export function validate(doc) {
     const t = doc.tools;
     if (!t || !Array.isArray(t.owned) || !t.owned.every((id) => typeof id === "string")) return "Werkzeugdaten ungültig";
     if (doc.rocks != null && (typeof doc.rocks !== "object" || !Array.isArray(doc.rocks.list))) return "Felsdaten ungültig";
+  }
+  if (doc.saveVersion >= 4) {
+    const e = doc.economy, t = doc.tools;
+    if (e.pouch != null && typeof e.pouch !== "object") return "Goldbeutel ungültig";
+    if (t.upgrades != null && (!Array.isArray(t.upgrades) || !t.upgrades.every((id) => typeof id === "string"))) return "Werkzeug-Upgrades ungültig";
   }
   return null;
 }
@@ -120,6 +130,31 @@ export function migrate(doc) {
       migratedFrom: doc.migratedFrom || 2,
     };
     delete doc.tool;
+  }
+  if (doc.saveVersion === 3) {
+    // phase 4: gold is no longer money on pickup. The cash of a phase-3
+    // save stays exactly as it is (that gold was sold automatically back
+    // then - it is NOT turned back into gold); the pouch starts empty.
+    const e = doc.economy || {};
+    const inv = e.inventory || {};
+    const legacyUg = ["dust", "flakes", "tinyPieces", "nuggets"].reduce((a, k) => a + (inv[k] && Number.isFinite(inv[k].ug) ? Math.max(0, Math.round(inv[k].ug)) : 0), 0);
+    const cash = Number.isInteger(e.moneyCents) ? e.moneyCents : 0;
+    doc = {
+      ...doc,
+      saveVersion: 4,
+      tools: { ...(doc.tools || { owned: ["hand"], equipped: "hand" }), upgrades: [] },
+      economy: {
+        ...e,
+        cashCents: cash,
+        moneyCents: cash,
+        pouch: null,
+        sold: { totalGoldUg: legacyUg, totalCashCents: Number.isInteger(e.earnedCents) ? e.earnedCents : cash, sales: 0, largestSaleCents: 0, legacyUg },
+        shop: null,
+        milestones: null,
+      },
+      migratedFrom: doc.migratedFrom || 3,
+    };
+    delete doc.economy.inventory;
   }
   return doc;
 }

@@ -117,12 +117,15 @@ export class ToolModels {
     });
     this.wrapTex.repeat.set(2, 3);
     this.leather = new THREE.MeshStandardMaterial({ map: this.wrapTex, color: 0xd2b49a, roughness: 0.82, metalness: 0 });
-    this.mats = [this.wood, this.steel, this.edge, this.soilMat, this.leather];
+    // the parts an upgrade changes get their own material (ash shaft, hardened point)
+    this.shovelWood = this.wood.clone();
+    this.pointMat = this.steel.clone();
+    this.mats = [this.wood, this.steel, this.edge, this.soilMat, this.leather, this.shovelWood, this.pointMat];
 
     // ---------------- shovel
     const shovel = (this.shovel = new THREE.Group());
     shovel.name = "tool-shovel";
-    const shaft = new THREE.Mesh(track(new THREE.CylinderGeometry(0.0155, 0.017, 0.92, 14, 1)), this.wood);
+    const shaft = new THREE.Mesh(track(new THREE.CylinderGeometry(0.0155, 0.017, 0.92, 14, 1)), this.shovelWood);
     shaft.rotation.x = Math.PI / 2;
     shaft.position.z = -0.06;
     shovel.add(shaft);
@@ -182,6 +185,22 @@ export class ToolModels {
     const edgeG = track(sweptTube(THREE, new THREE.Vector3(-W * 0.8, 0.004, -0.63 - L * 0.62), new THREE.Vector3(0, -0.004, -0.63 - L * 1.07), new THREE.Vector3(W * 0.8, 0.004, -0.63 - L * 0.62), 14, 6, () => ({ rx: 0.0028, ry: 0.0016 })));
     edgeG.translate(0, 0, -HEAD_Z);
     head.add(new THREE.Mesh(edgeG, this.edge));
+    // upgrade "Verstärktes Schaufelblatt": a riveted steel rim round the point
+    const rim = (this.bladeRim = new THREE.Group());
+    const rimG = track(sweptTube(THREE, new THREE.Vector3(-W * 0.93, 0.006, -0.63 - L * 0.5), new THREE.Vector3(0, 0.0, -0.63 - L * 1.12), new THREE.Vector3(W * 0.93, 0.006, -0.63 - L * 0.5), 18, 6, () => ({ rx: 0.006, ry: 0.0032 })));
+    rimG.translate(0, 0, -HEAD_Z);
+    const rimMat = this.steel.clone();
+    rimMat.color.setHex(0x5f6266);
+    this.mats.push(rimMat);
+    rim.add(new THREE.Mesh(rimG, rimMat));
+    const rivG = track(new THREE.SphereGeometry(0.0042, 8, 6));
+    for (const [rx, rz] of [[-0.09, -0.79], [-0.05, -0.87], [0.05, -0.87], [0.09, -0.79]]) {
+      const rv2 = new THREE.Mesh(rivG, this.edge);
+      rv2.position.set(rx, 0.03, rz - HEAD_Z);
+      rim.add(rv2);
+    }
+    rim.visible = false;
+    head.add(rim);
     // the load of soil (shown while scooping / carrying)
     const soilG = track(new THREE.IcosahedronGeometry(1, 2));
     const sp = soilG.attributes.position;
@@ -224,6 +243,9 @@ export class ToolModels {
     pick.add(wrap);
     // forged head: the eye around the handle end with its socket and wedge,
     // a curved point and a flat adze
+    // the head as one group round the eye (upgrade "Schwerer Kopf" scales it)
+    const pickHead = (this.pickHead = new THREE.Group());
+    pick.add(pickHead);
     const eye = new THREE.Mesh(track(new THREE.CylinderGeometry(0.03, 0.03, 0.075, 18, 2)), this.steel);
     eye.position.set(0, 0, -0.52);
     pick.add(eye);
@@ -238,22 +260,38 @@ export class ToolModels {
       const r = 0.022 * (1 - t) + 0.0016;
       return { rx: r, ry: r * 1.15 };
     }));
-    pick.add(new THREE.Mesh(point, this.steel));
+    pickHead.add(new THREE.Mesh(point, this.pointMat));
     const adze = track(sweptTube(THREE, new THREE.Vector3(0, 0.02, -0.52), new THREE.Vector3(0, 0.12, -0.53), new THREE.Vector3(0, 0.22, -0.47), 22, 12, (t) => ({
       rx: 0.02 + t * 0.016,            // widens into a blade ...
       ry: 0.02 * (1 - t) + 0.0022,      // ... and gets thin
     })));
-    pick.add(new THREE.Mesh(adze, this.steel));
+    pickHead.add(new THREE.Mesh(adze, this.steel));
     const tipG = track(new THREE.SphereGeometry(0.004, 8, 6));
     const tipMesh = new THREE.Mesh(tipG, this.edge);
     tipMesh.position.set(0, -0.29, -0.45);
-    pick.add(tipMesh);
+    pickHead.add(tipMesh);
+    this.pickTip = tipMesh;
+    for (const m of [eye, socket, wedge]) { pick.remove(m); pickHead.add(m); }
     pick.userData.grips = [
       { z: 0.13, dir: 1, side: 1 },               // right hand (see GRIPS in goldrush-hand.js)
       { z: 0.25, dir: 1, side: -1 },              // left hand at the end
     ];
     pick.userData.tip = new THREE.Vector3(0, -0.29, -0.45);
     for (const g of [shovel, pick]) g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.frustumCulled = false; } });
+  }
+
+  // what the bought upgrades look like (goldrush-shop.js ids)
+  applyUpgrades(ups) {
+    const has = (id) => ups && ups.has(id);
+    this.bladeRim.visible = has("shovel.blade");
+    this.shovelWood.color.setHex(has("shovel.handle") ? 0xf4e6c8 : 0xd8c0a0);       // pale ash vs. the old hickory
+    this.pointMat.color.setHex(has("pickaxe.tip") ? 0xc9ced6 : 0x8a8c8f);
+    this.pointMat.roughness = has("pickaxe.tip") ? 0.22 : 0.45;
+    this.pickTip.scale.setScalar(has("pickaxe.tip") ? 1.5 : 1);
+    // the heavy head: a bigger forging round the eye (the eye stays on the handle)
+    const k = has("pickaxe.head") ? 1.14 : 1;
+    this.pickHead.scale.setScalar(k);
+    this.pickHead.position.set(0, 0, -0.52 * (1 - k));
   }
 
   // a little dirt sticks to the working ends while you use them

@@ -1,29 +1,37 @@
-// GoldRush - economy (provisional, no shop yet): money, the gold that was
-// found (kept as structured finds, so selling / weighing / washing can come
-// later) and the statistics. The ONE place that changes money.
+// GoldRush - economy: cash, the gold you carry (the pouch), selling it,
+// buying supplies, and the statistics. The ONE place that changes money.
 //
 // Money is integer cents, gold mass integer micrograms, mined mass integer
 // grams - no floating-point sums anywhere (no € 1,2000000004).
-// Provisional gold price: € 100 per gram, i.e. 1 cent = 0.1 mg of gold.
+// Static game gold value (no live price, no network): € 100 per gram,
+// i.e. 1 cent = 0.1 mg of gold. Tool prices are balanced against it with
+// the canonical benchmark (tests/e2e/goldrush_bench.py).
 //
-// A find goes through three states:
-//   DISCOVERED  the dig took its slice out of the ground (mining) - it is
-//               used up there for good
-//   PENDING     it is on its way to the player (flying, lying, being held
-//               up): listed in `pending` with an id, saved like that
-//   COLLECTED   collect(id): only now money, inventory and find statistics
-//               change - exactly once (a second collect of the same id does
-//               nothing)
+// GOLD IS NOT MONEY. A find goes through these states:
+//   DISCOVERED          the dig took its slice out of the ground (mining) -
+//                       the resource is used up there for good
+//   PENDING             on its way to the player (flying, lying, held up):
+//                       listed in `pending` with an id, saved like that
+//   COLLECTED_TO_POUCH  collect(id): the gold is in the pouch (count + mass
+//                       per class) - exactly once; still no cash
+//   SOLD                sell(): at the assay station the whole pouch is
+//                       weighed and paid out - pouch emptied and cash booked
+//                       in one step
 // Leaving the game, hiding the tab or loading a save with pending finds
-// collects them all at once (collectAll) - no find is lost, none is paid
-// twice: the save always holds either the pending entry or the money,
-// never both, never neither.
+// moves them into the pouch (collectAll) - no find is lost, none counted
+// twice: the save always holds each find in exactly one state.
+//
+// Buying: buy(id, cents) checks the price against the cash and books it in
+// one step (never below zero); the caller grants the item in the same
+// synchronous call, so a save can never see one without the other.
 
 import { FIND } from "./goldrush-resources.js";
 
 export const GOLD_CENTS_PER_GRAM = 10000;
 const UG_PER_CENT = 1e6 / GOLD_CENTS_PER_GRAM;           // 100 µg
 
+// value of one find (shown when it is found / picked up) - the assay pays
+// exactly the sum of these for the pouch, so every "+ € 0,03" you saw counts
 export const centsForMass = (ug) => Math.max(1, Math.round(ug / UG_PER_CENT));
 
 // "€ 1.234,05" from integer cents, without going through a float
@@ -34,22 +42,28 @@ export function formatEuro(cents) {
   return `${neg ? "−" : ""}€ ${e},${String(rest).padStart(2, "0")}`;
 }
 
+// "12,4 mg" / "1,25 g" from micrograms
+export function formatMass(ug) {
+  if (ug >= 1e6) return `${(ug / 1e6).toFixed(2).replace(".", ",")} g`;
+  if (ug >= 1e3) return `${(ug / 1e3).toFixed(1).replace(".", ",")} mg`;
+  return `${Math.round(ug)} µg`;
+}
+
 const int = (v) => (Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0);
-const bucket = (b) => ({ count: int(b && b.count), ug: int(b && b.ug) });
+const bucket = (b) => ({ count: int(b && b.count), ug: int(b && b.ug), cents: int(b && b.cents) });
 const MASS_KEYS = ["dirt", "compactDirt", "gravel", "stone"];
+// pouch classes (the find ids of goldrush-resources.js)
+export const POUCH_CLASSES = ["traceGold", "fineGold", "goldFlake", "tinyGoldPiece", "smallNugget"];
+const CLASS_OF = { [FIND.TRACE]: "traceGold", [FIND.FINE]: "fineGold", [FIND.FLAKE]: "goldFlake", [FIND.TINY]: "tinyGoldPiece", [FIND.NUGGET]: "smallNugget" };
 
 export class Economy {
   constructor(saved = null) {
     const s = saved || {};
-    this.moneyCents = int(s.moneyCents);
-    this.earnedCents = int(s.earnedCents);
-    const inv = s.inventory || {};
-    this.inventory = {
-      dust: bucket(inv.dust),               // trace + fine gold dust
-      flakes: bucket(inv.flakes),
-      tinyPieces: bucket(inv.tinyPieces),
-      nuggets: bucket(inv.nuggets),
-    };
+    this.cashCents = int(s.cashCents != null ? s.cashCents : s.moneyCents);
+    this.earnedCents = int(s.earnedCents);          // all cash ever received (sales; v3: gold sold automatically)
+    const p = s.pouch || {};
+    this.pouch = {};
+    for (const c of POUCH_CLASSES) this.pouch[c] = bucket(p[c]);
     const st = s.stats || {};
     const g = st.massG || {};
     const tl = st.byTool || {};
@@ -64,12 +78,9 @@ export class Economy {
       massG: { dirt: int(g.dirt), compactDirt: int(g.compactDirt), gravel: int(g.gravel), stone: int(g.stone) },
       freshMassG: int(st.freshMassG),
       slices: int(st.slices),                // resource slices worked through
-      finds: int(st.finds),                  // collected finds
+      finds: int(st.finds),                  // finds put into the pouch
       discovered: int(st.discovered),        // finds taken out of the ground
-      dustValueCents: int(st.dustValueCents),
-      flakeValueCents: int(st.flakeValueCents),
-      tinyValueCents: int(st.tinyValueCents),
-      nuggetValueCents: int(st.nuggetValueCents),
+      goldFoundUg: int(st.goldFoundUg),      // all gold ever put into the pouch
       biggestNuggetCents: int(st.biggestNuggetCents),
       biggestNuggetUg: int(st.biggestNuggetUg),
       playTimeMs: int(st.playTimeMs),
@@ -77,19 +88,45 @@ export class Economy {
       rocksBroken: int(st.rocksBroken),
       byTool: { hand: tool(tl.hand), shovel: tool(tl.shovel), pickaxe: tool(tl.pickaxe) },
     };
-    this.flags = { firstNuggetSeen: !!(s.flags && s.flags.firstNuggetSeen) };
+    const so = s.sold || {};
+    this.sold = {
+      totalGoldUg: int(so.totalGoldUg),      // gold that went over the scale
+      totalCashCents: int(so.totalCashCents),// cash it brought
+      sales: int(so.sales),
+      largestSaleCents: int(so.largestSaleCents),
+      legacyUg: int(so.legacyUg),            // v3 saves: gold that was turned into cash automatically
+    };
+    const sh = s.shop || {};
+    this.shop = {
+      purchases: Array.isArray(sh.purchases) ? sh.purchases.filter((q) => q && typeof q.id === "string").map((q) => ({ id: q.id, cents: int(q.cents), atMs: int(q.atMs) })) : [],
+      spentCents: int(sh.spentCents),
+      toolPurchases: int(sh.toolPurchases),
+      upgradePurchases: int(sh.upgradePurchases),
+    };
+    const ms = s.milestones || {};
+    this.milestones = { firstSaleMs: ms.firstSaleMs != null ? int(ms.firstSaleMs) : null, shovelMs: ms.shovelMs != null ? int(ms.shovelMs) : null, pickaxeMs: ms.pickaxeMs != null ? int(ms.pickaxeMs) : null };
+    const fl = s.flags || {};
+    this.flags = {
+      firstNuggetSeen: !!fl.firstNuggetSeen,
+      firstSaleSeen: !!fl.firstSaleSeen,
+      firstPurchaseSeen: !!fl.firstPurchaseSeen,
+      hardSeen: !!fl.hardSeen,                // has come up against stone / a boulder
+    };
     this.nextId = int(s.nextId) || 1;
-    // finds on their way (saved); restored ones are collected by the game right after loading
+    // finds on their way (saved); restored ones go to the pouch right after loading
     this.pending = new Map();
     if (Array.isArray(s.pending)) {
-      for (const p of s.pending) {
-        if (!p || !Number.isInteger(p.id) || !(p.cls >= FIND.TRACE && p.cls <= FIND.NUGGET) || !(p.massUg > 0)) continue;
-        this.pending.set(p.id, { id: p.id, cls: p.cls, massUg: int(p.massUg), cents: centsForMass(p.massUg), key: String(p.key || "") });
-        if (p.id >= this.nextId) this.nextId = p.id + 1;
+      for (const q of s.pending) {
+        if (!q || !Number.isInteger(q.id) || !(q.cls >= FIND.TRACE && q.cls <= FIND.NUGGET) || !(q.massUg > 0)) continue;
+        this.pending.set(q.id, { id: q.id, cls: q.cls, massUg: int(q.massUg), cents: centsForMass(q.massUg), key: String(q.key || "") });
+        if (q.id >= this.nextId) this.nextId = q.id + 1;
       }
     }
-    this.sessionCents = 0;                    // this visit only (not saved)
+    this.sessionCents = 0;                    // cash received this visit (not saved)
   }
+
+  // ---- compatibility: "money" is cash
+  get moneyCents() { return this.cashCents; }
 
   // an action's material side (mining result)
   recordAction(r, toolId = "hand") {
@@ -98,8 +135,8 @@ export class Economy {
     const tb = st.byTool[toolId] || st.byTool.hand;
     st.totalDigs++;
     tb.actions++;
-    if (r.kind === "rock") { st.rockHits++; if (r.rock && r.rock.broke) st.rocksBroken++; return; }
-    if (r.blocked) { st.blockedDigs++; tb.blocked++; return; }
+    if (r.kind === "rock") { st.rockHits++; if (r.rock && r.rock.broke) st.rocksBroken++; this.flags.hardSeen = true; return; }
+    if (r.blocked) { st.blockedDigs++; tb.blocked++; this.flags.hardSeen = true; return; }
     if (r.removedMassKg > 0) st.successfulDigs++;
     const ml = Math.round(r.removedVolume * 1e6);
     st.volumeMl += ml;
@@ -113,7 +150,7 @@ export class Economy {
   }
 
   // the finds of one action are out of the ground: they become PENDING.
-  // Returns what to show (items carry their id) - no money yet.
+  // Returns what to show (items carry their id) - nothing in the pouch yet.
   discover(finds, count) {
     const out = { cents: 0, best: FIND.NONE, nuggetCents: 0, firstNugget: false, items: [] };
     if (!count) return out;
@@ -134,55 +171,104 @@ export class Economy {
     return out;
   }
 
-  // a pending find reached the player -> COLLECTED (once). Returns it or null.
+  // a pending find reached the player -> into the POUCH (once). Returns it or null.
   collect(id) {
     const it = this.pending.get(id);
     if (!it) return null;
     this.pending.delete(id);
-    const st = this.stats, inv = this.inventory, f = it, cents = it.cents;
+    const b = this.pouch[CLASS_OF[it.cls]];
+    b.count++;
+    b.ug += it.massUg;
+    b.cents += it.cents;
+    const st = this.stats;
     st.finds++;
-    if (f.cls === FIND.TRACE || f.cls === FIND.FINE) { inv.dust.count++; inv.dust.ug += f.massUg; st.dustValueCents += cents; }
-    else if (f.cls === FIND.FLAKE) { inv.flakes.count++; inv.flakes.ug += f.massUg; st.flakeValueCents += cents; }
-    else if (f.cls === FIND.TINY) { inv.tinyPieces.count++; inv.tinyPieces.ug += f.massUg; st.tinyValueCents += cents; }
-    else if (f.cls === FIND.NUGGET) {
-      inv.nuggets.count++; inv.nuggets.ug += f.massUg; st.nuggetValueCents += cents;
-      if (cents > st.biggestNuggetCents) { st.biggestNuggetCents = cents; st.biggestNuggetUg = f.massUg; }
-    }
-    this.moneyCents += cents;
-    this.earnedCents += cents;
-    this.sessionCents += cents;
+    st.goldFoundUg += it.massUg;
+    if (it.cls === FIND.NUGGET && it.cents > st.biggestNuggetCents) { st.biggestNuggetCents = it.cents; st.biggestNuggetUg = it.massUg; }
     return it;
   }
 
-  // everything still pending -> collected now; returns the items
+  // everything still pending -> pouch now; returns the items
   collectAll() {
     const out = [];
     for (const id of [...this.pending.keys()]) { const it = this.collect(id); if (it) out.push(it); }
     return out;
   }
 
+  get pouchUg() { let u = 0; for (const c of POUCH_CLASSES) u += this.pouch[c].ug; return u; }
+  get pouchCount() { let n = 0; for (const c of POUCH_CLASSES) n += this.pouch[c].count; return n; }
+  // what the assay station pays for the pouch right now
+  get pouchCents() { let v = 0; for (const c of POUCH_CLASSES) v += this.pouch[c].cents; return v; }
   get pendingCents() { let c = 0; for (const it of this.pending.values()) c += it.cents; return c; }
 
-  get totalGoldUg() {
-    const i = this.inventory;
-    return i.dust.ug + i.flakes.ug + i.tinyPieces.ug + i.nuggets.ug;
+  // pouch per class (for the sell view / the HUD)
+  pouchView() {
+    return POUCH_CLASSES.map((c) => ({ id: c, count: this.pouch[c].count, ug: this.pouch[c].ug, cents: this.pouch[c].cents }));
+  }
+
+  /**
+   * SOLD: weigh the whole pouch and pay it out - one step. Returns the sale
+   * ({ ok, cents, ug, count, byClass, first }) or { ok: false } when the
+   * pouch is empty. A second call right after finds an empty pouch.
+   */
+  sell() {
+    const ug = this.pouchUg;
+    if (ug <= 0) return { ok: false, reason: "empty", cents: 0, ug: 0 };
+    const byClass = this.pouchView();
+    const cents = this.pouchCents;
+    const count = this.pouchCount;
+    for (const c of POUCH_CLASSES) this.pouch[c] = { count: 0, ug: 0, cents: 0 };
+    this.cashCents += cents;
+    this.earnedCents += cents;
+    this.sessionCents += cents;
+    const so = this.sold;
+    so.totalGoldUg += ug;
+    so.totalCashCents += cents;
+    so.sales++;
+    if (cents > so.largestSaleCents) so.largestSaleCents = cents;
+    const first = !this.flags.firstSaleSeen;
+    this.flags.firstSaleSeen = true;
+    if (this.milestones.firstSaleMs == null) this.milestones.firstSaleMs = this.stats.playTimeMs;
+    return { ok: true, cents, ug, count, byClass, first };
+  }
+
+  /**
+   * Pay for an item: checks the cash, books it - one step, never below zero.
+   * The caller grants the item in the same synchronous call.
+   */
+  buy(id, cents, kind = "tool") {
+    const price = int(cents);
+    if (!(price > 0)) return { ok: false, reason: "price" };
+    if (this.cashCents < price) return { ok: false, reason: "cash", missing: price - this.cashCents };
+    this.cashCents -= price;
+    this.shop.spentCents += price;
+    this.shop.purchases.push({ id, cents: price, atMs: this.stats.playTimeMs });
+    if (kind === "tool") this.shop.toolPurchases++; else this.shop.upgradePurchases++;
+    if (id === "shovel" && this.milestones.shovelMs == null) this.milestones.shovelMs = this.stats.playTimeMs;
+    if (id === "pickaxe" && this.milestones.pickaxeMs == null) this.milestones.pickaxeMs = this.stats.playTimeMs;
+    const first = !this.flags.firstPurchaseSeen;
+    this.flags.firstPurchaseSeen = true;
+    return { ok: true, cents: price, first };
   }
 
   addPlayTime(ms) { this.stats.playTimeMs += Math.round(ms); }
 
   serialize() {
-    const i = this.inventory, st = this.stats;
+    const st = this.stats;
+    const pouch = {};
+    for (const c of POUCH_CLASSES) pouch[c] = { ...this.pouch[c] };
     return {
-      moneyCents: this.moneyCents,
+      cashCents: this.cashCents,
+      moneyCents: this.cashCents,                       // same value, for older readers
       earnedCents: this.earnedCents,
-      inventory: {
-        dust: { ...i.dust }, flakes: { ...i.flakes }, tinyPieces: { ...i.tinyPieces }, nuggets: { ...i.nuggets },
-        totalGoldUg: this.totalGoldUg, totalValueCents: this.earnedCents,
-      },
+      pouch,
+      pouchSummary: { totalGoldUg: this.pouchUg, estimatedSaleCents: this.pouchCents, count: this.pouchCount },
+      sold: { ...this.sold },
+      shop: { purchases: this.shop.purchases.map((q) => ({ ...q })), spentCents: this.shop.spentCents, toolPurchases: this.shop.toolPurchases, upgradePurchases: this.shop.upgradePurchases },
+      milestones: { ...this.milestones },
       stats: { ...st, massG: { ...st.massG }, byTool: { hand: { ...st.byTool.hand }, shovel: { ...st.byTool.shovel }, pickaxe: { ...st.byTool.pickaxe } } },
       flags: { ...this.flags },
       nextId: this.nextId,
-      pending: [...this.pending.values()].map((p) => ({ id: p.id, cls: p.cls, massUg: p.massUg, key: p.key })),
+      pending: [...this.pending.values()].map((q) => ({ id: q.id, cls: q.cls, massUg: q.massUg, key: q.key })),
     };
   }
 }

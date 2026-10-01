@@ -9,6 +9,10 @@
 //   shovel / pickaxe         - a deeper scoop with falling soil, a dump; the
 //                              pick's thunk in soil, a metallic clank on
 //                              stone, cracks and a breaking boulder
+//   camp                     - gold onto a brass pan, the balance settling,
+//                              a pen on the ledger; a crate lid, a soft
+//                              thud when something is bought (no till, no
+//                              casino sounds)
 // Every call varies pitch, filter and loudness a little, and sounds are
 // panned / attenuated by where they happen. The AudioContext is created on
 // the first user gesture (autoplay rules) and closed on exit.
@@ -25,6 +29,7 @@ const rv = (a, b) => a + Math.random() * (b - a);
 const LEVEL = {
   dirt: 23, compact: 20, gravel: 24, stone: 15, air: 21, dust: 16, flake: 20, tiny: 11, nugget: 15, pickup: 44,
   shovel: 20, dump: 18, pick: 17, pickStone: 11, crack: 13, break: 14, swing: 12, swap: 16,
+  scale: 14, sell: 14, shopOpen: 16, purchase: 14, insufficient: 14,
 };
 
 export class GoldRushAudio {
@@ -116,6 +121,7 @@ export class GoldRushAudio {
 
   // kind: dirt | compact | gravel | stone | air | dust | flake | tiny | nugget | pickup
   //       | shovel | dump | pick | pickStone | crack | break | swing | swap
+  //       | scale | sell | shopOpen | purchase | insufficient
   play(kind, { pan = 0, dist = 1.5, strength = 1 } = {}) {
     if (!this.ready) return;
     const t = this.ctx.currentTime + 0.005, out = this._out(pan, dist, LEVEL[kind] || 1), s = strength;
@@ -198,6 +204,27 @@ export class GoldRushAudio {
       case "swap":                                     // tool taken up
         this._tone(out, t, rv(180, 220), 0.05, 0.08, { to: 140 });
         this._noise(out, t + 0.02, 0.05, { f: rv(900, 1300), q: 1, gain: 0.05, attack: 0.004 });
+        break;
+      case "scale":                                    // the brass balance touched: a light ring and a creak
+        this._ting(out, t, rv(980, 1080), 0.05 * s, 0.28, [1, 2.7, 4.9]);
+        this._noise(out, t + 0.03, 0.12, { f: rv(700, 900), q: 6, gain: 0.03 * s, attack: 0.02 });
+        break;
+      case "sell":                                     // gold onto the pan, the beam settles, the pen on the ledger
+        for (let i = 0; i < 6; i++) this._ting(out, t + i * rv(0.03, 0.05), rv(2200, 3200), 0.035, 0.08);
+        this._ting(out, t + 0.28, rv(980, 1060), 0.06, 0.35, [1, 2.7, 4.9]);
+        this._noise(out, t + 0.75, 0.22, { f: rv(2600, 3400), q: 1.5, gain: 0.025, attack: 0.03 });   // a few strokes of a pen
+        break;
+      case "shopOpen":                                 // a crate lid / a wooden hatch
+        this._tone(out, t, rv(110, 130), 0.09, 0.14, { to: 80 });
+        this._noise(out, t, 0.08, { type: "lowpass", f: rv(500, 700), q: 0.8, gain: 0.12, attack: 0.003 });
+        break;
+      case "purchase":                                 // something heavy handed over the counter
+        this._tone(out, t, rv(85, 100), 0.12, 0.22, { to: 60 });
+        this._noise(out, t, 0.06, { type: "lowpass", f: rv(800, 1000), q: 0.8, gain: 0.14, attack: 0.002 });
+        this._ting(out, t + 0.12, rv(1400, 1600), 0.03, 0.18);
+        break;
+      case "insufficient":                             // a soft, dull tick - not an error buzzer
+        this._tone(out, t, rv(240, 260), 0.06, 0.08, { to: 200 });
         break;
       default: break;
     }

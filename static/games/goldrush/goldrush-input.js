@@ -159,7 +159,7 @@ export class GoldRushInput {
 
   _down(e) {
     if (!this.enabled || e.pointerType === "mouse") return;
-    if (e.target.closest && e.target.closest(".gr-hud-btn, .gr-panel, .gr-dialog, .gr-tool, .gr-belt")) return;   // HUD buttons / tool sheet keep their own taps
+    if (e.target.closest && e.target.closest(".gr-hud-btn, .gr-panel, .gr-dialog, .gr-tool, .gr-belt, .gr-sheet, .gr-ctx-btn")) return;   // HUD buttons / tool sheet keep their own taps
     e.preventDefault();
     const r = this.root.getBoundingClientRect();
     const x = e.clientX - r.left, y = e.clientY - r.top;

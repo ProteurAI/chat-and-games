@@ -1,5 +1,6 @@
 // GoldRush - the running game: renderer, world, player, the tools in your
-// hands, mining, boulders, finds, money, save, quality, lifecycle. Loaded lazily by goldrush.js
+// hands, mining, boulders, finds, the gold pouch, the camp's stations
+// (selling gold, buying supplies), money, save, quality, lifecycle. Loaded lazily by goldrush.js
 // (this is the module that pulls in three.js), created once per opened
 // game and fully disposed on exit - no render loop, listener, timer, audio
 // context or GL context survives it.
@@ -7,7 +8,7 @@
 import * as THREE from "../../vendor/three/three.module.min.js";
 import { AssetManager } from "./goldrush-assets.js";
 import { GoldRushAudio } from "./goldrush-audio.js";
-import { Economy } from "./goldrush-economy.js";
+import { Economy, formatEuro } from "./goldrush-economy.js";
 import { FirstPersonHands } from "./goldrush-hand.js";
 import { GoldRushHud } from "./goldrush-hud.js";
 import { GoldRushInput } from "./goldrush-input.js";
@@ -18,22 +19,27 @@ import { QUALITY, QUALITY_LEVELS, applyRendererQuality, createRenderer, guessQua
 import { FIND, FIND_IDS, VOXEL_H } from "./goldrush-resources.js";
 import { RockSystem } from "./goldrush-rocks.js";
 import { SAVE_VERSION, writeSave } from "./goldrush-save.js";
+import { SHOP_ITEMS, itemStatus, shopItem } from "./goldrush-shop.js";
+import { STATIONS, Stations } from "./goldrush-stations.js";
 import { FLOOR_Y } from "./goldrush-terrain.js";
-import { TOOL_DEFS, TOOL_ORDER, ToolController, cycleSeconds, toolEfficiency } from "./goldrush-tools.js";
+import { TOOL_DEFS, TOOL_ORDER, ToolController, cycleSeconds, effectiveDef, toolEfficiency } from "./goldrush-tools.js";
 import { DigEffects } from "./goldrush-vfx.js";
 import { GoldRushWorld, SPAWN, SUN_DIR } from "./goldrush-world.js";
 
 export const THREE_REVISION = THREE.REVISION;
 export { GRIPS, TOOL_KEYS } from "./goldrush-hand.js";
+export { STATIONS } from "./goldrush-stations.js";
 
-// the tool table as plain data (debug panel, tests, benchmark)
-export function TOOL_INFO() {
+// the tool table as plain data (debug panel, tests, benchmark) - with the
+// upgrades the player owns applied, and the shop price of each tool
+export function TOOL_INFO(upgrades = []) {
   return TOOL_ORDER.map((id) => {
-    const d = TOOL_DEFS[id];
+    const d = effectiveDef(id, upgrades), item = shopItem(id);
     return {
       id, label: d.label, tier: d.tier, key: d.key, defaultOwned: d.defaultOwned, reach: d.reach,
       materialEfficiency: [...d.materialEfficiency], loosenedBonus: [...d.loosenedBonus], hardnessLimit: d.hardnessLimit,
-      kernel: { ...d.kernel }, massCapacity: d.massCapacity, rockDamage: d.rockDamage, unlockCost: d.unlockCost,
+      kernel: { ...d.kernel }, massCapacity: d.massCapacity, rockDamage: d.rockDamage, price: item ? item.price : 0,
+      upgrades: d.upgrades || [],
       cycle: [0, 1, 2, 3].map((m) => +cycleSeconds(d, m).toFixed(3)),
     };
   });
@@ -84,11 +90,14 @@ export class GoldRushGame {
     this.debug = !!debug;
     this.settings = { quality: "auto", headBob: true, reducedMotion: false, sound: true, vibration: true, ...(doc.settings || {}) };
     this.economy = new Economy(doc.economy);
-    // finds that were still on their way when the last session ended are
-    // collected now, in one go (they are in the save as pending, not paid)
+    // finds that were still on their way when the last session ended go
+    // into the pouch now, in one go (they are in the save as pending)
     this.restoredPending = this.economy.collectAll().length;
     const tl = doc.tools || {};
-    this.tools = new ToolController({ owned: Array.isArray(tl.owned) ? tl.owned : ["hand"], equipped: tl.equipped || "hand", dev: false });
+    this.tools = new ToolController({ owned: Array.isArray(tl.owned) ? tl.owned : ["hand"], equipped: tl.equipped || "hand", dev: false, upgrades: Array.isArray(tl.upgrades) ? tl.upgrades : [] });
+    this.station = null;                     // the station the player stands at (prompt)
+    this.uiOpen = null;                      // "assay" | "supply" while its panel is open
+    this._objT = 0;
     this._lastPhase = "";
     this.player = {
       x: doc.player.x, z: doc.player.z, yaw: doc.player.yaw, pitch: doc.player.pitch,
@@ -175,7 +184,12 @@ export class GoldRushGame {
     this.audio = new GoldRushAudio();
     this.audio.setEnabled(this.settings.sound !== false);
     this.hud = new GoldRushHud(ui.root, ui.moneyEl, { reducedMotion: this.reducedMotion });
-    this.hud.setMoney(this.economy.moneyCents);
+    this.hud.setMoney(this.economy.cashCents);
+    this.hud.setPouch(this.economy.pouchCents);
+    // the camp: gold buyer + supply counter (the rack shows what is still for sale)
+    this.stations = new Stations(THREE, world.scene, world, { models: this.hands.models, goldMat: this.loot.goldMat });
+    this.stations.setOwned(this.tools.owned);
+    this.hands.models.applyUpgrades(this.tools.upgrades);
     const ring = new THREE.RingGeometry(0.88, 1, 48);
     this.reticle = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({
       color: 0xfff3d6, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, fog: false,
@@ -262,11 +276,13 @@ export class GoldRushGame {
     const unlock = () => { this.audio.unlock(); this.userActed = true; };
     this.on(ui.root, "pointerdown", unlock);
     this.on(window, "keydown", unlock);
-    // tools: 1 / 2 / 3 (only what you own; a locked slot just says so)
+    // tools: 1 / 2 / 3 (only what you own; a locked slot just says so);
+    // E: use the station in front of you
     this.on(window, "keydown", (e) => {
-      if (this.paused || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (this.paused || this.uiOpen || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
       const i = ["Digit1", "Digit2", "Digit3"].indexOf(e.code);
       if (i >= 0) this.selectTool(TOOL_ORDER[i]);
+      if (e.code === "KeyE" && this.station) { e.preventDefault(); this.openStation(this.station.id); }
     });
     if (this.debug) {
       this.on(window, "keydown", (e) => {
@@ -302,7 +318,7 @@ export class GoldRushGame {
   selectTool(id) {
     if (!TOOL_DEFS[id]) return false;
     if (!this.tools.canUse(id)) {
-      this.hud.tip(`locked-${id}`, `${TOOL_DEFS[id].label}: noch nicht freigeschaltet.`, 6);
+      this.hud.tip(`locked-${id}`, `${TOOL_DEFS[id].label}: noch nicht freigeschaltet – im Camp bei „Ausrüstung“ erhältlich.`, 6);
       return false;
     }
     if (id === this.tools.equipped && !this.tools.target) return true;
@@ -323,13 +339,111 @@ export class GoldRushGame {
     this.ui.onTool && this.ui.onTool(this.toolState());
   }
 
-  // a tool really becomes yours (the shop of a later phase calls this)
+  // a tool really becomes yours (what a purchase does; tests use it directly)
   grantTool(id) {
     if (!TOOL_DEFS[id]) return false;
     this.tools.unlock(id);
+    this.stations.setOwned(this.tools.owned);
     this.dirty = true;
     this.ui.onTool && this.ui.onTool(this.toolState());
     return true;
+  }
+
+  // ------------------------------------------------------------ the camp: selling + buying
+
+  // open the panel of a station: game input off, mouse free
+  openStation(id) {
+    if (this.uiOpen || !STATIONS.some((s) => s.id === id)) return false;
+    this.uiOpen = id;
+    this.input.releaseAll();
+    this.input.enabled = false;
+    this.tools.cancel();
+    this.hud.prompt(null);
+    this.audio.play(id === "assay" ? "scale" : "shopOpen", { dist: 0.6, strength: 0.6 });
+    this.ui.openStation(id, id === "assay" ? this.sellView() : this.shopView());
+    if (!this.touch && this.input.locked) this.input.exitLock();          // the panel needs the mouse
+    return true;
+  }
+
+  // close it again; resume = the close came from a click (may take the mouse back)
+  closeStation(resume = true) {
+    if (!this.uiOpen) return false;
+    this.uiOpen = null;
+    this.input.enabled = true;
+    this.input.releaseAll();
+    if (this._afterClose) { const f = this._afterClose; this._afterClose = null; f(); }
+    if (!this.touch) {
+      if (resume) this.input.requestLock();
+      else { this.setPaused(true); this.ui.showPauseOverlay(true); }
+    }
+    return true;
+  }
+
+  sellView() {
+    const e = this.economy;
+    return { classes: e.pouchView(), ug: e.pouchUg, cents: e.pouchCents, count: e.pouchCount, cash: e.cashCents, first: !e.flags.firstSaleSeen };
+  }
+
+  shopView() {
+    const e = this.economy, state = { owned: this.tools.owned, upgrades: this.tools.upgrades, hardSeen: e.flags.hardSeen, cashCents: e.cashCents };
+    return {
+      cash: e.cashCents, pouch: e.pouchCents,
+      items: SHOP_ITEMS.map((it) => ({ id: it.id, kind: it.kind, tool: it.tool, label: it.label, text: it.text, price: it.price, ...itemStatus(it, state) })),
+    };
+  }
+
+  /**
+   * SELL ALL at the assay station - one transaction (economy.sell): the
+   * pouch is emptied and the cash booked in the same step; what follows
+   * (scale, counting) only shows it. A second call finds an empty pouch.
+   */
+  sell() {
+    const r = this.economy.sell();
+    if (!r.ok) return r;
+    this.stations.weigh(r.ug);
+    this.audio.play("sell", { dist: 0.5 });
+    this.hud.setPouch(0);
+    this.hud.cashTo(this.economy.cashCents, 0.9);
+    if (r.first) this._afterClose = () => this.hud.message("Gold verkauft", `Neuer Kontostand: ${formatEuro(this.economy.cashCents)}`);
+    this.save("sale");
+    return r;
+  }
+
+  /**
+   * BUY at the supply counter - one transaction: status, price, cash and
+   * the item itself in one synchronous step (a second click finds it owned).
+   */
+  buy(id) {
+    const it = shopItem(id);
+    if (!it) return { ok: false, reason: "unknown" };
+    const e = this.economy;
+    const st = itemStatus(it, { owned: this.tools.owned, upgrades: this.tools.upgrades, hardSeen: e.flags.hardSeen, cashCents: e.cashCents });
+    if (st.state === "owned") return { ok: false, reason: "owned" };
+    if (st.state === "locked") return { ok: false, reason: "locked", needs: st.needs };
+    const pay = e.buy(it.id, it.price, it.kind);
+    if (!pay.ok) { this.audio.play("insufficient", { dist: 0.4 }); return { ok: false, reason: pay.reason, missing: pay.missing }; }
+    if (it.kind === "tool") {
+      this.tools.unlock(it.tool);
+      this.stations.setOwned(this.tools.owned);
+      this.tools.equip(it.tool);                                          // straight into your hands
+    } else {
+      this.tools.addUpgrade(it.id);
+      this.hands.models.applyUpgrades(this.tools.upgrades);
+    }
+    this.audio.play("purchase", { dist: 0.5 });
+    this.hud.cashTo(e.cashCents);
+    this.ui.onTool && this.ui.onTool(this.toolState());
+    this.save("purchase");
+    return { ok: true, item: it.id, cents: it.price, cash: e.cashCents };
+  }
+
+  // the quiet guidance of the very start (no quests, no rewards)
+  _objective() {
+    const e = this.economy;
+    if (e.flags.firstPurchaseSeen || this.tools.owned.size > 1) return null;
+    if (!e.flags.firstSaleSeen) return e.pouchUg > 0 || e.pending.size ? "Ziel: Gold im Camp beim Goldankauf verkaufen" : "Ziel: am Berg nach Gold graben";
+    const price = shopItem("shovel").price;
+    return `Ziel: Schaufel · ${formatEuro(e.cashCents)} / ${formatEuro(price)}`;
   }
 
   setReducedMotion(on) {
@@ -423,10 +537,12 @@ export class GoldRushGame {
     this._sunCheck(dt);
     this.hands.update(dt, this.tools.view(), { camera: this.camera, sunDir: SUN_VEC, sunVisible: this.sunVisible, walk: Math.min(1, Math.hypot(this.player.vx, this.player.vz) / WALK), bob: this.player.bob });
     this.hud.update(dt);
+    this.stations.update(dt);
     if (this.reticle.visible) { const m = this.reticle.material; m.opacity += ((this._reticleWant || 0.2) - m.opacity) * Math.min(1, dt * 10); }
     this.terrain.clock += dt;
     this.world.terrainUniforms.uTime.value = this.terrain.clock;
     this.world.updatePebbles();
+    this._stationTick(dt);
     this.economy.addPlayTime(dt * 1000);
     this.render();
     if (this.dirty && now - this.lastSave > AUTOSAVE_MS) this.save("auto");
@@ -532,6 +648,18 @@ export class GoldRushGame {
   _fw = new THREE.Vector3();
   _rt = new THREE.Vector3();
 
+  // which station is in front of the player (prompt / mobile button), the objective line
+  _stationTick(dt) {
+    const s = this.uiOpen ? null : this.stations.near(this.player.x, this.player.z, this.player.yaw);
+    if (s !== this.station) {
+      this.station = s;
+      this.hud.prompt(s ? s.action : null, this.touch ? "" : "E");
+      this.ui.onStation && this.ui.onStation(s);
+    }
+    this._objT -= dt;
+    if (this._objT <= 0) { this._objT = 0.5; this.hud.objective(this.uiOpen ? null : this._objective()); }
+  }
+
   // the new tool is in the hands now
   _swapped() {
     this.audio.play("swap", { dist: 0.3 });
@@ -584,6 +712,7 @@ export class GoldRushGame {
       this.farTarget = why === "far" ? hit : null;
     } else this.farTarget = null;
     this.aimState = state;
+    if (state === "hard" && !this.economy.flags.hardSeen) this.economy.flags.hardSeen = true;   // stone / a boulder right in front of you
     const r = this.reticle;
     if (this.target && this.target.boulder == null) {
       const n = this.target.normal;
@@ -693,7 +822,7 @@ export class GoldRushGame {
     const hit = this.target;
     if (!hit) return null;
     const id = tool && this.tools.canUse(tool) ? tool : this.tools.equipped;
-    const def = TOOL_DEFS[id];
+    const def = this.tools.defOf(id);                    // with the upgrades the player owns
     if (hit.distance > def.reach) return null;
     const r = this.mining.action(hit, def, this.player, this.camera.position);
     this.economy.recordAction(r, def.id);
@@ -718,11 +847,11 @@ export class GoldRushGame {
     };
   }
 
-  // a piece (or dust) reached the player: only now it is money
+  // a piece (or dust) reached the player: into the gold pouch (no cash yet)
   _collected(item) {
     const f = item.find;
     const it = f && f.id != null ? this.economy.collect(f.id) : null;
-    if (!it) return;                                     // already booked (never twice)
+    if (!it) return;                                     // already in the pouch (never twice)
     this.hud.collected(it.cents, it.cls);
     if (it.cls === FIND.NUGGET) this.hud.nugget(it.cents, !!(f && f.first));
     this.dirty = true;
@@ -745,7 +874,7 @@ export class GoldRushGame {
     if (this.hands) this.hands.endInspect();
     this.loot.flush();
     this.economy.collectAll();                          // anything pending that was never shown
-    this.hud.settle(this.economy.moneyCents);
+    this.hud.settle(this.economy.cashCents, this.economy.pouchCents);
   }
 
   _pan(hit) {
@@ -920,6 +1049,7 @@ export class GoldRushGame {
     if (this.loot) this.loot.dispose();
     if (this.hands) this.hands.dispose();
     if (this.rocks) this.rocks.dispose();
+    if (this.stations) this.stations.dispose();
     if (this.audio) this.audio.dispose();
     if (this.hud) this.hud.dispose();
     if (this.reticle) { this.reticle.geometry.dispose(); this.reticle.material.dispose(); }
@@ -951,7 +1081,7 @@ export function newWorldDoc(seed) {
     worldSeed: seed,
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    tools: { owned: ["hand"], equipped: "hand" },             // a new game owns ONLY the hand
+    tools: { owned: ["hand"], equipped: "hand", upgrades: [] },  // a new game owns ONLY the hand, € 0,00
     player: { x: SPAWN.x, z: SPAWN.z, yaw: SPAWN.yaw, pitch: SPAWN.pitch },
     settings: { quality: "auto", headBob: true, reducedMotion: false, sound: true, vibration: true },
     economy: null,

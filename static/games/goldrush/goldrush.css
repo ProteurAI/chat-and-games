@@ -99,14 +99,34 @@ button.gr-tool { border: none; font-family: inherit; cursor: default; }
 @keyframes gr-pulse { 50% { transform: scale(0.72); } }
 .gr-crosshair[data-state="hard"].is-pulse span { animation: none; }
 
-/* money: a short bump when it grows; this visit's finds underneath */
-.gr-hud-right { position: relative; }
+/* wallet: cash (money - changes when gold is sold or something bought), the
+   gold pouch under it (what the gold you carry would fetch), the quiet
+   objective of the first minutes */
+.gr-hud-right { position: relative; align-items: flex-start; }
+.gr-wallet { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
 .gr-money.is-up { animation: gr-money-up 0.32s var(--ease-emphasized); }
 @keyframes gr-money-up { 40% { transform: scale(1.07); } }
-.gr-money-sub {
-  position: absolute; top: calc(100% + 5px); left: 2px; white-space: nowrap; pointer-events: none;
-  font-size: 11px; font-weight: var(--font-semibold); color: #fff5dc; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7); font-variant-numeric: tabular-nums;
+.gr-pouch {
+  height: 26px; padding: 0 10px 0 7px; gap: 5px; font-size: 12px; font-weight: var(--font-semibold);
+  background: rgba(28, 22, 16, 0.6); color: #fbe7b2; box-shadow: none; font-variant-numeric: tabular-nums;
 }
+.gr-pouch-ico { width: 15px; height: 15px; color: #e3b04b; display: grid; place-items: center; }
+.gr-pouch-ico svg { width: 15px; height: 15px; display: block; }
+.gr-pouch-label { color: #e9d6b0; font-weight: var(--font-medium); }
+.gr-pouch { white-space: nowrap; }
+/* narrow phones: the bag icon says it, the value must not break ("≈ €" / "0,67") */
+@media (max-width: 440px) { .gr-pouch-label { display: none; } }
+.gr-objective {
+  max-width: 260px; text-align: right; padding: 3px 9px; border-radius: 8px; font-size: 11.5px; line-height: 1.35; font-weight: var(--font-medium);
+  background: rgba(20, 16, 12, 0.45); color: #f6ecd6; font-variant-numeric: tabular-nums;
+}
+/* station prompt: "[E] Gold verkaufen" */
+.gr-prompt {
+  position: absolute; left: 50%; top: calc(50% + 40px); transform: translateX(-50%); pointer-events: none; white-space: nowrap;
+  padding: 6px 14px; border-radius: var(--radius-full); font-size: var(--text-sm); font-weight: var(--font-semibold);
+  background: rgba(24, 18, 12, 0.72); color: #fbe9c0; box-shadow: 0 0 0 1px rgba(227, 176, 75, 0.35);
+}
+.gr-touch .gr-prompt { display: none; }
 
 /* finds: "+ € 0,04" rising from just below the crosshair (pooled nodes) */
 .gr-feed { position: absolute; left: 50%; top: calc(50% + 30px); width: 0; height: 0; pointer-events: none; }
@@ -140,6 +160,101 @@ button.gr-tool { border: none; font-family: inherit; cursor: default; }
 .gr-toast.is-on { animation: gr-toast 0.35s var(--ease-emphasized); }
 @keyframes gr-toast { from { opacity: 0; transform: translate(-50%, -8px) scale(0.96); } }
 .gr-reduced .gr-toast.is-on { animation: gr-fade-in 0.2s linear; }
+
+/* mobile: the station's context button, above the dig button */
+.gr-ctx-btn {
+  position: absolute; right: max(var(--space-5), env(safe-area-inset-right)); bottom: calc(max(var(--space-6), env(safe-area-inset-bottom)) + 104px);
+  min-width: 92px; height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid rgba(227, 176, 75, 0.6); pointer-events: auto;
+  background: rgba(32, 24, 16, 0.86); color: #fbe9c0; font: inherit; font-size: 12px; font-weight: var(--font-bold); letter-spacing: 0.05em;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+}
+.gr-desktop .gr-ctx-btn { display: none; }
+@media (max-height: 480px) { .gr-ctx-btn { bottom: calc(max(var(--space-4), env(safe-area-inset-bottom)) + 88px); } }
+
+/* ---------- the camp's sheets: Goldankauf + Ausrüstung (own look: dark wood, paper, brass) ---------- */
+.gr-sheet {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: var(--space-4);
+  background: rgba(10, 8, 6, 0.32); pointer-events: auto; z-index: 5; touch-action: pan-y;
+}
+.gr-sheet[hidden] { display: none; }
+.gr-sheet-card {
+  width: min(560px, 100%); max-height: min(86vh, 100%); overflow-y: auto; overscroll-behavior: contain;
+  border-radius: 16px; padding: 18px 18px 16px; color: #f3e9d6;
+  background: linear-gradient(180deg, #2d2219 0%, #231a13 100%); box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 236, 200, 0.06);
+  border: 1px solid #4a3a2b;
+}
+.gr-sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.gr-sheet-title { font-family: Georgia, "Times New Roman", serif; font-size: 22px; font-weight: 700; letter-spacing: 0.02em; color: #f7e3b5; }
+.gr-sheet-sub { margin-top: 3px; font-size: 13px; color: #c9b796; font-variant-numeric: tabular-nums; }
+.gr-sheet-close {
+  flex: none; width: 44px; height: 44px; border-radius: 12px; border: 1px solid #4a3a2b; background: #2f241a; color: #e9d6b0;
+  display: grid; place-items: center; cursor: pointer;
+}
+.gr-sheet-close svg { width: 18px; height: 18px; }
+.gr-scale { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.gr-scale-cell { padding: 10px 12px; border-radius: 10px; background: #1b140e; border: 1px solid #3f3124; display: flex; flex-direction: column; gap: 2px; }
+.gr-scale-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #a8977a; }
+.gr-scale-value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; color: #f3e9d6; }
+.gr-scale-gold { color: #f0c463; }
+.gr-sell-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.gr-sell-list li {
+  display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 8px;
+  background: #e9dcc0; color: #3a2a1b; font-size: 13.5px; font-variant-numeric: tabular-nums;
+}
+.gr-sell-list li.gr-sell-empty { display: block; background: transparent; color: #c9b796; padding: 8px 2px; }
+.gr-sell-list.is-selling li:not(.gr-sell-empty) { opacity: 0.55; transition: opacity 0.3s; }
+.gr-sell-name { font-weight: 600; }
+.gr-sell-count, .gr-sell-mass { color: #6b5539; }
+.gr-sell-value { font-weight: 700; min-width: 64px; text-align: right; }
+.gr-sell-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.gr-sell-cash { font-size: 13px; color: #d8c6a2; font-variant-numeric: tabular-nums; }
+.gr-btn-gold {
+  min-height: 44px; padding: 0 18px; border-radius: 12px; border: 1px solid #b8862e; cursor: pointer;
+  background: linear-gradient(180deg, #e9bd5e 0%, #c7922f 100%); color: #2b1d0c; font: inherit; font-weight: 700; font-size: 14px;
+  box-shadow: 0 2px 0 #8f6a22, 0 6px 14px rgba(0, 0, 0, 0.25); font-variant-numeric: tabular-nums;
+}
+.gr-btn-gold:disabled { cursor: default; background: #3a2e22; border-color: #4a3a2b; color: #a8977a; box-shadow: none; }
+.gr-btn-gold:not(:disabled):active { transform: translateY(1px); box-shadow: 0 1px 0 #8f6a22; }
+.gr-btn-sm { min-height: 44px; padding: 0 14px; font-size: 13px; }
+.gr-shop-list { display: flex; flex-direction: column; gap: 6px; }
+.gr-shop-group { margin: 8px 2px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em; color: #a8977a; }
+.gr-shop-item {
+  display: grid; grid-template-columns: 44px 1fr auto; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 10px;
+  background: #2f241a; border: 1px solid #4a3a2b;
+}
+.gr-shop-item.is-affordable { border-color: #b8862e; box-shadow: inset 0 0 0 1px rgba(233, 189, 94, 0.25); }
+.gr-shop-item.is-owned { background: #261d15; opacity: 0.85; }
+.gr-shop-item.is-locked { opacity: 0.72; }
+.gr-shop-item.is-bought { animation: gr-bought 0.9s ease-out; }
+@keyframes gr-bought { 0% { box-shadow: inset 0 0 0 2px rgba(240, 196, 99, 0.9); } 100% { box-shadow: inset 0 0 0 0 rgba(240, 196, 99, 0); } }
+.gr-shop-ico { position: relative; width: 44px; height: 44px; border-radius: 10px; background: #e9dcc0; color: #3a2a1b; display: grid; place-items: center; }
+.gr-shop-ico svg { width: 26px; height: 26px; }
+.gr-shop-plus { position: absolute; right: -4px; bottom: -4px; width: 18px; height: 18px; border-radius: 50%; background: #c7922f; color: #2b1d0c; font-size: 13px; font-weight: 800; display: grid; place-items: center; line-height: 1; }
+.gr-shop-name { font-weight: 700; font-size: 15px; color: #f3e9d6; }
+.gr-shop-text { margin-top: 2px; font-size: 12.5px; line-height: 1.4; color: #cdbb98; }
+.gr-shop-state { margin-top: 5px; font-size: 12px; color: #e3c98f; font-variant-numeric: tabular-nums; }
+.gr-shop-item.is-locked .gr-shop-state, .gr-shop-item.is-owned .gr-shop-state { color: #a8977a; }
+.gr-shop-progress { display: inline-block; vertical-align: middle; width: 54px; height: 3px; margin-right: 7px; border-radius: 2px; background: #4a3a2b; overflow: hidden; }
+.gr-shop-progress i { display: block; height: 100%; background: #e3b04b; }
+.gr-shop-buy { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.gr-shop-price { font-weight: 700; font-size: 15px; color: #f0c463; font-variant-numeric: tabular-nums; }
+/* touch: a bottom sheet (portrait) / a side panel (landscape); the 3D world stays behind it */
+.gr-touch .gr-sheet { align-items: flex-end; padding: 0; background: rgba(10, 8, 6, 0.28); }
+.gr-touch .gr-sheet-card {
+  width: 100%; max-height: 86%; border-radius: 18px 18px 0 0; border-bottom: none;
+  padding: 16px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  .gr-touch .gr-sheet { justify-content: flex-end; align-items: stretch; }
+  .gr-touch .gr-sheet-card { width: min(520px, 66vw); max-height: 100%; border-radius: 18px 0 0 18px; border-right: none; padding-top: max(14px, env(safe-area-inset-top)); }
+}
+@media (max-width: 420px) {
+  .gr-shop-item { grid-template-columns: 40px 1fr; }
+  .gr-shop-buy { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; align-items: center; }
+  .gr-sell-list li { grid-template-columns: 1fr auto auto; }
+  .gr-sell-mass { display: none; }
+}
+.gr-reduced .gr-shop-item.is-bought { animation: none; }
 
 /* short hints under the crosshair ("Zu weit entfernt") */
 .gr-tip {

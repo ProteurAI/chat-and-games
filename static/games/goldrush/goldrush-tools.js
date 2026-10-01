@@ -13,6 +13,7 @@
 // material (the finds are in the ground).
 
 import { MAT } from "./goldrush-materials.js";
+import { shopItem } from "./goldrush-shop.js";
 
 export const TOOL_ORDER = ["hand", "shovel", "pickaxe"];
 
@@ -31,13 +32,12 @@ export const TOOL_DEFS = {
     follow: { ok: (m) => [["recover", [0.26, 0.31, 0.34, 0.36][m]]], blocked: () => [["recover", 0.36]], air: () => [["recover", 0.18]] },
     rockDamage: 0,
     animationProfile: "hand", vfxProfile: { dust: 1, chunks: 1 }, audioProfile: "hand",
-    unlockCost: null,
   },
   shovel: {
     id: "shovel", tier: 2, label: "Schaufel", key: "2", defaultOwned: false,
     reach: 2.4,
     materialEfficiency: [1.0, 0.55, 0.5, 0],
-    loosenedBonus: [1, 1.7, 1.4, 1],
+    loosenedBonus: [1, 1.7, 1.6, 1],
     hardnessLimit: 3.5,
     // a scoop: wider, deeper, deepest at the leading edge: ~1.63 l = ~2.2 kg of loose dirt
     kernel: { type: "scoop", a: 0.23, b: 0.15, vol: 0.00163, tMax: 0.06, edge: 0.45, tilt: 0.35, settleMargin: 1.0 },
@@ -50,11 +50,7 @@ export const TOOL_DEFS = {
     },
     rockDamage: 0,
     animationProfile: "shovel", vfxProfile: { dust: 1.6, chunks: 2.4 }, audioProfile: "shovel",
-    // NOT a shop: a prepared, provisional figure for a later phase. Design
-    // target: earned after ~10-25 minutes of normal first play by hand; the
-    // canonical benchmark (tests/e2e/goldrush_bench.py) puts the median
-    // starter at ~€ 4.40 after 10 and ~€ 9.40 after 20 minutes.
-    unlockCost: { provisional: true, cents: 900 },
+    // price, requirements: goldrush-shop.js
   },
   pickaxe: {
     id: "pickaxe", tier: 2, label: "Spitzhacke", key: "3", defaultOwned: false,
@@ -65,7 +61,7 @@ export const TOOL_DEFS = {
     loosenedBonus: [1, 1, 1, 1],
     hardnessLimit: 10,
     // a point strike: small crater (~0.4 l at full bite), loosens around it
-    kernel: { type: "pick", a: 0.12, b: 0.09, vol: 0.0004, tMax: 0.05, edge: 0.3, tilt: 0, settleMargin: 0.6, cutsStone: true, loosenCm: 10, loosenR: 0.32 },
+    kernel: { type: "pick", a: 0.12, b: 0.09, vol: 0.0004, tMax: 0.05, edge: 0.3, tilt: 0, settleMargin: 0.6, cutsStone: true, loosenCm: 14, loosenR: 0.42 },
     massCapacity: 0.4,
     strike: [["raise", 0.3], ["swing", 0.12]],
     follow: {
@@ -75,11 +71,49 @@ export const TOOL_DEFS = {
     },
     rockDamage: 1,
     animationProfile: "pickaxe", vfxProfile: { dust: 0.8, chunks: 1.4 }, audioProfile: "pickaxe",
-    unlockCost: { provisional: true, cents: 1500 },             // provisional, see the shovel
+    // price, requirements: goldrush-shop.js
   },
 };
 
 export const toolDef = (id) => TOOL_DEFS[id] || TOOL_DEFS.hand;
+
+// a tool with the upgrades it has (goldrush-shop.js effects): a derived
+// definition, the base one stays untouched. Effects multiply:
+//   volMul (bite volume), effMul[mat] (efficiency per material),
+//   strikeMul / followMul (phase durations), rockMul (boulder damage),
+//   loosenMul (pickaxe loosening radius)
+const _eff = new Map();
+export function effectiveDef(id, upgrades) {
+  const base = toolDef(id);
+  const ups = [...(upgrades || [])].map(shopItem).filter((u) => u && u.kind === "upgrade" && u.tool === base.id).sort((a, b) => (a.id < b.id ? -1 : 1));
+  if (!ups.length) return base;
+  const key = base.id + "|" + ups.map((u) => u.id).join(",");
+  if (_eff.has(key)) return _eff.get(key);
+  let vol = 1, strike = 1, follow = 1, rock = 1, loosen = 1;
+  const eff = [1, 1, 1, 1];
+  for (const u of ups) {
+    const e = u.effect || {};
+    vol *= e.volMul || 1; strike *= e.strikeMul || 1; follow *= e.followMul || 1; rock *= e.rockMul || 1; loosen *= e.loosenMul || 1;
+    if (e.effMul) for (let m = 0; m < 4; m++) eff[m] *= e.effMul[m];
+  }
+  const scale = (list, k) => list.map(([n, d]) => [n, d * k]);
+  const d = {
+    ...base,
+    upgrades: ups.map((u) => u.id),
+    materialEfficiency: base.materialEfficiency.map((v, m) => v * eff[m]),
+    kernel: { ...base.kernel, vol: base.kernel.vol * vol, loosenR: base.kernel.loosenR ? base.kernel.loosenR * loosen : base.kernel.loosenR },
+    strike: scale(base.strike, strike),
+    follow: {
+      ok: (m) => scale(base.follow.ok(m), follow),
+      blocked: () => scale(base.follow.blocked(), follow),
+      air: () => scale(base.follow.air(), follow),
+    },
+    rockDamage: base.rockDamage * rock,
+    massCapacity: base.massCapacity * vol,
+  };
+  _eff.set(key, d);
+  return d;
+}
 
 // efficiency of a tool on a material at a cell (loosened ground helps)
 export function toolEfficiency(def, mat, loosened) {
@@ -97,9 +131,10 @@ export function cycleSeconds(def, mat = MAT.DIRT) {
 const LOWER = 0.18, RAISE = 0.24;
 
 export class ToolController {
-  constructor({ owned = ["hand"], equipped = "hand", dev = false } = {}) {
+  constructor({ owned = ["hand"], equipped = "hand", dev = false, upgrades = [] } = {}) {
     this.owned = new Set(owned.filter((id) => TOOL_DEFS[id]));
     this.owned.add("hand");
+    this.upgrades = new Set(upgrades.filter((id) => { const u = shopItem(id); return u && u.kind === "upgrade"; }));
     this.dev = !!dev;
     this.equipped = this.canUse(equipped) ? equipped : "hand";
     this.state = "idle";                  // idle | action | lower | raise
@@ -115,7 +150,9 @@ export class ToolController {
     this.lastReact = "ok";
   }
 
-  get def() { return toolDef(this.equipped); }
+  get def() { return effectiveDef(this.equipped, this.upgrades); }
+  defOf(id) { return effectiveDef(id, this.upgrades); }
+  addUpgrade(id) { const u = shopItem(id); if (u && u.kind === "upgrade") this.upgrades.add(id); }
   canUse(id) { return !!TOOL_DEFS[id] && (this.owned.has(id) || this.dev); }
   unlock(id) { if (TOOL_DEFS[id]) this.owned.add(id); }
   ownedList() { return TOOL_ORDER.filter((id) => this.owned.has(id)); }
@@ -224,5 +261,5 @@ export class ToolController {
   }
 
   // only what is really yours is saved (a debug unlock never is)
-  serialize() { return { equipped: this.owned.has(this.equipped) ? this.equipped : "hand", owned: this.ownedList() }; }
+  serialize() { return { equipped: this.owned.has(this.equipped) ? this.equipped : "hand", owned: this.ownedList(), upgrades: [...this.upgrades].sort() }; }
 }

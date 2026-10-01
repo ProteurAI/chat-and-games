@@ -6,6 +6,7 @@
 // at a time; open() while it is open just returns the running instance.
 
 import { BACKUP_KEY, loadSave, quarantineCorrupt, resetSave } from "./goldrush-save.js";
+import { formatEuro, formatMass } from "./goldrush-economy.js";
 import { webglAvailable } from "./goldrush-renderer.js";
 
 let current = null;
@@ -29,6 +30,8 @@ const ICONS = {
 
 // what the dig button says per tool
 const ACTION = { hand: "GRABEN", shovel: "SCHAUFELN", pickaxe: "HACKEN" };
+const CLASS_LABEL = { traceGold: "Goldstaub", fineGold: "Feiner Goldstaub", goldFlake: "Goldflitter", tinyGoldPiece: "Kleine Goldstücke", smallNugget: "Nuggets" };
+const SHOP_GROUPS = [["tool", null, "Werkzeug"], ["upgrade", "shovel", "Für die Schaufel"], ["upgrade", "pickaxe", "Für die Spitzhacke"]];
 
 const fmtMoney = (v) => `€ ${v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -81,16 +84,43 @@ class GoldRushShell {
           <button type="button" class="gr-slot" data-tool="pickaxe"><span class="gr-slot-key">3</span><span class="gr-slot-ico">${ICONS.pickaxe}</span><span class="gr-slot-label">Spitzhacke</span><span class="gr-lock" aria-hidden="true">🔒</span></button>
         </div>
         <div class="gr-crosshair" aria-hidden="true"><span></span></div>
-        <div class="gr-hint">WASD bewegen · Maus umsehen · Linksklick halten: graben · 1 2 3 Werkzeug · Esc: Pause</div>
+        <div class="gr-hint">WASD bewegen · Maus umsehen · Linksklick halten: graben · 1 2 3 Werkzeug · E: Station im Camp · Esc: Pause</div>
         <div class="gr-notice" role="status" hidden></div>
       </div>
       <div class="gr-stick" aria-hidden="true"><div class="gr-stick-knob"></div></div>
       <button type="button" class="gr-dig-btn" aria-label="Graben (gedrückt halten)"><span class="gr-dig-ico">${ICONS.hand}</span><span class="gr-dig-label">GRABEN</span></button>
+      <button type="button" class="gr-ctx-btn" data-act="use-station" hidden></button>
+      <div class="gr-sheet" data-sheet="assay" hidden role="dialog" aria-modal="true" aria-label="Goldankauf">
+        <div class="gr-sheet-card">
+          <div class="gr-sheet-head">
+            <div><div class="gr-sheet-title">Goldankauf</div><div class="gr-sheet-sub">Dein Gold wird gewogen und zum festen Camp-Preis angekauft.</div></div>
+            <button type="button" class="gr-sheet-close" data-act="close-station" aria-label="Schließen">${ICONS.close}</button>
+          </div>
+          <div class="gr-scale" aria-live="polite">
+            <div class="gr-scale-cell"><span class="gr-scale-label">Gewicht</span><span class="gr-scale-value" data-role="weigh">–</span></div>
+            <div class="gr-scale-cell"><span class="gr-scale-label">Wert</span><span class="gr-scale-value gr-scale-gold" data-role="worth">–</span></div>
+          </div>
+          <ul class="gr-sell-list" data-role="sell-list"></ul>
+          <div class="gr-sell-foot">
+            <div class="gr-sell-cash" data-role="sell-cash"></div>
+            <button type="button" class="gr-btn-gold" data-act="sell-all">Alles verkaufen</button>
+          </div>
+        </div>
+      </div>
+      <div class="gr-sheet" data-sheet="supply" hidden role="dialog" aria-modal="true" aria-label="Ausrüstung">
+        <div class="gr-sheet-card">
+          <div class="gr-sheet-head">
+            <div><div class="gr-sheet-title">Ausrüstung</div><div class="gr-sheet-sub" data-role="shop-cash"></div></div>
+            <button type="button" class="gr-sheet-close" data-act="close-station" aria-label="Schließen">${ICONS.close}</button>
+          </div>
+          <div class="gr-shop-list" data-role="shop-list"></div>
+        </div>
+      </div>
       <div class="gr-overlay gr-pause" hidden>
         <div class="gr-card">
           <div class="gr-card-title">Pausiert</div>
           <p class="gr-card-text" data-role="pause-text">Klicke, um weiterzugraben.</p>
-          <div class="gr-keys"><span><b>WASD</b> bewegen</span><span><b>Maus</b> umsehen</span><span><b>Linksklick</b> graben</span><span><b>1 2 3</b> Werkzeug</span><span><b>Shift</b> schneller</span><span><b>Esc</b> Pause</span></div>
+          <div class="gr-keys"><span><b>WASD</b> bewegen</span><span><b>Maus</b> umsehen</span><span><b>Linksklick</b> graben</span><span><b>1 2 3</b> Werkzeug</span><span><b>E</b> Goldankauf / Ausrüstung</span><span><b>Shift</b> schneller</span><span><b>Esc</b> Pause</span></div>
           <div class="gr-actions">
             <button type="button" class="primary-btn primary-btn--lg" data-act="resume">Weiterspielen</button>
             <button type="button" class="ghost-btn" data-act="settings">Einstellungen</button>
@@ -159,8 +189,17 @@ class GoldRushShell {
       loadText: q("[data-role=load-text]"), loadStep: q("[data-role=load-step]"), progress: q(".gr-progress"),
       dialog: q(".gr-dialog"), debug: q(".gr-debug"), tool: q(".gr-tool"), belt: q(".gr-belt"),
       digLabel: q(".gr-dig-label"), digIco: q(".gr-dig-ico"), toolIco: q(".gr-tool-ico"), toolName: q(".gr-tool-name"),
+      ctx: q(".gr-ctx-btn"), sheets: { assay: q("[data-sheet=assay]"), supply: q("[data-sheet=supply]") },
+      weigh: q("[data-role=weigh]"), worth: q("[data-role=worth]"), sellList: q("[data-role=sell-list]"), sellCash: q("[data-role=sell-cash]"),
+      sellBtn: q("[data-act=sell-all]"), shopList: q("[data-role=shop-list]"), shopCash: q("[data-role=shop-cash]"),
     };
+    this._openSheet = null;
+    this._near = null;
     this.on(root, "click", (e) => {
+      // a click on the sale while it runs: straight to the result
+      if (this._sale && e.target.closest("[data-sheet=assay]") && !e.target.closest("[data-act=close-station]")) { this._sale.skip = true; return; }
+      const buy = e.target.closest("[data-buy]");
+      if (buy) { this._buy(buy.dataset.buy, buy); return; }
       const slot = e.target.closest("[data-tool]");
       if (slot && this.game) {
         this.game.selectTool(slot.dataset.tool);
@@ -186,6 +225,7 @@ class GoldRushShell {
       this._syncSettings();
     });
     this.on(window, "keydown", (e) => {
+      if (e.key === "Escape" && this._openSheet) { e.preventDefault(); e.stopPropagation(); this._closeStation(false); return; }
       if (e.key === "Escape" && !this.el.panel.hidden) { e.preventDefault(); this._closeSettings(); }
     }, true);
   }
@@ -281,7 +321,13 @@ class GoldRushShell {
       notice: (t) => this.notice(t),
       setDebug: (t) => { el.debug.textContent = t; },
       toggleDebug: () => { el.debug.hidden = !el.debug.hidden; },
-      panelOpen: () => !el.panel.hidden,
+      panelOpen: () => !el.panel.hidden || !!this._openSheet,
+      openStation: (id, view) => this._showStation(id, view),
+      onStation: (s) => {
+        this._near = s;
+        el.ctx.hidden = !s || !this.touch;
+        if (s) el.ctx.textContent = s.id === "assay" ? "VERKAUFEN" : "AUSRÜSTUNG";
+      },
       onQuality: () => this._syncSettings(),
       onTool: (st) => this._renderTools(st),
     };
@@ -326,12 +372,163 @@ class GoldRushShell {
       return;
     }
     if (act === "settings") { this._openSettings(); return; }
+    if (act === "use-station") { if (g && this._near) g.openStation(this._near.id); return; }
+    if (act === "close-station") { this._closeStation(true); return; }
+    if (act === "sell-all") { this._sellAll(); return; }
     if (act === "tools") { if (this.touch) this._toolSheet(!this._sheetOpen); return; }
     if (act === "close-settings") { this._closeSettings(); return; }
     if (act === "reset") { this.root.querySelector(".gr-confirm").hidden = false; this.root.querySelector(".gr-reset").hidden = true; return; }
     if (act === "reset-cancel") { this.root.querySelector(".gr-confirm").hidden = true; this.root.querySelector(".gr-reset").hidden = false; return; }
     if (act === "reset-confirm") { this._resetGame(); return; }
     if (act.startsWith("dlg:")) { const r = this._dlgResolve; this._hideDialog(); if (r) r(act.slice(4)); else if (act === "dlg:exit") this.close(); }
+  }
+
+  // ------------------------------------------------------------ camp: selling + supplies
+
+  _showStation(id, view) {
+    this._openSheet = id;
+    for (const [k, el] of Object.entries(this.el.sheets)) el.hidden = k !== id;
+    this.el.ctx.hidden = true;
+    if (id === "assay") this._renderSell(view); else this._renderShop(view);
+    const f = this.el.sheets[id].querySelector(id === "assay" ? "[data-act=sell-all]" : ".gr-sheet-close");
+    if (f && !this.touch) f.focus({ preventScroll: true });
+  }
+
+  _closeStation(resume) {
+    if (!this._openSheet) return;
+    if (this._sale) { this._sale.skip = true; this._saleStep(performance.now()); }
+    this._openSheet = null;
+    for (const el of Object.values(this.el.sheets)) el.hidden = true;
+    if (this.game) this.game.closeStation(resume);
+    if (this._near && this.touch) this.el.ctx.hidden = false;
+  }
+
+  _renderSell(v) {
+    const el = this.el;
+    el.sellList.innerHTML = "";
+    const rows = v.classes.filter((c) => c.count > 0);
+    if (!rows.length) {
+      const li = document.createElement("li");
+      li.className = "gr-sell-empty";
+      li.textContent = v.first ? "Noch kein Gold im Beutel. Grab am Berg – jeder Fund landet zuerst hier im Goldbeutel." : "Dein Goldbeutel ist leer.";
+      el.sellList.appendChild(li);
+    }
+    for (const c of rows) {
+      const li = document.createElement("li");
+      li.innerHTML = `<span class="gr-sell-name"></span><span class="gr-sell-count"></span><span class="gr-sell-mass"></span><span class="gr-sell-value"></span>`;
+      li.children[0].textContent = CLASS_LABEL[c.id] || c.id;
+      li.children[1].textContent = `${c.count}×`;
+      li.children[2].textContent = formatMass(c.ug);
+      li.children[3].textContent = formatEuro(c.cents);
+      el.sellList.appendChild(li);
+    }
+    el.weigh.textContent = v.ug ? formatMass(v.ug) : "–";
+    el.worth.textContent = v.ug ? `≈ ${formatEuro(v.cents)}` : "–";
+    el.sellCash.textContent = `Kontostand ${formatEuro(v.cash)}`;
+    el.sellBtn.disabled = !v.ug;
+    el.sellBtn.textContent = v.ug ? `Alles verkaufen · ${formatEuro(v.cents)}` : "Nichts zu verkaufen";
+  }
+
+  // SELL ALL: the transaction happens at once (game.sell), the scale only shows it:
+  // weight settles -> value counts up -> cash. Tap / click skips to the end.
+  _sellAll() {
+    const g = this.game;
+    if (!g || this._sale) return;
+    const before = g.economy.cashCents;
+    const r = g.sell();
+    if (!r.ok) { this._renderSell(g.sellView()); return; }
+    this.el.sellBtn.disabled = true;
+    this.el.sellList.classList.add("is-selling");
+    const reduced = g.reducedMotion;
+    const dur = reduced ? 0.35 : Math.min(1.8, Math.max(0.8, 0.8 + Math.log10(1 + r.cents) * 0.3));
+    this._sale = { r, before, after: g.economy.cashCents, t0: performance.now(), dur, skip: false };
+    this._saleRaf = requestAnimationFrame((t) => this._saleStep(t));
+  }
+
+  _saleStep(now) {
+    const s = this._sale;
+    if (!s || !this.el) return;
+    const u = s.skip ? 1 : Math.min(1, (now - s.t0) / 1000 / s.dur);
+    // weight: settles with a small wobble in the first half; value: counts up in the second
+    const wU = Math.min(1, u / 0.5), vU = Math.max(0, Math.min(1, (u - 0.45) / 0.4)), cU = Math.max(0, (u - 0.85) / 0.15);
+    const wob = u >= 1 ? 1 : 1 - Math.exp(-5 * wU) * Math.cos(11 * wU);
+    this.el.weigh.textContent = formatMass(Math.max(0, Math.round(s.r.ug * Math.min(1.08, wob))));
+    this.el.worth.textContent = formatEuro(Math.round(s.r.cents * vU * vU * (3 - 2 * vU)));
+    this.el.sellCash.textContent = `Kontostand ${formatEuro(Math.round(s.before + (s.after - s.before) * Math.min(1, cU)))}`;
+    if (u < 1) { this._saleRaf = requestAnimationFrame((t) => this._saleStep(t)); return; }
+    cancelAnimationFrame(this._saleRaf);
+    this._sale = null;
+    this.el.sellList.classList.remove("is-selling");
+    this.el.weigh.textContent = formatMass(s.r.ug);
+    this.el.worth.textContent = formatEuro(s.r.cents);
+    this.el.sellCash.textContent = `Verkauft für ${formatEuro(s.r.cents)} · Kontostand ${formatEuro(s.after)}`;
+    this.el.sellList.innerHTML = `<li class="gr-sell-empty">Dein Goldbeutel ist leer. Bei der Ausrüstung nebenan kannst du dein Geld ausgeben.</li>`;
+    this.el.sellBtn.disabled = true;
+    this.el.sellBtn.textContent = "Verkauft";
+  }
+
+  _renderShop(v) {
+    const el = this.el;
+    el.shopCash.textContent = `Kontostand ${formatEuro(v.cash)}` + (v.pouch > 0 ? ` · im Goldbeutel ≈ ${formatEuro(v.pouch)} (erst verkaufen)` : "");
+    el.shopList.innerHTML = "";
+    for (const [kind, tool, title] of SHOP_GROUPS) {
+      const items = v.items.filter((it) => it.kind === kind && (tool == null || it.tool === tool));
+      if (!items.length) continue;
+      const h = document.createElement("div");
+      h.className = "gr-shop-group";
+      h.textContent = title;
+      el.shopList.appendChild(h);
+      for (const it of items) el.shopList.appendChild(this._shopRow(it, v.cash));
+    }
+  }
+
+  _shopRow(it, cash) {
+    const row = document.createElement("div");
+    row.className = `gr-shop-item is-${it.state}` + (it.affordable ? " is-affordable" : "");
+    row.dataset.item = it.id;
+    const ico = it.tool === "pickaxe" ? ICONS.pickaxe : ICONS.shovel;
+    row.innerHTML = `<div class="gr-shop-ico">${ico}${it.kind === "upgrade" ? '<span class="gr-shop-plus">+</span>' : ""}</div>
+      <div class="gr-shop-main"><div class="gr-shop-name"></div><div class="gr-shop-text"></div><div class="gr-shop-state"></div></div>
+      <div class="gr-shop-buy"><div class="gr-shop-price"></div></div>`;
+    row.querySelector(".gr-shop-name").textContent = it.label;
+    row.querySelector(".gr-shop-text").textContent = it.text;
+    row.querySelector(".gr-shop-price").textContent = it.state === "owned" ? "" : formatEuro(it.price);
+    const state = row.querySelector(".gr-shop-state"), buyBox = row.querySelector(".gr-shop-buy");
+    if (it.state === "owned") {
+      state.textContent = it.kind === "tool" ? "✓ In deinem Besitz" : "✓ Eingebaut";
+    } else if (it.state === "locked") {
+      state.textContent = "🔒 " + it.needs.map((n) => `${n.met ? "✓" : "○"} ${n.text}`).join(" · ");
+    } else {
+      // how close you are: € 6,42 / € 10,00 - a quiet line, no progress bar spam
+      const have = Math.min(cash, it.price);
+      state.innerHTML = it.affordable ? "Bereit zum Kauf" : `<span class="gr-shop-progress"><i style="width:${Math.round((have / it.price) * 100)}%"></i></span>${formatEuro(cash)} / ${formatEuro(it.price)} · noch ${formatEuro(it.missing)} benötigt`;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "gr-btn-gold gr-btn-sm";
+      b.dataset.buy = it.id;
+      b.textContent = "Kaufen";
+      b.disabled = !it.affordable;
+      buyBox.appendChild(b);
+    }
+    return row;
+  }
+
+  // BUY: one transaction (game.buy); a second click finds the item owned
+  _buy(id, btn) {
+    const g = this.game;
+    if (!g || this._buying) return;
+    this._buying = true;
+    if (btn) btn.disabled = true;
+    const r = g.buy(id);
+    this._renderShop(g.shopView());
+    if (r.ok) {
+      const row = this.el.shopList.querySelector(`[data-item="${id}"]`);
+      if (row) { row.classList.add("is-bought"); }
+      const it = g.shopView().items.find((x) => x.id === id);
+      g._afterClose = () => g.hud.message(`${it ? it.label : "Ausrüstung"} gekauft`, it && it.kind === "tool" ? "Liegt jetzt in deinen Händen." : "Ab sofort eingebaut.");
+    }
+    this._buying = false;
+    return r;
   }
 
   _openSettings() {
@@ -483,7 +680,32 @@ class GoldRushShell {
         if (opts.visuals !== false) g.render();
         return { done, blocked, cents, finds, best, keys, ms, perDig: done ? ms / done : 0, last: g.lastStroke };
       },
-      economy: () => ({ ...g.economy.serialize(), sessionCents: g.economy.sessionCents, shownCents: g.hud.shown }),
+      economy: () => ({ ...g.economy.serialize(), sessionCents: g.economy.sessionCents, shownCents: g.hud.shown, pouchCents: g.economy.pouchCents, pouchUg: g.economy.pouchUg, shownPouch: g.hud.pouch.shown }),
+      // the camp (selling / buying): what the UI does, without the UI
+      sell: () => g.sell(),
+      buy: (id) => g.buy(id),
+      sellView: () => g.sellView(),
+      shopView: () => g.shopView(),
+      openStation: (id) => g.openStation(id),
+      closeStation: () => { this._closeStation(false); return !g.uiOpen; },
+      uiState: () => ({ open: this._openSheet, uiOpen: g.uiOpen, near: g.station ? g.station.id : null, inputEnabled: g.input.enabled, ctx: !this.el.ctx.hidden, sale: !!this._sale,
+        prompt: this.root.querySelector(".gr-prompt").hidden ? null : this.root.querySelector(".gr-prompt").textContent,
+        objective: this.root.querySelector(".gr-objective").hidden ? null : this.root.querySelector(".gr-objective").textContent }),
+      // stand in front of a station, facing it
+      goToStation: (id) => { const st = this.engine.STATIONS.find((x) => x.id === id); const yaw = Math.atan2(-(st.lookX - st.x), -(st.lookZ - st.z)); const p = g.player; p.x = st.x; p.z = st.z; p.yaw = yaw; p.pitch = -0.15; p.vx = p.vz = 0; p.y = g.world.groundAt(p.x, p.z) + 1.62; g._updateCamera(); g._stationTick(0.6); g.render(); return g.station ? g.station.id : null; },
+      setCash: (cents) => { g.economy.cashCents = Math.max(0, Math.round(cents)); g.hud.setMoney(g.economy.cashCents); return g.economy.cashCents; },
+      flags: () => ({ ...g.economy.flags }),
+      // phase-3 polish probes: this stroke's hand variation, the tool's roll, the boulders' crack seeds
+      handVar: () => ({ side: g.hands._activeSide, v: g.hands._var ? { ...g.hands._var } : null, cycle: g.tools.cycles }),
+      toolRoll: () => g.hands.toolRoot.rotation.z,
+      rockSeeds: () => g.rocks.meshes.flatMap((m) => Array.from(m.geometry.attributes.aSeed.array)),
+      reticle: () => ({ visible: g.reticle.visible, opacity: +g.reticle.material.opacity.toFixed(3), scale: +g.reticle.scale.x.toFixed(3) }),
+      fresh: () => {
+        const t = g.terrain, cols = t.freshAt.reduce((n, f) => n + (f > -1e4 ? 1 : 0), 0);
+        const verts = t.chunks.reduce((n, c) => n + c.geom.attributes.aFresh.array.reduce((m, f) => m + (f > -1e4 ? 1 : 0), 0), 0);
+        return { clock: t.clock, uTime: g.world.terrainUniforms.uTime.value, cols, verts };
+      },
+      advanceClock: (s) => { g.terrain.clock += s; g.world.terrainUniforms.uTime.value = g.terrain.clock; g.render(); return g.terrain.clock; },
       probe: () => g.probe(),
       aim: () => ({ state: g.aimState, material: g.target ? g.target.material : null, distance: g.target ? g.target.distance : g.farTarget ? g.farTarget.distance : null }),
       hand: () => ({ state: g.tools.state, phase: g.tools.phase, cycle: g.tools.cycles, inspecting: !!g.hands.inspecting, dirt: g.hands.dirt, tool: g.tools.equipped, view: g.tools.view(),
@@ -510,7 +732,7 @@ class GoldRushShell {
       // tests / benchmark only: the tool in the hands right away (no lower / raise), if usable
       equipNow: (id) => { if (!g.tools.canUse(id)) return false; g.tools.equipped = id; g.tools.target = null; g.tools.state = "idle"; g.tools.phase = null; g._aim(); return true; },
       devUnlock: (on = true) => { g.setDevUnlock(on); return g.toolState(); },
-      toolDefs: () => JSON.parse(JSON.stringify(this.engine.TOOL_INFO())),
+      toolDefs: () => JSON.parse(JSON.stringify(this.engine.TOOL_INFO([...g.tools.upgrades]))),
       toolPose: (pose) => { g.hands.debugToolPose = pose; g.hands.update(0, g.tools.view(), { camera: g.camera, sunDir: g.world.sun.position.clone().normalize(), sunVisible: true, walk: 0, bob: 0 }); g.render(); },
       grips: () => this.engine.GRIPS,
       toolKeys: () => this.engine.TOOL_KEYS,
@@ -551,7 +773,7 @@ class GoldRushShell {
         return {
           toast: q(".gr-toast").hidden ? null : q(".gr-toast").textContent, tip: q(".gr-tip").hidden ? null : q(".gr-tip").textContent,
           floats: [...this.root.querySelectorAll(".gr-float")].filter((e) => !e.hidden).map((e) => e.textContent),
-          money: q(".gr-money").textContent, sub: q(".gr-money-sub") && !q(".gr-money-sub").hidden ? q(".gr-money-sub").textContent : null,
+          money: q(".gr-money").textContent, pouch: q(".gr-pouch") && !q(".gr-pouch").hidden ? q(".gr-pouch-value").textContent : null,
           crosshair: q(".gr-crosshair").dataset.state || "idle",
         };
       },
@@ -611,6 +833,8 @@ class GoldRushShell {
     clearTimeout(this._noticeT);
     clearTimeout(this._toolT);
     clearTimeout(this._hintT);
+    if (this._saleRaf) cancelAnimationFrame(this._saleRaf);
+    this._sale = null;
     if (this._dlgResolve) { const r = this._dlgResolve; this._dlgResolve = null; r("exit"); }
     this.root.remove();
     this.root = null;
