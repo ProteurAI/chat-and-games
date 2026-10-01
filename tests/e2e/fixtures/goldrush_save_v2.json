@@ -1,0 +1,101 @@
+{
+ "note": "real GoldRush save v2 written by the phase-2 code (commit 5a629e3), seed 4242, 120 hand strokes",
+ "phase2": {
+  "n": 120,
+  "cents": 120,
+  "hashes": {
+   "height": 566578904,
+   "slices": 242465032,
+   "money": 120,
+   "finds": 7,
+   "seed": 4242
+  },
+  "money": 120
+ },
+ "doc": {
+  "saveVersion": 2,
+  "worldSeed": 4242,
+  "createdAt": 1790836431302,
+  "updatedAt": 1790836433191,
+  "tool": "hand",
+  "player": {
+   "x": 1.6,
+   "z": 7.6,
+   "yaw": 0,
+   "pitch": -1.05
+  },
+  "settings": {
+   "quality": "auto",
+   "headBob": true,
+   "reducedMotion": false,
+   "sound": true,
+   "vibration": true
+  },
+  "economy": {
+   "moneyCents": 120,
+   "earnedCents": 120,
+   "inventory": {
+    "dust": {
+     "count": 5,
+     "ug": 2124
+    },
+    "flakes": {
+     "count": 0,
+     "ug": 0
+    },
+    "tinyPieces": {
+     "count": 2,
+     "ug": 9900
+    },
+    "nuggets": {
+     "count": 0,
+     "ug": 0
+    },
+    "totalGoldUg": 12024,
+    "totalValueCents": 120
+   },
+   "stats": {
+    "totalDigs": 120,
+    "successfulDigs": 120,
+    "blockedDigs": 0,
+    "findDigs": 7,
+    "volumeMl": 123816,
+    "massG": {
+     "dirt": 0,
+     "compactDirt": 0,
+     "gravel": 222870,
+     "stone": 0
+    },
+    "freshMassG": 218343,
+    "slices": 138,
+    "finds": 7,
+    "dustValueCents": 21,
+    "flakeValueCents": 0,
+    "tinyValueCents": 99,
+    "nuggetValueCents": 0,
+    "biggestNuggetCents": 0,
+    "biggestNuggetUg": 0,
+    "playTimeMs": 0
+   },
+   "flags": {
+    "firstNuggetSeen": false
+   }
+  },
+  "terrain": {
+   "gen": 1,
+   "cols": 240,
+   "cell": 0.125,
+   "unit": "mm",
+   "encoding": "rle-zigzag-varint-b64",
+   "changed": 74,
+   "data": "m50DAgcdAgIFHQICBRsCAgUZAgIFHQICCSHbAQODApsDcQED/QGRA2sBA/0BjwNrAQP3AYsDawED/QGRA20BA4cCowN12gEDswP3BOMBAQOzA/cE4wEBA7UD9wTjAQEDtQP3BOMBAQOzA/cE4wEBA7ED9QThAdoBA6EBlwI7AQOlAaECPQEDqQGhAj8BA7MBqwJBAQOlAaECPQEDnQGTAjnbAQEHAwEHAgIBBwICAQkDAQcDAQfsIAA="
+  },
+  "resources": {
+   "unit": "slice+mm",
+   "encoding": "rle-zigzag-varint-b64",
+   "changed": 1,
+   "slices": "oJ8DAQHAJgA=",
+   "level": "4cUDAA=="
+  }
+ }
+}
