@@ -88,7 +88,7 @@ button.gr-tool { border: none; font-family: inherit; cursor: default; }
   background: rgba(255, 250, 240, 0.92); box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.35);
   transition: all var(--motion-fast) var(--ease-standard);
 }
-.gr-crosshair[data-state="dig"] span { width: 16px; height: 16px; margin: -8px 0 0 -8px; background: transparent; box-shadow: 0 0 0 2px rgba(255, 244, 214, 0.95), 0 0 0 3.5px rgba(0, 0, 0, 0.3); }
+.gr-crosshair[data-state="dig"] span { width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; background: transparent; box-shadow: 0 0 0 1.5px rgba(255, 244, 214, 0.9), 0 0 0 2.5px rgba(0, 0, 0, 0.25); }
 /* too hard for the hand: a small grey diamond; out of reach: the dot fades */
 .gr-crosshair[data-state="hard"] span {
   width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 2px; background: transparent; transform: rotate(45deg);

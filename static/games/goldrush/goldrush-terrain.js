@@ -86,6 +86,8 @@ export class DiggableTerrain {
     this.height = new Float32Array(n);
     this.qh = new Int32Array(n);                     // height - base, in 0.1 mm (the stored truth)
     this.loose = new Uint8Array(n);                  // loosened depth below the surface, cm (pickaxe)
+    this.freshAt = new Float32Array(n).fill(-1e5);  // when the column was last cut / moved (game clock, s) - looks fresh
+    this.clock = 0;                                  // game clock, set by the engine every frame
     this.rock = new Float32Array(n);
     this.rill = new Float32Array(n);
     this.spawn = opts.spawn || null;
@@ -312,6 +314,7 @@ export class DiggableTerrain {
         const n = vpc * vpc;
         const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3), uv = new Float32Array(n * 2);
         const matw = new Float32Array(n * 2);          // (gravel, stone) weight -> detail textures
+        const fresh = new Float32Array(n).fill(-1e5);  // when the ground here was last dug (fades in the shader)
         const i0 = cx * cc, j0 = cz * cc;
         for (let j = 0; j < vpc; j++) {
           for (let i = 0; i < vpc; i++) {
@@ -328,6 +331,7 @@ export class DiggableTerrain {
         geom.setAttribute("color", new THREE.BufferAttribute(col, 3));
         geom.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
         geom.setAttribute("aMat", new THREE.BufferAttribute(matw, 2));
+        geom.setAttribute("aFresh", new THREE.BufferAttribute(fresh, 1));
         geom.setIndex(this.stride === 2 ? this.indexHalf : this.indexFull);
         const mesh = new THREE.Mesh(geom, this.material);
         mesh.castShadow = true;
@@ -348,7 +352,7 @@ export class DiggableTerrain {
     const j0 = Math.max(gj0, chunk.j0), j1 = Math.min(gj1, chunk.j0 + cc);
     if (i0 > i1 || j0 > j1) return false;
     const pos = chunk.geom.attributes.position.array, nor = chunk.geom.attributes.normal.array, col = chunk.geom.attributes.color.array;
-    const matw = chunk.geom.attributes.aMat.array;
+    const matw = chunk.geom.attributes.aMat.array, fresh = chunk.geom.attributes.aFresh.array;
     const last = vps - 1;
     const rgb = [0, 0, 0];
     for (let gj = j0; gj <= j1; gj++) {
@@ -375,12 +379,14 @@ export class DiggableTerrain {
         col[v * 3 + 2] = rgb[2];
         matw[v * 2] = mat === MAT.GRAVEL ? 1 : 0;
         matw[v * 2 + 1] = mat === MAT.STONE ? 1 : 0;
+        fresh[v] = this.freshAt[k];
       }
     }
     chunk.geom.attributes.position.needsUpdate = true;
     chunk.geom.attributes.normal.needsUpdate = true;
     chunk.geom.attributes.color.needsUpdate = true;
     chunk.geom.attributes.aMat.needsUpdate = true;
+    chunk.geom.attributes.aFresh.needsUpdate = true;
     chunk.geom.computeBoundingSphere();
     return true;
   }
@@ -602,6 +608,7 @@ export class DiggableTerrain {
       if (q >= this.qh[k] || rec.n >= REC_MAX) continue;
       removedQ += this.qh[k] - q;
       this._setQ(k, q);
+      this.freshAt[k] = this.clock;
       if (inStone) field.cutStone(k, H[k]);
       // loosening (pickaxe) / using it up (any removal)
       const cm = Math.round((old - H[k]) * 100);
@@ -615,6 +622,12 @@ export class DiggableTerrain {
     if (K.loosenCm) this._loosen(hit, K, i0, i1, j0, j1);
     if (!cells) return { requested: requested * area, removed: 0, relocated: 0, cells: 0, chunks: 0 };
     if (onCut) onCut(rec);
+    // the rim of a cut is scuffed too (crumbs, broken crust): it looks fresh as well
+    const F = this.freshAt, now = this.clock;
+    for (let r = 0; r < rec.n; r++) {
+      const k = rec.k[r];
+      F[k - vps - 1] = F[k - vps] = F[k - vps + 1] = F[k - 1] = F[k + 1] = F[k + vps - 1] = F[k + vps] = F[k + vps + 1] = now;
+    }
     const m = Math.ceil((K.settleMargin || 0.8) / c);
     const movedQ = this._settleLocal(Math.max(lo, i0 - m), Math.min(hi, i1 + m), Math.max(lo, j0 - m), Math.min(hi, j1 + m), SETTLE_ITER);
     const w0 = this._win;
@@ -736,6 +749,7 @@ export class DiggableTerrain {
     const before = H[a];
     this._setQ(a, this.qh[a] - units);
     this._setQ(b, this.qh[b] + units);
+    this.freshAt[a] = this.freshAt[b] = this.clock;
     if (this.loose[b] < 30) this.loose[b] = Math.min(30, this.loose[b] + Math.round(units / 100));   // slid material is loose (cm, from ~5 mm on)
     lim[a] = this._reposeTan(a);
     lim[b] = this._reposeTan(b);

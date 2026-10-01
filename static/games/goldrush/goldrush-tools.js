@@ -44,7 +44,7 @@ export const TOOL_DEFS = {
     massCapacity: 2.5,
     strike: [["windup", 0.3], ["thrust", 0.12]],
     follow: {
-      ok: () => [["scoop", 0.2], ["dump", 0.3], ["recover", 0.16]],
+      ok: () => [["scoop", 0.18], ["dump", 0.38], ["recover", 0.1]],      // the dump is held a little: readable
       blocked: () => [["recoil", 0.22], ["recover", 0.24]],
       air: () => [["recover", 0.25]],
     },

@@ -76,8 +76,10 @@ export class RockSystem {
       geo.computeVertexNormals();
       return geo;
     });
-    // damage: crack lines in the rock's own space, more and wider the more
-    // it is damaged (per-instance attribute, no texture swap, one program)
+    // damage: a crack network in the rock's own space (cell borders of a
+    // warped 3D cellular noise, offset per boulder - no two crack the same),
+    // more and wider the more it is damaged (per-instance attributes, no
+    // texture swap, one program)
     // the rock detail texture tiled finer than on the ground: grain, not a
     // single giant crack (real cracks are the damage below)
     this.tex = rockTex ? rockTex.clone() : null;
@@ -85,27 +87,43 @@ export class RockSystem {
     this.mat = new THREE.MeshStandardMaterial({ color: 0x9a9185, map: this.tex, roughness: 0.92, flatShading: true });
     this.mat.onBeforeCompile = (shader) => {
       shader.vertexShader = shader.vertexShader
-        .replace("#include <common>", "#include <common>\nattribute float aDamage;\nvarying float vDamage;\nvarying vec3 vObj;")
-        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvDamage = aDamage;\nvObj = position;");
+        .replace("#include <common>", "#include <common>\nattribute float aDamage;\nattribute float aSeed;\nvarying float vDamage;\nvarying vec3 vObj;")
+        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvDamage = aDamage;\nvObj = position + vec3(aSeed, aSeed * 1.7, aSeed * 0.6);");
       shader.fragmentShader = shader.fragmentShader
         .replace("#include <common>", `#include <common>
           varying float vDamage; varying vec3 vObj;
-          float grCrack(vec3 p, float s) {
-            float a = sin(p.x * s + 1.7 * sin(p.y * s * 0.6 + 1.3));
-            float b = sin(p.z * s * 1.1 + 1.9 * sin(p.x * s * 0.5 + 0.7));
-            return min(abs(a), abs(b));
+          vec3 grH3(vec3 p) {
+            p = vec3(dot(p, vec3(127.1, 311.7, 74.7)), dot(p, vec3(269.5, 183.3, 246.1)), dot(p, vec3(113.5, 271.9, 124.6)));
+            return fract(sin(p) * 43758.5453);
+          }
+          // distance to the nearest cell border (F2 - F1) + the cell's own random value
+          vec2 grCells(vec3 p) {
+            vec3 i = floor(p), f = fract(p);
+            float d1 = 8.0, d2 = 8.0, id = 0.0;
+            for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+              vec3 g = vec3(float(x), float(y), float(z));
+              vec3 o = grH3(i + g);
+              vec3 r = g + o - f;
+              float d = dot(r, r);
+              if (d < d1) { d2 = d1; d1 = d; id = o.z; } else if (d < d2) d2 = d;
+            }
+            return vec2(sqrt(d2) - sqrt(d1), id);
           }`)
         .replace("#include <map_fragment>", `#include <map_fragment>
           if (vDamage > 0.01) {
-            float l1 = grCrack(vObj, 6.5);
-            float l2 = grCrack(vObj.zxy + 2.0, 9.0);
-            float w = 0.05 + 0.07 * vDamage;
-            float cr = max(step(0.12, vDamage) * smoothstep(w, 0.0, l1), step(0.55, vDamage) * smoothstep(w * 0.9, 0.0, l2));
+            vec3 q = vObj + 0.18 * sin(vObj.yzx * 5.3);
+            vec2 c1 = grCells(q * 2.6);
+            vec2 c2 = grCells(q.zxy * 5.2 + 3.1);
+            float w = 0.035 + 0.05 * vDamage;
+            // only some borders crack at first, more of them as the damage grows
+            float m1 = step(0.12, vDamage) * step(c1.y, 0.25 + vDamage * 0.9);
+            float m2 = step(0.55, vDamage) * step(c2.y, (vDamage - 0.45) * 1.4);
+            float cr = max(m1 * smoothstep(w, 0.0, c1.x), m2 * smoothstep(w * 0.8, 0.0, c2.x));
             diffuseColor.rgb *= 1.0 - 0.62 * cr;
             diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.12, 1.08, 1.02), 0.25 * vDamage);
           }`);
     };
-    this.mat.customProgramCacheKey = () => "goldrush-rock-v1";
+    this.mat.customProgramCacheKey = () => "goldrush-rock-v2";
     const byVariant = [[], [], [], []];
     for (const r of this.rocks) byVariant[r.variant].push(r);
     this.meshes = [];
@@ -113,8 +131,10 @@ export class RockSystem {
       if (!list.length) return;
       const im = new THREE.InstancedMesh(this.geos[vi], this.mat, list.length);
       const dmg = new THREE.InstancedBufferAttribute(new Float32Array(list.length), 1);
+      const seed = new THREE.InstancedBufferAttribute(new Float32Array(list.map((r) => (r.index * 7.31) % 23)), 1);
       im.geometry = this.geos[vi].clone();                      // own attribute set per variant
       im.geometry.setAttribute("aDamage", dmg);
+      im.geometry.setAttribute("aSeed", seed);
       im.castShadow = true;
       im.receiveShadow = true;
       im.name = "pile-boulders";
@@ -132,6 +152,7 @@ export class RockSystem {
     this.rubble = new THREE.InstancedMesh(rg, this.mat, Math.max(1, this.rocks.length * RUBBLE));
     this.rubble.geometry = rg;
     rg.setAttribute("aDamage", new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, this.rocks.length * RUBBLE)).fill(0.3), 1));
+    rg.setAttribute("aSeed", new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, this.rocks.length * RUBBLE)).map((_, n) => (n * 3.17) % 19), 1));
     this.rubble.count = 0;
     this.rubble.castShadow = true;
     this.rubble.receiveShadow = true;
@@ -316,12 +337,12 @@ export class RockSystem {
     return d < 1 / 3 ? "intact" : d < 2 / 3 ? "damaged" : "heavilyDamaged";
   }
 
-  // one pickaxe hit: -> { stage, broke, hp, maxHp, kg }
+  // one pickaxe hit (damage may be fractional with upgrades): -> { stage, broke, hp, maxHp, kg }
   hit(i, damage) {
     const r = this.rocks[i];
     if (!r || r.broken) return null;
     this.stats.hits++;
-    r.hp = Math.max(0, r.hp - damage);
+    r.hp = Math.max(0, Math.round((r.hp - damage) * 100) / 100);
     r.changed = true;
     let broke = false, kg = 0;
     if (r.hp === 0) {
@@ -394,7 +415,7 @@ export class RockSystem {
       if (!r || e.length < 10 || !e.every(Number.isFinite)) continue;
       r.x = e[1] / 1000; r.y = e[2] / 1000; r.z = e[3] / 1000;
       r.q.set(e[4] / 10000, e[5] / 10000, e[6] / 10000, e[7] / 10000).normalize();
-      r.hp = Math.max(0, Math.min(r.maxHp, Math.round(e[8])));
+      r.hp = Math.max(0, Math.min(r.maxHp, Math.round(e[8] * 100) / 100));
       r.broken = e[9] === 1 || r.hp === 0;
       if (r.broken) r.hp = 0;
       r.changed = true;

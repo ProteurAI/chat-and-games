@@ -201,6 +201,7 @@ export class GoldRushWorld {
     this._machineZones();
     this._boulders();
     this._grass();
+    this._pebbles();
     this._distantRidges();
   }
 
@@ -223,21 +224,47 @@ export class GoldRushWorld {
     // per-vertex material weights (gravel, stone) pick the detail texture:
     // soil grain, packed pebbles or cracked rock - the pile shows what it is made of
     const gravel = this.gravelTex, rock = this.rockTex;
+    // A world-space second sample of the soil detail (rotated, larger) breaks
+    // the tiling; soft value noise adds dry-crust / colour variation and a
+    // little roughness variation; freshly dug ground (aFresh: when) is darker
+    // and moister for soil, cleaner for gravel / broken stone, and fades back
+    // over a couple of minutes. Cheap: a few texture reads and two noises.
+    this.terrainUniforms = { uTime: { value: 0 } };
+    const uni = this.terrainUniforms;
     this.terrainMaterial.onBeforeCompile = (shader) => {
       shader.uniforms.uGravel = { value: gravel };
       shader.uniforms.uRock = { value: rock };
+      shader.uniforms.uTime = uni.uTime;
       shader.vertexShader = shader.vertexShader
-        .replace("#include <common>", "#include <common>\nattribute vec2 aMat;\nvarying vec2 vMat;")
-        .replace("#include <uv_vertex>", "#include <uv_vertex>\nvMat = aMat;");
+        .replace("#include <common>", "#include <common>\nattribute vec2 aMat;\nattribute float aFresh;\nuniform float uTime;\nvarying vec2 vMat;\nvarying float vFresh;\nvarying vec3 vWPos;")
+        // the fade weight (not the time stamp) is interpolated: a fresh vertex
+        // next to untouched ones (-1e5) blends out softly instead of vanishing
+        .replace("#include <uv_vertex>", "#include <uv_vertex>\nvMat = aMat;\nvFresh = aFresh > -1.0e4 ? exp(-max(0.0, uTime - aFresh) / 80.0) : 0.0;")
+        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;");
       shader.fragmentShader = shader.fragmentShader
-        .replace("#include <common>", "#include <common>\nuniform sampler2D uGravel;\nuniform sampler2D uRock;\nvarying vec2 vMat;")
+        .replace("#include <common>", `#include <common>
+          uniform sampler2D uGravel; uniform sampler2D uRock; uniform float uTime;
+          varying vec2 vMat; varying float vFresh; varying vec3 vWPos;
+          float grHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+          float grNoise(vec2 p) {
+            vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(grHash(i), grHash(i + vec2(1.0, 0.0)), f.x), mix(grHash(i + vec2(0.0, 1.0)), grHash(i + vec2(1.0, 1.0)), f.x), f.y) * 2.0 - 1.0;
+          }`)
         .replace("#include <map_fragment>", `
-          vec3 soilT = texture2D(map, vMapUv).rgb;
+          vec2 wuv = vWPos.xz;
+          vec3 soilT = mix(texture2D(map, vMapUv).rgb, texture2D(map, mat2(0.8, -0.6, 0.6, 0.8) * wuv * 0.137 + 0.31).rgb, 0.35);
           vec3 gravT = texture2D(uGravel, vMapUv * 1.7).rgb;
           vec3 rockT = texture2D(uRock, vMapUv * 0.8).rgb;
-          diffuseColor.rgb *= mix(mix(soilT, gravT, clamp(vMat.x, 0.0, 1.0)), rockT, clamp(vMat.y, 0.0, 1.0));`);
+          float grN1 = grNoise(wuv * 0.9), grN2 = grNoise(wuv * 3.7 + 7.1);
+          float crust = 0.95 + 0.06 * grN1 + 0.03 * grN2;
+          diffuseColor.rgb *= mix(mix(soilT, gravT, clamp(vMat.x, 0.0, 1.0)), rockT, clamp(vMat.y, 0.0, 1.0)) * crust;
+          float grFresh = vFresh;
+          vec3 freshTint = mix(vec3(0.8, 0.75, 0.71), vec3(1.07, 1.05, 1.02), clamp(vMat.x + vMat.y, 0.0, 1.0));
+          diffuseColor.rgb *= mix(vec3(1.0), freshTint, grFresh * 0.9);`)
+        .replace("#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
+          roughnessFactor *= (0.93 + 0.1 * grN2) * (1.0 - 0.14 * grFresh);`);
     };
-    this.terrainMaterial.customProgramCacheKey = () => "goldrush-terrain-v2";
+    this.terrainMaterial.customProgramCacheKey = () => "goldrush-terrain-v4";
     this.terrain = new DiggableTerrain(THREE, {
       seed: this.seed, center: { x: 0, z: -6 }, size: 30, cell: 0.125, chunkCells: 30,
       moundCenter: MOUND_CENTER, material: this.terrainMaterial, spawn: SPAWN,
@@ -570,6 +597,69 @@ export class GoldRushWorld {
     }
   }
 
+  // small loose stones lying on the untouched pile: they go with the
+  // material when that spot is dug (hidden as soon as its column changed).
+  // One instanced draw call, no shadows of their own; count follows quality.
+  _pebbles() {
+    const THREE = this.THREE, t = this.terrain, rng = mulberry32(this.seed + 907);
+    const geo = this.track(new THREE.IcosahedronGeometry(1, 0));
+    const gp = geo.attributes.position;
+    for (let v = 0; v < gp.count; v++) gp.setXYZ(v, gp.getX(v) * (0.85 + (v % 3) * 0.12), gp.getY(v) * 0.6, gp.getZ(v) * (0.9 + (v % 2) * 0.15));
+    geo.computeVertexNormals();
+    const mat = this.track(new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true }));
+    const max = 1100;
+    const im = new THREE.InstancedMesh(geo, mat, max);
+    im.name = "pile-pebbles";
+    im.receiveShadow = true;
+    im.castShadow = false;
+    this.pebbles = [];
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), pos = new THREE.Vector3(), col = new THREE.Color();
+    let tries = 0;
+    while (this.pebbles.length < max && tries++ < max * 6) {
+      const x = t.x0 + 2 + rng() * (t.size - 4), z = t.z0 + 2 + rng() * (t.size - 4);
+      const i = Math.round((x - t.x0) / t.cell), j = Math.round((z - t.z0) / t.cell), k = j * t.vps + i;
+      if (t.base[k] < 0.05 || t.base[k] > 7 || rng() > 0.35 + t.rock[k]) continue;
+      const s = 0.012 + rng() * rng() * 0.03;
+      const n = this.pebbles.length;
+      this.pebbles.push({ k, x, z, s, ry: rng() * 6.28, tilt: (rng() - 0.5) * 0.6 });
+      const gray = 0.55 + rng() * 0.25, warm = rng() * 0.12;
+      col.setRGB(gray + warm, gray + warm * 0.6, gray * 0.92);
+      im.setColorAt(n, col);
+    }
+    im.count = this.pebbles.length;
+    this.pebbleMax = this.pebbles.length;
+    this.pebbleMesh = im;
+    this._pm = { m, q, e, sc, pos };
+    this.pebbles.forEach((p, n) => this._placePebble(p, n));
+    im.instanceMatrix.needsUpdate = true;
+    if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    im.computeBoundingSphere();
+    this.scene.add(im);
+    this._pebbleRev = t.revision;
+  }
+
+  _placePebble(p, n) {
+    const t = this.terrain, { m, q, e, sc, pos } = this._pm;
+    if (t.qh[p.k] !== 0) m.makeScale(0, 0, 0);                        // its ground was dug / moved: gone with it
+    else {
+      e.set(p.tilt, p.ry, p.tilt * 0.5);
+      m.compose(pos.set(p.x, t.getHeightAt(p.x, p.z) + p.s * 0.25, p.z), q.setFromEuler(e), sc.setScalar(p.s));
+    }
+    this.pebbleMesh.setMatrixAt(n, m);
+  }
+
+  // after digging: pebbles whose ground changed disappear
+  updatePebbles() {
+    const t = this.terrain;
+    if (!this.pebbleMesh || this._pebbleRev === t.revision) return;
+    this._pebbleRev = t.revision;
+    let changed = false;
+    this.pebbles.forEach((p, n) => {
+      if (!p.gone && t.qh[p.k] !== 0) { p.gone = true; this._placePebble(p, n); changed = true; }
+    });
+    if (changed) this.pebbleMesh.instanceMatrix.needsUpdate = true;
+  }
+
   // dry grass tufts (a few thin blades each, vertex-coloured - no alpha
   // texture, so no dark fringes), mostly outside the fence; count follows quality
   _grass() {
@@ -692,6 +782,7 @@ export class GoldRushWorld {
     }
     this.terrain.setLod(q.terrainStride);
     if (this.grassMesh) this.grassMesh.count = Math.round(this.grassMax * q.grass);
+    if (this.pebbleMesh) this.pebbleMesh.count = Math.round(this.pebbleMax * Math.max(0.4, Math.min(1, q.grass)));
     this.scene.fog.density = q.fogDensity;
   }
 

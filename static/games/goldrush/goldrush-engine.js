@@ -178,7 +178,7 @@ export class GoldRushGame {
     this.hud.setMoney(this.economy.moneyCents);
     const ring = new THREE.RingGeometry(0.88, 1, 48);
     this.reticle = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({
-      color: 0xfff3d6, transparent: true, opacity: 0.38, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, fog: false,
+      color: 0xfff3d6, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, fog: false,
     }));
     this.reticle.visible = false;
     this.reticle.renderOrder = 3;
@@ -201,10 +201,15 @@ export class GoldRushGame {
     held.geometry = this.loot.geos[5][0];
     held.material = this.loot.goldMat;
     held.visible = true;
+    // ... and the whole claim, the camp behind you included: one frame without
+    // frustum culling uploads every buffer and texture (no hitch at the first look round)
+    const culled = [];
+    world.scene.traverse((o) => { if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; } });
     renderer.compile(world.scene, camera);
     renderer.compile(this.hands.scene, this.hands.camera);
     if (this.rocks.tex) renderer.initTexture(this.rocks.tex);   // no upload hitch when the first boulder comes into view
     this.render();                                        // uploads the gold pieces' buffers too
+    for (const o of culled) o.frustumCulled = true;
     renderer.autoClear = false;
     renderer.render(this.hands.scene, this.hands.camera);
     renderer.autoClear = true;
@@ -418,6 +423,10 @@ export class GoldRushGame {
     this._sunCheck(dt);
     this.hands.update(dt, this.tools.view(), { camera: this.camera, sunDir: SUN_VEC, sunVisible: this.sunVisible, walk: Math.min(1, Math.hypot(this.player.vx, this.player.vz) / WALK), bob: this.player.bob });
     this.hud.update(dt);
+    if (this.reticle.visible) { const m = this.reticle.material; m.opacity += ((this._reticleWant || 0.2) - m.opacity) * Math.min(1, dt * 10); }
+    this.terrain.clock += dt;
+    this.world.terrainUniforms.uTime.value = this.terrain.clock;
+    this.world.updatePebbles();
     this.economy.addPlayTime(dt * 1000);
     this.render();
     if (this.dirty && now - this.lastSave > AUTOSAVE_MS) this.save("auto");
@@ -580,11 +589,16 @@ export class GoldRushGame {
       const n = this.target.normal;
       r.position.set(this.target.x + n.x * 0.012, this.target.y + n.y * 0.012, this.target.z + n.z * 0.012);
       r.quaternion.setFromUnitVectors(ZUP, this._n.set(n.x, n.y, n.z));
-      r.scale.setScalar(Math.max(def.kernel.a, def.kernel.b) * 1.05);
-      r.material.color.setHex(state === "hard" ? 0xc9c3ba : 0xfff3d6);
+      // quiet: a thin ring the size of the bite on diggable ground, a small
+      // grey one on stone - the world stays the main thing on screen
+      const hard = state === "hard";
+      r.scale.setScalar(hard ? 0.07 : Math.max(def.kernel.a, def.kernel.b) * 0.8);
+      r.material.color.setHex(hard ? 0xc9c3ba : 0xfff3d6);
+      this._reticleWant = hard ? 0.3 : 0.2;
       r.visible = true;
     } else {
       r.visible = false;
+      r.material.opacity = 0;
     }
     this.ui.setCrosshair(state);
   }

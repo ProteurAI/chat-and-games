@@ -41,7 +41,7 @@ export const TOOL_KEYS = {
     windup: { p: [0.043, -0.183, -0.774], r: [-0.094, 0.502, 0.2] },      // pulled back, blade up
     thrust: { p: [-0.002, -0.433, -0.996], r: [-0.416, 0.428, 0.1] },     // driven in, forward and down
     scoop: { p: [-0.011, -0.346, -0.886], r: [-0.103, 0.54, 0.05] },      // handle pressed down: the load comes up
-    dump: { p: [0.289, -0.312, -0.879], r: [-0.319, -0.02, 1.3] },        // swung aside and tipped
+    dump: { p: [0.34, -0.27, -0.84], r: [-0.2, -0.3, 1.72] },             // swung well aside and tipped right over (held a moment)
     recoil: { p: [0.043, -0.188, -0.765], r: [-0.151, 0.532, 0.25] },     // stone: thrown back
     held: { p: [-0.084, -0.544, -0.851], r: [-0.37, 0.588, 0.3] },        // one hand only (inspect)
   },
@@ -77,6 +77,8 @@ export const GRIPS = {
 const HANDLE_IN_GLOVE = [0, -0.03, -0.072];      // where a held handle runs through the closed glove
 
 const ease = (t) => t * t * (3 - 2 * t);
+// a stable pseudo-random number per stroke (variation that never touches timing or aim)
+const vary = (n, salt) => { let h = Math.imul(n ^ salt, 0x45d9f3b); h = Math.imul(h ^ (h >>> 16), 0x45d9f3b); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 const easeIn = (t) => t * t;
 const easeOut = (t) => 1 - (1 - t) * (1 - t);
 const EASE = { in: easeIn, out: easeOut, inout: ease };
@@ -427,14 +429,29 @@ export class FirstPersonHands {
     const sig = `${view.cycle}`;
     if (view.state === "action" && sig !== this._phaseSig) {
       this._phaseSig = sig;
-      this._activeSide = view.cycle % 2 ? 1 : -1;
+      // the hands take turns - not like a machine: now and then the same hand twice
+      const n = view.cycle;
+      this._activeSide = n === 1 ? 1 : vary(n, 11) < 0.18 ? this._activeSide : -this._activeSide;
       this._from = clonePose((this._activeSide === 1 ? this.right : this.left).pose);
+      // where and how this stroke lands: a little different each time, by material
+      const m = this.hitMat;
+      const reachK = m === 1 ? 1.12 : m === 2 ? 0.92 : 1;            // compact: deeper, gravel: shorter
+      this._var = {
+        dx: (vary(n, 3) - 0.5) * 0.026, dy: (vary(n, 5) - 0.5) * 0.016, dz: (vary(n, 7) - 0.5) * 0.02,
+        roll: (vary(n, 13) - 0.5) * 0.14, yaw: (vary(n, 17) - 0.5) * 0.1, curl: (vary(n, 19) - 0.5) * 0.16 + (m === 2 ? -0.12 : m === 1 ? 0.08 : 0),
+        reach: reachK, scrapeOut: 0.85 + vary(n, 23) * 0.3,
+      };
     }
     const act = this._activeSide === 1 ? this.right : this.left;
     let activePose = null;
+    const V = this._var || { dx: 0, dy: 0, dz: 0, roll: 0, yaw: 0, curl: 0, reach: 1, scrapeOut: 1 };
     if (view.state === "action" && view.phase === "windup") {
       const u = view.u;
       activePose = u < 0.55 ? lerpPose(this._from, POSE.reach, easeOut(u / 0.55), target) : lerpPose(POSE.reach, POSE.contact, easeIn((u - 0.55) / 0.45), target);
+      // this stroke's own contact point and angle (grows in with the reach)
+      const k = rm ? 0 : ease(u);
+      activePose.p[0] += V.dx * k; activePose.p[1] += (V.dy - (V.reach - 1) * 0.05) * k; activePose.p[2] += (V.dz - (V.reach - 1) * 0.06) * k;
+      activePose.r[2] += V.roll * k; activePose.r[1] += V.yaw * k; activePose.c += V.curl * k;
     } else if (view.state === "action" && view.phase === "recover") {
       const u = view.u;
       if (this.hit === "blocked") {
@@ -447,6 +464,9 @@ export class FirstPersonHands {
         activePose = lerpPose(POSE.contact, idle, ease(u), target);
       } else {
         activePose = u < 0.6 ? lerpPose(POSE.contact, POSE.scrape, ease(u / 0.6), target) : lerpPose(POSE.scrape, idle, ease((u - 0.6) / 0.4), target);
+        // the scrape back differs a little stroke to stroke, fading out towards rest
+        const k = rm ? 0 : Math.sin(Math.min(1, u / 0.8) * Math.PI);
+        activePose.p[0] += V.dx * 0.6 * k; activePose.p[2] += (V.scrapeOut - 1) * 0.05 * k; activePose.r[2] += V.roll * 0.6 * k; activePose.c += V.curl * 0.5 * k;
       }
     }
     let inspectPose = null;
