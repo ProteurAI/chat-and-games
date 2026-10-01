@@ -205,7 +205,7 @@ def desktop_suite(browser, base, user, shots):
     A.mouse.down()
     t0 = time.time()
     while time.time() - t0 < 1.3:
-        h = A.evaluate("() => [window.__goldrush.hand().state, window.__goldrush.state().revision, window.__goldrush.info().particles]")
+        h = A.evaluate("() => { const G = window.__goldrush, s = G.hand(); return [s.state === 'action' ? s.phase : s.state, G.state().revision, G.info().particles]; }")
         states.append((round(time.time() - t0, 3), h[0]))
         revs.append((round(time.time() - t0, 3), h[1]))
         parts = max(parts, h[2])
@@ -214,9 +214,9 @@ def desktop_suite(browser, base, user, shots):
     e1 = eco(A)["stats"]
     seen = {s for _, s in states}
     first_change = next((t for t, r in revs if r > r0), None)
-    first_windup = next((t for t, s in states if s == "digWindup"), None)
+    first_windup = next((t for t, s in states if s == "windup"), None)
     ok("T1 the hand runs windup -> contact -> recover while held",
-       {"digWindup", "digRecover"} <= seen, str(sorted(seen)))
+       {"windup", "recover"} <= seen, str(sorted(seen)))
     ok("T1 nothing is removed before the fingers touch (first change >= windup time after the press)",
        first_change is not None and first_windup is not None and first_change - first_windup >= 0.08, f"windup at {first_windup}s, first change at {first_change}s")
     ok("T1 the terrain changes, dust flies, the removed dirt is booked (kg by material)",
@@ -327,8 +327,8 @@ def desktop_suite(browser, base, user, shots):
         b = r.get("best", 0)
         key = "dust" if b in (TRACE, FINE) else "flake" if b == FLAKE else "tiny" if b == TINY else "nugget" if b == NUGGET else None
         if key and key not in got:
-            snap = A.evaluate("() => ({ loot: window.__goldrush.loot(), look: window.__goldrush.lootLook() })")
-            got[key] = {"stroke": n, "cents": r["cents"], "loot": snap["loot"], "booked": eco(A)["moneyCents"] - before}
+            snap = A.evaluate("() => ({ loot: window.__goldrush.loot(), look: window.__goldrush.lootLook(), pending: window.__goldrush.pending().map((p) => p.cls) })")
+            got[key] = {"stroke": n, "cents": r["cents"], "loot": snap["loot"], "booked": eco(A)["moneyCents"] - before, "pending": snap["pending"]}
             if key in ("flake", "tiny") and shots:
                 time.sleep(0.35)
                 A.screenshot(path=str(shots / f"p2_desktop_{key}.png"))
@@ -336,7 +336,8 @@ def desktop_suite(browser, base, user, shots):
             break
     settled(A, 10)
     d = got.get("dust")
-    ok("T8 gold dust: a few cents, a short glitter (no object), booked right away", d and 1 <= d["cents"] <= 8 and d["loot"]["glints"] > 0 and d["booked"] == d["cents"], str(d))
+    ok("T8 gold dust: a few cents, a short glitter (no object), pending until the glitter is over, then booked",
+       d and 1 <= d["cents"] <= 8 and d["loot"]["glints"] > 0 and any(c in (TRACE, FINE) for c in d["pending"]) and eco(A)["pending"] == [], str(d))
     f = got.get("flake")
     ok("T9 gold flake: a visible piece + 8-30 cents", f and 8 <= f["cents"] <= 40 and f["loot"]["active"] >= 1, str(f))
     t = got.get("tiny")
@@ -395,7 +396,7 @@ def desktop_suite(browser, base, user, shots):
     time.sleep(4.0)
     A.mouse.up()
     rate = (A.evaluate("() => window.__goldrush.hand().cycle") - c0) / 4.0
-    ok("T15 holding the button: 3-4 strokes per second, never more", 2.6 <= rate <= 4.25, f"{rate:.2f}/s")
+    ok("T15 holding the button: the hand's pace (2-3 strokes per second, phase 3), never more", 2.0 <= rate <= 3.1, f"{rate:.2f}/s")
 
     # ---- TEST 21: player and terrain - no digging under your own feet, never stuck in your pit
     s = st(A)
@@ -524,9 +525,9 @@ def determinism_and_save_suite(browser, base, user, shots):
     A.evaluate("(d) => { localStorage.setItem('goldrush.save', JSON.stringify(d)); localStorage.removeItem('goldrush.save.backup'); }", v1)
     open_game(A, start=False)
     e = eco(A)
-    ok("v1 -> v2 migration: seed + digs kept, money in cents, written back as version 2",
+    ok("v1 -> v3 migration: seed + digs kept, money in cents, written back as the current version (3)",
        st(A)["seed"] == 77 and e["stats"]["totalDigs"] == 12 and e["moneyCents"] == 0
-       and A.evaluate("() => { window.__goldrush.save(); return JSON.parse(localStorage.getItem('goldrush.save')).saveVersion; }") == 2)
+       and A.evaluate("() => { window.__goldrush.save(); return JSON.parse(localStorage.getItem('goldrush.save')).saveVersion; }") == 3)
     errs = errors(A)
     ok("determinism/save: no JS errors", not errs, "; ".join(errs[:3]))
     gr_close(A)
@@ -561,10 +562,12 @@ def economy_suite(browser, base, user):
         ang = spots[name]["ang"]
         A.evaluate(AIM_AT_MOUND, {"ang": ang, "back": 1.3, "maxd": 1.9})
         m0, f0, d0 = eco(A)["moneyCents"], eco(A)["stats"]["finds"], eco(A)["stats"]["successfulDigs"]
-        A.evaluate(DIG_HERE, {"ang": ang, "n": 150})
+        # phase 3: a hand stroke moves ~0.14 l (phase 2: ~2.7 l) - dig a comparable amount of ground
+        A.evaluate(DIG_HERE, {"ang": ang, "n": 900})
+        A.evaluate("() => window.__goldrush.flushLoot()")          # finds are money once picked up
         e = eco(A)
         res[name] = {"g": round(spots[name]["g"], 3), "cents": e["moneyCents"] - m0, "finds": e["stats"]["finds"] - f0, "digs": e["stats"]["successfulDigs"] - d0}
-    ok("T23 a rich zone of the test seed pays clearly more than a barren one (150 strokes each)",
+    ok("T23 a rich zone of the test seed pays clearly more than a barren one (900 hand strokes each, ~120 l)",
        res["rich"]["cents"] > res["barren"]["cents"] and res["rich"]["finds"] > res["barren"]["finds"], json.dumps(res))
 
     # ---- TEST 24-26: economy of 10,000 typical hand strokes on the test seed
@@ -625,7 +628,7 @@ def touch_suite(browser, base, user, shots):
     time.sleep(4.0)
     touch(cdp, "touchEnd", [])
     rate = (M.evaluate("() => window.__goldrush.hand().cycle") - c0) / 4.0
-    ok("T16 mobile: holding GRABEN digs 3-4 strokes per second, like the mouse", 2.6 <= rate <= 4.25, f"{rate:.2f}/s")
+    ok("T16 mobile: holding GRABEN digs at the same pace as the mouse (2-3 strokes per second)", 2.0 <= rate <= 3.1, f"{rate:.2f}/s")
     if shots:
         M.screenshot(path=str(shots / "p2_phone_dig.png"))
 
@@ -684,11 +687,11 @@ def touch_suite(browser, base, user, shots):
        lying >= 1 and got and e["moneyCents"] == m0 + 50 and e["shownCents"] == e["moneyCents"], f"lying {lying}, {m0} -> {e['moneyCents']}")
     M.evaluate("(p) => window.__goldrush.pose(p)", tg)
     M.evaluate("() => window.__goldrush.debugFind(4, 6000)")
-    booked = eco(M)["moneyCents"]
+    booked = eco(M)["moneyCents"]                       # the piece is pending (in the air), not money yet
     gr_close(M)
     open_game(M, start=False)
-    ok("T20 closing with a piece still in the air: it is saved with the money (nothing lost, nothing doubled)",
-       eco(M)["moneyCents"] == booked, f"{booked} -> {eco(M)['moneyCents']}")
+    ok("T20 closing with a piece still in the air: it is booked on the way out (nothing lost, nothing doubled)",
+       eco(M)["moneyCents"] == booked + 60 and eco(M)["pending"] == [], f"{booked} -> {eco(M)['moneyCents']}")
     errs = errors(M)
     ok("touch: no JS errors", not errs, "; ".join(errs[:3]))
     gr_close(M)

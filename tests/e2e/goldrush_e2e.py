@@ -372,7 +372,7 @@ def desktop_suite(browser, base, user, shots, engine):
     ok("T7 raycast: flank in reach -> target (crosshair 'dig'); sky / >2.4 m / flat ground behind -> none",
        aim and cross == "dig" and not sky and not far and not away, f"aim {aim} sky {sky} far {far} away {away}")
 
-    # real input: hold LMB -> 3-5 digs per second
+    # real input: hold LMB -> the hand's pace (phase 3: ~2.4 strokes per second, a slow start)
     A.evaluate(AIM_AT_MOUND, {"ang": 0.0, "back": 1.3, "maxd": 1.7})
     d0 = st(A)["digs"]
     rev0 = st(A)["revision"]
@@ -384,8 +384,8 @@ def desktop_suite(browser, base, user, shots, engine):
     dt = time.time() - t0
     d1 = st(A)["digs"]
     rate = (d1 - d0) / dt
-    ok("T7 holding the left mouse button digs 3-5 times per second and changes the terrain",
-       3.0 <= rate <= 5.2 and st(A)["revision"] > rev0, f"{d1 - d0} digs in {dt:.2f}s = {rate:.2f}/s, h {h0:.3f}")
+    ok("T7 holding the left mouse button digs at the hand's pace (2-3 strokes per second) and changes the terrain",
+       2.0 <= rate <= 3.1 and st(A)["revision"] > rev0, f"{d1 - d0} digs in {dt:.2f}s = {rate:.2f}/s, h {h0:.3f}")
 
     # ---- TEST 8: 100 digs the way a player does them (button held, view
     # sweeping over the flank, stepping in) - frame times meanwhile
@@ -400,7 +400,7 @@ def desktop_suite(browser, base, user, shots, engine):
     if free:
         A.mouse.down(button="right")
     t0, k, my = time.time(), 0, 450
-    while st(A)["digs"] - d0 < 100 and time.time() - t0 < 45:
+    while st(A)["digs"] - d0 < 100 and time.time() - t0 < 75:          # phase 3: the hand does ~2.4 strokes/s
         k += 1
         phase = k % 60
         if not st(A)["target"]:
@@ -470,8 +470,8 @@ def desktop_suite(browser, base, user, shots, engine):
     dh2 = max(abs(a - b) for a, b in zip(before["h"], again["h"]))
     ok("T10 ... also after a full page reload", again["seed"] == before["seed"] and dh2 < 0.0015, f"max dh {dh2 * 1000:.2f} mm")
     doc = A.evaluate("() => JSON.parse(localStorage.getItem('goldrush.save'))")
-    ok("T10 save document: current version, seed, money as integer cents, tool hand, timestamps, compact terrain",
-       doc["saveVersion"] == 2 and doc["worldSeed"] == before["seed"] and isinstance(doc["economy"]["moneyCents"], int) and doc["tool"] == "hand"
+    ok("T10 save document: current version, seed, money as integer cents, only the hand owned, timestamps, compact terrain",
+       doc["saveVersion"] == 3 and doc["worldSeed"] == before["seed"] and isinstance(doc["economy"]["moneyCents"], int) and doc["tools"]["owned"] == ["hand"]
        and doc["createdAt"] <= doc["updatedAt"] and doc["terrain"] and "settings" in doc,
        f"{len(json.dumps(doc))} B, terrain keys {list(doc['terrain'].keys())}")
 
