@@ -471,7 +471,7 @@ def desktop_suite(browser, base, user, shots, engine):
     ok("T10 ... also after a full page reload", again["seed"] == before["seed"] and dh2 < 0.0015, f"max dh {dh2 * 1000:.2f} mm")
     doc = A.evaluate("() => JSON.parse(localStorage.getItem('goldrush.save'))")
     ok("T10 save document: current version, seed, money as integer cents, only the hand owned, timestamps, compact terrain",
-       doc["saveVersion"] == 3 and doc["worldSeed"] == before["seed"] and isinstance(doc["economy"]["moneyCents"], int) and doc["tools"]["owned"] == ["hand"]
+       doc["saveVersion"] == 4 and doc["worldSeed"] == before["seed"] and isinstance(doc["economy"]["cashCents"], int) and doc["tools"]["owned"] == ["hand"]
        and doc["createdAt"] <= doc["updatedAt"] and doc["terrain"] and "settings" in doc,
        f"{len(json.dumps(doc))} B, terrain keys {list(doc['terrain'].keys())}")
 

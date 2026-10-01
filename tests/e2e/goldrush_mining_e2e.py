@@ -49,13 +49,33 @@ def st(page):
     return page.evaluate("() => window.__goldrush.state()")
 
 
+# Phase 4: finds go into the gold POUCH (money only after selling them at the
+# camp). These phase-2/3 checks are about the gold the player has collected,
+# so "money" here means cash + the pouch's value (exactly what it meant then).
+POUCH_KEYS = {"dust": ("traceGold", "fineGold"), "flakes": ("goldFlake",), "tinyPieces": ("tinyGoldPiece",), "nuggets": ("smallNugget",)}
+
+
+def compat(e):
+    p = e["pouch"]
+    e["moneyCents"] = e["cashCents"] + e["pouchCents"]
+    e["shownCents"] = e["shownCents"] + e["shownPouch"]
+    e["earnedCents"] = e["earnedCents"] + e["pouchCents"]
+    e["inventory"] = {k: {"count": sum(p[c]["count"] for c in cs), "ug": sum(p[c]["ug"] for c in cs)} for k, cs in POUCH_KEYS.items()}
+    st = e["stats"]
+    st["dustValueCents"] = p["traceGold"]["cents"] + p["fineGold"]["cents"]
+    st["flakeValueCents"] = p["goldFlake"]["cents"]
+    st["tinyValueCents"] = p["tinyGoldPiece"]["cents"]
+    st["nuggetValueCents"] = p["smallNugget"]["cents"]
+    return e
+
+
 def eco(page):
-    return page.evaluate("() => window.__goldrush.economy()")
+    return compat(page.evaluate("() => window.__goldrush.economy()"))
 
 
 def settled(page, timeout=6):
     """all pieces picked up and the money counter done counting"""
-    return wait_for(lambda: page.evaluate("() => { const G = window.__goldrush, e = G.economy(); return G.loot().active === 0 && e.shownCents === e.moneyCents; }"), timeout)
+    return wait_for(lambda: page.evaluate("() => { const G = window.__goldrush, e = G.economy(); return G.loot().active === 0 && e.shownCents === e.cashCents && e.shownPouch === e.pouchCents; }"), timeout)
 
 
 def open_game(page, start=True):
@@ -300,13 +320,15 @@ def desktop_suite(browser, base, user, shots):
     shown = e["shownCents"]
     ok("T19 every shown piece is collected exactly once: HUD balance == booked balance, nothing pending",
        all_collected and shown == e["moneyCents"], f"shown {shown} booked {e['moneyCents']} (from {m0})")
-    money_txt = hs["money"].replace(" ", " ")
+    # (phase 4: the collected gold is in the pouch - its value is what the HUD shows under the cash)
+    money_txt = (hs["pouch"] or "€ 0,00").replace(" ", " ")
     euros = int(money_txt.split("€")[1].strip().replace(".", "").split(",")[0]), int(money_txt.split(",")[1])
     doc = A.evaluate("() => { window.__goldrush.save(); return JSON.parse(localStorage.getItem('goldrush.save')); }")
+    pc = doc["economy"]["pouchSummary"]["estimatedSaleCents"]
     ok("T13 money is integer cents end to end (save, economy, HUD text) - no float residue",
-       isinstance(doc["economy"]["moneyCents"], int) and doc["economy"]["moneyCents"] == e["moneyCents"]
-       and euros[0] * 100 + euros[1] == e["moneyCents"] and "." not in str(doc["economy"]["moneyCents"]),
-       f"{money_txt} = {e['moneyCents']} ct")
+       isinstance(pc, int) and isinstance(doc["economy"]["cashCents"], int) and pc + doc["economy"]["cashCents"] == e["moneyCents"]
+       and euros[0] * 100 + euros[1] == e["pouchCents"] and "." not in str(pc),
+       f"{money_txt} = {e['pouchCents']} ct")
     stats = e["stats"]
     ok("T13 the finds add up exactly: dust + flakes + tiny + nuggets == earned",
        stats["dustValueCents"] + stats["flakeValueCents"] + stats["tinyValueCents"] + stats["nuggetValueCents"] == e["earnedCents"], str({k: stats[k] for k in ("dustValueCents", "flakeValueCents", "tinyValueCents", "nuggetValueCents")}))
@@ -525,9 +547,9 @@ def determinism_and_save_suite(browser, base, user, shots):
     A.evaluate("(d) => { localStorage.setItem('goldrush.save', JSON.stringify(d)); localStorage.removeItem('goldrush.save.backup'); }", v1)
     open_game(A, start=False)
     e = eco(A)
-    ok("v1 -> v3 migration: seed + digs kept, money in cents, written back as the current version (3)",
+    ok("v1 -> current migration: seed + digs kept, money in cents, written back as the current version (4)",
        st(A)["seed"] == 77 and e["stats"]["totalDigs"] == 12 and e["moneyCents"] == 0
-       and A.evaluate("() => { window.__goldrush.save(); return JSON.parse(localStorage.getItem('goldrush.save')).saveVersion; }") == 3)
+       and A.evaluate("() => { window.__goldrush.save(); return JSON.parse(localStorage.getItem('goldrush.save')).saveVersion; }") == 4)
     errs = errors(A)
     ok("determinism/save: no JS errors", not errs, "; ".join(errs[:3]))
     gr_close(A)

@@ -1,0 +1,149 @@
+{
+ "note": "real GoldRush save v3 written by the phase-3 code (commit 8707754), seed 4242, 120 hand strokes",
+ "phase2": {
+  "n": 240,
+  "cents": 27,
+  "hashes": {
+   "height": 1747983204,
+   "qh": 1094734886,
+   "slices": 1901506892,
+   "money": 27,
+   "finds": 6,
+   "pending": 0,
+   "carried": 0,
+   "rocks": "3378,1384,853,6,0;5116,5320,-5022,6,0;-3167,5762,-2118,5,0;-7468,4014,-3538,6,0;-6896,5168,-6328,11,0;-210,5628,-9467,12,0;6483,1006,-1214,7,0;10290,846,-5734,5,0;-6627,4232,-9528,6,0;1953,1297,-13909,11,0;-3291,1320,1819,9,0;1250,4063,-594,17,0",
+   "tools": {
+    "equipped": "hand",
+    "owned": [
+     "hand"
+    ]
+   },
+   "seed": 4242
+  },
+  "money": 27
+ },
+ "doc": {
+  "saveVersion": 3,
+  "worldSeed": 4242,
+  "createdAt": 1790858342518,
+  "updatedAt": 1790858345148,
+  "tools": {
+   "equipped": "hand",
+   "owned": [
+    "hand"
+   ]
+  },
+  "player": {
+   "x": 1.6,
+   "z": 7.6,
+   "yaw": 0,
+   "pitch": -1.05
+  },
+  "settings": {
+   "quality": "auto",
+   "headBob": true,
+   "reducedMotion": false,
+   "sound": true,
+   "vibration": true
+  },
+  "economy": {
+   "moneyCents": 27,
+   "earnedCents": 27,
+   "inventory": {
+    "dust": {
+     "count": 6,
+     "ug": 2700
+    },
+    "flakes": {
+     "count": 0,
+     "ug": 0
+    },
+    "tinyPieces": {
+     "count": 0,
+     "ug": 0
+    },
+    "nuggets": {
+     "count": 0,
+     "ug": 0
+    },
+    "totalGoldUg": 2700,
+    "totalValueCents": 27
+   },
+   "stats": {
+    "totalDigs": 240,
+    "successfulDigs": 240,
+    "blockedDigs": 0,
+    "findDigs": 6,
+    "volumeMl": 8006,
+    "relocatedMl": 72,
+    "massG": {
+     "dirt": 1486,
+     "compactDirt": 3070,
+     "gravel": 9063,
+     "stone": 0
+    },
+    "freshMassG": 13547,
+    "slices": 51,
+    "finds": 6,
+    "discovered": 6,
+    "dustValueCents": 27,
+    "flakeValueCents": 0,
+    "tinyValueCents": 0,
+    "nuggetValueCents": 0,
+    "biggestNuggetCents": 0,
+    "biggestNuggetUg": 0,
+    "playTimeMs": 0,
+    "rockHits": 0,
+    "rocksBroken": 0,
+    "byTool": {
+     "hand": {
+      "actions": 240,
+      "massG": 13619,
+      "volumeMl": 8006,
+      "blocked": 0
+     },
+     "shovel": {
+      "actions": 0,
+      "massG": 0,
+      "volumeMl": 0,
+      "blocked": 0
+     },
+     "pickaxe": {
+      "actions": 0,
+      "massG": 0,
+      "volumeMl": 0,
+      "blocked": 0
+     }
+    }
+   },
+   "flags": {
+    "firstNuggetSeen": false
+   },
+   "nextId": 7,
+   "pending": []
+  },
+  "terrain": {
+   "gen": 1,
+   "cols": 240,
+   "cell": 0.125,
+   "unit": "0.1mm",
+   "encoding": "rle-zigzag-varint-b64",
+   "changed": 13,
+   "data": "/aADApEB1xEDAYsFAwGHBQMBgQUDAZEFAwGbBdwBAe8KAwH9BAMB/wQDAf8EAwH7BAMB6wTdIgA=",
+   "loose": "4cUDAA=="
+  },
+  "resources": {
+   "unit": "slice1cm+0.1mm",
+   "encoding": "rle-zigzag-varint-b64",
+   "changed": 1,
+   "slices": "4cUDAA==",
+   "level": "/qADASDiJAA=",
+   "carried": []
+  },
+  "rocks": {
+   "v": 1,
+   "count": 12,
+   "list": []
+  }
+ }
+}

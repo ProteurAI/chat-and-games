@@ -78,17 +78,39 @@ def select(page, tool):
     return wait_for(lambda: G(page, "(t) => { const s = window.__goldrush.tools(); return s.equipped === t && s.state === 'idle'; }", tool), 3)
 
 
+# Phase 4: finds go into the gold POUCH (money only after selling them at the
+# camp). These phase-2/3 checks are about the gold the player has collected,
+# so "money" here means cash + the pouch's value (exactly what it meant then).
+POUCH_KEYS = {"dust": ("traceGold", "fineGold"), "flakes": ("goldFlake",), "tinyPieces": ("tinyGoldPiece",), "nuggets": ("smallNugget",)}
+
+
+def compat(e):
+    p = e["pouch"]
+    e["moneyCents"] = e["cashCents"] + e["pouchCents"]
+    e["shownCents"] = e["shownCents"] + e["shownPouch"]
+    e["earnedCents"] = e["earnedCents"] + e["pouchCents"]
+    e["inventory"] = {k: {"count": sum(p[c]["count"] for c in cs), "ug": sum(p[c]["ug"] for c in cs)} for k, cs in POUCH_KEYS.items()}
+    st = e["stats"]
+    st["dustValueCents"] = p["traceGold"]["cents"] + p["fineGold"]["cents"]
+    st["flakeValueCents"] = p["goldFlake"]["cents"]
+    st["tinyValueCents"] = p["tinyGoldPiece"]["cents"]
+    st["nuggetValueCents"] = p["smallNugget"]["cents"]
+    return e
+
+
 def eco(page):
-    return G(page, "() => window.__goldrush.economy()")
+    return compat(G(page, "() => window.__goldrush.economy()"))
 
 
 # stand in front of a fresh patch (of `want` material, or any) and aim at it
-SPOT = r"""({ want, reach, start, fresh, rock, core, uniform }) => {
+# wide: search all the way round the mound (compact dirt lies mostly inside the
+# pile; on the surface it is only left at the back, away from the starter faces)
+SPOT = r"""({ want, reach, start, fresh, rock, core, uniform, wide }) => {
   const G = window.__goldrush, t = G.terrain();
   const solid = (h) => { const i = Math.round((h.x - t.x0) / t.cell), j = Math.round((h.z - t.z0) / t.cell);
     for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const k = (j + dj) * t.vps + i + di; if (!(t.height[k] <= t.stoneTop[k] + 1e-4 && t.height[k] >= t.stoneBot[k])) return false; } return true; };
   for (let a = 0; a < 220; a++) {
-    const ang = -2.2 + ((a * 0.618034 + (start || 0)) % 1) * 4.4;
+    const span = wide ? Math.PI : 2.2, ang = -span + ((a * 0.618034 + (start || 0)) % 1) * 2 * span;
     const dx = Math.sin(ang), dz = Math.cos(ang);
     let foot = null;
     for (let d = 14; d > 0; d -= 0.05) if (G.heightAt(dx * d, -6 + dz * d) > 0.35) { foot = d; break; }
@@ -310,9 +332,9 @@ def foundation_and_tools(browser, base, user, shots):
        and belt == [{"t": "hand", "locked": False, "active": True}, {"t": "shovel", "locked": True, "active": False}, {"t": "pickaxe", "locked": True, "active": False}],
        f"{t0['owned']} tip={tip!r} belt={belt}")
     defs = G(A, "() => window.__goldrush.toolDefs()")
-    fields = ["id", "label", "tier", "reach", "materialEfficiency", "loosenedBonus", "kernel", "massCapacity", "rockDamage", "unlockCost", "cycle"]
+    fields = ["id", "label", "tier", "reach", "materialEfficiency", "loosenedBonus", "kernel", "massCapacity", "rockDamage", "price", "cycle"]
     luck = [k for d in defs for k in json.dumps(d).lower().split('"') if any(w in k for w in ("luck", "findchance", "findbonus", "goldbonus", "rarity"))]
-    ok("T22 exactly three tool definitions (hand, shovel, pickaxe), each with efficiency per material, kernel, timing, rock damage, unlock cost",
+    ok("T22 exactly three tool definitions (hand, shovel, pickaxe), each with efficiency per material, kernel, timing, rock damage, shop price",
        [d["id"] for d in defs] == ["hand", "shovel", "pickaxe"] and all(all(f in d for f in fields) and len(d["materialEfficiency"]) == 4 for d in defs),
        str([(d["id"], d["cycle"]) for d in defs]))
     ok("T40a no tool carries luck / find-rate stats - more gold only comes from moving more ground", not luck, str(luck))
@@ -320,7 +342,7 @@ def foundation_and_tools(browser, base, user, shots):
     # ---------------- T11: hand mass per action and material (fresh ground)
     per = {}
     for name, start in (("dirt", 0.1), ("compactDirt", 0.3), ("gravel", 0.5)):
-        spot = G(A, SPOT, {"want": name, "reach": 2.0, "start": start, "fresh": True, "uniform": True})
+        spot = G(A, SPOT, {"want": name, "reach": 2.0, "start": start, "fresh": True, "uniform": True, "wide": name == "compactDirt"})
         if not spot:
             per[name] = None
             continue
@@ -484,7 +506,7 @@ def foundation_and_tools(browser, base, user, shots):
     pk_kgmin = 60 / defs[2]["cycle"][DIRT] * pk_kg
     ok("T29 the pickaxe is the wrong tool for loose dirt: less kg/min than the bare hand", pk_kgmin < hand_kgmin, f"{pk_kgmin:.1f} vs hand {hand_kgmin:.1f} kg/min")
     # T30: loosening compact soil helps hand and shovel
-    cp = G(A, SPOT, {"want": "compactDirt", "reach": 2.0, "start": 0.27, "fresh": True, "uniform": True})
+    cp = G(A, SPOT, {"want": "compactDirt", "reach": 2.0, "start": 0.27, "fresh": True, "uniform": True, "wide": True})
     before = G(A, ACT_N, {"n": 4, "tool": "hand", "spot": cp, "jitter": 0})
     G(A, ACT_N, {"n": 5, "tool": "pickaxe", "spot": cp, "jitter": 0})
     loose = G(A, "(s) => { const G = window.__goldrush; G.aimAt(s); return G.probe().loose; }", cp)
@@ -662,8 +684,8 @@ def foundation_and_tools(browser, base, user, shots):
        saved["tools"]["owned"] == ["hand"] and not ui_dev and tools(A)["dev"], str(saved["tools"]))
 
     # ---------------- T41/T45: save v3, owning a tool for real
-    ok("T41 save v3 holds owned tools, pending finds, boulders, carried finds, 0.1 mm terrain, 1 cm slices",
-       saved["saveVersion"] == 3 and set(saved["tools"]) == {"owned", "equipped"} and isinstance(saved["economy"]["pending"], list)
+    ok("T41 the save (now v4) holds owned tools, pending finds, boulders, carried finds, 0.1 mm terrain, 1 cm slices",
+       saved["saveVersion"] == 4 and set(saved["tools"]) == {"owned", "equipped", "upgrades"} and isinstance(saved["economy"]["pending"], list)
        and saved["rocks"]["v"] == 1 and isinstance(saved["resources"]["carried"], list) and saved["terrain"]["unit"] == "0.1mm"
        and saved["resources"]["unit"] == "slice1cm+0.1mm", str({k: saved[k] for k in ("saveVersion", "tools")}))
     h_before = G(A, "() => window.__goldrush.hashes()")
@@ -711,9 +733,9 @@ def progression(browser, base, user, shots, bench):
     h = G(A, "() => window.__goldrush.hashes()")
     A.evaluate("() => window.__goldrush.save()")
     d3 = json.loads(G(A, "() => localStorage.getItem('goldrush.save')"))
-    ok("T42 a real phase-2 save (v2) loads: identical ground, same money, only the hand owned; written back as v3 and still small",
+    ok("T42 a real phase-2 save (v2) loads: identical ground, same money, only the hand owned; written back as the current version and still small",
        h["height"] == fix["phase2"]["hashes"]["height"] and h["money"] == fix["phase2"]["money"] and h["tools"]["owned"] == ["hand"]
-       and d3["saveVersion"] == 3 and len(json.dumps(d3)) < 8000, f"hash {h['height']} vs {fix['phase2']['hashes']['height']}, money {h['money']}, {len(json.dumps(d3))} B")
+       and d3["saveVersion"] == 4 and len(json.dumps(d3)) < 8000, f"hash {h['height']} vs {fix['phase2']['hashes']['height']}, money {h['money']}, {len(json.dumps(d3))} B")
     v1 = {"saveVersion": 1, "worldSeed": 77, "createdAt": 1, "updatedAt": 2, "money": 3.5, "tool": "hand",
           "player": {"x": 0.6, "z": 10.2, "yaw": 0, "pitch": 0.1}, "stats": {"digs": 12}, "terrain": None}
     gr_close(A)
@@ -721,8 +743,8 @@ def progression(browser, base, user, shots, bench):
     open_game(A)
     A.evaluate("() => window.__goldrush.save()")
     d = json.loads(G(A, "() => localStorage.getItem('goldrush.save')"))
-    ok("T42b a phase-1 save (v1, money as a float) goes 1 -> 2 -> 3: € 3,50 kept as 350 cents, only the hand",
-       d["saveVersion"] == 3 and d["economy"]["moneyCents"] == 350 and d["tools"]["owned"] == ["hand"] and d["worldSeed"] == 77, str({k: d[k] for k in ("saveVersion", "tools")}))
+    ok("T42b a phase-1 save (v1, money as a float) goes 1 -> 2 -> 3 -> 4: € 3,50 kept as 350 cents, only the hand",
+       d["saveVersion"] == 4 and d["economy"]["cashCents"] == 350 and d["tools"]["owned"] == ["hand"] and d["worldSeed"] == 77, str({k: d[k] for k in ("saveVersion", "tools")}))
 
     # T17: pending -> collected, exactly once, also across exit and reload
     fresh(A)
@@ -773,14 +795,14 @@ def progression(browser, base, user, shots, bench):
 
     # T44: unlock costs are prepared, provisional, and fit the measured pace
     defs = G(A, "() => window.__goldrush.toolDefs()")
-    sh = defs[1]["unlockCost"]
+    sh = {"cents": defs[1]["price"], "provisional": True}
     med10 = bench["money_cents"]["600"]["median"] if bench else None
     med25 = None
     if bench and bench["money_cents"]["1200"]["n"]:
         med20, med30 = bench["money_cents"]["1200"]["median"], bench["money_cents"]["1800"]["median"]
         med25 = (med20 + med30) / 2
-    ok("T44 shovel / pickaxe prices are only prepared (provisional, no shop) and the shovel's sits between a median starter's money after 10 and 25 minutes",
-       sh["provisional"] and defs[2]["unlockCost"]["provisional"] and (med10 is None or med25 is None or med10 <= sh["cents"] <= med25),
+    ok("T44 (phase 4: the shop sets the prices) the shovel's price sits between a median starter's gold after 10 and 25 minutes",
+       sh["cents"] > 0 and defs[2]["price"] > sh["cents"] and (med10 is None or med25 is None or med10 <= sh["cents"] <= med25),
        f"shovel {sh} median 10 min {med10} ct, ~25 min {med25} ct")
     errs = errors(A)
     ok("progression part ran without page errors", not errs, str(errs[:3]))
