@@ -20,8 +20,9 @@ import { DevAccess } from "./goldrush-devaccess.js";
 import { DevHud } from "./goldrush-devhud.js";
 import { SAVE_VERSION } from "./goldrush-save.js";
 import { formatEuro, formatMass } from "./goldrush-economy.js";
-// command packs (DEV_PACKS): phase 1-5. A later phase adds one import line here.
+// command packs (DEV_PACKS): phase 1-5, phase 6. A later phase adds one import line here.
 import "./goldrush-devcommands.js";
+import "./goldrush-devcommands6.js";
 
 const DEV_ERROR = actions.DEV_ERROR;
 const CLOSE = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>`;
