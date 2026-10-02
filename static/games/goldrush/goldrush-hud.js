@@ -275,6 +275,10 @@ export class GoldRushHud {
     this.toast.remove();
     this.tipEl.remove();
     this.promptEl.remove();
-    // the wallet stack goes with the shell's DOM
+    this.workEl.remove();
+    // the wallet stack: the cash counter belongs to the shell and goes back where it was, the
+    // rest (pouch, load, objective) goes - a game restarted in place (a restore) builds its own
+    if (this.stack.parentElement) this.stack.parentElement.insertBefore(this.moneyEl, this.stack);
+    this.stack.remove();
   }
 }

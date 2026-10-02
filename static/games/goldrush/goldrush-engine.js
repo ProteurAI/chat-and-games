@@ -397,7 +397,7 @@ export class GoldRushGame {
     if (r.kind === "pick") this.audio.play("swap", { dist: 0.3 });
     else if (r.kind === "drop") this.audio.play("bucket", { dist: 0.5, strength: 0.8 });
     else if (r.kind === "work") this._enterWork();
-    this._stationSig = "";
+    this._stationSig = null;
     this.dirty = true;
     return true;
   }
@@ -408,7 +408,7 @@ export class GoldRushGame {
     this.input.allLook = true;
     this.ui.root.classList.add("gr-working");
     this.audio.play(this.processing.work === "pan" ? "splash" : "rattle", { dist: 0.4, strength: 0.6 });
-    this._stationSig = "";
+    this._stationSig = null;
   }
 
   _leaveWork() {
@@ -416,7 +416,7 @@ export class GoldRushGame {
     this.input.allLook = false;
     this.ui.root.classList.remove("gr-working");
     this.hud.work(null);
-    this._stationSig = "";
+    this._stationSig = null;
   }
 
   // E while working: take the gold out of the pan (when it shows), else stop for now
@@ -843,7 +843,7 @@ export class GoldRushGame {
     p.y = this.world.groundAt(p.x, p.z) + EYE;
     this._updateCamera();
     this._aim();
-    this._stationSig = "";
+    this._stationSig = null;
     this._stationTick(0);
     this.dirty = true;
     if (!this.running) this.render();

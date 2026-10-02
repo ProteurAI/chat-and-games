@@ -119,7 +119,7 @@ function applyPlan(g, p) {
 export function refreshItems(g) {
   g.processing.applyUpgrades();
   g.ui.onTool && g.ui.onTool(g.toolState());
-  g._stationSig = "";
+  g._stationSig = null;
   g._aim();
 }
 
@@ -259,7 +259,7 @@ export function fillBucket(g, fraction, kind = "paydirt") {
   // at the wash place: the bucket is set down where you work with it
   if (nearWash(g) && !pr.bucket.carried && !pr.bucketAtWash()) pr.devPlaceBucket(WASH.bucketSpot.x, WASH.bucketSpot.z);
   if (!pr.devSetBucket(batch)) return fail(DEV_ERROR);
-  g._stationSig = "";
+  g._stationSig = null;
   return { ok: true };
 }
 
@@ -277,7 +277,7 @@ export function concentrateLoad(g) {
   b.finds = [{ cls: FIND.FLAKE, ug: 1400, key: "dev:conc:0" }, { cls: FIND.FLAKE, ug: 1100, key: "dev:conc:1" }, { cls: FIND.TINY, ug: 3800, key: "dev:conc:2" }];
   b.history = [{ op: "dev", kind: "concentrate" }];
   if (!pr.devPanLoad(b)) return fail(DEV_ERROR);
-  g._stationSig = "";
+  g._stationSig = null;
   return { ok: true };
 }
 
@@ -286,7 +286,7 @@ export function bucketHere(g) {
   if (!pr.bucket) return fail("Erst einen Eimer besitzen.");
   const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw), rx = Math.cos(p.yaw), rz = -Math.sin(p.yaw);
   if (!pr.devPlaceBucket(p.x + fx * 0.6 + rx * 0.35, p.z + fz * 0.6 + rz * 0.35, p.yaw)) return fail(DEV_ERROR);
-  g._stationSig = "";
+  g._stationSig = null;
   return { ok: true };
 }
 
@@ -294,7 +294,7 @@ export function bucketToWash(g) {
   const pr = g.processing;
   if (!pr.bucket) return fail("Erst einen Eimer besitzen.");
   if (!pr.devPlaceBucket(WASH.bucketSpot.x, WASH.bucketSpot.z)) return fail(DEV_ERROR);
-  g._stationSig = "";
+  g._stationSig = null;
   return { ok: true };
 }
 
