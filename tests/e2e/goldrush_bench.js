@@ -25,8 +25,19 @@
 //   B     shovel -> blade upgrade -> pickaxe
 //   C     shovel -> pickaxe -> both shovel upgrades
 //   D     shovel -> both shovel upgrades -> pickaxe -> both pickaxe upgrades
+// Phase 5 (processing, 120-180 min):
+//   T     tool upgrades first: all six phase-4 items, then bucket, pan, classifier
+//   P     pan first: shovel -> bucket -> pan, then pickaxe / upgrades, classifier
+//   K     classifier as early as possible: shovel -> bucket -> pan -> classifier
+//   M     balanced: shovel, pickaxe, blade -> bucket, pan -> handle -> classifier
 // With the pickaxe the bot breaks up hard ground (compact / gravel) before
 // shovelling it, like a player who learned what the pickaxe is for.
+// With bucket + gold pan it PROCESSES: the bucket stands next to it, every
+// dig goes in until it is full, it carries it to the wash place (slower
+// when full), sieves it (classifier), pans every load (each at the game's
+// own minimum time + 15 %: a person, not a machine), takes the gold out,
+// sells / shops from there when due, walks back and sets the bucket down
+// again - all with the game's real transactions.
 // No timers, no pity: whatever the ground holds is what it finds.
 //
 // window.__grBench.init(seed, opts) / .run(untilSeconds) / .result()
@@ -35,11 +46,18 @@
   const G = window.__goldrush;
   const WALK = 3.4, TRIP = 4.6;                    // m/s digging around / walking to the camp (partly sprinting)
   const SWITCH = 0.42;                             // lower + raise a tool
-  const CHECK = [60, 300, 600, 1200, 1800, 2700, 3600, 5400];
+  const CHECK = [60, 300, 600, 1200, 1800, 2700, 3600, 5400, 7200, 9000, 10800];
+  const WASH_SPOT = { x: -16.15, z: 3.5 };
+  const MOUND = { x: 0, z: -6 };
+  const SLOW = 1.15;                               // real work vs the game's minimum time per load
   const PICKUP = { 1: 0.4, 2: 0.4, 3: 1.0, 4: 1.1, 5: 1.4 };
   const PLANS = {
     none: [], A: ["shovel"], B: ["shovel", "shovel.blade", "pickaxe"], C: ["shovel", "pickaxe", "shovel.blade", "shovel.handle"],
     D: ["shovel", "shovel.blade", "shovel.handle", "pickaxe", "pickaxe.tip", "pickaxe.head"],
+    T: ["shovel", "shovel.blade", "shovel.handle", "pickaxe", "pickaxe.tip", "pickaxe.head", "bucket", "pan", "classifier", "pan.riffles", "bucket.large"],
+    P: ["shovel", "bucket", "pan", "pickaxe", "shovel.blade", "shovel.handle", "classifier", "pan.riffles", "bucket.large", "pickaxe.tip", "pickaxe.head"],
+    K: ["shovel", "bucket", "pan", "classifier", "pan.riffles", "bucket.large", "pickaxe", "shovel.blade", "shovel.handle", "pickaxe.tip", "pickaxe.head"],
+    M: ["shovel", "pickaxe", "shovel.blade", "bucket", "pan", "shovel.handle", "classifier", "pan.riffles", "bucket.large", "pickaxe.tip", "pickaxe.head"],
   };
 
   function rng(seed) {
@@ -69,6 +87,7 @@
       this.nuggets = [];
       this.kg = 0;
       this.trips = 0; this.tripTime = 0; this.lastTrip = 0; this.log = [];
+      this.procOn = false; this.bk = null; this.bucketMl = 0; this.capMl = 10000; this.procRounds = 0; this.procTime = 0; this.pans = 0;
       this.win = { n: 0, hard: 0 }; this.good = null; this.side = this.r() < 0.5 ? -1 : 1; this.returns = 0;
       this.bought = {};
       this.state = "walk";
@@ -130,7 +149,7 @@
         if (this.money[c] != null || this.t < c) continue;
         const e = G.economy();
         this.money[c] = this.cents;
-        this.snap[c] = { cash: e.cashCents, pouch: e.pouchCents, earned: e.sold.totalCashCents, owned: G.tools().owned.slice(), upgrades: (G.tools().saved.upgrades || []).slice(), kg: Math.round(this.kg) };
+        this.snap[c] = { cash: e.cashCents, pouch: e.pouchCents, earned: e.sold.totalCashCents, owned: G.tools().owned.slice(), upgrades: (G.tools().saved.upgrades || []).slice(), equipment: G.proc().owned.slice(), kg: Math.round(this.kg) };
       }
     },
 
@@ -163,11 +182,12 @@
       return false;
     },
 
-    _trip(buy) {
+    _trip(buy, from = null) {
       const st = G.economy();
       const assay = { x: -12.4, z: 9.25 }, supply = { x: -18.75, z: 10.35 };
-      const d = Math.hypot(assay.x - this.x, assay.z - this.z);
-      let dt = d / TRIP + 1.0;                                  // walk over, step up to the table
+      const o = from || this;
+      const d = Math.hypot(assay.x - this.x, assay.z - this.z), d0 = Math.hypot(assay.x - o.x, assay.z - o.z);
+      let dt = d0 / TRIP + 1.0;                                 // walk over, step up to the table
       const entry = { t: Math.round(this.t), sold: 0, cash: 0, bought: [] };
       if (st.pouchUg > 0) {
         if (!st.flags.firstSaleSeen) this.firstSaleT = this.t + dt + 1.2;
@@ -187,6 +207,9 @@
         }
         G.equipNow(this.tool);
         this._defs();
+        const pr = G.proc();
+        this.procOn = pr.owned.includes("bucket") && pr.owned.includes("pan");
+        this.capMl = pr.capacityMl;
       }
       dt += d / TRIP + 1.5;                                     // back to the spot, find it again
       entry.cash = G.economy().cashCents;
@@ -198,21 +221,64 @@
       G.aimAt({ x: this.x, z: this.z, yaw: this.yaw, pitch: this.pitch });
     },
 
-    _maybeTrip() {
-      if (this.strategy === "none") return;
+    _maybeTrip(from = null) {
+      if (this.strategy === "none") return false;
       const e = G.economy();
       const pouch = e.pouchCents;
       if (!e.flags.firstSaleSeen) {
-        if (pouch >= 100 || (this.t >= 300 && pouch > 0)) this._trip(false);     // curious: what is it worth?
-        return;
+        if (pouch >= 100 || (this.t >= 300 && pouch > 0)) { this._trip(false, from); return true; }     // curious: what is it worth?
+        return false;
       }
       const next = this._next();
       if (next) {
         if (next.state === "locked" && next.needs.every((n) => n.met || n.text.startsWith("auf Stein"))) this._seekStone();
         const it = this._next();
-        if (it && it.state === "available" && e.cashCents + pouch >= it.price) { this._trip(true); return; }
+        if (it && it.state === "available" && e.cashCents + pouch >= it.price) { this._trip(true, from); return true; }
       }
-      if (pouch >= 300 && this.t - this.lastTrip >= 600) this._trip(false);       // now and then: cash in, see where you stand
+      if (pouch >= 300 && this.t - this.lastTrip >= 600) { this._trip(false, from); return true; }     // now and then: cash in, see where you stand
+      return false;
+    },
+
+    // processing: the bucket stands next to the bot (re-placed when it moved away)
+    _ensureBucket() {
+      const near = this.bk && Math.hypot(this.bk.x - this.x, this.bk.z - this.z) < 1.9;
+      if (near) return;
+      const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw), fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
+      this.bk = { x: this.x + rx * 0.55 - fx * 0.25, z: this.z + rz * 0.55 - fz * 0.25 };
+      G.procPlaceBucket(this.bk.x, this.bk.z);
+      this.t += 1.0;
+    },
+
+    // a full bucket: carry it to the wash place, sieve, pan everything, back
+    _procCycle() {
+      const p0 = G.proc();
+      const kg = p0.bucket.massG / 1000, carry = WALK * (1 - 0.15 * Math.min(1.4, kg / 16));
+      const d = Math.hypot(WASH_SPOT.x - this.x, WASH_SPOT.z - this.z);
+      let dt = 1.0 + d / carry + 1.0;                           // pick it up, carry it over, set it down
+      G.procBucketToWash();
+      if (p0.owned.includes("classifier")) {
+        const r = G.procAct("sieve-load");
+        if (r.ok) { const w = G.procWork(30); dt += 1.2 + 1.0 + w.t * SLOW + 1.2; }     // to the screen, tip it, shake, to the trough
+      }
+      for (let i = 0; i < 24; i++) {
+        const f = G.procAct("pan-fill");
+        if (!f.ok) break;
+        const w = G.procWork(30);
+        if (!w.done) break;
+        G.procCollect();
+        dt += 1.5 + w.t * SLOW + 1.0;                           // fill the pan, swirl, take the gold out
+        this.pans++;
+      }
+      this.t += dt; this.procTime += dt; this.procRounds++;
+      this.bucketMl = 0;
+      this._check();
+      if (!this._maybeTrip(WASH_SPOT)) {                        // sell / shop from here, or straight back
+        const back = Math.hypot(WASH_SPOT.x - this.x, WASH_SPOT.z - this.z) / WALK + 1.0;
+        this.t += back; this.procTime += back;
+      }
+      this.bk = null;
+      this._ensureBucket();
+      G.aimAt({ x: this.x, z: this.z, yaw: this.yaw, pitch: this.pitch });
     },
 
     // with a pickaxe: hard ground (compact / gravel, not loose yet) gets broken up first
@@ -257,12 +323,22 @@
       let guard = 0;
       while (this.t < until && guard++ < 400000) {
         if (this.state === "walk") {
-          // straight at the mound until something is in reach
+          // towards the mound until something is in reach (it is huge - on the way there is
+          // always a face); right at its middle and still nothing: look round
           if (this._scan(this.yaw)) { this.state = "dig"; this.t += 0.3; continue; }
+          if (this.digs === 0) {
+            // the first walk from the claim entrance: straight ahead (as calibrated in phase 4)
+            this._move(0.25, this.yaw);
+            if (this.walked > 40) { this.yaw += 0.5; this.walked = 0; }
+            continue;
+          }
+          const dx = MOUND.x - this.x, dz = MOUND.z - this.z;
+          if (Math.hypot(dx, dz) > 4) this.yaw = Math.atan2(-dx, -dz) + (r() - 0.5) * 0.4;
+          else if (this.walked > 6) { this.yaw += 0.9; this.walked = 0; }
           this._move(0.25, this.yaw);
-          if (this.walked > 40) { this.yaw += 0.5; this.walked = 0; }
           continue;
         }
+        if (this.procOn) this._ensureBucket();
         this._loosen();
         const res = G.act({ visuals: false, tool: this.tool });
         this.actions++;
@@ -294,6 +370,10 @@
           if (res.best >= 5) { if (this.first.nugget == null) this.first.nugget = at; this.nuggets.push(at); }
         }
         this._check();
+        if (this.procOn) {
+          this.bucketMl += res.intoMl || 0;
+          if (this.bucketMl >= this.capMl - 50 || res.spilledMl > 0) { this._procCycle(); continue; }
+        }
         this._maybeTrip();
         // the hand wanders a little; every ~60 actions a fresh patch next to it
         if (this.digs % 12 === 0) {
@@ -320,6 +400,7 @@
         biggestNuggetCents: e.stats.biggestNuggetCents, finds: e.stats.finds, slices: e.stats.slices,
         massG: e.stats.massG, x: +this.x.toFixed(2), z: +this.z.toFixed(2), starter: G.starter(),
         trips: this.trips, tripTime: +this.tripTime.toFixed(1), bought: this.bought, tripLog: this.log,
+        procRounds: this.procRounds, procTime: +this.procTime.toFixed(1), pans: this.pans, ledger: G.proc().ledger, equipment: G.proc().owned,
         firstSale: this.firstSaleT != null ? +this.firstSaleT.toFixed(1) : null,
         removedM3: e.stats.volumeMl / 1e6,
         cash: e.cashCents, earned: e.sold.totalCashCents, spent: e.shop.spentCents, sales: e.sold.sales, largestSale: e.sold.largestSaleCents,

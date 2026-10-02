@@ -35,8 +35,9 @@ if hasattr(sys.stdout, "reconfigure"):
 
 BOT = open(os.path.join(os.path.dirname(__file__), "goldrush_bench.js"), encoding="utf-8").read()
 CHECK = [60, 300, 600, 1200, 1800]
-CHECK4 = [600, 1200, 1800, 2700, 3600, 5400]
-ITEMS = ["shovel", "pickaxe", "shovel.blade", "shovel.handle", "pickaxe.tip", "pickaxe.head"]
+CHECK4 = [600, 1200, 1800, 2700, 3600, 5400, 7200, 9000, 10800]
+ITEMS = ["shovel", "pickaxe", "shovel.blade", "shovel.handle", "pickaxe.tip", "pickaxe.head", "bucket", "pan", "classifier", "pan.riffles", "bucket.large"]
+OWNED_AT = (1800, 3600, 5400, 7200, 10800)
 
 
 def arg(name, default):
@@ -118,18 +119,23 @@ def summarize4(results):
         "cash_cents": {str(c): dist(at(c, "cash")) for c in CHECK4},
         "earned_cents": {str(c): dist(at(c, "earned")) for c in CHECK4},
         "owned": {},
-        "kg": {str(c): dist(at(c, "kg")) for c in (1800, 3600, 5400)},
+        "kg": {str(c): dist(at(c, "kg")) for c in OWNED_AT},
+        "procRounds": dist([r.get("procRounds") for r in results]),
+        "pans": dist([r.get("pans") for r in results]),
+        "panToClassifier_s": dist([(r["bought"].get("classifier") - r["bought"]["pan"]) if r["bought"].get("classifier") and r["bought"].get("pan") else None for r in results]),
         "pileShareRemoved_pct": dist([100 * r["removedM3"] / r["pileM3"] for r in results]),
         "trips": dist([r["trips"] for r in results]),
         "tripTime_s": dist([r["tripTime"] for r in results]),
         "biggestNugget_cents": dist([r["biggestNuggetCents"] or None for r in results]),
         "firstNugget_s": dist([r["first"]["nugget"] for r in results]),
     }
-    for c in (1800, 3600, 5400):
+    for c in OWNED_AT:
         combos = {}
         for r in results:
-            sn = r["snap"].get(str(c)) or r["snap"].get(c) or {}
-            key = "+".join([t for t in sn.get("owned", []) if t != "hand"] + sn.get("upgrades", [])) or "hand only"
+            sn = r["snap"].get(str(c)) or r["snap"].get(c)
+            if not sn:
+                continue
+            key = "+".join([t for t in sn.get("owned", []) if t != "hand"] + sn.get("upgrades", []) + sn.get("equipment", [])) or "hand only"
             combos[key] = combos.get(key, 0) + 1
         out["owned"][str(c)] = dict(sorted(combos.items(), key=lambda kv: -kv[1]))
     worth = [r["earned"] + 0 for r in results]
