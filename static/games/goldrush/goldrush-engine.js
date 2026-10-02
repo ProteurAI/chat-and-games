@@ -29,6 +29,8 @@ import { DigEffects } from "./goldrush-vfx.js";
 import { GoldRushWorld, SPAWN, SUN_DIR } from "./goldrush-world.js";
 
 export const THREE_REVISION = THREE.REVISION;
+export { SPAWN } from "./goldrush-world.js";
+export { WASH } from "./goldrush-processing.js";
 export { GRIPS, TOOL_KEYS } from "./goldrush-hand.js";
 export { STATIONS } from "./goldrush-stations.js";
 
@@ -128,6 +130,10 @@ export class GoldRushGame {
     this._hit = { x: 0, y: 0, z: 0, normal: null, distance: 0, diggable: true, boulder: null };
     this.ready = false;
     this.disposed = false;
+    // developer tools: this mine was changed by a QA command (informative only)
+    this.devModified = !!doc.devModified;
+    this.devModifiedAt = Number.isFinite(doc.devModifiedAt) ? doc.devModifiedAt : null;
+    this.devHook = null;                     // per-frame debug overlays (only while one is switched on)
   }
 
   get digs() { return this.economy.stats.successfulDigs; }
@@ -477,6 +483,32 @@ export class GoldRushGame {
     return r;
   }
 
+  // What owning a shop item means in the game - one place, used by buy() and
+  // by the developer tools (goldrush-devactions.js). A later phase with a new
+  // kind of item (a machine) adds its kind here and in ownsItem().
+  canGrant(it) { return !!it && ["tool", "equipment", "upgrade"].includes(it.kind); }
+
+  ownsItem(it) {
+    if (it.kind === "tool") return this.tools.owned.has(it.tool);
+    if (it.kind === "equipment") return this.processing.owned.has(it.id);
+    if (it.kind === "upgrade") return this.tools.upgrades.has(it.id);
+    return false;
+  }
+
+  _grantItem(it) {
+    if (it.kind === "tool") {
+      this.tools.unlock(it.tool);
+      this.stations.setOwned(this.tools.owned);
+    } else if (it.kind === "equipment") {
+      this.processing.grant(it.id);                                       // it appears on the claim
+    } else if (it.kind === "upgrade") {
+      this.tools.addUpgrade(it.id);
+      this.hands.models.applyUpgrades(this.tools.upgrades);
+      this.processing.applyUpgrades();
+    } else return false;
+    return true;
+  }
+
   /**
    * BUY at the supply counter - one transaction: status, price, cash and
    * the item itself in one synchronous step (a second click finds it owned).
@@ -490,17 +522,8 @@ export class GoldRushGame {
     if (st.state === "locked") return { ok: false, reason: "locked", needs: st.needs };
     const pay = e.buy(it.id, it.price, it.kind);
     if (!pay.ok) { this.audio.play("insufficient", { dist: 0.4 }); return { ok: false, reason: pay.reason, missing: pay.missing }; }
-    if (it.kind === "tool") {
-      this.tools.unlock(it.tool);
-      this.stations.setOwned(this.tools.owned);
-      this.tools.equip(it.tool);                                          // straight into your hands
-    } else if (it.kind === "equipment") {
-      this.processing.grant(it.id);                                       // it appears on the claim
-    } else {
-      this.tools.addUpgrade(it.id);
-      this.hands.models.applyUpgrades(this.tools.upgrades);
-      this.processing.applyUpgrades();
-    }
+    this._grantItem(it);
+    if (it.kind === "tool") this.tools.equip(it.tool);                    // straight into your hands
     this.audio.play("purchase", { dist: 0.5 });
     this.hud.cashTo(e.cashCents);
     this.ui.onTool && this.ui.onTool(this.toolState());
@@ -624,6 +647,7 @@ export class GoldRushGame {
     this.render();
     if (this.dirty && now - this.lastSave > AUTOSAVE_MS) this.save("auto");
     if (this.debug) this._debugTick(now);
+    if (this.devHook) this.devHook(now);
   };
 
   render() {
@@ -797,6 +821,51 @@ export class GoldRushGame {
     } else this.hud.load(null);
     this._objT -= dt;
     if (this._objT <= 0) { this._objT = 0.5; this.hud.objective(this.uiOpen ? null : this._objective()); }
+  }
+
+  /**
+   * Developer tools: stand somewhere else. The same rules as walking there:
+   * inside the fence, pushed out of props and boulders, off walls, on the
+   * ground at eye height, standing still. -> positionCheck()
+   */
+  teleport({ x, z, yaw, pitch }) {
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+    if (this.processing.work) this._leaveWork();
+    this.tools.cancel();
+    this.input.releaseAll();
+    const p = this.player;
+    p.x = x; p.z = z;
+    if (Number.isFinite(yaw)) p.yaw = yaw;
+    if (Number.isFinite(pitch)) p.pitch = Math.max(-1.45, Math.min(1.45, pitch));
+    p.vx = p.vz = 0; p.bob = 0; p.kick = 0;
+    for (let i = 0; i < 4; i++) { this.world.collide(p, RADIUS); this._keepOffWalls(); }
+    this.world.collide(p, RADIUS);
+    p.y = this.world.groundAt(p.x, p.z) + EYE;
+    this._updateCamera();
+    this._aim();
+    this._stationSig = "";
+    this._stationTick(0);
+    this.dirty = true;
+    if (!this.running) this.render();
+    return this.positionCheck();
+  }
+
+  // where the player stands is a place one can stand (tests + teleport)
+  positionCheck() {
+    const p = this.player, b = this.world.bounds, eps = 0.02;
+    const finite = [p.x, p.y, p.z, p.yaw, p.pitch].every(Number.isFinite);
+    const inside = p.x >= b.minX - 1e-6 && p.x <= b.maxX + 1e-6 && p.z >= b.minZ - 1e-6 && p.z <= b.maxZ + 1e-6;
+    let clear = true;
+    for (const c of this.world.colliders) {
+      if (c.type === "circle") { if (Math.hypot(p.x - c.x, p.z - c.z) < c.r + RADIUS - eps) clear = false; continue; }
+      const cs = Math.cos(-c.rot), sn = Math.sin(-c.rot);
+      const lx = (p.x - c.x) * cs - (p.z - c.z) * sn, lz = (p.x - c.x) * sn + (p.z - c.z) * cs;
+      const dx = lx - Math.max(-c.hw, Math.min(c.hw, lx)), dz = lz - Math.max(-c.hd, Math.min(c.hd, lz));
+      if (Math.hypot(dx, dz) < RADIUS - eps) clear = false;
+    }
+    const ground = this.world.groundAt(p.x, p.z);
+    const onGround = Math.abs(p.y - (ground + EYE)) < 1e-3;
+    return { ok: finite && inside && clear && onGround && p.vx === 0 && p.vz === 0, x: p.x, z: p.z, y: p.y, ground, inside, clear, onGround };
   }
 
   // the new tool is in the hands now
@@ -1112,6 +1181,7 @@ export class GoldRushGame {
       resources: this.mining.serialize(),
       rocks: this.rocks.serialize(),
       processing: this.processing.serialize(),
+      ...(this.devModified ? { devModified: true, devModifiedAt: this.devModifiedAt } : {}),
     };
   }
 

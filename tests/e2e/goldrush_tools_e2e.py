@@ -679,7 +679,9 @@ def foundation_and_tools(browser, base, user, shots):
     # ---------------- T21: dev unlock is debug/test only and never saved as owned
     G(A, "() => window.__goldrush.save()")
     saved = json.loads(G(A, "() => localStorage.getItem(grKey())"))
-    ui_dev = G(A, "() => !!document.querySelector('.gr-root [data-act*=dev], .gr-root [data-role*=dev]')")
+    # (prompt 5.5: the server-gated "Entwicklertools" entry and its DEV / DEV-MODIFIED marks are not this debug unlock)
+    ui_dev = G(A, """() => [...document.querySelectorAll('.gr-root [data-act*=dev], .gr-root [data-role*=dev]')]
+      .some((e) => !e.closest('.gr-dev-entry') && e.dataset.role !== 'start-dev')""")
     ok("T21 the dev unlock exists only for debug / tests: no control in the game UI, never saved as owned",
        saved["tools"]["owned"] == ["hand"] and not ui_dev and tools(A)["dev"], str(saved["tools"]))
 

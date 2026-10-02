@@ -14,6 +14,7 @@
 //   goldrush.save.u<id>.backup     the previous good document
 //   goldrush.save.u<id>.prev       the mine before the last "Neue Mine"
 //   goldrush.save.u<id>.corrupt    a document that could not be read
+//   goldrush.save.u<id>.devSnapshot  developer tools: the mine before the first QA command
 //   goldrush.settings              device settings (quality, sound, motion)
 //
 // The hosted server (Render free tier, SQLite on an ephemeral disk) may
@@ -40,7 +41,8 @@
 //     terrain: { gen, cols, cell, unit, encoding, changed, data, loose },
 //     resources: { unit, encoding, changed, slices, level, carried, carriedFine },
 //     rocks: { v, count, list },
-//     processing: { owned, nextBatch, bucket, pan, classifier, tub, ledger } }
+//     processing: { owned, nextBatch, bucket, pan, classifier, tub, ledger },
+//     devModified?, devModifiedAt? }  (only once a developer / QA command changed the mine)
 //
 // The terrain is stored as integer height deltas against the seeded
 // original mound (0.1 mm), run-length encoded - untouched ground costs
@@ -221,6 +223,7 @@ export function summarize(doc) {
   return {
     playMs: Math.max(0, Math.round(st.playTimeMs || 0)), cashCents: Math.max(0, cash), pouchCents: Math.max(0, Math.round(pouch.estimatedSaleCents || 0)),
     tools, equipment, kgMoved: Math.max(0, Math.round(kg)), seed: doc.worldSeed, updatedAt: doc.updatedAt || 0,
+    devModified: !!doc.devModified,
   };
 }
 
@@ -233,7 +236,7 @@ export class GoldRushSaveService {
     this.backend = backend;
     this.player = currentPlayer(user, backend);
     const k = `${PREFIX}.${this.player.key}`;
-    this.keys = { main: k, backup: `${k}.backup`, prev: `${k}.prev`, corrupt: `${k}.corrupt` };
+    this.keys = { main: k, backup: `${k}.backup`, prev: `${k}.prev`, corrupt: `${k}.corrupt`, devSnapshot: `${k}.devSnapshot` };
     this.notice = null;                   // what load() had to do (shown once by the shell)
   }
 
@@ -270,7 +273,7 @@ export class GoldRushSaveService {
     const o = this._parse(this.backend.get(orphan));
     if (o.doc) cands.push({ key: orphan, doc: o.doc });
     for (const key of this.backend.keys(`${PREFIX}.u`)) {
-      if (key === this.keys.main || /\.(backup|prev|corrupt)$/.test(key)) continue;
+      if (key === this.keys.main || /\.(backup|prev|corrupt|devSnapshot)$/.test(key)) continue;
       const r = this._parse(this.backend.get(key));
       if (r.doc && r.doc.owner && r.doc.owner.tag === this.player.tag) cands.push({ key, doc: r.doc });
     }
@@ -349,7 +352,29 @@ export class GoldRushSaveService {
     this.backend.remove(this.keys.main);
     this.backend.remove(this.keys.backup);
     this.backend.remove(this.keys.corrupt);
+    this.backend.remove(this.keys.devSnapshot);          // the old mine's developer snapshot goes with it
   }
+
+  // ---- developer tools (QA): one snapshot of this player's mine as it was
+  // before the first developer command. It belongs to that mine (seed +
+  // creation time) and is never offered as a mine of its own.
+  devSnapshot() {
+    let s = null;
+    try { s = JSON.parse(this.backend.get(this.keys.devSnapshot) || "null"); } catch (e) { return null; }
+    if (!s || typeof s !== "object" || !s.doc) return null;
+    const error = validate(s.doc);
+    if (error || !this._mine(s.doc)) return null;
+    return { at: Number.isFinite(s.at) ? s.at : 0, doc: s.doc, seed: s.doc.worldSeed, createdAt: s.doc.createdAt };
+  }
+
+  writeDevSnapshot(doc) {
+    const out = { ...doc, owner: { id: this.player.id, tag: this.player.tag } };
+    delete out.settings;
+    this.backend.set(this.keys.devSnapshot, JSON.stringify({ v: 1, at: Date.now(), doc: out }));
+    return true;
+  }
+
+  clearDevSnapshot() { this.backend.remove(this.keys.devSnapshot); }
 
   // ---- the browser-wide save from before phase 5
   legacy() {
@@ -381,6 +406,16 @@ export class GoldRushSaveService {
   export() {
     const r = this.load();
     return r.doc ? JSON.stringify({ ...r.doc, saveVersion: SAVE_VERSION }) : null;
+  }
+
+  // check a document before it replaces anything (developer import): validated, migrated, not saved
+  parseImport(json) {
+    if (typeof json === "string" && json.length > 8 * 1024 * 1024) return { ok: false, error: "Datei zu groß" };
+    const r = this._parse(typeof json === "string" ? json : JSON.stringify(json));
+    if (!r.doc) return { ok: false, error: r.error || "leer" };
+    const doc = migrate(r.doc);
+    delete doc.settings;
+    return { ok: true, doc };
   }
 
   import(json) {

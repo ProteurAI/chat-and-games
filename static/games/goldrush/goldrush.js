@@ -15,10 +15,11 @@ let current = null;
 
 export function isOpen() { return !!current; }
 
-// user: { id, name } of the logged-in Chat & Games account (app.js)
-export function open({ onExit, user } = {}) {
+// user: { id, name } of the logged-in Chat & Games account (app.js);
+// api: the app's authenticated fetch (only the developer access uses it)
+export function open({ onExit, user, api } = {}) {
   if (current) return current;
-  current = new GoldRushShell(onExit, user);
+  current = new GoldRushShell(onExit, user, api);
   current.start();
   return current;
 }
@@ -62,9 +63,11 @@ function newSeed() {
 }
 
 class GoldRushShell {
-  constructor(onExit, user) {
+  constructor(onExit, user, api) {
     this.onExit = onExit || (() => {});
+    this.api = typeof api === "function" ? api : null;
     this.saves = new GoldRushSaveService(user);
+    this.devtools = null;                                  // developer / QA tools: loaded on first use (goldrush-devtools.js)
     this.settings = this.saves.loadSettings();           // device settings: a new mine keeps them
     this.touch = window.matchMedia("(pointer: coarse)").matches;
     let dbg = false;
@@ -148,6 +151,10 @@ class GoldRushShell {
             <button type="button" class="ghost-btn" data-act="settings">Einstellungen</button>
             <button type="button" class="ghost-btn" data-act="exit">Verlassen</button>
           </div>
+          <div class="gr-dev-entry">
+            <button type="button" class="ghost-btn gr-dev-open" data-act="dev"><span data-role="dev-label">Entwicklertools</span></button>
+            <span class="gr-dev-badge" data-role="dev-badge" hidden>DEV</span><span class="gr-dev-flag" data-role="dev-flag" hidden>DEV-MODIFIED</span>
+          </div>
         </div>
       </div>
       <div class="gr-panel" hidden role="dialog" aria-modal="true" aria-label="GoldRush Einstellungen">
@@ -168,6 +175,10 @@ class GoldRushShell {
           <div class="gr-sub" data-role="bob-note" hidden>Dein System wünscht reduzierte Bewegung – sie ist hier immer an.</div>
           <label class="gr-toggle"><input type="checkbox" data-role="sound" /><span>Sound <em>(vorläufige Platzhalter-Klänge)</em></span></label>
           <label class="gr-toggle" data-role="vibration-row" hidden><input type="checkbox" data-role="vibration" /><span>Vibration <em>(dezent, bei Treffern und Funden)</em></span></label>
+          <div class="gr-dev-entry" data-role="dev-entry">
+            <button type="button" class="ghost-btn gr-dev-open" data-act="dev"><span data-role="dev-label">Entwicklertools</span></button>
+            <span class="gr-dev-badge" data-role="dev-badge" hidden>DEV</span><span class="gr-dev-flag" data-role="dev-flag" hidden>DEV-MODIFIED</span>
+          </div>
           <div class="gr-danger-zone" data-role="danger-zone">
             <button type="button" class="ghost-btn gr-reset" data-act="new-mine">Neue Mine starten …</button>
             <div class="gr-sub">Löscht deinen Fortschritt und schüttet einen neuen Berg auf. Diese Einstellungen bleiben.</div>
@@ -183,7 +194,7 @@ class GoldRushShell {
           <div class="gr-loading-brand"><span aria-hidden="true">⛏️</span><span>GoldRush</span></div>
           <p class="gr-start-tag" data-role="start-tag">Ein Claim, ein riesiger Berg – und erst einmal nur deine Hände.</p>
           <div class="gr-start-card" data-role="start-mine" hidden>
-            <div class="gr-start-card-title">Deine Mine</div>
+            <div class="gr-start-card-title">Deine Mine <span class="gr-dev-flag" data-role="start-dev" hidden>DEV-MODIFIED</span></div>
             <dl class="gr-start-stats" data-role="start-stats"></dl>
           </div>
           <div class="gr-start-card gr-start-legacy" data-role="start-legacy" hidden>
@@ -266,6 +277,7 @@ class GoldRushShell {
       this._syncSettings();
     });
     this.on(window, "keydown", (e) => {
+      if (e.key === "Escape" && this.devtools && this.devtools.active) { e.preventDefault(); e.stopPropagation(); this.devtools.escape(); return; }
       if (e.key === "Escape" && this._openSheet) { e.preventDefault(); e.stopPropagation(); this._closeStation(false); return; }
       if (e.key === "Escape" && !this.el.panel.hidden) { e.preventDefault(); this._closeSettings(); }
     }, true);
@@ -310,6 +322,7 @@ class GoldRushShell {
     const mineCard = this.root.querySelector("[data-role=start-mine]");
     mineCard.hidden = !has;
     if (has) this._fillStats(this.root.querySelector("[data-role=start-stats]"), res.summary);
+    this.root.querySelector("[data-role=start-dev]").hidden = !(has && res.summary && res.summary.devModified);
     const lgCard = this.root.querySelector("[data-role=start-legacy]");
     lgCard.hidden = !lg;
     if (lg) this._fillStats(this.root.querySelector("[data-role=legacy-stats]"), lg.summary);
@@ -403,6 +416,9 @@ class GoldRushShell {
     this._renderTools(game.toolState());
     if (this.pendingNotice || game.loadNotice) this.notice(this.pendingNotice || game.loadNotice);
     this.pendingNotice = null;
+    if (this.devtools) this.devtools.attachGame();
+    this.devStateChanged();
+    this._checkDevSession();
     if (this.touch) {
       game.setPaused(false);
       if (window.matchMedia("(orientation: portrait)").matches) setTimeout(() => { if (!this.closed) this.notice("Tipp: Für mehr Übersicht das Gerät drehen."); }, 1800);
@@ -446,7 +462,7 @@ class GoldRushShell {
       notice: (t) => this.notice(t),
       setDebug: (t) => { el.debug.textContent = t; },
       toggleDebug: () => { el.debug.hidden = !el.debug.hidden; },
-      panelOpen: () => !el.panel.hidden || !!this._openSheet,
+      panelOpen: () => !el.panel.hidden || !!this._openSheet || !!(this.devtools && this.devtools.active),
       openStation: (id, view) => this._showStation(id, view),
       onStation: (s) => {
         this._near = s;
@@ -503,6 +519,7 @@ class GoldRushShell {
       return;
     }
     if (act === "settings") { this._openSettings(); return; }
+    if (act === "dev") { this._openDev(!this.el.panel.hidden ? "settings" : "pause"); return; }
     if (act === "use-station") { if (!g) return; if (g.processing.work) g._workAction(); else if (this._near) g.useStation(); return; }
     if (act === "close-station") { this._closeStation(true); return; }
     if (act === "sell-all") { this._sellAll(); return; }
@@ -664,6 +681,7 @@ class GoldRushShell {
     this.el.pause.hidden = true;
     // before a mine is chosen: only the device settings, no new-mine button
     this.root.querySelector("[data-role=danger-zone]").hidden = !this.game;
+    this.root.querySelector("[data-role=dev-entry]").hidden = !this.game;
     this.el.panel.querySelector("[data-act=close-settings]").textContent = this.game ? "Zurück zum Spiel" : "Fertig";
     if (this.game) { this.game.setPaused(true); this.game.input.exitLock(); }
     this._syncSettings();
@@ -715,6 +733,19 @@ class GoldRushShell {
     g.save("before-new-mine");
     const ok = await this._confirmNewMine(this._liveSummary());
     if (!ok || this.closed || this.game !== g) return;
+    this._swapMine(null, { reset: true });
+  }
+
+  /**
+   * The running mine makes way for another one: `doc` (written first when
+   * `write`), a new mine (`reset`), or - doc null - the mine as it is stored
+   * now (reload). The old game saves and hands its GL context back
+   * (forceContextLoss): the next one gets a fresh canvas.
+   */
+  _swapMine(doc, { reset = false, write = false, notice = null } = {}) {
+    const g = this.game;
+    if (!g) return;
+    if (this.devtools) this.devtools.hide();
     this.el.panel.hidden = true;
     this.el.hud.hidden = true;
     this.el.pause.hidden = true;
@@ -723,15 +754,83 @@ class GoldRushShell {
     g.dispose();
     this.game = null;
     if (window.__goldrush) delete window.__goldrush;
-    // the old game handed its GL context back (forceContextLoss): a fresh canvas for the new mine
     const fresh = document.createElement("canvas");
     fresh.className = "gr-canvas";
     fresh.tabIndex = -1;
     this.el.canvas.replaceWith(fresh);
     this.el.canvas = fresh;
-    this.saves.reset();
-    this.found = null;
-    this._launch(null, true);
+    this.pendingNotice = notice;
+    if (reset) {
+      this.saves.reset();
+      this.found = null;
+      this._launch(null, true);
+      return;
+    }
+    if (doc && write) { try { this.saves.save(doc); } catch (e) { /* the launch saves it again */ } }
+    if (!doc) doc = this.saves.load().doc;
+    this._launch(doc || null);
+  }
+
+  // ------------------------------------------------------------ developer / QA tools
+
+  // pause menu / settings -> "Entwicklertools": the server decides (goldrush-devtools.js)
+  async _openDev(from) {
+    const g = this.game;
+    if (!g || this._devLoading) return;
+    this._devLoading = true;
+    let mod = null;
+    try { mod = await import("./goldrush-devtools.js"); } catch (e) { mod = null; }
+    this._devLoading = false;
+    if (this.closed || this.game !== g) return;
+    if (!mod) { this.notice("Die Entwicklertools konnten nicht geladen werden."); return; }
+    if (!this.devtools) this.devtools = new mod.GoldRushDevTools(this);
+    this.el.panel.hidden = true;
+    this.el.pause.hidden = true;
+    g.setPaused(true);
+    g.input.exitLock();
+    this.devtools.enter(from);
+  }
+
+  // the panel closed: back where it was opened
+  devReturn(from) {
+    this.devStateChanged();
+    if (!this.game) return;
+    if (from === "settings") { this._openSettings(); return; }
+    if (this.touch) { this.game.setPaused(false); return; }
+    this.el.pauseText.textContent = "Klicke, um weiterzugraben.";
+    this.el.pause.querySelector("[data-act=resume]").textContent = "Weiterspielen";
+    this.el.pause.hidden = false;
+    const b = this.el.pause.querySelector("[data-act=dev]");
+    if (b) b.focus({ preventScroll: true });
+  }
+
+  devReloadMine(doc, notice, write = false) { this._swapMine(doc, { write, notice }); }
+
+  devFreshMine() { this._swapMine(null, { reset: true, notice: "Frische Mine angelegt." }); }
+
+  // DEV / DEV-MODIFIED next to the entry (pause menu, settings)
+  devStateChanged() {
+    if (!this.root) return;
+    const on = !!((this.devtools && this.devtools.unlocked) || this._devSession);
+    const mod = !!(this.game && this.game.devModified);
+    for (const el of this.root.querySelectorAll("[data-role=dev-label]")) el.textContent = on ? "Entwicklertools ✓" : "Entwicklertools";
+    for (const el of this.root.querySelectorAll("[data-role=dev-badge]")) el.hidden = !on;
+    for (const el of this.root.querySelectorAll(".gr-dev-entry [data-role=dev-flag]")) el.hidden = !mod;
+  }
+
+  // a developer session of this browser tab (unlocked earlier): ask the server once whether it still holds
+  async _checkDevSession() {
+    if (this._devChecked || !this.api) return;
+    this._devChecked = true;
+    let has = false;
+    try { const s = JSON.parse(sessionStorage.getItem("goldrush.devSession") || "null"); has = !!(s && s.user === this.saves.player.id); } catch (e) { has = false; }
+    if (!has) return;
+    try {
+      const { DevAccess } = await import("./goldrush-devaccess.js");
+      const st = await new DevAccess(this.api, this.saves.player).status();
+      this._devSession = !!st.unlocked;
+    } catch (e) { this._devSession = false; }
+    this.devStateChanged();
   }
 
   _liveSummary() {
@@ -1008,6 +1107,20 @@ class GoldRushShell {
       sampleAt: (x, y, z) => g.terrain.field.sample(x, y, z, {}),
       three: this.engine.THREE_REVISION,
       backupKey: this.saves.keys.backup,
+      // developer tools (QA mode)
+      devState: () => {
+        const d = this.devtools, snap = this.saves.devSnapshot();
+        return { loaded: !!d, active: !!(d && d.active), open: !!(d && d.isOpen), unlocked: !!(d && d.unlocked), devModified: g.devModified,
+          snapshot: snap ? { at: snap.at, seed: snap.seed, createdAt: snap.createdAt, cash: snap.doc.economy ? snap.doc.economy.cashCents : null } : null,
+          cat: d ? d.cat : null, toggles: d ? { ...d.state.toggles } : {}, devHook: !!g.devHook, heatmap: !!g.terrain.heatmap,
+          toast: d && d.$ ? d.$.toast.textContent : null, position: g.positionCheck(),
+          models: { bucket: !!g.processing.bucket && (g.processing.worldBucket.visible || g.processing.carrying), pan: g.processing.restPan.visible || g.processing.work === "pan",
+            classifier: g.processing.cls.visible, riffles: g.processing.restPan.userData.riffles.visible, bucketScale: g.processing.bucketScale,
+            slots: [...this.el.belt.querySelectorAll("[data-tool]")].filter((b) => !b.classList.contains("is-locked")).map((b) => b.dataset.tool) } };
+      },
+      devRun: (id, arg) => (this.devtools ? this.devtools.runCommand(id, arg) : null),
+      devRows: () => (this.devtools ? JSON.parse(JSON.stringify(this.devtools.ctx().actions.itemRows(g))) : null),
+      positionCheck: () => g.positionCheck(),
     };
   }
 
@@ -1016,6 +1129,7 @@ class GoldRushShell {
   close() {
     if (this.closed) return;
     this.closed = true;
+    if (this.devtools) { this.devtools.dispose(); this.devtools = null; }
     if (this.game) { this.game.dispose(); this.game = null; }
     for (const off of this._off.splice(0)) off();
     clearTimeout(this._noticeT);

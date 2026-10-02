@@ -49,6 +49,10 @@ Damit andere im Netzwerk überhaupt auf deinen Rechner zugreifen dürfen, muss d
 New-NetFirewallRule -DisplayName "Chat & Games" -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow -Profile Private
 ```
 
+## GoldRush-Entwicklertools (optional, nur für Entwicklung/QA)
+
+GoldRush hat interne Entwickler-/QA-Werkzeuge (Pause-Menü bzw. Einstellungen → „Entwicklertools“). Sie sind nur aktiv, wenn auf dem **Server** die Umgebungsvariable `GOLDRUSH_DEV_CODE` gesetzt ist – der Code steht nie in einer Datei des Projekts. Lokal z. B. vor dem Start in PowerShell `$env:GOLDRUSH_DEV_CODE = "<dein Code>"`, auf Render unter *Environment*. Optional schränkt `GOLDRUSH_DEV_USER_IDS` (z. B. `1,7`) den Zugang auf bestimmte Benutzer-IDs ein. Details: `docs/goldrush.md`.
+
 ## Worauf du achten solltest, damit es zuverlässig läuft
 
 - **Rechner darf nicht in den Standby/Sleep gehen**, solange der Chat laufen soll (Energieoptionen ggf. anpassen, "Nie in den Ruhezustand" während der Nutzung).

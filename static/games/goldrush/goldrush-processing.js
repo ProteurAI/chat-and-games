@@ -95,6 +95,7 @@ export class ProcessingSystem {
       recoveredUg: int(l.recoveredUg), recoveredFineUg: int(l.recoveredFineUg), tailUg: int(l.tailUg), tailG: int(l.tailG), tailMl: int(l.tailMl),
       spoilFineUg: int(l.spoilFineUg), panLoads: int(l.panLoads), sieveLoads: int(l.sieveLoads), buckets: int(l.buckets),
     };
+    if (l.devInUg) this.ledger.devInUg = int(l.devInUg);         // developer test material (only in test mines)
     this.work = null;              // null | "pan" | "sieve"
     this.swirlAngle = 0;
     this.swirlK = 0;               // how hard you swirl right now (0..1, visuals)
@@ -321,6 +322,90 @@ export class ProcessingSystem {
     b.batch = this._batch(STAGE.RAW);
     this._fills();
     return true;
+  }
+
+  // ---- developer tools only (goldrush-devactions.js) - never called by the game.
+  // Test material comes from outside the mountain (source "dev"): it is booked
+  // as input like a dig, what it replaces goes to the tailings - so the ledger
+  // stays exact (in == containers + recovered + tailings) in a test mine too.
+  _devIn(batch) {
+    const L = this.ledger;
+    L.inUg += batch.goldUg; L.inFineUg += batch.fineUg; L.inG += batch.massG; L.inMl += batch.volumeMl;
+    L.devInUg = (L.devInUg || 0) + batch.goldUg;
+  }
+
+  _devTail(batch) {
+    const L = this.ledger;
+    L.tailUg += batch.goldUg; L.tailG += batch.massG; L.tailMl += batch.volumeMl;
+  }
+
+  // the bucket's whole content becomes `batch` (null = empty)
+  devSetBucket(batch) {
+    const b = this.bucket;
+    if (!b || (batch && batch.volumeMl > this.capacityMl)) return false;
+    this._devTail(b.batch);
+    b.batch = batch || this._batch(STAGE.RAW);
+    if (batch) { batch.id = this.nextBatch++; this._devIn(batch); }
+    this._fills();
+    return true;
+  }
+
+  // a load straight into the (empty) pan, ready to swirl at the trough
+  devPanLoad(batch) {
+    if (!this.owned.has("pan") || this.work || this.pan.batch.volumeMl > 0 || this.pan.batch.goldUg > 0) return false;
+    batch.id = this.nextBatch++;
+    this._devIn(batch);
+    this.pan.batch = batch;
+    this.pan.progress = 0;
+    this.panDone = false;
+    this.reveal = null;
+    this._fills();
+    return true;
+  }
+
+  // put the bucket down somewhere (out of the hands)
+  devPlaceBucket(x, z, ry = 0.4) {
+    const b = this.bucket;
+    if (!b || this.work) return false;
+    b.carried = false; b.x = x; b.z = z; b.ry = ry;
+    this._sync();
+    return true;
+  }
+
+  // forget the tailings so far (the numbers and the stone heap) - in and out together
+  devClearTailings() {
+    const L = this.ledger;
+    L.inUg = Math.max(0, L.inUg - L.tailUg); L.inG = Math.max(0, L.inG - L.tailG); L.inMl = Math.max(0, L.inMl - L.tailMl);
+    L.tailUg = 0; L.tailG = 0; L.tailMl = 0;
+    this.sieve.stones = 0; this.sieve.dumpT = 0;
+    this._stoneDirty = true;
+    this._fills();
+  }
+
+  // a piece of equipment goes away again (its content to the tailings)
+  devRemove(id) {
+    if (!this.owned.has(id)) return false;
+    if (this.work) this.stopWork();
+    if (id === "bucket" && this.bucket) { this._devTail(this.bucket.batch); this.bucket = null; }
+    if (id === "pan") { this._devTail(this.pan.batch); this.pan.batch = this._batch(STAGE.RAW); this.pan.progress = 0; this.panDone = false; this.reveal = null; }
+    if (id === "classifier") {
+      this._devTail(this.sieve.batch); this._devTail(this.tub);
+      this.sieve.batch = this._batch(STAGE.RAW); this.sieve.progress = 0; this.sieve.stones = 0;
+      this.tub = this._batch(STAGE.CONCENTRATE);
+    }
+    this.owned.delete(id);
+    this._sync();
+    return true;
+  }
+
+  // after an upgrade went away: a bucket holding more than it can now
+  devFitBucket() {
+    const b = this.bucket;
+    if (!b || b.batch.volumeMl <= this.capacityMl) return;
+    const keep = b.batch.take(this.capacityMl, this.nextBatch++);
+    this._devTail(b.batch);
+    b.batch = keep;
+    this._fills();
   }
 
   // the pan takes up to 2,5 l: concentrate from the tub first, else raw from the bucket

@@ -56,7 +56,8 @@ const int = (v) => (Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0);
 const bucket = (b) => ({ count: int(b && b.count), ug: int(b && b.ug), cents: int(b && b.cents) });
 const MASS_KEYS = ["dirt", "compactDirt", "gravel", "stone"];
 // pouch classes (the find ids of goldrush-resources.js)
-export const POUCH_CLASSES = ["traceGold", "fineGold", "goldFlake", "tinyGoldPiece", "smallNugget", "washedGold"];
+export const DEV_MAX_CASH = 100000000;               // developer tools: at most € 1.000.000,00
+export const POUCH_CLASSES =["traceGold", "fineGold", "goldFlake", "tinyGoldPiece", "smallNugget", "washedGold"];
 const CLASS_OF = { [FIND.TRACE]: "traceGold", [FIND.FINE]: "fineGold", [FIND.FLAKE]: "goldFlake", [FIND.TINY]: "tinyGoldPiece", [FIND.NUGGET]: "smallNugget" };
 
 export class Economy {
@@ -285,6 +286,27 @@ export class Economy {
   }
 
   addPlayTime(ms) { this.stats.playTimeMs += Math.round(ms); }
+
+  // ---- developer tools only (goldrush-devactions.js): never called by the game.
+  // Cash is set directly (not earned: no sale, no statistics); gold goes into
+  // the pouch as a real entry of its class, worth what its mass is worth.
+  devSetCash(cents) {
+    if (!Number.isInteger(cents) || cents < 0 || cents > DEV_MAX_CASH) return false;
+    this.cashCents = cents;
+    return true;
+  }
+
+  devAddPouch(cls, ug) {
+    const key = CLASS_OF[cls] || (cls === "washedGold" ? "washedGold" : null);
+    if (!key || !Number.isInteger(ug) || ug <= 0 || ug > 1e9) return null;
+    const b = this.pouch[key], cents = centsForMass(ug);
+    b.count++; b.ug += ug; b.cents += cents;
+    return { cls: key, ug, cents };
+  }
+
+  devEmptyPouch() {
+    for (const c of POUCH_CLASSES) this.pouch[c] = { count: 0, ug: 0, cents: 0 };
+  }
 
   serialize() {
     const st = this.stats;
