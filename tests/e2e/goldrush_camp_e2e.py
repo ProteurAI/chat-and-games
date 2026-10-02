@@ -459,7 +459,7 @@ def mobile(browser, base, user, shots):
           return { inside: c.left >= -1 && c.right <= innerWidth + 1 && c.top >= -1 && c.bottom <= innerHeight + 1, scrolls: card.scrollHeight > card.clientHeight, minH: Math.min(...btns), rows: document.querySelectorAll('[data-sheet=supply] .gr-shop-item').length, w: Math.round(c.width), h: Math.round(c.height) }; }""")
         shot(M, shots, f"mobile_shop_{name}")
         ok(f"{'44' if name == 'portrait' else '45'} mobile shop ({name}): a sheet inside the screen, every item reachable (scrolls), 44 px targets",
-           shop["inside"] and shop["rows"] == 11 and shop["minH"] >= 44, str(shop))          # phase 5: tools, upgrades, processing kit
+           shop["inside"] and shop["rows"] == len(M.evaluate("() => window.__goldrush.shopView().items")) and shop["minH"] >= 44, str(shop))   # every item of the shop registry
         M.tap("[data-sheet=supply] [data-act=close-station]")
         errs = errors(M)
         ok(f"mobile {name}: no page errors", not errs, str(errs[:3]))
@@ -481,17 +481,17 @@ def saves(A):
     v1 = {"saveVersion": 1, "worldSeed": 77, "createdAt": 1, "updatedAt": 2, "money": 3.5, "tool": "hand",
           "player": {"x": 0.6, "z": 10.2, "yaw": 0, "pitch": 0.1}, "stats": {"digs": 12}, "terrain": None}
     d = load(v1)
-    ok("49 a phase-1 save (v1) loads: € 3,50 as cash, written as v5", d["saveVersion"] == 5 and d["economy"]["cashCents"] == 350 and d["tools"]["owned"] == ["hand"], str(d["economy"]["cashCents"]))
+    ok("49 a phase-1 save (v1) loads: € 3,50 as cash, written as the current version (v6)", d["saveVersion"] == 6 and d["economy"]["cashCents"] == 350 and d["tools"]["owned"] == ["hand"], str(d["economy"]["cashCents"]))
     fx2 = json.loads((FIX / "goldrush_save_v2.json").read_text(encoding="utf-8"))
     d = load(fx2["doc"])
     h = G(A, "() => window.__goldrush.hashes()")
-    ok("50 a real phase-2 save (v2) loads: the same ground, € 1,20 as cash, written as v5", d["saveVersion"] == 5 and d["economy"]["cashCents"] == fx2["phase2"]["money"] and h["height"] == fx2["phase2"]["hashes"]["height"],
+    ok("50 a real phase-2 save (v2) loads: the same ground, € 1,20 as cash, written as the current version (v6)", d["saveVersion"] == 6 and d["economy"]["cashCents"] == fx2["phase2"]["money"] and h["height"] == fx2["phase2"]["hashes"]["height"],
        f"cash {d['economy']['cashCents']}")
     fx3 = json.loads((FIX / "goldrush_save_v3.json").read_text(encoding="utf-8"))
     d = load(fx3["doc"])
     h = G(A, "() => window.__goldrush.hashes()")
     ok("51 a real phase-3 save (v3) loads: its cash stays exactly (gold sold back then is NOT turned back into gold), the pouch starts empty, the ground is the same",
-       d["saveVersion"] == 5 and d["economy"]["cashCents"] == fx3["doc"]["economy"]["moneyCents"] and d["economy"]["pouchSummary"]["totalGoldUg"] == 0
+       d["saveVersion"] == 6 and d["economy"]["cashCents"] == fx3["doc"]["economy"]["moneyCents"] and d["economy"]["pouchSummary"]["totalGoldUg"] == 0
        and d["economy"]["sold"]["legacyUg"] == fx3["doc"]["economy"]["inventory"]["totalGoldUg"] and h["height"] == fx3["phase2"]["hashes"]["height"],
        f"cash {fx3['doc']['economy']['moneyCents']} -> {d['economy']['cashCents']}, legacy gold {d['economy']['sold']['legacyUg']} ug")
     # 52: a v4 save reloads deterministically

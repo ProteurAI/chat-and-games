@@ -549,7 +549,7 @@ def determinism_and_save_suite(browser, base, user, shots):
     e = eco(A)
     ok("v1 -> current migration: seed + digs kept, money in cents, written back as the current version (5)",
        st(A)["seed"] == 77 and e["stats"]["totalDigs"] == 12 and e["moneyCents"] == 0
-       and A.evaluate("() => { window.__goldrush.save(); return JSON.parse(localStorage.getItem(grKey())).saveVersion; }") == 5)
+       and A.evaluate("() => { window.__goldrush.save(); return JSON.parse(localStorage.getItem(grKey())).saveVersion; }") == 6)
     errs = errors(A)
     ok("determinism/save: no JS errors", not errs, "; ".join(errs[:3]))
     gr_close(A)

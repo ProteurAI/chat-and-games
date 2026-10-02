@@ -360,7 +360,7 @@ def snapshot_and_commands(browser, base, user, shots):
     shop = G(A, f"() => {GR}.shopView()")
     d22 = ds(A)
     ok("9 / 22 'Alle aktuellen Items geben': every item of the shop registry owned - tools usable, upgrades built in (riffles, large bucket), shop all OWNED",
-       all(r["status"] == "owned" for r in rows) and len(rows) == len(PHASE5_ITEMS) and all(i["state"] == "owned" for i in shop["items"])
+       all(r["status"] == "owned" for r in rows) and len(rows) == len(shop["items"]) >= len(PHASE5_ITEMS) and all(i["state"] == "owned" for i in shop["items"])
        and d22["models"]["riffles"] and d22["models"]["bucketScale"] > 1 and proc(A)["capacityMl"] == 14000 and sorted(d22["models"]["slots"]) == ["hand", "pickaxe", "shovel"],
        f"{[r['id'] for r in rows if r['status'] != 'owned']} {d22['models']}")
     shot(A, shots, "panel_equipment")
@@ -491,12 +491,12 @@ def world_and_tools(browser, base, user, shots):
     info = dict(zip(A.locator(".gr-dev-info dt").all_inner_texts(), A.locator(".gr-dev-info dd").all_inner_texts()))
     ok("save info: version, user id, seed, play time, cash, pouch, moved mass, items, size, devModified - no token / password / secret",
        all(k in info for k in ("Save-Version", "User-ID", "World Seed", "Spielzeit", "Kontostand", "Goldbeutel", "Bewegte Masse", "Items", "Save-Größe", "devModified"))
-       and info["Save-Version"] == "5" and info["User-ID"] == str(user["user"]["id"]) and user["token"] not in A.inner_text(".gr-dev-body") and CODE not in A.inner_text(".gr-dev-body"), str(info)[:300])
+       and info["Save-Version"] == "6" and info["User-ID"] == str(user["user"]["id"]) and user["token"] not in A.inner_text(".gr-dev-body") and CODE not in A.inner_text(".gr-dev-body"), str(info)[:300])
     with A.expect_download() as dl:
         A.click("[data-dev-cmd='save.export']")
     path = dl.value.path()
     exported = json.loads(Path(path).read_text(encoding="utf-8"))
-    ok("save export: a JSON file of this mine (valid v5 document, no token inside)", exported["saveVersion"] == 5 and exported["devModified"] is True and user["token"] not in Path(path).read_text(encoding="utf-8"), dl.value.suggested_filename)
+    ok("save export: a JSON file of this mine (valid current-version document, no token inside)", exported["saveVersion"] == 6 and exported["devModified"] is True and user["token"] not in Path(path).read_text(encoding="utf-8"), dl.value.suggested_filename)
     # import: a broken file is refused, the mine untouched
     fp = fingerprint(A)
     bad = Path(tempfile.mkdtemp()) / "broken.json"

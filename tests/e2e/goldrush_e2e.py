@@ -474,7 +474,8 @@ def desktop_suite(browser, base, user, shots, engine):
     ok("T9 500+ digs: heights/normals/colours finite, within floor limits, bounds valid",
        total >= 500 and geo["ok"], f"digs {total}, {geo}, save {size500} B")
     info = A.evaluate("() => window.__goldrush.info()")
-    ok("T9 particles/fragments stay within their pools", info["particles"] <= 260 and info["fragments"] <= 40, f"{info['particles']} / {info['fragments']}")
+    pools = A.evaluate("() => window.__goldrush.fxStats().pools")     # (phase 6: three effect layers, bigger pools)
+    ok("T9 particles/fragments stay within their pools", info["particles"] <= pools["dust"] and info["fragments"] <= pools["frags"], f"{info['particles']} / {info['fragments']} of {pools['dust']} / {pools['frags']}")
     A.evaluate("() => window.__goldrush.pose({ x: 3, z: 9, yaw: 0.3, pitch: -0.05 })")
     time.sleep(0.3)
     shot(A, shots, "desktop_after500")
@@ -505,7 +506,7 @@ def desktop_suite(browser, base, user, shots, engine):
     ok("T10 ... also after a full page reload", again["seed"] == before["seed"] and dh2 < 0.0015, f"max dh {dh2 * 1000:.2f} mm")
     doc = A.evaluate("() => JSON.parse(localStorage.getItem(grKey()))")
     ok("T10 save document: current version, seed, money as integer cents, only the hand owned, timestamps, compact terrain, the player's own (settings on the device)",
-       doc["saveVersion"] == 5 and doc["worldSeed"] == before["seed"] and isinstance(doc["economy"]["cashCents"], int) and doc["tools"]["owned"] == ["hand"]
+       doc["saveVersion"] == 6 and doc["worldSeed"] == before["seed"] and isinstance(doc["economy"]["cashCents"], int) and doc["tools"]["owned"] == ["hand"]
        and doc["createdAt"] <= doc["updatedAt"] and doc["terrain"] and "settings" not in doc and doc.get("owner", {}).get("id") == str(user["user"]["id"]),
        f"{len(json.dumps(doc))} B, terrain keys {list(doc['terrain'].keys())}")
 
