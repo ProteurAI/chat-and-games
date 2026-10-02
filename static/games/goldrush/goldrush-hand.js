@@ -400,6 +400,12 @@ export class FirstPersonHands {
     if (kind === "ok") {
       this.dirt = Math.min(1, this.dirt + (this.tool === "hand" ? 0.0035 : 0.002));
       if (this.tool === "shovel") this.load = Math.min(1, massKg / 2.2);
+      // a short recoil through the handle: hard ground answers harder, the pick more than the shovel
+      if (!this.reducedMotion) {
+        const hard = [0.35, 0.65, 0.75, 1][mat] || 0.5;
+        if (this.tool === "pickaxe") this.shake = Math.max(this.shake, 0.06 + 0.08 * hard);
+        else if (this.tool === "shovel") this.shake = Math.max(this.shake, 0.03 + 0.04 * hard);
+      }
     } else if (kind === "blocked") {
       this.shake = this.reducedMotion ? 0 : 0.22;
     }

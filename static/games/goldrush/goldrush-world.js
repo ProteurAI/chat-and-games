@@ -236,15 +236,15 @@ export class GoldRushWorld {
       shader.uniforms.uRock = { value: rock };
       shader.uniforms.uTime = uni.uTime;
       shader.vertexShader = shader.vertexShader
-        .replace("#include <common>", "#include <common>\nattribute vec2 aMat;\nattribute float aFresh;\nuniform float uTime;\nvarying vec2 vMat;\nvarying float vFresh;\nvarying vec3 vWPos;")
+        .replace("#include <common>", "#include <common>\nattribute vec2 aMat;\nattribute float aFresh;\nuniform float uTime;\nvarying vec2 vMat;\nvarying float vFresh;\nvarying float vFreshQ;\nvarying vec3 vWPos;")
         // the fade weight (not the time stamp) is interpolated: a fresh vertex
         // next to untouched ones (-1e5) blends out softly instead of vanishing
-        .replace("#include <uv_vertex>", "#include <uv_vertex>\nvMat = aMat;\nvFresh = aFresh > -1.0e4 ? exp(-max(0.0, uTime - aFresh) / 80.0) : 0.0;")
+        .replace("#include <uv_vertex>", "#include <uv_vertex>\nvMat = aMat;\nvFresh = aFresh > -1.0e4 ? exp(-max(0.0, uTime - aFresh) / 80.0) : 0.0;\nvFreshQ = aFresh > -1.0e4 ? exp(-max(0.0, uTime - aFresh) / 14.0) : 0.0;")
         .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;");
       shader.fragmentShader = shader.fragmentShader
         .replace("#include <common>", `#include <common>
           uniform sampler2D uGravel; uniform sampler2D uRock; uniform float uTime;
-          varying vec2 vMat; varying float vFresh; varying vec3 vWPos;
+          varying vec2 vMat; varying float vFresh; varying float vFreshQ; varying vec3 vWPos;
           float grHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
           float grNoise(vec2 p) {
             vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -260,11 +260,16 @@ export class GoldRushWorld {
           diffuseColor.rgb *= mix(mix(soilT, gravT, clamp(vMat.x, 0.0, 1.0)), rockT, clamp(vMat.y, 0.0, 1.0)) * crust;
           float grFresh = vFresh;
           vec3 freshTint = mix(vec3(0.8, 0.75, 0.71), vec3(1.07, 1.05, 1.02), clamp(vMat.x + vMat.y, 0.0, 1.0));
-          diffuseColor.rgb *= mix(vec3(1.0), freshTint, grFresh * 0.9);`)
+          diffuseColor.rgb *= mix(vec3(1.0), freshTint, grFresh * 0.9);
+          // just cut: moist and darker for some seconds (soil only), crumbly and uneven while fresh
+          float grSoil = 1.0 - clamp(vMat.x + vMat.y, 0.0, 1.0);
+          diffuseColor.rgb *= 1.0 - vFreshQ * 0.16 * grSoil;
+          float grCrumb = grNoise(wuv * 23.0) * 0.6 + grNoise(wuv * 61.0) * 0.4;
+          diffuseColor.rgb *= 1.0 - grFresh * 0.11 * max(0.0, grCrumb) + grFresh * 0.04 * min(0.0, grCrumb);`)
         .replace("#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
-          roughnessFactor *= (0.93 + 0.1 * grN2) * (1.0 - 0.14 * grFresh);`);
+          roughnessFactor *= (0.93 + 0.1 * grN2) * (1.0 - 0.14 * grFresh - 0.16 * vFreshQ * (1.0 - clamp(vMat.x + vMat.y, 0.0, 1.0)));`);
     };
-    this.terrainMaterial.customProgramCacheKey = () => "goldrush-terrain-v4";
+    this.terrainMaterial.customProgramCacheKey = () => "goldrush-terrain-v5";
     this.terrain = new DiggableTerrain(THREE, {
       seed: this.seed, center: { x: 0, z: -6 }, size: 30, cell: 0.125, chunkCells: 30,
       moundCenter: MOUND_CENTER, material: this.terrainMaterial, spawn: SPAWN,

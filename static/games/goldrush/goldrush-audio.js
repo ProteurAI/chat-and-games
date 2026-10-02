@@ -33,6 +33,9 @@ const LEVEL = {
   shovel: 20, dump: 18, pick: 17, pickStone: 11, crack: 13, break: 14, swing: 12, swap: 16,
   scale: 14, sell: 14, shopOpen: 16, purchase: 14, insufficient: 14,
   splash: 14, rattle: 15, bucket: 16,
+  // phase 6: per tool x material, transport and the sluice
+  hand_dirt: 22, hand_gravel: 20, shovel_dirt: 19, shovel_gravel: 17, pickaxe_compact: 16, pickaxe_stone: 11, rock_break: 13,
+  material_slide: 18, bucket_fill: 15, wheelbarrow_dump: 9, sluice_water: 13, sluice_feed: 15, sluice_cleanout: 14,
 };
 
 export class GoldRushAudio {
@@ -122,7 +125,9 @@ export class GoldRushAudio {
     ratios.forEach((r, i) => this._tone(dest, t0, f * r, decay / (1 + i * 0.6), gain / (1 + i * 1.3)));
   }
 
-  // kind: dirt | compact | gravel | stone | air | dust | flake | tiny | nugget | pickup
+  // kind: hand_dirt | hand_gravel | shovel_dirt | shovel_gravel | pickaxe_compact | pickaxe_stone | rock_break
+  //       | material_slide | bucket_fill | wheelbarrow_dump | sluice_water | sluice_feed | sluice_cleanout
+  //       | dirt | compact | gravel | stone | air | dust | flake | tiny | nugget | pickup
   //       | shovel | dump | pick | pickStone | crack | break | swing | swap
   //       | scale | sell | shopOpen | purchase | insufficient
   play(kind, { pan = 0, dist = 1.5, strength = 1 } = {}) {
@@ -240,6 +245,71 @@ export class GoldRushAudio {
       case "bucket":                                   // a tin bucket set down
         this._ting(out, t, rv(420, 480), 0.05 * s, 0.22, [1, 2.3, 3.9]);
         this._noise(out, t, 0.06, { type: "lowpass", f: rv(600, 800), q: 0.8, gain: 0.1 * s });
+        break;
+      // ---- phase 6: the material speaks for itself, per tool
+      case "hand_dirt":                                // fingers in soft soil: a soft scrape, crumbs
+        this._noise(out, t, rv(0.07, 0.1), { f: rv(850, 1250), q: 0.8, gain: 0.24 * s });
+        this._grains(out, t + 0.01, 5 + Math.floor(Math.random() * 3), 0.07, 1500, 3000, 2, 0.04 * s, 0.09 * s);
+        this._tone(out, t, rv(95, 115), 0.04, 0.06 * s, { to: 62 });
+        break;
+      case "hand_gravel":                              // fingers in gravel: pebbles click against each other
+        this._noise(out, t, rv(0.06, 0.09), { f: rv(1500, 2100), q: 0.7, gain: 0.12 * s });
+        this._grains(out, t, 10 + Math.floor(Math.random() * 5), 0.09, 2600, 5400, 6, 0.05 * s, 0.13 * s);
+        break;
+      case "shovel_dirt":                              // the blade into soil: a deep scrape, the load crumbling
+        this._noise(out, t, rv(0.16, 0.2), { f: rv(400, 600), q: 0.8, gain: 0.3 * s, attack: 0.008 });
+        this._tone(out, t, rv(60, 72), 0.09, 0.16 * s, { to: 42 });
+        this._grains(out, t + 0.05, 9 + Math.floor(Math.random() * 4), 0.16, 1100, 2600, 2, 0.04 * s, 0.09 * s);
+        this._noise(out, t, 0.012, { f: rv(3000, 3800), q: 4, gain: 0.04 * s, attack: 0.001 });
+        break;
+      case "shovel_gravel":                            // the blade into gravel: a brighter grind, many pebbles
+        this._noise(out, t, rv(0.14, 0.18), { f: rv(900, 1300), q: 0.7, gain: 0.2 * s, attack: 0.006 });
+        this._grains(out, t + 0.02, 16 + Math.floor(Math.random() * 6), 0.18, 2200, 5200, 5, 0.05 * s, 0.12 * s);
+        this._noise(out, t, 0.014, { f: rv(3200, 4000), q: 4, gain: 0.06 * s, attack: 0.001 });
+        break;
+      case "pickaxe_compact":                          // the point into firm ground: a dull, heavy thunk
+        this._tone(out, t, rv(80, 100), 0.08, 0.24 * s, { to: 52 });
+        this._noise(out, t, 0.06, { type: "lowpass", f: rv(550, 800), q: 0.9, gain: 0.26 * s, attack: 0.002 });
+        this._grains(out, t + 0.02, 5 + Math.floor(Math.random() * 3), 0.08, 1200, 2400, 2, 0.04 * s, 0.08 * s);
+        break;
+      case "pickaxe_stone":                            // steel on rock: a clank with a short ring
+        this._noise(out, t, 0.03, { type: "highpass", f: rv(1800, 2400), q: 0.7, gain: 0.2 * s, attack: 0.0008 });
+        this._ting(out, t, rv(1350, 1600), 0.08 * s, 0.2, [1, 2.31, 3.87, 5.2]);
+        this._tone(out, t, rv(160, 190), 0.06, 0.18 * s, { to: 120 });
+        this._grains(out, t + 0.02, 4, 0.06, 3000, 6000, 4, 0.03 * s, 0.06 * s);
+        break;
+      case "rock_break":                               // a boulder gives way: knocks, a rumble, a spray of chips
+        for (let i = 0; i < 3; i++) this._tone(out, t + i * rv(0.04, 0.07), rv(80, 140), 0.12, 0.15 * s, { to: 55 });
+        this._noise(out, t, 0.3, { type: "lowpass", f: rv(500, 800), q: 0.7, gain: 0.22 * s, attack: 0.004 });
+        this._grains(out, t + 0.05, 14, 0.32, 1600, 4200, 3, 0.04 * s, 0.1 * s);
+        break;
+      case "material_slide":                           // crumbs trickling down a fresh face
+        this._noise(out, t, rv(0.35, 0.5), { type: "bandpass", f: rv(1400, 2000), q: 0.8, gain: 0.04 * s, attack: 0.06 });
+        this._grains(out, t + 0.03, 6 + Math.floor(Math.random() * 4), 0.45, 1800, 4200, 3, 0.02 * s, 0.05 * s);
+        break;
+      case "bucket_fill":                              // soil into a tin bucket
+        this._noise(out, t, 0.12, { type: "lowpass", f: rv(700, 950), q: 0.8, gain: 0.16 * s, attack: 0.006 });
+        this._ting(out, t + 0.01, rv(380, 440), 0.035 * s, 0.18, [1, 2.3, 3.9]);
+        this._grains(out, t + 0.03, 5, 0.1, 1200, 2600, 2, 0.03 * s, 0.07 * s);
+        break;
+      case "wheelbarrow_dump":                         // a barrow load sliding out, landing heavily
+        this._noise(out, t, rv(0.45, 0.6), { f: rv(420, 620), q: 0.6, gain: 0.18 * s, attack: 0.08 });
+        this._grains(out, t + 0.1, 16, 0.5, 900, 2600, 2, 0.03 * s, 0.07 * s);
+        this._tone(out, t + 0.32, rv(52, 64), 0.12, 0.16 * s, { to: 38 });
+        break;
+      case "sluice_water":                             // water running down the box over the riffles
+        this._noise(out, t, rv(0.7, 0.9), { type: "lowpass", f: rv(1100, 1500), q: 0.5, gain: 0.1 * s, attack: 0.2 });
+        this._noise(out, t + 0.1, 0.5, { f: rv(2400, 3000), q: 1, gain: 0.025 * s, attack: 0.15 });
+        break;
+      case "sluice_feed":                              // material into the wooden hopper
+        this._noise(out, t, rv(0.25, 0.35), { f: rv(500, 700), q: 0.7, gain: 0.2 * s, attack: 0.03 });
+        this._tone(out, t + 0.05, rv(95, 115), 0.08, 0.12 * s, { to: 70 });
+        this._grains(out, t + 0.08, 9, 0.3, 1200, 3000, 2, 0.03 * s, 0.07 * s);
+        break;
+      case "sluice_cleanout":                          // brushing the mat out, water, a few bright ticks of gold
+        for (let i = 0; i < 3; i++) this._noise(out, t + i * rv(0.12, 0.18), 0.09, { f: rv(1200, 1800), q: 1.5, gain: 0.08 * s, attack: 0.02 });
+        this._noise(out, t + 0.1, 0.4, { type: "lowpass", f: rv(900, 1200), q: 0.6, gain: 0.06 * s, attack: 0.08 });
+        for (let i = 0; i < 3; i++) this._ting(out, t + 0.25 + i * rv(0.06, 0.1), rv(2200, 2900), 0.03, 0.1);
         break;
       default: break;
     }

@@ -10,15 +10,15 @@ export const QUALITY_LEVELS = ["low", "medium", "high"];
 export const QUALITY = {
   low: {
     label: "Niedrig", dprDesktop: 1, dprMobile: 1, shadowSize: 1024, softShadows: false,
-    particles: 60, fragments: 10, terrainStride: 2, grass: 0.35, fogDensity: 0.0074,
+    particles: 90, fragments: 70, terrainStride: 2, grass: 0.35, fogDensity: 0.0074,
   },
   medium: {
     label: "Mittel", dprDesktop: 1.5, dprMobile: 1.35, shadowSize: 2048, softShadows: true,
-    particles: 140, fragments: 22, terrainStride: 1, grass: 0.7, fogDensity: 0.0062,
+    particles: 170, fragments: 150, terrainStride: 1, grass: 0.7, fogDensity: 0.0062,
   },
   high: {
     label: "Hoch", dprDesktop: 2, dprMobile: 1.6, shadowSize: 4096, shadowSizeMobile: 2048, softShadows: true,
-    particles: 240, fragments: 36, terrainStride: 1, grass: 1, fogDensity: 0.0058,
+    particles: 280, fragments: 230, terrainStride: 1, grass: 1, fogDensity: 0.0058,
   },
 };
 

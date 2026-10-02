@@ -63,8 +63,16 @@ const AUTOSAVE_MS = 10000;
 const MONITOR = { warmup: 3, window: 2, slowMs: 27, cooldown: 8 };
 const GLINTS = { low: 24, medium: 48, high: 64 };
 const INSPECT_S = 1.15;
-const SOUND = ["dirt", "compact", "gravel", "stone"];
-const KICK = { hand: 0.01, shovel: 0.016, pickaxe: 0.022 };     // subtle camera kick per contact (off with reduced motion)
+// what a hit sounds like, per tool x material (dirt, compact, gravel, stone) - placeholders, goldrush-audio.js
+const DIG_SOUND = {
+  hand: ["hand_dirt", "hand_dirt", "hand_gravel", "stone"],
+  shovel: ["shovel_dirt", "shovel_dirt", "shovel_gravel", "pickaxe_stone"],
+  pickaxe: ["pickaxe_compact", "pickaxe_compact", "pickaxe_compact", "pickaxe_stone"],
+};
+// a very subtle camera impulse per tool x material (radians of pitch; off with reduced motion)
+const KICK = { hand: [0.005, 0.007, 0.007, 0.01], shovel: [0.012, 0.015, 0.016, 0.02], pickaxe: [0.016, 0.02, 0.02, 0.026] };
+// one short haptic pulse per hit (ms; phones with vibration switched on) - never a continuous buzz
+const HAPTIC = { hand: [4, 6, 7, 12], shovel: [8, 10, 12, 16], pickaxe: [10, 14, 14, 20] };
 const STONE_TIP = {
   hand: "Zu hart für die Hand – hier braucht es eine Spitzhacke.",
   shovel: "Die Schaufel prallt am Stein ab – dafür braucht es eine Spitzhacke.",
@@ -183,6 +191,11 @@ export class GoldRushGame {
     const camera = (this.camera = new THREE.PerspectiveCamera(FOV, 1, 0.05, 900));
     camera.rotation.order = "YXZ";
     this.effects = new DigEffects(THREE, world.scene, this.terrain);
+    // fresh steep cuts trickle a moment later (visual only) - a quiet slide
+    this.effects.onTrickle = (x, y, z) => {
+      const c = this.camera.position, d = Math.hypot(x - c.x, y - c.y, z - c.z);
+      if (d < 6) this.audio.play("material_slide", { pan: this._pan({ x, z }), dist: d, strength: 0.6 });
+    };
     this.loot = new LootSystem(THREE, world.scene, this.terrain, { envMap });
     this.loot.onCollect = (item) => this._collected(item);
     this.loot.onNuggetArrive = (item) => this._nuggetInHand(item);
@@ -960,18 +973,19 @@ export class GoldRushGame {
     this.economy.recordAction(r, def.id);
     const pan = this._pan(hit), dist = hit.distance;
     if (!r.ok) { this.tools.react("air"); this.hands.contact("air"); return; }
-    const kick = this.reducedMotion ? 0 : KICK[def.id] || 0.01;
+    const kicks = KICK[def.id] || KICK.hand, haptics = HAPTIC[def.id] || HAPTIC.hand;
+    const dir = this._toolDir();
     if (r.kind === "rock") {
-      // the pickaxe on a boulder: chips, a clank, the boulder cracks / breaks
+      // the pickaxe on a boulder: chips, a clank, the boulder cracks / breaks apart
       const rk = r.rock;
       this.tools.react("ok", MAT.STONE);
       this.hands.contact("blocked", MAT.STONE);
-      this.effects.burst(hit, MATERIALS[MAT.STONE], rk && rk.broke ? 1.4 : 0.8, rk && rk.broke ? 6 : 2);
-      this.audio.play("pickStone", { pan, dist });
-      if (rk && rk.broke) this.audio.play("break", { pan, dist });
+      this.effects.impact(hit, MAT.STONE, rk && rk.broke ? "rock" : "pickaxe", dir, rk && rk.broke ? 1.4 : 0.9);
+      this.audio.play("pickaxe_stone", { pan, dist });
+      if (rk && rk.broke) this.audio.play("rock_break", { pan, dist });
       else if (rk && rk.stage !== "intact") this.audio.play("crack", { pan, dist, strength: 0.8 });
-      this._haptic(rk && rk.broke ? [18, 40, 26] : 16);
-      this.player.kick = Math.min(0.04, this.player.kick + kick);
+      this._haptic(rk && rk.broke ? [18, 40, 26] : haptics[MAT.STONE]);
+      if (!this.reducedMotion) this.player.kick = Math.min(0.04, this.player.kick + kicks[MAT.STONE] * (rk && rk.broke ? 1.3 : 1));
       if (rk && rk.broke) this.hud.tip("rock-broken", "Felsbrocken zerschlagen – der Weg ist frei.", 20);
       this.lastStroke = { tool: def.id, kind: "rock", material: MAT.STONE, massKg: 0, rock: rk, finds: 0, cents: 0 };
       this.dirty = true;
@@ -980,12 +994,12 @@ export class GoldRushGame {
     if (r.blocked) {
       this.tools.react("blocked", MAT.STONE);
       this.hands.contact("blocked", MAT.STONE);
-      this.effects.burst(hit, MATERIALS[MAT.STONE], 0.6, def.id === "shovel" ? 2 : 0);
-      this.audio.play(def.id === "hand" ? "stone" : "pickStone", { pan, dist, strength: def.id === "hand" ? 1 : 0.7 });
-      this._haptic(MATERIALS[MAT.STONE].haptic);
+      this.effects.impact(hit, MAT.STONE, def.id, dir, 0.5);
+      this.audio.play(DIG_SOUND[def.id] ? DIG_SOUND[def.id][MAT.STONE] : "stone", { pan, dist, strength: def.id === "hand" ? 1 : 0.7 });
+      this._haptic(haptics[MAT.STONE]);
       if (STONE_TIP[def.id]) this.hud.tip(`stone-${def.id}`, STONE_TIP[def.id], 10);
       this.ui.crosshairPulse && this.ui.crosshairPulse("hard");
-      this.player.kick = Math.min(0.03, this.player.kick + kick * 0.5);
+      if (!this.reducedMotion) this.player.kick = Math.min(0.03, this.player.kick + kicks[MAT.STONE] * 0.5);
       this.lastStroke = { tool: def.id, kind: "blocked", material: hit.boulder != null ? MAT.STONE : r.material, massKg: 0, blocked: true, finds: 0, cents: 0 };
       this.dirty = true;
       return;
@@ -994,13 +1008,12 @@ export class GoldRushGame {
     this.tools.react("ok", r.material);
     if (def.id === "shovel") { const c = mdef.fragmentColor; this.hands.models.soilMat.color.setRGB(c[0] * 1.25, c[1] * 1.25, c[2] * 1.25); }
     this.hands.contact("ok", r.material, r.removedMassKg);
-    const vfx = def.vfxProfile || { dust: 1, chunks: 1 };
-    this.effects.burst(hit, mdef, Math.min(1.6, (0.55 + r.removedMassKg / 3) * vfx.dust), Math.round(vfx.chunks - 1));
-    if (def.id === "shovel") this.audio.play("shovel", { pan, dist, strength: Math.min(1, 0.6 + r.removedMassKg / 3) });
-    else if (def.id === "pickaxe") this.audio.play(r.material === MAT.STONE ? "pickStone" : "pick", { pan, dist });
-    else this.audio.play(SOUND[r.material], { pan, dist, strength: Math.min(1, 0.6 + r.removedMassKg * 2) });
-    this._haptic(mdef.haptic);
-    this.player.kick = Math.min(0.03, this.player.kick + kick);
+    this.effects.impact(hit, r.material, def.id, dir, Math.min(1.5, 0.6 + r.removedMassKg / 2.5));
+    const kind = (DIG_SOUND[def.id] || DIG_SOUND.hand)[r.material] || "hand_dirt";
+    this.audio.play(kind, { pan, dist, strength: def.id === "hand" ? Math.min(1, 0.6 + r.removedMassKg * 2) : Math.min(1, 0.6 + r.removedMassKg / 3) });
+    this._haptic(haptics[r.material] || mdef.haptic);
+    if (!this.reducedMotion) this.player.kick = Math.min(0.03, this.player.kick + (kicks[r.material] || kicks[0]));
+    this._trickleAfter(hit, r.material);
     this.ui.onDig && this.ui.onDig();
     // into the bucket next to you (with all its gold), or spoil: its finds
     // come out of the ground now (pending), shown now (loot), money on pickup
@@ -1055,7 +1068,7 @@ export class GoldRushGame {
     const routed = this.processing.collect(r, this.player, id);
     const disc = this.economy.discover(routed.finds, routed.count);
     if (visuals) {
-      this.effects.burst(hit, MATERIALS[r.material], 1);
+      this.effects.impact(hit, r.material, id, this._toolDir(), Math.min(1.5, 0.6 + r.removedMassKg / 2.5));
       if (disc.items.length) {
         if (disc.firstNugget) for (const it of disc.items) if (it.cls === FIND.NUGGET) { it.first = true; break; }
         this.loot.spawn(disc.items, hit);
@@ -1104,6 +1117,27 @@ export class GoldRushGame {
     this.economy.collectAll();                          // anything pending that was never shown
     this.hud.settle(this.economy.cashCents, this.economy.pouchCents);
   }
+
+  // the tool's motion into the ground: where the crosshair looks (dig effects throw relative to it)
+  _toolDir() {
+    const p = this.player, cp = Math.cos(p.pitch);
+    return this._dir.set(-Math.sin(p.yaw) * cp, Math.sin(p.pitch), -Math.cos(p.yaw) * cp);
+  }
+
+  // a cut into a steep face: a few crumbs trickle down it a moment later (visual only -
+  // the ground, its mass and its gold are not touched)
+  _trickleAfter(hit, mat) {
+    if (mat === MAT.STONE || this._trickleCool > performance.now()) return;
+    const T = this.terrain, d = 0.15;
+    const gx = (T.getHeightAt(hit.x - d, hit.z) - T.getHeightAt(hit.x + d, hit.z)) / (2 * d);
+    const gz = (T.getHeightAt(hit.x, hit.z - d) - T.getHeightAt(hit.x, hit.z + d)) / (2 * d);
+    const sl = Math.hypot(gx, gz);
+    if (sl < 0.7) return;                                   // ~35 degrees and steeper
+    const x = hit.x - (gx / sl) * 0.22, z = hit.z - (gz / sl) * 0.22;
+    if (this.effects.queueTrickle(x, T.getHeightAt(x, z) + 0.012, z, gx / sl, gz / sl, mat, 0.25 + Math.random() * 0.6)) this._trickleCool = performance.now() + 700;
+  }
+
+  _dir = new THREE.Vector3();
 
   _pan(hit) {
     const p = this.player, dx = hit.x - p.x, dz = hit.z - p.z;

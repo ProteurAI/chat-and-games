@@ -483,6 +483,20 @@ export class DiggableTerrain {
     return (a + (b - a) * tx) * (1 - tz) + (c + (d - c) * tx) * tz;
   }
 
+  // the ground's own colour at a point (the vertex colour of the nearest grid
+  // point - what the dig effects tint their dust and crumbs with) -> out [r, g, b]
+  surfaceColor(x, z, out) {
+    const cc = this.chunkCells, per = this.chunksPerSide;
+    const gi = Math.round((x - this.x0) / this.cell), gj = Math.round((z - this.z0) / this.cell);
+    if (gi < 0 || gj < 0 || gi >= this.vps || gj >= this.vps) return false;
+    const cx = Math.min(per - 1, Math.floor(gi / cc)), cz = Math.min(per - 1, Math.floor(gj / cc));
+    const ch = this.chunks[cz * per + cx];
+    if (!ch) return false;
+    const v = (gj - ch.j0) * (cc + 1) + (gi - ch.i0), col = ch.geom.attributes.color.array;
+    out[0] = col[v * 3]; out[1] = col[v * 3 + 1]; out[2] = col[v * 3 + 2];
+    return true;
+  }
+
   getHeightAt(x, z) { return this._heightFrom(this.height, x, z); }
   getBaseHeightAt(x, z) { return this._heightFrom(this.base, x, z); }
 
