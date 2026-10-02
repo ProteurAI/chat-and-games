@@ -13,6 +13,8 @@
 //                              a pen on the ledger; a crate lid, a soft
 //                              thud when something is bought (no till, no
 //                              casino sounds)
+//   wash place               - water slapping in the pan, the screen's
+//                              rattle, a bucket set down / tipped
 // Every call varies pitch, filter and loudness a little, and sounds are
 // panned / attenuated by where they happen. The AudioContext is created on
 // the first user gesture (autoplay rules) and closed on exit.
@@ -30,6 +32,7 @@ const LEVEL = {
   dirt: 23, compact: 20, gravel: 24, stone: 15, air: 21, dust: 16, flake: 20, tiny: 11, nugget: 15, pickup: 44,
   shovel: 20, dump: 18, pick: 17, pickStone: 11, crack: 13, break: 14, swing: 12, swap: 16,
   scale: 14, sell: 14, shopOpen: 16, purchase: 14, insufficient: 14,
+  splash: 14, rattle: 15, bucket: 16,
 };
 
 export class GoldRushAudio {
@@ -225,6 +228,17 @@ export class GoldRushAudio {
         break;
       case "insufficient":                             // a soft, dull tick - not an error buzzer
         this._tone(out, t, rv(240, 260), 0.06, 0.08, { to: 200 });
+        break;
+      case "splash":                                   // water slapping in the pan
+        this._noise(out, t, rv(0.18, 0.26), { type: "lowpass", f: rv(900, 1300), q: 0.7, gain: 0.16 * s, attack: 0.02 });
+        this._noise(out, t + 0.05, 0.12, { f: rv(2200, 2900), q: 2.5, gain: 0.04 * s, attack: 0.01 });
+        break;
+      case "rattle":                                   // the screen shaken: pebbles on wire
+        for (let i = 0; i < 4; i++) this._noise(out, t + i * rv(0.03, 0.05), 0.04, { f: rv(1800, 2600), q: 3, gain: 0.07 * s });
+        break;
+      case "bucket":                                   // a tin bucket set down
+        this._ting(out, t, rv(420, 480), 0.05 * s, 0.22, [1, 2.3, 3.9]);
+        this._noise(out, t, 0.06, { type: "lowpass", f: rv(600, 800), q: 0.8, gain: 0.1 * s });
         break;
       default: break;
     }

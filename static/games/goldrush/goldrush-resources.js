@@ -24,6 +24,11 @@
 // dust, a flake, a tiny piece, a small nugget - and its exact mass) is
 // decided by a hash of seed + voxel index. Taking a slice out pays it
 // exactly once.
+// Besides those visible pieces every slice holds FINE GOLD, spread through
+// the material - far too fine to see while digging (fineUg, from the same
+// gold density, no dice). Digging alone never gets it back: it leaves with
+// the spoil. Washing the material (bucket -> classifier -> gold pan,
+// goldrush-material.js) recovers part of it.
 
 import { fbm2, hash3, mulberry32, noise2, noise3, smoothstep } from "./goldrush-noise.js";
 import { MAT } from "./goldrush-materials.js";
@@ -48,6 +53,9 @@ const MASS = {
   [FIND.TINY]: [2500, 6500, 1.6],      // 25-90 ct
   [FIND.NUGGET]: [10000, 30000, 2.2],  // 1-4 €, most of them small
 };
+// fine gold per slice at gold density 1 (µg) - the bulk of the gold in the
+// ground, but only processing brings it back (see the phase-5 benchmark)
+const FINE_PER_SLICE = 6000;
 // starter zone: gold density held inside this band (fair, not lucky)
 // (narrow on purpose: early progress should come from steady work, not from
 // whether a seed's first nugget shows up early - see the phase-4 benchmark)
@@ -206,17 +214,20 @@ export class MaterialField {
   }
 
   // content of resource voxel (column k = vertex i/j, slice iy): writes
-  // { cls, massUg } into out; cls FIND.NONE for barren ground
+  // { cls, massUg, fineUg, mat } into out; cls FIND.NONE when it holds no
+  // visible piece (fineUg: the fine gold spread through it)
   voxel(i, j, iy, out) {
     const t = this.terrain, k = j * t.vps + i;
     const x = t.x0 + i * t.cell, z = t.z0 + j * t.cell, y = this.floorY + (iy + 0.5) * VOXEL_H;
     out.cls = FIND.NONE;
     out.massUg = 0;
+    out.fineUg = 0;
     const mat = this.materialAt(x, y, z, k);
     out.mat = mat;
     if (mat === MAT.STONE) return out;
     const g = this.goldDensityAt(x, y, z, mat, t.base[k] - y);
     out.g = g;
+    out.fineUg = Math.round(FINE_PER_SLICE * g);
     const s = this.seed;
     if (hash3(i, iy, j, s ^ 0x6a09e667) >= P_FIND * Math.pow(g, 0.85)) return out;
     const u = hash3(i, iy, j, s ^ 0x3c6ef372);

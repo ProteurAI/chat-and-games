@@ -17,6 +17,9 @@
 //   SOLD                sell(): at the assay station the whole pouch is
 //                       weighed and paid out - pouch emptied and cash booked
 //                       in one step
+// Gold won by washing material (gold pan, goldrush-material.js) goes into
+// the pouch with recover() - its fine gold as "washedGold", the pieces in
+// it into their own classes - straight from the pan, exactly once.
 // Leaving the game, hiding the tab or loading a save with pending finds
 // moves them into the pouch (collectAll) - no find is lost, none counted
 // twice: the save always holds each find in exactly one state.
@@ -53,7 +56,7 @@ const int = (v) => (Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0);
 const bucket = (b) => ({ count: int(b && b.count), ug: int(b && b.ug), cents: int(b && b.cents) });
 const MASS_KEYS = ["dirt", "compactDirt", "gravel", "stone"];
 // pouch classes (the find ids of goldrush-resources.js)
-export const POUCH_CLASSES = ["traceGold", "fineGold", "goldFlake", "tinyGoldPiece", "smallNugget"];
+export const POUCH_CLASSES = ["traceGold", "fineGold", "goldFlake", "tinyGoldPiece", "smallNugget", "washedGold"];
 const CLASS_OF = { [FIND.TRACE]: "traceGold", [FIND.FINE]: "fineGold", [FIND.FLAKE]: "goldFlake", [FIND.TINY]: "tinyGoldPiece", [FIND.NUGGET]: "smallNugget" };
 
 export class Economy {
@@ -87,6 +90,8 @@ export class Economy {
       rockHits: int(st.rockHits),
       rocksBroken: int(st.rocksBroken),
       byTool: { hand: tool(tl.hand), shovel: tool(tl.shovel), pickaxe: tool(tl.pickaxe) },
+      washedUg: int(st.washedUg),            // fine gold recovered by washing (all time)
+      washedPieces: int(st.washedPieces),    // pieces that came out of the pan / off the screen
     };
     const so = s.sold || {};
     this.sold = {
@@ -185,6 +190,35 @@ export class Economy {
     st.goldFoundUg += it.massUg;
     if (it.cls === FIND.NUGGET && it.cents > st.biggestNuggetCents) { st.biggestNuggetCents = it.cents; st.biggestNuggetUg = it.massUg; }
     return it;
+  }
+
+  /**
+   * Gold won by processing (gold pan / classifier): fine gold -> "washedGold",
+   * each piece -> its class. No pending state - it is in your hand already.
+   * -> { cents, ug, pieces }
+   */
+  recover(fineUg, finds = []) {
+    const out = { cents: 0, ug: 0, pieces: 0 };
+    const st = this.stats;
+    const fine = int(fineUg);
+    if (fine > 0) {
+      const b = this.pouch.washedGold, c = centsForMass(fine);
+      b.count++; b.ug += fine; b.cents += c;
+      out.cents += c; out.ug += fine;
+      st.washedUg += fine;
+    }
+    for (const f of finds) {
+      const cls = CLASS_OF[f.cls], ug = int(f.ug);
+      if (!cls || !(ug > 0)) continue;
+      const b = this.pouch[cls], c = centsForMass(ug);
+      b.count++; b.ug += ug; b.cents += c;
+      out.cents += c; out.ug += ug; out.pieces++;
+      st.finds++;
+      st.washedPieces++;
+      if (f.cls === FIND.NUGGET && c > st.biggestNuggetCents) { st.biggestNuggetCents = c; st.biggestNuggetUg = ug; }
+    }
+    st.goldFoundUg += out.ug;
+    return out;
   }
 
   // everything still pending -> pouch now; returns the items

@@ -459,7 +459,7 @@ def mobile(browser, base, user, shots):
           return { inside: c.left >= -1 && c.right <= innerWidth + 1 && c.top >= -1 && c.bottom <= innerHeight + 1, scrolls: card.scrollHeight > card.clientHeight, minH: Math.min(...btns), rows: document.querySelectorAll('[data-sheet=supply] .gr-shop-item').length, w: Math.round(c.width), h: Math.round(c.height) }; }""")
         shot(M, shots, f"mobile_shop_{name}")
         ok(f"{'44' if name == 'portrait' else '45'} mobile shop ({name}): a sheet inside the screen, every item reachable (scrolls), 44 px targets",
-           shop["inside"] and shop["rows"] == 6 and shop["minH"] >= 44, str(shop))
+           shop["inside"] and shop["rows"] == 11 and shop["minH"] >= 44, str(shop))          # phase 5: tools, upgrades, processing kit
         M.tap("[data-sheet=supply] [data-act=close-station]")
         errs = errors(M)
         ok(f"mobile {name}: no page errors", not errs, str(errs[:3]))

@@ -26,6 +26,7 @@ export class GoldRushInput {
     this.locked = false;
     this.everLocked = false;             // the browser has granted the lock at least once
     this.free = false;                   // no pointer lock available: look by right-button drag
+    this.allLook = false;                // every touch drag is "look" (work at the wash place)
     this.dragLook = false;
     this.enabled = true;
     this.pointers = new Map();           // pointerId -> { role, x0, y0, x, y }
@@ -165,7 +166,8 @@ export class GoldRushInput {
     const x = e.clientX - r.left, y = e.clientY - r.top;
     let role;
     if (this.digBtn && (e.target === this.digBtn || this.digBtn.contains(e.target))) role = "dig";
-    else if (x < r.width * 0.45 && y > r.height * 0.3 && ![...this.pointers.values()].some((p) => p.role === "stick")) role = "stick";
+    // working (panning / sieving): every finger swirls / shakes - no walking
+    else if (!this.allLook && x < r.width * 0.45 && y > r.height * 0.3 && ![...this.pointers.values()].some((p) => p.role === "stick")) role = "stick";
     else role = "look";
     this.pointers.set(e.pointerId, { role, x0: x, y0: y, x, y });
     try { this.root.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }

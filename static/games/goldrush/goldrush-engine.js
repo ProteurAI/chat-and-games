@@ -1,6 +1,7 @@
 // GoldRush - the running game: renderer, world, player, the tools in your
 // hands, mining, boulders, finds, the gold pouch, the camp's stations
-// (selling gold, buying supplies), money, save, quality, lifecycle. Loaded lazily by goldrush.js
+// (selling gold, buying supplies), processing at the wash place (bucket,
+// classifier, gold pan), money, save, quality, lifecycle. Loaded lazily by goldrush.js
 // (this is the module that pulls in three.js), created once per opened
 // game and fully disposed on exit - no render loop, listener, timer, audio
 // context or GL context survives it.
@@ -8,7 +9,7 @@
 import * as THREE from "../../vendor/three/three.module.min.js";
 import { AssetManager } from "./goldrush-assets.js";
 import { GoldRushAudio } from "./goldrush-audio.js";
-import { Economy, formatEuro } from "./goldrush-economy.js";
+import { Economy, formatEuro, formatMass } from "./goldrush-economy.js";
 import { FirstPersonHands } from "./goldrush-hand.js";
 import { GoldRushHud } from "./goldrush-hud.js";
 import { GoldRushInput } from "./goldrush-input.js";
@@ -21,7 +22,8 @@ import { RockSystem } from "./goldrush-rocks.js";
 import { DEFAULT_SETTINGS, SAVE_VERSION } from "./goldrush-save.js";
 import { SHOP_ITEMS, itemStatus, shopItem } from "./goldrush-shop.js";
 import { STATIONS, Stations } from "./goldrush-stations.js";
-import { FLOOR_Y } from "./goldrush-terrain.js";
+import { ProcessingSystem } from "./goldrush-processing.js";
+import { SLICE_ORIGIN_Y } from "./goldrush-terrain.js";
 import { TOOL_DEFS, TOOL_ORDER, ToolController, cycleSeconds, effectiveDef, toolEfficiency } from "./goldrush-tools.js";
 import { DigEffects } from "./goldrush-vfx.js";
 import { GoldRushWorld, SPAWN, SUN_DIR } from "./goldrush-world.js";
@@ -191,6 +193,10 @@ export class GoldRushGame {
     this.stations = new Stations(THREE, world.scene, world, { models: this.hands.models, goldMat: this.loot.goldMat });
     this.stations.setOwned(this.tools.owned);
     this.hands.models.applyUpgrades(this.tools.upgrades);
+    // the wash place: bucket, classifier, gold pan (phase 5)
+    this.processing = new ProcessingSystem(THREE, world.scene, world, this.doc.processing, {
+      economy: this.economy, effects: this.effects, hands: this.hands, envMap, goldMat: this.loot.goldMat, upgrades: () => this.tools.upgrades,
+    });
     const ring = new THREE.RingGeometry(0.88, 1, 48);
     this.reticle = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({
       color: 0xfff3d6, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, fog: false,
@@ -219,6 +225,10 @@ export class GoldRushGame {
     // ... and the whole claim, the camp behind you included: one frame without
     // frustum culling uploads every buffer and texture (no hitch at the first look round)
     const culled = [];
+    const pr = this.processing, shown = [pr.restPan.visible, pr.cls.visible, pr.worldBucket.visible];
+    pr.restPan.visible = pr.cls.visible = pr.worldBucket.visible = true;
+    pr.warmup(true);
+    this.hands.scene.add(pr.handPan, pr.handBucket);
     world.scene.traverse((o) => { if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; } });
     renderer.compile(world.scene, camera);
     renderer.compile(this.hands.scene, this.hands.camera);
@@ -228,6 +238,9 @@ export class GoldRushGame {
     renderer.autoClear = false;
     renderer.render(this.hands.scene, this.hands.camera);
     renderer.autoClear = true;
+    this.hands.scene.remove(pr.handPan, pr.handBucket);
+    pr.warmup(false);
+    [pr.restPan.visible, pr.cls.visible, pr.worldBucket.visible] = shown;
     held.visible = false;
     [this.hands.models.shovel.visible, this.hands.models.pickaxe.visible, tr.visible] = vis;
     this.hands.models.soil.visible = false;
@@ -282,8 +295,9 @@ export class GoldRushGame {
     this.on(window, "keydown", (e) => {
       if (this.paused || this.uiOpen || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
       const i = ["Digit1", "Digit2", "Digit3"].indexOf(e.code);
-      if (i >= 0) this.selectTool(TOOL_ORDER[i]);
-      if (e.code === "KeyE" && this.station) { e.preventDefault(); this.openStation(this.station.id); }
+      if (i >= 0 && !this.processing.work && !this.processing.carrying) this.selectTool(TOOL_ORDER[i]);
+      if (e.code === "KeyE" && this.processing.work) { e.preventDefault(); this._workAction(); return; }
+      if (e.code === "KeyE" && this.station) { e.preventDefault(); this.useStation(); }
     });
     if (this.debug) {
       this.on(window, "keydown", (e) => {
@@ -366,6 +380,59 @@ export class GoldRushGame {
     return true;
   }
 
+  // E / the phone's button: whatever is in front of you
+  useStation() {
+    const s = this.station;
+    if (!s) return false;
+    if (s.kind !== "process") return this.openStation(s.id);
+    if (s.disabled) { this.hud.tip(`proc-${s.id}`, s.action, 4); return false; }
+    const r = this.processing.act(s.id, this.player);
+    if (!r.ok) return false;
+    if (r.kind === "pick") this.audio.play("swap", { dist: 0.3 });
+    else if (r.kind === "drop") this.audio.play("bucket", { dist: 0.5, strength: 0.8 });
+    else if (r.kind === "work") this._enterWork();
+    this._stationSig = "";
+    this.dirty = true;
+    return true;
+  }
+
+  _enterWork() {
+    this.tools.cancel();
+    this.input.releaseAll();
+    this.input.allLook = true;
+    this.ui.root.classList.add("gr-working");
+    this.audio.play(this.processing.work === "pan" ? "splash" : "rattle", { dist: 0.4, strength: 0.6 });
+    this._stationSig = "";
+  }
+
+  _leaveWork() {
+    this.processing.stopWork();
+    this.input.allLook = false;
+    this.ui.root.classList.remove("gr-working");
+    this.hud.work(null);
+    this._stationSig = "";
+  }
+
+  // E while working: take the gold out of the pan (when it shows), else stop for now
+  _workAction() {
+    const pr = this.processing;
+    if (pr.work === "pan" && pr.panDone) { this._collectPan(); return; }
+    this._leaveWork();
+  }
+
+  _collectPan() {
+    const r = this.processing.finishPan();
+    this._leaveWork();
+    if (!r.ok) return;
+    if (r.cents > 0) {
+      this.hud.collected(r.cents, FIND.FINE);
+      this.hud.message("Gold gewaschen", `${formatMass(r.ug)} · ≈ ${formatEuro(r.cents)}${r.pieces ? ` · ${r.pieces} ${r.pieces === 1 ? "Stück" : "Stücke"}` : ""}`);
+      this.audio.play(r.pieces ? "tiny" : "flake", { dist: 0.3 });
+    } else this.hud.tip("pan-empty", "Diesmal blieb kein Gold in der Pfanne.", 3);
+    this.dirty = true;
+    this.save("pan");
+  }
+
   // close it again; resume = the close came from a click (may take the mouse back)
   closeStation(resume = true) {
     if (!this.uiOpen) return false;
@@ -386,7 +453,7 @@ export class GoldRushGame {
   }
 
   shopView() {
-    const e = this.economy, state = { owned: this.tools.owned, upgrades: this.tools.upgrades, hardSeen: e.flags.hardSeen, cashCents: e.cashCents };
+    const e = this.economy, state = { owned: this.tools.owned, upgrades: this.tools.upgrades, equipment: this.processing.owned, hardSeen: e.flags.hardSeen, cashCents: e.cashCents };
     return {
       cash: e.cashCents, pouch: e.pouchCents,
       items: SHOP_ITEMS.map((it) => ({ id: it.id, kind: it.kind, tool: it.tool, label: it.label, text: it.text, price: it.price, ...itemStatus(it, state) })),
@@ -418,7 +485,7 @@ export class GoldRushGame {
     const it = shopItem(id);
     if (!it) return { ok: false, reason: "unknown" };
     const e = this.economy;
-    const st = itemStatus(it, { owned: this.tools.owned, upgrades: this.tools.upgrades, hardSeen: e.flags.hardSeen, cashCents: e.cashCents });
+    const st = itemStatus(it, { owned: this.tools.owned, upgrades: this.tools.upgrades, equipment: this.processing.owned, hardSeen: e.flags.hardSeen, cashCents: e.cashCents });
     if (st.state === "owned") return { ok: false, reason: "owned" };
     if (st.state === "locked") return { ok: false, reason: "locked", needs: st.needs };
     const pay = e.buy(it.id, it.price, it.kind);
@@ -427,9 +494,12 @@ export class GoldRushGame {
       this.tools.unlock(it.tool);
       this.stations.setOwned(this.tools.owned);
       this.tools.equip(it.tool);                                          // straight into your hands
+    } else if (it.kind === "equipment") {
+      this.processing.grant(it.id);                                       // it appears on the claim
     } else {
       this.tools.addUpgrade(it.id);
       this.hands.models.applyUpgrades(this.tools.upgrades);
+      this.processing.applyUpgrades();
     }
     this.audio.play("purchase", { dist: 0.5 });
     this.hud.cashTo(e.cashCents);
@@ -521,7 +591,7 @@ export class GoldRushGame {
   setPaused(p) {
     if (this.paused === p) return;
     this.paused = p;
-    if (p) { this.input.releaseAll(); this.save("pause"); }
+    if (p) { if (this.processing && this.processing.work) this._leaveWork(); this.input.releaseAll(); this.save("pause"); }
     this._syncLoop();
   }
 
@@ -541,6 +611,7 @@ export class GoldRushGame {
     this.effects.update(dt);
     this.loot.update(dt, this.camera, this.player);
     this._sunCheck(dt);
+    this.processing.update(dt);
     this.hands.update(dt, this.tools.view(), { camera: this.camera, sunDir: SUN_VEC, sunVisible: this.sunVisible, walk: Math.min(1, Math.hypot(this.player.vx, this.player.vz) / WALK), bob: this.player.bob });
     this.hud.update(dt);
     this.stations.update(dt);
@@ -576,6 +647,7 @@ export class GoldRushGame {
   update(dt) {
     const p = this.player, input = this.input, world = this.world;
     const look = input.takeLook();
+    if (this.processing.work) { this._workUpdate(dt, look); return; }
     p.yaw -= look.x;
     p.pitch = Math.max(-1.45, Math.min(1.45, p.pitch - look.y));
     this.hands.look(look.x, look.y);
@@ -584,7 +656,7 @@ export class GoldRushGame {
     let mx = input.move.x, my = input.move.y;
     const len = Math.hypot(mx, my);
     if (len > 1) { mx /= len; my /= len; }
-    const speed = input.sprint ? SPRINT : WALK;
+    const speed = (input.sprint ? SPRINT : WALK) * this.processing.speedFactor();
     const sin = Math.sin(p.yaw), cos = Math.cos(p.yaw);
     const tx = (-sin * my + cos * mx) * speed, tz = (-cos * my - sin * mx) * speed;
     const a = Math.min(1, dt * 10);
@@ -621,13 +693,56 @@ export class GoldRushGame {
     this._updateCamera(dt);
     this._aim();
     // the tool: actions while dig is held and the crosshair is on the ground
-    const want = input.digHeld && !!this.target;
-    if (input.digHeld && !this.target) this._hintNoTarget();
-    this.tools.blocked = !!this.hands.inspecting;
+    // (not while you carry the bucket - your hand is on its bail)
+    const carrying = this.processing.carrying;
+    const want = input.digHeld && !!this.target && !carrying;
+    if (input.digHeld && !this.target && !carrying) this._hintNoTarget();
+    if (input.digHeld && carrying) this.hud.tip("carry", "Du trägst den Eimer – erst abstellen [E], dann graben.", 8);
+    this.tools.blocked = !!this.hands.inspecting || carrying;
     const ev = this.tools.tick(dt, want);
     if (ev === "contact") this._contact();
     else if (ev === "swap") this._swapped();
     this._phaseHooks();
+  }
+
+  // working at the wash place: the camera stays at the trough / the screen,
+  // mouse / touch movement is the work (swirl / shake) - see goldrush-processing.js
+  _workUpdate(dt, look) {
+    const p = this.player, pr = this.processing, wp = pr.workPose();
+    if (!wp) { this._leaveWork(); return; }
+    const k = Math.min(1, dt * 8);
+    p.x += (wp.x - p.x) * k; p.z += (wp.z - p.z) * k;
+    let dy = wp.yaw - p.yaw;
+    dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    p.yaw += dy * k;
+    p.pitch += (wp.pitch - p.pitch) * k;
+    p.vx = p.vz = 0;
+    const ground = this.world.groundAt(p.x, p.z) + EYE;
+    p.y += (ground - p.y) * Math.min(1, dt * 12);
+    this._updateCamera(dt);
+    this.target = null;
+    this.ui.setCrosshair("idle");
+    this.tools.blocked = true;
+    this.tools.tick(dt, false);
+    const ev = pr.input(look.x, look.y, dt);
+    if (ev === "pan-ready") { this.audio.play("flake", { dist: 0.3, strength: 0.7 }); this._haptic(10); }
+    else if (ev && ev.kind === "sieved") {
+      this.audio.play("dump", { dist: 0.4, strength: 0.8 });
+      const n = ev.retained.pieces;
+      this.hud.message("Gesiebt", `${(ev.underMl / 1000).toFixed(1).replace(".", ",")} l Konzentrat in der Wanne${n ? ` · ${n} Nugget herausgepickt` : ""}`);
+      if (ev.retained.cents) this.hud.collected(ev.retained.cents, FIND.NUGGET);
+      this._leaveWork();
+      this.dirty = true;
+      return;
+    }
+    // click / tap when the gold shows: collect
+    const click = this.input.digHeld;
+    if (pr.work === "pan" && pr.panDone && click && !this._workClick) { this._workClick = click; this._collectPan(); return; }
+    this._workClick = click;
+    const touch = this.touch;
+    if (pr.work === "pan") this.hud.work(pr.panDone ? (touch ? "Gold liegt in der Pfanne – EINSAMMELN tippen" : "Gold liegt in der Pfanne – Klick oder [E]: einsammeln")
+      : touch ? "Mit dem Finger kreisen: Pfanne schwenken" : "Maus kreisen lassen: Pfanne schwenken · [E] aufhören");
+    else this.hud.work(touch ? "Mit dem Finger hin und her: Sieb rütteln" : "Maus hin und her: Sieb rütteln · [E] aufhören");
   }
 
   // looks and sounds bound to an action's phases (not to the contact)
@@ -637,10 +752,12 @@ export class GoldRushGame {
     this._lastPhase = sig;
     if (v.state !== "action") return;
     if (v.tool === "shovel" && v.phase === "dump" && this.lastStroke && this.lastStroke.massKg > 0) {
-      // the load goes off the blade, to the right of the player
+      // the load goes off the blade, to the right of the player - or into the bucket
       const c = this.camera, p = this.player, fw = this._fw.set(-Math.sin(p.yaw), 0, -Math.cos(p.yaw)), rt = this._rt.set(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
-      const x = c.position.x + fw.x * 0.75 + rt.x * 0.45, z = c.position.z + fw.z * 0.75 + rt.z * 0.45;
-      const y = Math.max(this.terrain.getHeightAt(x, z) + 0.2, c.position.y - 0.55);
+      let x = c.position.x + fw.x * 0.75 + rt.x * 0.45, z = c.position.z + fw.z * 0.75 + rt.z * 0.45;
+      let y = Math.max(this.terrain.getHeightAt(x, z) + 0.2, c.position.y - 0.55);
+      const bk = this.lastStroke.intoBucket && this.processing.bucket;
+      if (bk) { x = bk.x; z = bk.z; y = this.world.groundAt(x, z) + 0.42 * this.processing.bucketScale; }
       setTimeout(() => {
         if (this.disposed) return;
         this.effects.spill(x, y, z, MATERIALS[this.lastStroke ? this.lastStroke.material : 0] || MATERIALS[0], Math.min(1, 0.4 + (this.lastStroke ? this.lastStroke.massKg : 1) / 3));
@@ -656,12 +773,28 @@ export class GoldRushGame {
 
   // which station is in front of the player (prompt / mobile button), the objective line
   _stationTick(dt) {
-    const s = this.uiOpen ? null : this.stations.near(this.player.x, this.player.z, this.player.yaw);
-    if (s !== this.station) {
-      this.station = s;
-      this.hud.prompt(s ? s.action : null, this.touch ? "" : "E");
+    const pr = this.processing;
+    let s = null;
+    if (!this.uiOpen && !pr.work) {
+      const pi = pr.interaction(this.player);
+      if (pi) s = { ...pi, kind: "process" };
+      else { const st = this.stations.near(this.player.x, this.player.z, this.player.yaw); if (st) s = { ...st, kind: "station" }; }
+    }
+    if (pr.work) s = pr.work === "pan" && pr.panDone ? { id: "pan-collect", action: "Gold einsammeln", short: "EINSAMMELN", kind: "work" } : { id: "work-stop", action: "", short: "FERTIG", kind: "work" };
+    const sig = s ? `${s.kind}:${s.id}:${s.action}` : "";
+    if (sig !== this._stationSig) {
+      this._stationSig = sig;
+      this.station = s && s.kind !== "work" ? s : null;
+      this.hud.prompt(s && s.action ? s.action : null, this.touch || (s && s.disabled) ? "" : "E");
       this.ui.onStation && this.ui.onStation(s);
     }
+    // the bucket chip: while you carry it or stand near it
+    const b = pr.bucket;
+    if (b && (b.carried || Math.hypot(b.x - this.player.x, b.z - this.player.z) < 3.2)) {
+      const l = (pr.bucketMl / 1000).toFixed(1).replace(".", ","), cap = Math.round(pr.capacityMl / 1000);
+      this.hud.load(`Eimer ${l} / ${cap} l${b.carried ? ` · ${pr.bucketKg.toFixed(1).replace(".", ",")} kg` : ""}`);
+      this.hud.loadEl.classList.toggle("is-full", pr.bucketMl >= pr.capacityMl - 50);
+    } else this.hud.load(null);
     this._objT -= dt;
     if (this._objT <= 0) { this._objT = 0.5; this.hud.objective(this.uiOpen ? null : this._objective()); }
   }
@@ -800,8 +933,11 @@ export class GoldRushGame {
     this._haptic(mdef.haptic);
     this.player.kick = Math.min(0.03, this.player.kick + kick);
     this.ui.onDig && this.ui.onDig();
-    // finds: out of the ground now (pending), shown now (loot), money on pickup
-    const disc = this.economy.discover(r.finds, r.findCount);
+    // into the bucket next to you (with all its gold), or spoil: its finds
+    // come out of the ground now (pending), shown now (loot), money on pickup
+    const routed = this.processing.collect(r, this.player, def.id);
+    this._intoBucket(routed);
+    const disc = this.economy.discover(routed.finds, routed.count);
     if (disc.items.length) {
       if (disc.firstNugget) for (const it of disc.items) if (it.cls === FIND.NUGGET) { it.first = true; break; }
       this.loot.spawn(disc.items, hit);
@@ -810,7 +946,20 @@ export class GoldRushGame {
       if (best === FIND.NUGGET) this._haptic([14, 50, 24]);
     }
     this.lastStroke = this._strokeInfo(def, r, disc);
+    this.lastStroke.intoBucket = routed.intoMl > 0;
     this.dirty = true;
+  }
+
+  // the bucket caught a dig: a puff at its rim (hand / pickaxe; the shovel dumps into it), a tip once it is full
+  _intoBucket(routed) {
+    if (!(routed.intoMl > 0)) return;
+    const pr = this.processing, b = pr.bucket;
+    if (this.tools.equipped !== "shovel" && this.effects) {
+      const def = MATERIALS[0];
+      this.effects.spill(b.x, this.world.groundAt(b.x, b.z) + 0.3 * pr.bucketScale, b.z, def, 0.25);
+    }
+    if (pr.fullNow && !this._fullTold) { this._fullTold = true; this.hud.tip("bucket-full", "Eimer voll – ab zum Waschplatz beim Wassertank.", 12); }
+    if (!pr.fullNow) this._fullTold = false;
   }
 
   _strokeInfo(def, r, disc) {
@@ -834,7 +983,8 @@ export class GoldRushGame {
     this.economy.recordAction(r, def.id);
     const base = { ok: r.ok, kind: r.kind, blocked: r.blocked, material: r.material, rock: r.rock, cents: 0, finds: 0, massKg: 0 };
     if (!r.ok || r.blocked || r.kind === "rock") { this.dirty = true; this.lastStroke = { tool: id, kind: r.kind, massKg: 0 }; return base; }
-    const disc = this.economy.discover(r.finds, r.findCount);
+    const routed = this.processing.collect(r, this.player, id);
+    const disc = this.economy.discover(routed.finds, routed.count);
     if (visuals) {
       this.effects.burst(hit, MATERIALS[r.material], 1);
       if (disc.items.length) {
@@ -845,9 +995,12 @@ export class GoldRushGame {
       for (const it of disc.items) this._collected({ cls: it.cls, cents: it.cents, find: it, silent: true });
     }
     this.lastStroke = this._strokeInfo(def, r, disc);
+    this.lastStroke.intoBucket = routed.intoMl > 0;
     this.dirty = true;
     return {
       ...base, cents: disc.cents, finds: disc.items.length, best: disc.best, massKg: r.removedMassKg, massByMat: [...r.massByMat], slices: r.slices, cells: r.cells,
+      fineUg: r.fineUg, intoMl: routed.intoMl, spilledMl: routed.spilledMl, intoG: routed.intoG, spilledG: routed.spilledG, intoUg: routed.intoUg,
+      volumeMl: Math.round(r.removedVolume * 1e6), massG: [0, 1, 2, 3].reduce((a, m) => a + Math.round(r.massByMat[m] * 1000), 0),
       requested: r.requestedVolume, removed: r.removedVolume, relocated: r.relocatedVolume, processed: r.processedVolume,
       keys: disc.items.map((i) => i.key), ids: disc.items.map((i) => i.id),
     };
@@ -958,6 +1111,7 @@ export class GoldRushGame {
       terrain: this.terrain.serialize(),
       resources: this.mining.serialize(),
       rocks: this.rocks.serialize(),
+      processing: this.processing.serialize(),
     };
   }
 
@@ -1008,7 +1162,7 @@ export class GoldRushGame {
     const f = this.terrain.field, y = hit.y - 0.02;
     const mat = hit.boulder != null ? MAT.STONE : f.materialAt(hit.x, y, hit.z);
     const t = this.terrain, i = Math.round((hit.x - t.x0) / t.cell), j = Math.round((hit.z - t.z0) / t.cell);
-    const k = j * t.vps + i, iy = Math.ceil((y - FLOOR_Y) / VOXEL_H - 0.5) - 1;
+    const k = j * t.vps + i, iy = Math.ceil((y - SLICE_ORIGIN_Y) / VOXEL_H - 0.5) - 1;
     const def = this.tools.def;
     return {
       material: MATERIALS[mat].id, hardness: MATERIALS[mat].hardness, handEfficiency: MATERIALS[mat].handEfficiency,
@@ -1055,6 +1209,7 @@ export class GoldRushGame {
     if (this.hands) this.hands.dispose();
     if (this.rocks) this.rocks.dispose();
     if (this.stations) this.stations.dispose();
+    if (this.processing) this.processing.dispose();
     if (this.audio) this.audio.dispose();
     if (this.hud) this.hud.dispose();
     if (this.reticle) { this.reticle.geometry.dispose(); this.reticle.material.dispose(); }
@@ -1092,5 +1247,6 @@ export function newWorldDoc(seed) {
     terrain: null,
     resources: null,
     rocks: null,
+    processing: null,
   };
 }

@@ -15,7 +15,13 @@ import { MAT } from "./goldrush-materials.js";
 import { MaterialField } from "./goldrush-resources.js";
 import { decodeInt16Rle, decodeIntRle, encodeIntRle } from "./goldrush-save.js";
 
-export const FLOOR_Y = -2.5;          // open-pit floor: nobody digs deeper (phase 1)
+export const FLOOR_Y = -2.5;          // today's open-pit floor (the dig limit) - later phases may lower it
+// Origin of the resource-slice index (1 cm slices, goldrush-mining.js /
+// goldrush-resources.js). Fixed for good: it decides which slice holds
+// which gold, so it must never move - a deeper pit just uses slices below
+// it (negative indices). Nothing assumes the original ground (y = 0) or
+// FLOOR_Y to be the end of the mine.
+export const SLICE_ORIGIN_Y = -2.5;
 // Version of the mound generator. Saves store height deltas against the
 // generated mound, so they only fit the generator that made it: bump this
 // whenever _generate() changes shape (old digs are then dropped, not
@@ -105,7 +111,7 @@ export class DiggableTerrain {
         Math.abs(b - B[k - V - 1]) / d2, Math.abs(b - B[k - V + 1]) / d2, Math.abs(b - B[k + V - 1]) / d2, Math.abs(b - B[k + V + 1]) / d2);
     }
     this.onRelocate = null;                          // (from, to, before, after) - set by the mining system
-    this.field = new MaterialField(this.seed, this, FLOOR_Y);
+    this.field = new MaterialField(this.seed, this, SLICE_ORIGIN_Y);
     this.stoneTop = this.field.stoneTop;             // uppermost stone body per column
     this.stoneBot = this.field.stoneBot;
     this.consumed = null;                            // set by the mining system (worked-over depth per column)

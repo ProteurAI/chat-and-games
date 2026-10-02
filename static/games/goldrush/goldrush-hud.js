@@ -66,10 +66,20 @@ export class GoldRushHud {
     stack.className = "gr-wallet";
     moneyEl.parentElement.insertBefore(stack, moneyEl);
     stack.append(moneyEl, pouch);
+    // the bucket you work with (phase 5): "Eimer 6,2 / 10 l" while it is near / in your hand
+    const load = (this.loadEl = document.createElement("div"));
+    load.className = "gr-chip gr-load";
+    load.hidden = true;
+    stack.appendChild(load);
     const obj = (this.objEl = document.createElement("div"));
     obj.className = "gr-objective";
     obj.hidden = true;
     stack.appendChild(obj);
+    // what to do while panning / sieving (bottom centre, quiet)
+    const work = (this.workEl = document.createElement("div"));
+    work.className = "gr-work";
+    work.hidden = true;
+    hud.appendChild(work);
     const prompt = (this.promptEl = document.createElement("div"));
     prompt.className = "gr-prompt";
     prompt.hidden = true;
@@ -117,6 +127,23 @@ export class GoldRushHud {
     this._obj = t;
     this.objEl.textContent = t;
     this.objEl.hidden = !t;
+  }
+
+  // bucket chip (null hides it)
+  load(text) {
+    const t = text || "";
+    if (t === this._load) return;
+    this._load = t;
+    this.loadEl.textContent = t;
+    this.loadEl.hidden = !t;
+  }
+
+  work(text) {
+    const t = text || "";
+    if (t === this._work) return;
+    this._work = t;
+    this.workEl.textContent = t;
+    this.workEl.hidden = !t;
   }
 
   prompt(text, key = "E") {

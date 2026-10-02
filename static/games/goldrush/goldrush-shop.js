@@ -12,6 +12,12 @@
 // Upgrades are fine-tuning: all of them together make a tool ~1.2x
 // (shovel) - the big steps come later from new kinds of tools, processing
 // and machines.
+//
+// Phase 5 - processing (goldrush-processing.js): a bucket to carry ground
+// to the wash place, the gold pan that washes the fine gold out of it, the
+// classifier (a screen) that takes the stones out first, and one small
+// upgrade each for bucket and pan. They improve RECOVERY - how much of the
+// gold that is already in the ground comes back out - never "luck".
 
 export const SHOP_ITEMS = [
   {
@@ -47,21 +53,52 @@ export const SHOP_ITEMS = [
     effect: { rockMul: 1.4, strikeMul: 1.12, loosenMul: 1.2 },
     requires: { tools: ["pickaxe"] },
   },
+  {
+    id: "bucket", kind: "equipment", label: "Eimer", price: 1400,
+    text: "Fasst rund 10 Liter. Stell ihn neben dich und grab hinein – so trägst du goldhaltige Erde zum Waschplatz, statt sie wegzuwerfen.",
+    requires: { tools: ["shovel"] },
+  },
+  {
+    id: "pan", kind: "equipment", label: "Goldpfanne", price: 11000,
+    text: "Am Waschplatz schwenkst du Erde aus dem Eimer im Wasser: das Leichte geht über den Rand, Gold bleibt liegen – auch das feine, das beim Graben verloren geht.",
+    requires: { equipment: ["bucket"] },
+  },
+  {
+    id: "classifier", kind: "equipment", label: "Sieb", price: 16000,
+    text: "Ein Rüttelsieb über der Wanne: Steine und Klumpen bleiben oben, durch fällt ein feines Konzentrat – weniger zu waschen, und die Pfanne hält mehr vom Feingold.",
+    requires: { equipment: ["pan"] },
+  },
+  {
+    id: "pan.riffles", kind: "upgrade", tool: "pan", label: "Riffelpfanne", price: 6000,
+    text: "Eingepresste Rillen im Pfannenrand halten feines Gold beim Schwenken fest – etwa ein Achtel mehr Feingold aus jeder Pfanne.",
+    effect: { recoveryMul: 1.12 },
+    requires: { equipment: ["pan"] },
+  },
+  {
+    id: "bucket.large", kind: "upgrade", tool: "bucket", label: "Großer Eimer", price: 4000,
+    text: "Ein 14-Liter-Eimer: weniger Wege zum Waschplatz – dafür voll spürbar schwerer.",
+    effect: { capacityMul: 1.4 },
+    requires: { equipment: ["bucket"] },
+  },
 ];
 
 export const shopItem = (id) => SHOP_ITEMS.find((i) => i.id === id) || null;
 export const upgradesFor = (tool) => SHOP_ITEMS.filter((i) => i.kind === "upgrade" && i.tool === tool);
+export const EQUIPMENT = SHOP_ITEMS.filter((i) => i.kind === "equipment").map((i) => i.id);
+const NEED_TEXT = { shovel: "Schaufel besitzen", pickaxe: "Spitzhacke besitzen", bucket: "Eimer besitzen", pan: "Goldpfanne besitzen", classifier: "Sieb besitzen" };
 
 /**
  * What an item is for this player right now:
  *   { state: "owned" | "locked" | "available", needs: [{ text, met }], affordable, missing }
- * state = { owned: Set of tool ids, upgrades: Set of ids, hardSeen, cashCents }
+ * state = { owned: Set of tool ids, upgrades: Set of ids, equipment: Set of ids, hardSeen, cashCents }
  */
 export function itemStatus(item, state) {
-  const owned = item.kind === "tool" ? state.owned.has(item.tool) : state.upgrades.has(item.id);
+  const eq = state.equipment || new Set();
+  const owned = item.kind === "tool" ? state.owned.has(item.tool) : item.kind === "equipment" ? eq.has(item.id) : state.upgrades.has(item.id);
   const needs = [];
   const r = item.requires || {};
-  for (const t of r.tools || []) needs.push({ text: t === "shovel" ? "Schaufel besitzen" : "Spitzhacke besitzen", met: state.owned.has(t) });
+  for (const t of r.tools || []) needs.push({ text: NEED_TEXT[t], met: state.owned.has(t) });
+  for (const t of r.equipment || []) needs.push({ text: NEED_TEXT[t], met: eq.has(t) });
   if (r.hard) needs.push({ text: "auf Stein oder einen Felsbrocken gestoßen", met: !!state.hardSeen });
   const locked = !owned && needs.some((n) => !n.met);
   const missing = Math.max(0, item.price - state.cashCents);

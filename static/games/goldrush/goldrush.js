@@ -29,12 +29,18 @@ const ICONS = {
   hand: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 11V5.5a1.5 1.5 0 013 0V10m0-1V4a1.5 1.5 0 013 0v6m0-4.5a1.5 1.5 0 013 0V12m0-3a1.5 1.5 0 013 0v5c0 4-2.7 7-6.5 7-2.4 0-4-1-5.3-2.8L4.7 14a1.6 1.6 0 012.4-2L8 13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`,
   shovel: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.5 3.2l3.3 3.3M19.2 4.9l-8.4 8.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M10.8 13.3l-1.6-1.6c-.5-.5-1.3-.5-1.8 0L4.3 14.8c-1.6 1.6-1.6 4.2 0 5.8s4.2 1.6 5.8 0l3.1-3.1c.5-.5.5-1.3 0-1.8l-1.6-1.6" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" fill="none"/></svg>`,
   pickaxe: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.2 9.8L4 20" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" fill="none"/><path d="M4.5 7.5c3.9-3.7 10-4.4 14.6-1.6l-1.4 1.4c-.1-.1-3.6-2.5-8.6-.6M16.5 19.5c3.7-3.9 4.4-10 1.6-14.6l-1.4 1.4c.1.1 2.5 3.6.6 8.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`,
+  bucket: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-1.6 11.2a1.6 1.6 0 01-1.6 1.3H8.2a1.6 1.6 0 01-1.6-1.3L5 8z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" fill="none"/><path d="M5.6 8c0-3.2 2.9-5 6.4-5s6.4 1.8 6.4 5" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M6.4 12.5h11.2" stroke="currentColor" stroke-width="1.3" opacity=".6"/></svg>`,
+  pan: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.8 10.5c0 3.8 4.1 6.5 9.2 6.5s9.2-2.7 9.2-6.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none"/><ellipse cx="12" cy="10.5" rx="9.2" ry="2.6" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="10" cy="13.6" r="1" fill="#c7922f"/><circle cx="13.2" cy="14.2" r=".8" fill="#c7922f"/></svg>`,
+  classifier: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5h18l-1.5 4H4.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" fill="none"/><path d="M6 8.5l1 4M10 8.5l.4 4M14 8.5l-.4 4M18 8.5l-1 4" stroke="currentColor" stroke-width="1" opacity=".65"/><path d="M5 12.5v7M19 12.5v7M7 16h10v3.5H7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" fill="none"/></svg>`,
 };
 
 // what the dig button says per tool
 const ACTION = { hand: "GRABEN", shovel: "SCHAUFELN", pickaxe: "HACKEN" };
-const CLASS_LABEL = { traceGold: "Goldstaub", fineGold: "Feiner Goldstaub", goldFlake: "Goldflitter", tinyGoldPiece: "Kleine Goldstücke", smallNugget: "Nuggets" };
-const SHOP_GROUPS = [["tool", null, "Werkzeug"], ["upgrade", "shovel", "Für die Schaufel"], ["upgrade", "pickaxe", "Für die Spitzhacke"]];
+const CLASS_LABEL = { traceGold: "Goldstaub", fineGold: "Feiner Goldstaub", goldFlake: "Goldflitter", tinyGoldPiece: "Kleine Goldstücke", smallNugget: "Nuggets", washedGold: "Waschgold (Feingold)" };
+const SHOP_GROUPS = [["tool", null, "Werkzeug"], ["upgrade", "shovel", "Für die Schaufel"], ["upgrade", "pickaxe", "Für die Spitzhacke"],
+  ["equipment", null, "Verarbeitung"], ["upgrade", "bucket", "Für den Eimer"], ["upgrade", "pan", "Für die Goldpfanne"]];
+// where a bought piece of equipment is now (the claim, not an inventory)
+const EQUIP_WHERE = { bucket: "Steht vor dem Schuppen – stell ihn neben dich und grab hinein.", pan: "Liegt am Waschplatz beim Wassertank.", classifier: "Steht am Waschplatz über der Wanne." };
 
 const fmtMoney = (v) => `€ ${v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const TOOL_NAME = { hand: "Hand", shovel: "Schaufel", pickaxe: "Spitzhacke", bucket: "Eimer", pan: "Goldpfanne", classifier: "Sieb" };
@@ -100,7 +106,7 @@ class GoldRushShell {
           <button type="button" class="gr-slot" data-tool="pickaxe"><span class="gr-slot-key">3</span><span class="gr-slot-ico">${ICONS.pickaxe}</span><span class="gr-slot-label">Spitzhacke</span><span class="gr-lock" aria-hidden="true">🔒</span></button>
         </div>
         <div class="gr-crosshair" aria-hidden="true"><span></span></div>
-        <div class="gr-hint">WASD bewegen · Maus umsehen · Linksklick halten: graben · 1 2 3 Werkzeug · E: Station im Camp · Esc: Pause</div>
+        <div class="gr-hint">WASD bewegen · Maus umsehen · Linksklick halten: graben · 1 2 3 Werkzeug · E: Eimer, Waschplatz, Camp · Esc: Pause</div>
         <div class="gr-notice" role="status" hidden></div>
       </div>
       <div class="gr-stick" aria-hidden="true"><div class="gr-stick-knob"></div></div>
@@ -136,7 +142,7 @@ class GoldRushShell {
         <div class="gr-card">
           <div class="gr-card-title">Pausiert</div>
           <p class="gr-card-text" data-role="pause-text">Klicke, um weiterzugraben.</p>
-          <div class="gr-keys"><span><b>WASD</b> bewegen</span><span><b>Maus</b> umsehen</span><span><b>Linksklick</b> graben</span><span><b>1 2 3</b> Werkzeug</span><span><b>E</b> Goldankauf / Ausrüstung</span><span><b>Shift</b> schneller</span><span><b>Esc</b> Pause</span></div>
+          <div class="gr-keys"><span><b>WASD</b> bewegen</span><span><b>Maus</b> umsehen</span><span><b>Linksklick</b> graben</span><span><b>1 2 3</b> Werkzeug</span><span><b>E</b> Eimer · Waschplatz · Goldankauf · Ausrüstung</span><span><b>Shift</b> schneller</span><span><b>Esc</b> Pause</span></div>
           <div class="gr-actions">
             <button type="button" class="primary-btn primary-btn--lg" data-act="resume">Weiterspielen</button>
             <button type="button" class="ghost-btn" data-act="settings">Einstellungen</button>
@@ -444,8 +450,9 @@ class GoldRushShell {
       openStation: (id, view) => this._showStation(id, view),
       onStation: (s) => {
         this._near = s;
-        el.ctx.hidden = !s || !this.touch;
-        if (s) el.ctx.textContent = s.id === "assay" ? "VERKAUFEN" : "AUSRÜSTUNG";
+        const label = !s ? "" : s.kind === "station" ? (s.id === "assay" ? "VERKAUFEN" : "AUSRÜSTUNG") : s.short || "";
+        el.ctx.hidden = !label || !this.touch;
+        el.ctx.textContent = label;
       },
       onQuality: () => this._syncSettings(),
       onTool: (st) => this._renderTools(st),
@@ -496,7 +503,7 @@ class GoldRushShell {
       return;
     }
     if (act === "settings") { this._openSettings(); return; }
-    if (act === "use-station") { if (g && this._near) g.openStation(this._near.id); return; }
+    if (act === "use-station") { if (!g) return; if (g.processing.work) g._workAction(); else if (this._near) g.useStation(); return; }
     if (act === "close-station") { this._closeStation(true); return; }
     if (act === "sell-all") { this._sellAll(); return; }
     if (act === "tools") { if (this.touch) this._toolSheet(!this._sheetOpen); return; }
@@ -607,7 +614,7 @@ class GoldRushShell {
     const row = document.createElement("div");
     row.className = `gr-shop-item is-${it.state}` + (it.affordable ? " is-affordable" : "");
     row.dataset.item = it.id;
-    const ico = it.tool === "pickaxe" ? ICONS.pickaxe : ICONS.shovel;
+    const ico = it.kind === "equipment" ? ICONS[it.id] : it.tool === "pickaxe" ? ICONS.pickaxe : it.tool === "bucket" ? ICONS.bucket : it.tool === "pan" ? ICONS.pan : ICONS.shovel;
     row.innerHTML = `<div class="gr-shop-ico">${ico}${it.kind === "upgrade" ? '<span class="gr-shop-plus">+</span>' : ""}</div>
       <div class="gr-shop-main"><div class="gr-shop-name"></div><div class="gr-shop-text"></div><div class="gr-shop-state"></div></div>
       <div class="gr-shop-buy"><div class="gr-shop-price"></div></div>`;
@@ -616,7 +623,7 @@ class GoldRushShell {
     row.querySelector(".gr-shop-price").textContent = it.state === "owned" ? "" : formatEuro(it.price);
     const state = row.querySelector(".gr-shop-state"), buyBox = row.querySelector(".gr-shop-buy");
     if (it.state === "owned") {
-      state.textContent = it.kind === "tool" ? "✓ In deinem Besitz" : "✓ Eingebaut";
+      state.textContent = it.kind === "upgrade" ? "✓ Eingebaut" : "✓ In deinem Besitz";
     } else if (it.state === "locked") {
       state.textContent = "🔒 " + it.needs.map((n) => `${n.met ? "✓" : "○"} ${n.text}`).join(" · ");
     } else {
@@ -646,7 +653,7 @@ class GoldRushShell {
       const row = this.el.shopList.querySelector(`[data-item="${id}"]`);
       if (row) { row.classList.add("is-bought"); }
       const it = g.shopView().items.find((x) => x.id === id);
-      g._afterClose = () => g.hud.message(`${it ? it.label : "Ausrüstung"} gekauft`, it && it.kind === "tool" ? "Liegt jetzt in deinen Händen." : "Ab sofort eingebaut.");
+      g._afterClose = () => g.hud.message(`${it ? it.label : "Ausrüstung"} gekauft`, it && it.kind === "tool" ? "Liegt jetzt in deinen Händen." : it && it.kind === "equipment" ? EQUIP_WHERE[it.id] : "Ab sofort eingebaut.");
     }
     this._buying = false;
     return r;
@@ -847,6 +854,34 @@ class GoldRushShell {
       goToStation: (id) => { const st = this.engine.STATIONS.find((x) => x.id === id); const yaw = Math.atan2(-(st.lookX - st.x), -(st.lookZ - st.z)); const p = g.player; p.x = st.x; p.z = st.z; p.yaw = yaw; p.pitch = -0.15; p.vx = p.vz = 0; p.y = g.world.groundAt(p.x, p.z) + 1.62; g._updateCamera(); g._stationTick(0.6); g.render(); return g.station ? g.station.id : null; },
       setCash: (cents) => { g.economy.cashCents = Math.max(0, Math.round(cents)); g.hud.setMoney(g.economy.cashCents); return g.economy.cashCents; },
       flags: () => ({ ...g.economy.flags }),
+      // phase 5: processing (bucket / classifier / gold pan) - the real transactions, without walking
+      proc: () => {
+        const pr = g.processing, b = pr.bucket;
+        return { owned: pr.ownedList(), work: pr.work, panDone: pr.panDone, carrying: pr.carrying, capacityMl: pr.capacityMl, recoveryMul: pr.recoveryMul,
+          bucket: b ? { x: b.x, z: b.z, carried: b.carried, atWash: pr.bucketAtWash(), batch: b.batch.serialize(), massG: b.batch.massG, goldUg: b.batch.goldUg } : null,
+          tub: { ...pr.tub.serialize(), massG: pr.tub.massG, goldUg: pr.tub.goldUg }, pan: { ...pr.pan.batch.serialize(), progress: pr.pan.progress, need: pr.pan.need, goldUg: pr.pan.batch.goldUg },
+          sieve: { ...pr.sieve.batch.serialize(), progress: pr.sieve.progress }, ledger: { ...pr.ledger }, inContainersUg: pr.goldInContainers(), inContainersG: pr.massInContainers(),
+          speed: pr.speedFactor(), interaction: pr.interaction(g.player), station: g.station ? { id: g.station.id, kind: g.station.kind, action: g.station.action } : null,
+          held: g.hands.held, mining: g.mining.stats() };
+      },
+      procGrant: (id) => { const ok = g.processing.grant(id); g._stationSig = ""; return ok; },
+      procPlaceBucket: (x, z) => { const b = g.processing.bucket; if (!b) return false; b.carried = false; b.x = x; b.z = z; g.processing._sync(); return true; },
+      procBucketToWash: () => { const b = g.processing.bucket; if (!b) return false; b.carried = true; return g.processing.act("bucket-wash", g.player).ok; },
+      procAct: (id) => g.processing.act(id, g.player),
+      procEmptyBucket: () => g.processing.emptyBucket(),
+      // work for `seconds` at full pace (as if swirling / shaking steadily), in frame-sized steps
+      procWork: (seconds, step = 1 / 30) => {
+        const pr = g.processing;
+        let ev = null, t = 0;
+        while (pr.work && t < seconds - 1e-9) { const dt = Math.min(step, seconds - t); ev = pr.input(dt * 2.2, dt * 1.1, dt) || ev; t += dt; if (pr.update) pr.update(dt); if (pr.panDone) break; }
+        const out = { ev: ev && typeof ev === "object" ? { ...ev } : ev, t, progress: pr.work === "sieve" ? pr.sieve.progress : pr.pan.progress, done: pr.panDone, work: pr.work };
+        if (!pr.work) g._leaveWork();
+        return out;
+      },
+      procCollect: () => { const r = g.processing.finishPan(); g._leaveWork(); return r; },
+      procStop: () => { g._leaveWork(); return true; },
+      useStation: () => g.useStation(),
+      workAction: () => { g._workAction(); return g.processing.work; },
       // phase-3 polish probes: this stroke's hand variation, the tool's roll, the boulders' crack seeds
       handVar: () => ({ side: g.hands._activeSide, v: g.hands._var ? { ...g.hands._var } : null, cycle: g.tools.cycles }),
       toolRoll: () => g.hands.toolRoot.rotation.z,

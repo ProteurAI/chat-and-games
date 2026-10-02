@@ -16,6 +16,10 @@
 // A found nugget is held up in the right hand for a moment (inspect); the
 // controller is blocked meanwhile. Switching tools lowers the old one out
 // of view and raises the new one.
+// Held objects (phase 5, goldrush-processing.js): a bucket carried by its
+// bail, the gold pan held by its rim with both hands - the tool is put away
+// meanwhile, the gloves sit on the object's grips, its pose comes from the
+// processing system (swirling the pan, the bucket swinging).
 
 import { ToolModels } from "./goldrush-toolmodels.js";
 
@@ -314,6 +318,55 @@ export class FirstPersonHands {
     this.inspecting = null;
     this.state = "idle";                            // mirrors the controller (tests / debug)
     this.phase = null;
+    this.held = null;                               // "bucket" | "pan" | null
+    this.heldGroup = null;
+    this.heldGrips = null;
+    // muddy water thrown over the pan's rim (a small pool, view space)
+    this.drops = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ color: 0x6b5640, roughness: 0.4, transparent: true, opacity: 0.85 }), 24);
+    this.drops.count = 0;
+    this.drops.frustumCulled = false;
+    this.dropState = [];
+    for (let i = 0; i < 24; i++) this.dropState.push({ life: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, s: 0 });
+    this.scene.add(this.drops);
+  }
+
+  // hold something else than a tool (null = back to the tool / bare hands)
+  setHeld(kind, group = null, grips = null) {
+    if (this.heldGroup && this.heldGroup !== group) this.scene.remove(this.heldGroup);
+    this.held = kind || null;
+    this.heldGroup = kind ? group : null;
+    this.heldGrips = kind ? grips : null;
+    if (this.heldGroup && this.heldGroup.parent !== this.scene) this.scene.add(this.heldGroup);
+    if (!kind) { this.drops.count = 0; for (const d of this.dropState) d.life = 0; }
+  }
+
+  // a drop of muddy water leaves the pan over its rim
+  splash(group) {
+    const d = this.dropState.find((x) => x.life <= 0);
+    if (!d || !group) return;
+    const a = Math.random() * Math.PI * 2, r = 0.19;
+    const v = this._v.set(Math.cos(a) * r, 0.06, Math.sin(a) * r).applyMatrix4(group.matrix);
+    d.x = v.x; d.y = v.y; d.z = v.z;
+    d.vx = Math.cos(a) * 0.25 + (Math.random() - 0.5) * 0.1; d.vy = 0.15 + Math.random() * 0.2; d.vz = -0.05 + Math.sin(a) * 0.1;
+    d.s = 0.003 + Math.random() * 0.004;
+    d.life = 0.6;
+  }
+
+  _drops(dt) {
+    const m = this._m;
+    let n = 0;
+    for (const d of this.dropState) {
+      if (d.life <= 0) continue;
+      d.life -= dt;
+      d.vy -= 9.81 * dt * 0.6;
+      d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+      if (d.life <= 0) continue;
+      m.makeScale(d.s, d.s, d.s);
+      m.setPosition(d.x, d.y, d.z);
+      this.drops.setMatrixAt(n++, m);
+    }
+    this.drops.count = n;
+    if (n) this.drops.instanceMatrix.needsUpdate = true;
   }
 
   _showTool(id) {
@@ -409,8 +462,11 @@ export class FirstPersonHands {
     const breathe = rm ? 0 : Math.sin(this.time * 1.3) * 0.003;
     const bobX = rm ? 0 : Math.sin(bob) * 0.008 * walk, bobY = rm ? 0 : -Math.abs(Math.cos(bob)) * 0.01 * walk;
     const extra = { x: this.sway.x + bobX, y: this.sway.y + bobY + breathe - sw * 0.42, rx: -sw * 0.5 };
-    if (this.tool === "hand") this._updateHands(dt, view, extra);
+    if (!this.held) this.toolRoot.visible = this.tool !== "hand";
+    if (this.held && this.heldGroup) this._updateHeld(dt, extra);
+    else if (this.tool === "hand") this._updateHands(dt, view, extra);
     else this._updateTool(dt, view, extra);
+    this._drops(dt);
     // dust on the gloves builds up while digging
     this.gloveMat.color.copy(this.baseGlove).lerp(this.dirtColor, this.dirt * 0.55);
     this.models.setDirt(this.dirt);
@@ -565,8 +621,32 @@ export class FirstPersonHands {
     }
   }
 
-  // the glove matrix for a grip (view space), incl. the mirror for the left hand
-  _gripMatrix(grip, out) {
+  // ---- a held object (bucket / pan): its pose from the processing system, gloves on its grips
+  _updateHeld(dt, extra) {
+    this.toolRoot.visible = false;
+    const G = this.heldGroup, pose = G.userData.pose || { p: [0, -0.3, -0.4], r: [0, 0, 0] };
+    G.position.set(pose.p[0] * this.aspectK + extra.x, pose.p[1] + extra.y, pose.p[2]);
+    G.rotation.set(pose.r[0] + extra.rx, pose.r[1], pose.r[2]);
+    G.updateMatrix();
+    G.updateMatrixWorld(true);
+    for (const g of [this.right, this.left]) {
+      const grip = this.heldGrips && this.heldGrips.find((q) => q.side === g.side);
+      if (grip) {
+        g.applyMatrix(this._gripMatrix(grip, this._g, G.matrix), this.aspectK, 0.95);
+        g.pose = clonePose(POSE.rest);
+      } else {
+        // the free hand hangs at your side, out of the way
+        const f = 1 - Math.exp(-dt * 10), rest = POSE.rest, q = g.pose;
+        for (let i = 0; i < 3; i++) { q.p[i] += (rest.p[i] - q.p[i]) * f; q.r[i] += (rest.r[i] - q.r[i]) * f; }
+        q.c += (rest.c - q.c) * f;
+        g.apply(q, this.aspectK, { x: extra.x, y: extra.y - 0.16, rx: extra.rx });
+      }
+    }
+  }
+
+  // the glove matrix for a grip (view space), incl. the mirror for the left hand;
+  // frame = the matrix of what is held (default: the tool)
+  _gripMatrix(grip, out, frame = null) {
     const bx = this._bx, by = this._by, bz = this._bz, f = grip.flip || 1, ph = grip.roll || 0;
     if (grip.axis === "x") { bx.set(f, 0, 0); by.set(0, Math.cos(ph), -Math.sin(ph)); }
     else { bx.set(0, 0, f); by.set(-Math.sin(ph), Math.cos(ph), 0); }
@@ -576,7 +656,7 @@ export class FirstPersonHands {
     const h = this._v.set(HANDLE_IN_GLOVE[0], HANDLE_IN_GLOVE[1], HANDLE_IN_GLOVE[2]).applyMatrix4(m);
     m.setPosition(grip.pos[0] - h.x, grip.pos[1] - h.y, grip.pos[2] - h.z);
     if (grip.side === -1) m.premultiply(this._mx).multiply(this._mx);
-    return m.premultiply(this.toolRoot.matrix);
+    return m.premultiply(frame || this.toolRoot.matrix);
   }
 
   // tests: largest distance between a glove's closed fist and its grip
@@ -604,6 +684,9 @@ export class FirstPersonHands {
   }
 
   dispose() {
+    this.setHeld(null);
+    this.drops.geometry.dispose();
+    this.drops.material.dispose();
     this.bodyGeo.dispose();
     this.armGeo.dispose();
     this.armMat.dispose();

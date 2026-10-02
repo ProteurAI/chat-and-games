@@ -120,6 +120,19 @@ button.gr-tool { border: none; font-family: inherit; cursor: default; }
   max-width: 260px; text-align: right; padding: 3px 9px; border-radius: 8px; font-size: 11.5px; line-height: 1.35; font-weight: var(--font-medium);
   background: rgba(20, 16, 12, 0.45); color: #f6ecd6; font-variant-numeric: tabular-nums;
 }
+/* the bucket you work with, the work hint while panning / sieving */
+.gr-load {
+  height: 26px; padding: 0 10px; font-size: 12px; font-weight: var(--font-semibold); white-space: nowrap;
+  background: rgba(28, 22, 16, 0.6); color: #e9dcc0; box-shadow: none; font-variant-numeric: tabular-nums;
+}
+.gr-load.is-full { color: #f0c463; }
+.gr-work {
+  position: absolute; left: 50%; bottom: calc(max(var(--space-6), env(safe-area-inset-bottom)) + 70px); transform: translateX(-50%);
+  max-width: min(92vw, 520px); text-align: center; pointer-events: none; padding: 7px 14px; border-radius: var(--radius-full);
+  font-size: var(--text-sm); font-weight: var(--font-semibold); background: rgba(24, 18, 12, 0.66); color: #fbe9c0;
+}
+.gr-working .gr-crosshair, .gr-working .gr-dig-btn, .gr-working .gr-stick, .gr-working .gr-belt, .gr-working .gr-tool { display: none; }
+.gr-touch .gr-work { bottom: calc(max(var(--space-6), env(safe-area-inset-bottom)) + 150px); }
 /* station prompt: "[E] Gold verkaufen" */
 .gr-prompt {
   position: absolute; left: 50%; top: calc(50% + 40px); transform: translateX(-50%); pointer-events: none; white-space: nowrap;

@@ -27,16 +27,20 @@
 // the height they landed, and pay out when a tool later removes that layer.
 // Nothing is lost, nothing pays twice, nothing pays for material that only
 // slid.
+// The fine gold of every used-up slice (goldrush-resources.js) is reported
+// with the dig (fineUg) - the caller decides where that material goes
+// (a bucket for processing, or the spoil). Slid fine gold rides along per
+// receiving column (carriedFine) and comes out with that column's next cut.
 
 import { MAT, MATERIALS } from "./goldrush-materials.js";
 import { FIND, VOXEL_H } from "./goldrush-resources.js";
 import { decodeInt16Rle, decodeIntRle, encodeInt16Rle, encodeIntRle } from "./goldrush-save.js";
-import { FLOOR_Y } from "./goldrush-terrain.js";
+import { SLICE_ORIGIN_Y } from "./goldrush-terrain.js";
 import { toolEfficiency } from "./goldrush-tools.js";
 
 const FEET_RADIUS = 0.45;        // m: no digging straight under your own feet
 // index of the lowest slice whose centre is at or above height h
-const sliceIndex = (h) => Math.ceil((h - FLOOR_Y) / VOXEL_H - 0.5);
+const sliceIndex = (h) => Math.ceil((h - SLICE_ORIGIN_Y) / VOXEL_H - 0.5);
 const MAX_FINDS = 32;
 const OLD_VOXEL_H = 0.05;         // phase-2 saves: 5 cm slices
 const Q = 10000;                  // 0.1 mm
@@ -51,16 +55,18 @@ export class MiningSystem {
     this.cidx = new Int16Array(terrain.height.length);
     this.carried = new Map();                           // column -> [{ cls, massUg, key, y }]
     this.carriedCount = 0;
+    this.carriedFine = new Map();                       // column -> { ug, y }: fine gold in slid material
     this._resetIndex();
     terrain.consumed = this.consumed;
     terrain.onRelocate = (a, b, before, after) => this._relocate(a, b, before, after);
     this._vox = {};
     this.sliceVolume = VOXEL_H * terrain.cell * terrain.cell;
-    this.totals = { relocatedSlices: 0, carriedPaid: 0 };
+    // ledger (session): fine gold of used-up slices = paid out with digs + still riding in slid material
+    this.totals = { relocatedSlices: 0, carriedPaid: 0, fineUsedUg: 0, finePaidUg: 0 };
     this.result = {
       ok: false, reason: "", kind: "", material: MAT.DIRT, blocked: false, cells: 0, chunks: 0,
       requestedVolume: 0, removedVolume: 0, removedMassKg: 0, relocatedVolume: 0, processedVolume: 0,
-      massKg: 0, freshKg: 0, volumeL: 0, massByMat: [0, 0, 0, 0], slices: 0, finds: [], findCount: 0, rock: null,
+      massKg: 0, freshKg: 0, volumeL: 0, massByMat: [0, 0, 0, 0], slices: 0, finds: [], findCount: 0, fineUg: 0, rock: null,
     };
     for (let i = 0; i < MAX_FINDS; i++) this.result.finds.push({ cls: 0, massUg: 0, x: 0, y: 0, z: 0, mat: 0, key: "" });
     this._n = { x: 0, y: 1, z: 0 };
@@ -72,6 +78,7 @@ export class MiningSystem {
     for (let k = 0; k < H.length; k++) I[k] = sliceIndex(H[k]);
     this.carried.clear();
     this.carriedCount = 0;
+    this.carriedFine.clear();
   }
 
   // material at the very surface of a hit (a boulder is always stone)
@@ -116,7 +123,7 @@ export class MiningSystem {
     const r = this.result;
     r.ok = false; r.blocked = false; r.kind = ""; r.cells = 0; r.chunks = 0; r.rock = null;
     r.requestedVolume = 0; r.removedVolume = 0; r.removedMassKg = 0; r.relocatedVolume = 0; r.processedVolume = 0;
-    r.massKg = 0; r.freshKg = 0; r.volumeL = 0; r.massByMat.fill(0); r.slices = 0; r.findCount = 0;
+    r.massKg = 0; r.freshKg = 0; r.volumeL = 0; r.massByMat.fill(0); r.slices = 0; r.findCount = 0; r.fineUg = 0;
     r.reason = this.check(hit, def, player);
     if (r.reason) return r;
     r.ok = true;
@@ -163,6 +170,9 @@ export class MiningSystem {
           }
           if (!list.length) this.carried.delete(k);
         }
+        // fine gold that slid here earlier: it comes off with this cut
+        const cf = this.carriedFine.get(k);
+        if (cf && cf.y > after) { r.fineUg += cf.ug; this.carriedFine.delete(k); }
         // slices whose centre the column passes now are used up
         const lo = sliceIndex(after), hi = I[k] - 1;
         if (lo > hi) continue;                                      // only loose, already worked material
@@ -170,7 +180,9 @@ export class MiningSystem {
         for (let iy = lo; iy <= hi; iy++) {
           r.slices++;
           const v = field.voxel(i, j, iy, this._vox);
-          if (v.cls !== FIND.NONE) this._push(r, v.cls, v.massUg, v.mat, x, FLOOR_Y + (iy + 0.5) * VOXEL_H, z, `${i}:${j}:${iy}`);
+          r.fineUg += v.fineUg;
+          this.totals.fineUsedUg += v.fineUg;
+          if (v.cls !== FIND.NONE) this._push(r, v.cls, v.massUg, v.mat, x, SLICE_ORIGIN_Y + (iy + 0.5) * VOXEL_H, z, `${i}:${j}:${iy}`);
         }
       }
     };
@@ -178,6 +190,7 @@ export class MiningSystem {
     r.requestedVolume = res ? res.requested : 0;
     if (!res || !res.cells) { r.kind = "blocked"; r.blocked = true; return r; }     // e.g. stone right under a thin skin
     r.kind = "dig";
+    this.totals.finePaidUg += r.fineUg;
     r.cells = res.cells;
     r.chunks = res.chunks;
     r.relocatedVolume = res.relocated;
@@ -228,18 +241,33 @@ export class MiningSystem {
       }
       if (!list.length) this.carried.delete(a);
     }
+    // fine gold riding in the loose material that went
+    const cf = this.carriedFine.get(a);
+    if (cf && cf.y > after) { this.carriedFine.delete(a); this._carryFine(b, cf.ug, yTo - 0.002); }
     if (after < this.consumed[a]) this.consumed[a] = after;
     // unworked slices that slid away are used up here, their finds travel along
     const lo = sliceIndex(after), hi = I[a] - 1;
     if (lo > hi) return;
     I[a] = lo;
     const i = a % vps, j = (a - i) / vps;
+    let fine = 0;
     for (let iy = lo; iy <= hi; iy++) {
       this.totals.relocatedSlices++;
       const v = this.field.voxel(i, j, iy, this._vox);
+      fine += v.fineUg;
       if (v.cls !== FIND.NONE) this._carry(b, { cls: v.cls, massUg: v.massUg, key: `${i}:${j}:${iy}`, y: yTo - 0.002 - (hi - iy) * VOXEL_H * 0.3 });
     }
+    this.totals.fineUsedUg += fine;
+    if (fine > 0) this._carryFine(b, fine, yTo - 0.002);
   }
+
+  // one running total per receiving column (it all lies in its loose top)
+  _carryFine(k, ug, y) {
+    const cf = this.carriedFine.get(k);
+    if (cf) { cf.ug += ug; cf.y = Math.max(cf.y, y); } else this.carriedFine.set(k, { ug, y });
+  }
+
+  get carriedFineUg() { let u = 0; for (const cf of this.carriedFine.values()) u += cf.ug; return u; }
 
   _carry(k, it) {
     let list = this.carried.get(k);
@@ -273,8 +301,10 @@ export class MiningSystem {
       if (qs[k] || ql[k]) changed++;
     }
     const carried = [];
-    for (const [k, list] of this.carried) for (const it of list) carried.push([k, Math.round((it.y - FLOOR_Y) * Q), it.cls, it.massUg, it.key]);
-    return { unit: "slice1cm+0.1mm", encoding: "rle-zigzag-varint-b64", changed, slices: encodeInt16Rle(qs), level: encodeIntRle(ql), carried };
+    for (const [k, list] of this.carried) for (const it of list) carried.push([k, Math.round((it.y - SLICE_ORIGIN_Y) * Q), it.cls, it.massUg, it.key]);
+    const carriedFine = [];
+    for (const [k, cf] of this.carriedFine) carriedFine.push([k, Math.round((cf.y - SLICE_ORIGIN_Y) * Q), cf.ug]);
+    return { unit: "slice1cm+0.1mm", encoding: "rle-zigzag-varint-b64", changed, slices: encodeInt16Rle(qs), level: encodeIntRle(ql), carried, carriedFine };
   }
 
   // call after the terrain got its saved heights; no data (older save) =
@@ -292,8 +322,8 @@ export class MiningSystem {
       for (let k = 0; k < n; k++) {
         C[k] = Math.min(H[k], H[k] - ql[k] / 1000);
         if (qs[k] <= 0) continue;                            // nothing below today's surface was used up
-        const old = Math.ceil((H[k] - FLOOR_Y) / OLD_VOXEL_H - 0.5) - qs[k];
-        const yw = FLOOR_Y + old * OLD_VOXEL_H;
+        const old = Math.ceil((H[k] - SLICE_ORIGIN_Y) / OLD_VOXEL_H - 0.5) - qs[k];
+        const yw = SLICE_ORIGIN_Y + old * OLD_VOXEL_H;
         I[k] = Math.min(sliceIndex(yw), sliceIndex(H[k]));
       }
     } else {
@@ -307,7 +337,15 @@ export class MiningSystem {
           if (!Array.isArray(e) || e.length < 5) continue;
           const [k, yq, cls, massUg, key] = e;
           if (!Number.isInteger(k) || k < 0 || k >= n || !Number.isFinite(yq) || !(cls >= FIND.TRACE && cls <= FIND.NUGGET) || !(massUg > 0)) continue;
-          this._carry(k, { cls, massUg: Math.round(massUg), key: String(key), y: FLOOR_Y + yq / Q });
+          this._carry(k, { cls, massUg: Math.round(massUg), key: String(key), y: SLICE_ORIGIN_Y + yq / Q });
+        }
+      }
+      if (Array.isArray(d.carriedFine)) {
+        for (const e of d.carriedFine) {
+          if (!Array.isArray(e) || e.length < 3) continue;
+          const [k, yq, ug] = e;
+          if (!Number.isInteger(k) || k < 0 || k >= n || !Number.isFinite(yq) || !(ug > 0)) continue;
+          this._carryFine(k, Math.round(ug), SLICE_ORIGIN_Y + yq / Q);
         }
       }
     }
@@ -317,6 +355,7 @@ export class MiningSystem {
 
   // gold still in reach of the ground in a box (debug / benchmark), µg
   stats() {
-    return { carried: this.carriedCount, relocatedSlices: this.totals.relocatedSlices, carriedPaid: this.totals.carriedPaid };
+    return { carried: this.carriedCount, relocatedSlices: this.totals.relocatedSlices, carriedPaid: this.totals.carriedPaid,
+      fineUsedUg: this.totals.fineUsedUg, finePaidUg: this.totals.finePaidUg, carriedFineUg: this.carriedFineUg };
   }
 }
