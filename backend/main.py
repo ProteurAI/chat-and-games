@@ -18,6 +18,7 @@ from . import who_am_i as who_am_i_module
 from . import party as party_module
 from . import drawing_game as drawing_game_module
 from . import kopf_kicker as kopf_kicker_module
+from . import goldrush_dev as goldrush_dev_module
 from .multiscreen import session as multiscreen_module
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -68,6 +69,11 @@ def get_user_by_token(token: Optional[str]) -> Optional[dict]:
     with db.get_conn() as conn:
         row = conn.execute("SELECT * FROM users WHERE token = ?", (token,)).fetchone()
     return db.row_to_dict(row) if row else None
+
+
+# GoldRush developer / QA access (code only in the env var GOLDRUSH_DEV_CODE)
+goldrush_dev_module.init(get_current_user)
+app.include_router(goldrush_dev_module.router)
 
 
 # ---------- connection manager (websockets) ----------

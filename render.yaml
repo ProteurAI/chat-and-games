@@ -10,3 +10,8 @@ services:
         value: 3.11.9
       - key: TEAM_PASSWORD
         sync: false
+      # GoldRush developer / QA tools: the code is set in the Render dashboard only
+      # (never in this file); not set = developer tools switched off
+      # (optional, dashboard only: GOLDRUSH_DEV_USER_IDS = comma-separated user ids allowed to unlock)
+      - key: GOLDRUSH_DEV_CODE
+        sync: false
