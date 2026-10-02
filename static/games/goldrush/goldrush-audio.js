@@ -197,7 +197,8 @@ export class GoldRushAudio {
         this._noise(out, t + 0.012, 0.08, { type: "lowpass", f: rv(500, 700), q: 1, gain: 0.22 * s, attack: 0.002 });
         break;
       case "break":                                    // it breaks: knocks and a spray of chips
-        for (let i = 0; i < 4; i++) this._tone(out, t + i * rv(0.03, 0.06), rv(90, 160), 0.1, 0.2 * s, { to: 60 });
+        // (0.17: four knocks close together must not add up past 0 dBFS)
+        for (let i = 0; i < 4; i++) this._tone(out, t + i * rv(0.03, 0.06), rv(90, 160), 0.1, 0.17 * s, { to: 60 });
         this._noise(out, t, 0.25, { type: "lowpass", f: rv(600, 900), q: 0.7, gain: 0.26 * s, attack: 0.003 });
         this._grains(out, t + 0.04, 14, 0.3, 1600, 4200, 3, 0.05 * s, 0.12 * s);
         break;
