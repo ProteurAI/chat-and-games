@@ -18,6 +18,11 @@
 // classifier (a screen) that takes the stones out first, and one small
 // upgrade each for bucket and pan. They improve RECOVERY - how much of the
 // gold that is already in the ground comes back out - never "luck".
+//
+// Phase 6 - primitive mechanisation: a wheelbarrow (transport: ~85 l a
+// trip) and a sluice box by the water tank (continuous washing while you
+// work on), with two small sluice upgrades. They raise THROUGHPUT - litres
+// per minute - far more than gold per litre; real machines come later.
 
 export const SHOP_ITEMS = [
   {
@@ -80,12 +85,34 @@ export const SHOP_ITEMS = [
     effect: { capacityMul: 1.4 },
     requires: { equipment: ["bucket"] },
   },
+  {
+    id: "wheelbarrow", kind: "equipment", label: "Schubkarre", price: 30000,
+    text: "Fasst rund 85 Liter. Stell sie neben dich und grab hinein, dann schieb sie zum Waschplatz – oder später zum Trichter der Waschrinne und kipp sie aus. Voll ist sie spürbar schwer, bergauf erst recht.",
+    requires: { equipment: ["bucket"] },
+  },
+  {
+    id: "sluice", kind: "equipment", label: "Waschrinne", price: 48000,
+    text: "Eine Holzrinne mit Riffelmatte am Wassertank: Material in den Trichter, Wasser an – sie wäscht von selbst, während du weitergräbst. Die Riffel halten das Gold; ab und zu ausbürsten und das Schwerkonzentrat in der Pfanne fertig waschen.",
+    requires: { equipment: ["pan"] },
+  },
+  {
+    id: "sluice.hopper", kind: "upgrade", tool: "sluice", label: "Großer Trichter", price: 38000,
+    text: "Ein höherer Aufgabetrichter: fasst 90 statt 50 Liter – eine ganze Schubkarre, die Rinne läuft länger ohne dich.",
+    requires: { equipment: ["sluice"] },
+  },
+  {
+    id: "sluice.mat", kind: "upgrade", tool: "sluice", label: "Moosmatte", price: 85000,
+    text: "Eine Matte mit feinem Flor unter den Riffeln: hält mehr vom Feingold fest – etwa ein Sechstel mehr aus jeder Ladung.",
+    effect: { capture: 0.75 },
+    requires: { equipment: ["sluice"] },
+  },
 ];
 
 export const shopItem = (id) => SHOP_ITEMS.find((i) => i.id === id) || null;
 export const upgradesFor = (tool) => SHOP_ITEMS.filter((i) => i.kind === "upgrade" && i.tool === tool);
 export const EQUIPMENT = SHOP_ITEMS.filter((i) => i.kind === "equipment").map((i) => i.id);
-const NEED_TEXT = { shovel: "Schaufel besitzen", pickaxe: "Spitzhacke besitzen", bucket: "Eimer besitzen", pan: "Goldpfanne besitzen", classifier: "Sieb besitzen" };
+const NEED_TEXT = { shovel: "Schaufel besitzen", pickaxe: "Spitzhacke besitzen", bucket: "Eimer besitzen", pan: "Goldpfanne besitzen", classifier: "Sieb besitzen",
+  wheelbarrow: "Schubkarre besitzen", sluice: "Waschrinne besitzen" };
 
 /**
  * What an item is for this player right now:

@@ -214,8 +214,11 @@ export class GoldRushGame {
     this.hands.models.applyUpgrades(this.tools.upgrades);
     // the wash place: bucket, classifier, gold pan (phase 5)
     this.processing = new ProcessingSystem(THREE, world.scene, world, this.doc.processing, {
-      economy: this.economy, effects: this.effects, hands: this.hands, envMap, goldMat: this.loot.goldMat, upgrades: () => this.tools.upgrades,
+      economy: this.economy, effects: this.effects, hands: this.hands, envMap, goldMat: this.loot.goldMat, upgrades: () => this.tools.upgrades, camera,
     });
+    // phase 6: the sluice's water (near it), a barrow load landing in the hopper
+    this.processing.onSound = (kind) => this.audio.play(kind, { dist: 2.5, strength: 0.7 });
+    this.processing.onDumped = (ml) => this._dumped(ml);
     const ring = new THREE.RingGeometry(0.88, 1, 48);
     this.reticle = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({
       color: 0xfff3d6, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, fog: false,
@@ -408,11 +411,36 @@ export class GoldRushGame {
     const r = this.processing.act(s.id, this.player);
     if (!r.ok) return false;
     if (r.kind === "pick") this.audio.play("swap", { dist: 0.3 });
-    else if (r.kind === "drop") this.audio.play("bucket", { dist: 0.5, strength: 0.8 });
+    else if (r.kind === "drop") this.audio.play(s.id === "barrow-park" ? "shopOpen" : "bucket", { dist: 0.5, strength: 0.8 });
+    else if (r.kind === "barrow") { this.audio.play("swap", { dist: 0.3 }); this.player.pitch = Math.min(this.player.pitch, -0.28); this.hud.tip("barrow", this.touch ? "Mit dem Stick schieben · ABSTELLEN tippen zum Abstellen" : "W schieben · [E] abstellen · am Trichter: [E] auskippen", 30); }
+    else if (r.kind === "dump") this.audio.play("wheelbarrow_dump", { dist: 1.2 });
+    else if (r.kind === "feed") { this.audio.play("sluice_feed", { dist: 0.8 }); this._fedEffect(s.id); }
+    else if (r.kind === "build") { this.audio.play("purchase", { dist: 1 }); this.hud.message("Waschrinne", "wird aufgebaut …"); }
+    else if (r.kind === "water") { this.audio.play("splash", { dist: 1, strength: 0.8 }); if (r.on) this.hud.tip("sluice-on", "Die Rinne läuft, solange Material im Trichter ist – du kannst derweil weiterarbeiten.", 40); }
     else if (r.kind === "work") this._enterWork();
     this._stationSig = null;
     this.dirty = true;
     return true;
+  }
+
+  // a barrow load went into the hopper (at the top of the tip)
+  _dumped(ml) {
+    const pr = this.processing, sl = pr.sluice;
+    if (!sl) return;
+    const x = sl.root.position.x - 0.27, z = sl.root.position.z;
+    if (this.effects) this.effects.spill(x, 1.35, z, MATERIALS[0], 0.9);
+    this.audio.play("sluice_feed", { dist: 1.2 });
+    const l = (ml / 1000).toFixed(0);
+    this.hud.message("Ausgekippt", `${l} l im Trichter${pr.barrow && pr.barrow.batch.volumeMl > 0 ? " – der Rest bleibt in der Karre" : ""}`);
+    this.dirty = true;
+  }
+
+  // a bucket emptied into the hopper / the barrow: a little spill over the edge
+  _fedEffect(id) {
+    const pr = this.processing;
+    if (!this.effects) return;
+    if (id === "bucket-hopper" && pr.sluice) this.effects.spill(pr.sluice.root.position.x - 0.27, 1.3, pr.sluice.root.position.z, MATERIALS[0], 0.5);
+    else if (id === "bucket-barrow" && pr.barrow) { const c = pr.barrow.trayCenter(); this.effects.spill(c.x, this.world.groundAt(c.x, c.z) + 0.6, c.z, MATERIALS[0], 0.5); }
   }
 
   _enterWork() {
@@ -647,7 +675,7 @@ export class GoldRushGame {
     this.effects.update(dt);
     this.loot.update(dt, this.camera, this.player);
     this._sunCheck(dt);
-    this.processing.update(dt);
+    this.processing.update(dt, this.player);
     this.hands.update(dt, this.tools.view(), { camera: this.camera, sunDir: SUN_VEC, sunVisible: this.sunVisible, walk: Math.min(1, Math.hypot(this.player.vx, this.player.vz) / WALK), bob: this.player.bob });
     this.hud.update(dt);
     this.stations.update(dt);
@@ -685,20 +713,25 @@ export class GoldRushGame {
     const p = this.player, input = this.input, world = this.world;
     const look = input.takeLook();
     if (this.processing.work) { this._workUpdate(dt, look); return; }
+    const pr = this.processing, bw = pr.pushing ? pr.barrow : null;
+    const oy = p.yaw;
     p.yaw -= look.x;
-    p.pitch = Math.max(-1.45, Math.min(1.45, p.pitch - look.y));
+    if (bw && (bw.dump || !bw.canGo(p.x, p.z, p.yaw))) p.yaw = oy;          // it would swing into something: hold
+    // pushing: the eyes stay on the barrow (the grips stay in view)
+    p.pitch = bw ? Math.max(-0.8, Math.min(0.1, p.pitch - look.y)) : Math.max(-1.45, Math.min(1.45, p.pitch - look.y));
     this.hands.look(look.x, look.y);
 
     // walk: accelerate towards the stick/keys direction
     let mx = input.move.x, my = input.move.y;
     const len = Math.hypot(mx, my);
     if (len > 1) { mx /= len; my /= len; }
-    const speed = (input.sprint ? SPRINT : WALK) * this.processing.speedFactor();
+    const speed = (input.sprint && !bw ? SPRINT : WALK) * this.processing.speedFactor();
     const sin = Math.sin(p.yaw), cos = Math.cos(p.yaw);
     const tx = (-sin * my + cos * mx) * speed, tz = (-cos * my - sin * mx) * speed;
     const a = Math.min(1, dt * 10);
     p.vx += (tx - p.vx) * a;
     p.vz += (tz - p.vz) * a;
+    const ox = p.x, oz = p.z;
     const g0 = world.groundAt(p.x, p.z);
     // steep ground: walking up to 38°, scrambling (slower) up to 68° - so you
     // always get out of your own pit - never up a stone wall
@@ -719,6 +752,11 @@ export class GoldRushGame {
     }
     world.collide(p, RADIUS);
     this._keepOffWalls();
+    if (bw) {
+      // the wheel would climb a wall / the barrow would hit something: you stop
+      if (bw.dump || !bw.canGo(p.x, p.z, p.yaw)) { p.x = ox; p.z = oz; p.vx = p.vz = 0; }
+      bw.follow(p);
+    }
     const ground = world.groundAt(p.x, p.z) + EYE;
     p.y += (ground - p.y) * Math.min(1, dt * (ground < p.y - 0.4 ? 20 : 12));
     if (p.y < ground - 0.25) p.y = ground - 0.25;             // never sink into ground that rose under you
@@ -731,11 +769,15 @@ export class GoldRushGame {
     this._aim();
     // the tool: actions while dig is held and the crosshair is on the ground
     // (not while you carry the bucket - your hand is on its bail)
-    const carrying = this.processing.carrying;
+    const carrying = this.processing.carrying || this.processing.pushing;
     const want = input.digHeld && !!this.target && !carrying;
     if (input.digHeld && !this.target && !carrying) this._hintNoTarget();
-    if (input.digHeld && carrying) this.hud.tip("carry", "Du trägst den Eimer – erst abstellen [E], dann graben.", 8);
+    if (input.digHeld && carrying) {
+      if (this.processing.pushing) this.hud.tip("push", "Du schiebst die Schubkarre – erst abstellen [E], dann graben.", 8);
+      else this.hud.tip("carry", "Du trägst den Eimer – erst abstellen [E], dann graben.", 8);
+    }
     this.tools.blocked = !!this.hands.inspecting || carrying;
+    if (carrying !== this._handsBusy) { this._handsBusy = carrying; this.ui.setHandsBusy && this.ui.setHandsBusy(carrying); }
     const ev = this.tools.tick(dt, want);
     if (ev === "contact") this._contact();
     else if (ev === "swap") this._swapped();
@@ -763,7 +805,14 @@ export class GoldRushGame {
     this.tools.tick(dt, false);
     const ev = pr.input(look.x, look.y, dt);
     if (ev === "pan-ready") { this.audio.play("flake", { dist: 0.3, strength: 0.7 }); this._haptic(10); }
-    else if (ev && ev.kind === "sieved") {
+    else if (ev && ev.kind === "cleaned") {
+      this.audio.play("sluice_cleanout", { dist: 0.5 });
+      this.hud.message("Riffelmatte gereinigt", `${(ev.heavyMl / 1000).toFixed(1).replace(".", ",")} l Schwerkonzentrat in der Schale am Waschtrog${ev.nuggets ? ` · ${ev.nuggets} Nugget${ev.nuggets > 1 ? "s" : ""} herausgepickt` : ""}`);
+      if (ev.cents) this.hud.collected(ev.cents, FIND.NUGGET);
+      this._leaveWork();
+      this.dirty = true;
+      return;
+    } else if (ev && ev.kind === "sieved") {
       this.audio.play("dump", { dist: 0.4, strength: 0.8 });
       const n = ev.retained.pieces;
       this.hud.message("Gesiebt", `${(ev.underMl / 1000).toFixed(1).replace(".", ",")} l Konzentrat in der Wanne${n ? ` · ${n} Nugget herausgepickt` : ""}`);
@@ -779,6 +828,7 @@ export class GoldRushGame {
     const touch = this.touch;
     if (pr.work === "pan") this.hud.work(pr.panDone ? (touch ? "Gold liegt in der Pfanne – EINSAMMELN tippen" : "Gold liegt in der Pfanne – Klick oder [E]: einsammeln")
       : touch ? "Mit dem Finger kreisen: Pfanne schwenken" : "Maus kreisen lassen: Pfanne schwenken · [E] aufhören");
+    else if (pr.work === "clean") this.hud.work(touch ? "Mit dem Finger hin und her: Riffelmatte ausbürsten" : "Maus hin und her: Riffelmatte ausbürsten · [E] aufhören");
     else this.hud.work(touch ? "Mit dem Finger hin und her: Sieb rütteln" : "Maus hin und her: Sieb rütteln · [E] aufhören");
   }
 
@@ -793,8 +843,9 @@ export class GoldRushGame {
       const c = this.camera, p = this.player, fw = this._fw.set(-Math.sin(p.yaw), 0, -Math.cos(p.yaw)), rt = this._rt.set(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
       let x = c.position.x + fw.x * 0.75 + rt.x * 0.45, z = c.position.z + fw.z * 0.75 + rt.z * 0.45;
       let y = Math.max(this.terrain.getHeightAt(x, z) + 0.2, c.position.y - 0.55);
-      const bk = this.lastStroke.intoBucket && this.processing.bucket;
+      const into = this.lastStroke.intoBucket ? this.lastStroke.into : null, bk = into === "bucket" && this.processing.bucket, bw = into === "wheelbarrow" && this.processing.barrow;
       if (bk) { x = bk.x; z = bk.z; y = this.world.groundAt(x, z) + 0.42 * this.processing.bucketScale; }
+      else if (bw) { const c = bw.trayCenter(); x = c.x; z = c.z; y = this.world.groundAt(x, z) + 0.62; }
       setTimeout(() => {
         if (this.disposed) return;
         this.effects.spill(x, y, z, MATERIALS[this.lastStroke ? this.lastStroke.material : 0] || MATERIALS[0], Math.min(1, 0.4 + (this.lastStroke ? this.lastStroke.massKg : 1) / 3));
@@ -825,12 +876,21 @@ export class GoldRushGame {
       this.hud.prompt(s && s.action ? s.action : null, this.touch || (s && s.disabled) ? "" : "E");
       this.ui.onStation && this.ui.onStation(s);
     }
-    // the bucket chip: while you carry it or stand near it
-    const b = pr.bucket;
-    if (b && (b.carried || Math.hypot(b.x - this.player.x, b.z - this.player.z) < 3.2)) {
+    // the load chip: the bucket you carry / the barrow you push, else what stands near you
+    const b = pr.bucket, w = pr.barrow, sl = pr.sluice, P = this.player;
+    const dB = b && !b.carried ? Math.hypot(b.x - P.x, b.z - P.z) : Infinity;
+    const wc = w && !w.pushing ? w.trayCenter(this._wc || (this._wc = {})) : null, dW = wc ? Math.hypot(wc.x - P.x, wc.z - P.z) : Infinity;
+    const dS = sl ? Math.hypot(sl.root.position.x + 1.2 - P.x, sl.root.position.z - P.z) : Infinity;
+    if (b && (b.carried || (dB < 3.2 && dB <= dW))) {
       const l = (pr.bucketMl / 1000).toFixed(1).replace(".", ","), cap = Math.round(pr.capacityMl / 1000);
       this.hud.load(`Eimer ${l} / ${cap} l${b.carried ? ` · ${pr.bucketKg.toFixed(1).replace(".", ",")} kg` : ""}`);
       this.hud.loadEl.classList.toggle("is-full", pr.bucketMl >= pr.capacityMl - 50);
+    } else if (w && (w.pushing || dW < 3.6)) {
+      this.hud.load(`Schubkarre ${Math.round(w.volumeMl / 1000)} / ${Math.round(w.capacityMl / 1000)} l${w.pushing ? ` · ${Math.round(w.massKg)} kg` : ""}`);
+      this.hud.loadEl.classList.toggle("is-full", w.full);
+    } else if (sl && sl.installed && dS < 4.2) {
+      this.hud.load(`Trichter ${Math.round(sl.hopper.batch.volumeMl / 1000)} / ${Math.round(sl.capacityMl / 1000)} l · Riffel ${Math.min(100, Math.round(sl.riffleLoad * 100))} %${sl.running ? " · Wasser an" : ""}`);
+      this.hud.loadEl.classList.toggle("is-full", sl.riffleLoad >= 1);
     } else this.hud.load(null);
     this._objT -= dt;
     if (this._objT <= 0) { this._objT = 0.5; this.hud.objective(this.uiOpen ? null : this._objective()); }
@@ -1029,18 +1089,22 @@ export class GoldRushGame {
     }
     this.lastStroke = this._strokeInfo(def, r, disc);
     this.lastStroke.intoBucket = routed.intoMl > 0;
+    this.lastStroke.into = routed.into;
     this.dirty = true;
   }
 
   // the bucket caught a dig: a puff at its rim (hand / pickaxe; the shovel dumps into it), a tip once it is full
   _intoBucket(routed) {
     if (!(routed.intoMl > 0)) return;
-    const pr = this.processing, b = pr.bucket;
-    if (this.tools.equipped !== "shovel" && this.effects) {
-      const def = MATERIALS[0];
-      this.effects.spill(b.x, this.world.groundAt(b.x, b.z) + 0.3 * pr.bucketScale, b.z, def, 0.25);
+    const pr = this.processing, b = pr.bucket, w = pr.barrow;
+    if (routed.into === "wheelbarrow" && w) {
+      if (this.tools.equipped !== "shovel" && this.effects) { const c = w.trayCenter(); this.effects.spill(c.x, this.world.groundAt(c.x, c.z) + 0.55, c.z, MATERIALS[0], 0.25); }
+      if (pr.fullNow && !this._fullTold) { this._fullTold = true; this.hud.tip("barrow-full", pr.sluice && pr.sluice.installed ? "Schubkarre voll – greifen und zum Trichter der Waschrinne schieben." : "Schubkarre voll – greifen und an den Waschplatz schieben.", 12); }
+    } else if (b) {
+      if (this.tools.equipped !== "shovel" && this.effects) this.effects.spill(b.x, this.world.groundAt(b.x, b.z) + 0.3 * pr.bucketScale, b.z, MATERIALS[0], 0.25);
+      else this.audio.play("bucket_fill", { dist: 1, strength: 0.6 });
+      if (pr.fullNow && !this._fullTold) { this._fullTold = true; this.hud.tip("bucket-full", "Eimer voll – ab zum Waschplatz beim Wassertank.", 12); }
     }
-    if (pr.fullNow && !this._fullTold) { this._fullTold = true; this.hud.tip("bucket-full", "Eimer voll – ab zum Waschplatz beim Wassertank.", 12); }
     if (!pr.fullNow) this._fullTold = false;
   }
 
@@ -1078,6 +1142,7 @@ export class GoldRushGame {
     }
     this.lastStroke = this._strokeInfo(def, r, disc);
     this.lastStroke.intoBucket = routed.intoMl > 0;
+    this.lastStroke.into = routed.into;
     this.dirty = true;
     return {
       ...base, cents: disc.cents, finds: disc.items.length, best: disc.best, massKg: r.removedMassKg, massByMat: [...r.massByMat], slices: r.slices, cells: r.cells,

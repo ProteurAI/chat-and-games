@@ -313,6 +313,7 @@ button.gr-tool { border: none; font-family: inherit; cursor: default; }
 .gr-dig-ico svg { width: 30px; height: 30px; display: block; }
 .gr-dig-btn.is-active { transform: scale(0.9); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); }
 .gr-dig-btn.is-active.is-stroke { transform: scale(0.86); }
+.gr-dig-btn.is-busy { opacity: 0.38; filter: saturate(0.2); }
 .gr-desktop .gr-stick, .gr-desktop .gr-dig-btn { display: none; }
 .gr-touch .gr-tool { bottom: auto; top: calc(max(var(--space-3), env(safe-area-inset-top)) + 46px); }
 .gr-touch .gr-notice { top: calc(max(var(--space-3), env(safe-area-inset-top)) + 100px); }

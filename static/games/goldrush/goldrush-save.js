@@ -32,7 +32,7 @@
 // taking it moves it to their key and marks the legacy slot as migrated
 // (goldrush.legacy) - it is never given to a second player.
 //
-// Document (v5):
+// Document (v6):
 //   { saveVersion: 5, worldSeed, createdAt, updatedAt, owner: { id, tag },
 //     tools: { owned: ["hand", ...], equipped, upgrades: [...] },
 //     player: { x, z, yaw, pitch },
@@ -41,7 +41,7 @@
 //     terrain: { gen, cols, cell, unit, encoding, changed, data, loose },
 //     resources: { unit, encoding, changed, slices, level, carried, carriedFine },
 //     rocks: { v, count, list },
-//     processing: { owned, nextBatch, bucket, pan, classifier, tub, ledger },
+//     processing: { owned, nextBatch, bucket, pan, classifier, tub, ledger, wheelbarrow, sluice },
 //     devModified?, devModifiedAt? }  (only once a developer / QA command changed the mine)
 //
 // The terrain is stored as integer height deltas against the seeded
@@ -59,11 +59,13 @@
 // 4 = gold is not money: a gold pouch, selling at the assay station, the
 // supply shop (tool upgrades, purchases, milestones); 5 = the save belongs
 // to a player (owner), settings live outside the mine, physical gold
-// processing (bucket, pan, classifier, material batches, fine gold).
-// Older documents are upgraded on load step by step (1 -> 2 -> 3 -> 4 -> 5)
-// and written back as 5. A new mine owns only the hand and has € 0,00.
+// processing (bucket, pan, classifier, material batches, fine gold); 6 =
+// primitive mechanisation (a wheelbarrow and a sluice box with their loads,
+// the sluice's riffles, concentrate tray and tailings).
+// Older documents are upgraded on load step by step (1 -> 2 -> ... -> 6)
+// and written back as 6. A new mine owns only the hand and has € 0,00.
 
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 const PREFIX = "goldrush.save";
 const LEGACY_KEY = "goldrush.save";
 const LEGACY_BACKUP_KEY = "goldrush.save.backup";
@@ -138,6 +140,11 @@ export function validate(doc) {
     if (pr != null && (typeof pr !== "object" || (pr.owned != null && !Array.isArray(pr.owned)))) return "Verarbeitungsdaten ungültig";
     if (doc.owner != null && (typeof doc.owner !== "object" || typeof doc.owner.tag !== "string")) return "Besitzerdaten ungültig";
   }
+  if (doc.saveVersion >= 6 && doc.processing != null) {
+    const pr = doc.processing;
+    if (pr.wheelbarrow != null && (typeof pr.wheelbarrow !== "object" || !finite(pr.wheelbarrow.x) || !finite(pr.wheelbarrow.z))) return "Schubkarrendaten ungültig";
+    if (pr.sluice != null && typeof pr.sluice !== "object") return "Waschrinnendaten ungültig";
+  }
   return null;
 }
 
@@ -207,6 +214,10 @@ export function migrate(doc) {
     // nothing on its way through processing yet. Everything else - cash,
     // pouch, tools, upgrades, ground - stays exactly as it is.
     doc = { ...doc, saveVersion: 5, processing: null, migratedFrom: doc.migratedFrom || 4 };
+  }
+  if (doc.saveVersion === 5) {
+    // phase 6: no wheelbarrow, no sluice yet - everything else exactly as it was
+    doc = { ...doc, saveVersion: 6, migratedFrom: doc.migratedFrom || 5 };
   }
   return doc;
 }

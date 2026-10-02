@@ -3,8 +3,8 @@
 // One generic flow, whatever moves or treats the material:
 //
 //   SOURCE      hand · shovel · pickaxe  (later: excavator, loader)
-//   TRANSPORT   bucket                   (later: wheelbarrow, conveyor)
-//   PROCESS     classifier · gold pan    (later: sluice, trommel, wash plant)
+//   TRANSPORT   bucket · wheelbarrow     (later: loader, conveyor)
+//   PROCESS     classifier · gold pan · sluice   (later: hopper, trommel, wash plant)
 //   OUTPUT      concentrate · tailings · recovered gold
 //
 // A MaterialBatch is a quantity of ground with everything it holds - all
@@ -23,7 +23,7 @@
 
 import { FIND } from "./goldrush-resources.js";
 
-export const STAGE = { RAW: "raw", CONCENTRATE: "concentrate", TAILINGS: "tailings" };
+export const STAGE = { RAW: "raw", CONCENTRATE: "concentrate", HEAVY: "heavy", TAILINGS: "tailings" };
 export const MAT_KEYS = ["dirt", "compactDirt", "gravel", "stone"];
 
 // ---- tuning (canonical benchmark: tests/e2e/goldrush_bench.js, processing strategies)
@@ -33,12 +33,22 @@ export const COARSE = [0.16, 0.26, 0.62, 1.0];
 // fine gold the gold pan recovers from what it washes; the pan always keeps
 // the visible pieces (heavy, they sink to the bottom) - only the finest
 // gold washes over the rim with the mud
-export const PAN_RECOVERY = { raw: 0.58, concentrate: 0.68 };
+export const PAN_RECOVERY = { raw: 0.58, concentrate: 0.68, heavy: 0.94 };
 // seconds of steady panning per litre (raw ground is full of pebbles and
 // clods; a classified concentrate pans faster), clamped per load
-export const PAN_SECONDS = { raw: 3.7, concentrate: 2.7, min: 6, max: 12 };
+export const PAN_SECONDS = { raw: 3.7, concentrate: 2.7, heavy: 2.2, min: 6, max: 12 };
 export const PAN_CAPACITY_ML = 2500;
 export const SIEVE_SECONDS = { perL: 0.42, min: 3, max: 6 };
+// SLUICE (phase 6): water carries the material down the box, the riffles hold
+// the heavy fraction - every gold piece, `capture` of the fine gold and a
+// little black sand (heavyShare of the mass) - everything else leaves at the
+// outlet as tailings. Riffles take `riffleL` litres before they need a clean
+// out; past that they hold less and less (down to `overload` of capture at
+// twice the load). The heavy concentrate then pans with little loss (0.94):
+// a little more gold per litre than panning raw ground (0.65 x 0.94 = 0.61
+// vs 0.58), less than classifier + riffled pan (0.76) - its point is the
+// litres per minute, while you do something else; no pan is skipped.
+export const SLUICE_TUNING = { capture: 0.65, heavyShare: 0.012, riffleL: 240, overload: 0.5 };
 
 const int = (v) => (Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0);
 const validFind = (f) => f && f.cls >= FIND.TRACE && f.cls <= FIND.NUGGET && f.ug > 0;
@@ -46,7 +56,7 @@ const validFind = (f) => f && f.cls >= FIND.TRACE && f.cls <= FIND.NUGGET && f.u
 export class MaterialBatch {
   constructor(o = {}) {
     this.id = Number.isInteger(o.id) ? o.id : 0;
-    this.stage = o.stage === STAGE.CONCENTRATE || o.stage === STAGE.TAILINGS ? o.stage : STAGE.RAW;
+    this.stage = o.stage === STAGE.CONCENTRATE || o.stage === STAGE.HEAVY || o.stage === STAGE.TAILINGS ? o.stage : STAGE.RAW;
     this.volumeMl = int(o.volumeMl);
     const c = Array.isArray(o.comp) ? o.comp : [];
     this.comp = [int(c[0]), int(c[1]), int(c[2]), int(c[3])];       // grams per material
@@ -169,16 +179,61 @@ export function panLoad(batch, recovery, tailsId = 0) {
 }
 
 // the pan's fine-gold recovery for a load of this stage, with its upgrades
+// (a heavy sluice concentrate is mostly gold and black sand: hardly anything
+// to lose, the riffled pan helps only a little there)
 export function panRecovery(stage, recoveryMul = 1) {
+  if (stage === STAGE.HEAVY) return Math.min(0.96, PAN_RECOVERY.heavy * (1 + (recoveryMul - 1) * 0.15));
   return Math.min(0.92, (stage === STAGE.CONCENTRATE ? PAN_RECOVERY.concentrate : PAN_RECOVERY.raw) * recoveryMul);
 }
 
 // how long a load takes to pan (s of steady swirling)
 export function panSeconds(batch) {
-  const perL = batch.stage === STAGE.CONCENTRATE ? PAN_SECONDS.concentrate : PAN_SECONDS.raw;
+  const perL = batch.stage === STAGE.HEAVY ? PAN_SECONDS.heavy : batch.stage === STAGE.CONCENTRATE ? PAN_SECONDS.concentrate : PAN_SECONDS.raw;
   return Math.max(PAN_SECONDS.min, Math.min(PAN_SECONDS.max, (batch.volumeMl / 1000) * perL));
 }
 
 export function sieveSeconds(batch) {
   return Math.max(SIEVE_SECONDS.min, Math.min(SIEVE_SECONDS.max, (batch.volumeMl / 1000) * SIEVE_SECONDS.perL));
+}
+
+/**
+ * Move material from one container to another - the ONE transfer every
+ * container, vehicle and machine uses (bucket, wheelbarrow, sluice hopper,
+ * classifier, pan; later loader, hopper, conveyor). A holder is
+ * { batch, capacityMl } (capacity: the most it takes; none = unlimited).
+ * Exact: what leaves `from` arrives in `to` (volume, mass, gold, pieces).
+ * A small rounding rest (< 60 ml) goes along instead of staying behind.
+ * -> ml moved
+ */
+export function pour(from, to, maxMl = Infinity, id = 0) {
+  if (!from || !to || !from.batch || !to.batch || from === to || from.batch === to.batch) return 0;
+  const cap = Number.isFinite(to.capacityMl) ? to.capacityMl : Infinity;
+  const room = Math.max(0, cap - to.batch.volumeMl);
+  const want = Math.min(from.batch.volumeMl, room, Math.max(0, maxMl));
+  if (want <= 0) return 0;
+  const part = from.batch.take(want, id);
+  if (from.batch.volumeMl > 0 && from.batch.volumeMl < 60 && to.batch.volumeMl + part.volumeMl + from.batch.volumeMl <= cap) part.absorb(from.batch);
+  const moved = part.volumeMl;
+  to.batch.absorb(part);
+  return moved;
+}
+
+/**
+ * SLUICE: a portion of the feed runs down the box (see SLUICE_TUNING).
+ *   heavy   what the riffles hold: every piece, floor(fine x capture), heavyShare of each material
+ *   tails   the rest, out at the bottom
+ * Exact: heavy + tails == input (volume, every material, fine gold, pieces).
+ */
+export function sluiceSplit(batch, capture, heavyShare, ids = [0, 0]) {
+  const heavy = new MaterialBatch({ id: ids[0], stage: STAGE.HEAVY, source: batch.source });
+  const tails = new MaterialBatch({ id: ids[1], stage: STAGE.TAILINGS, source: batch.source });
+  const c = Math.max(0, Math.min(1, capture)), h = Math.max(0, Math.min(1, heavyShare));
+  heavy.volumeMl = Math.floor(batch.volumeMl * h);
+  tails.volumeMl = batch.volumeMl - heavy.volumeMl;
+  for (let m = 0; m < 4; m++) { heavy.comp[m] = Math.floor(batch.comp[m] * h); tails.comp[m] = batch.comp[m] - heavy.comp[m]; }
+  heavy.fineUg = Math.floor(batch.fineUg * c);
+  tails.fineUg = batch.fineUg - heavy.fineUg;
+  heavy.finds = batch.finds.slice();
+  batch.volumeMl = 0; batch.comp = [0, 0, 0, 0]; batch.fineUg = 0; batch.finds = [];
+  return { heavy, tails };
 }

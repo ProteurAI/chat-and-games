@@ -15,6 +15,16 @@
 //                goes over the rim, the gold stays. Raw ground pans slower
 //                and keeps less of the fine gold than a concentrate.
 //   POUCH        the recovered gold goes into the gold pouch (economy.recover)
+//   WHEELBARROW  (phase 6) the big container: dig into it like into the bucket,
+//                push it (goldrush-wheelbarrow.js), tip it into the sluice
+//                hopper, or park it at the wash place to feed screen and pan
+//   SLUICE       (phase 6) the first continuous processing by the water tank
+//                (goldrush-sluice.js): hopper -> riffles -> tailings; its
+//                cleaned heavy concentrate is panned here like the rest
+//
+// Every move of material between containers goes through pour()
+// (goldrush-material.js) - the bucket, the barrow, the hopper today, a
+// loader or a conveyor later.
 //
 // The material is a MaterialBatch all the way (goldrush-material.js):
 // nothing is re-rolled, gold is only ever moved or - what a process does
@@ -24,8 +34,11 @@
 // swirls the pan or shakes the screen; progress is capped per second, so a
 // load takes its few seconds of real work - no bar that fills on its own.
 
-import { MaterialBatch, STAGE, batchFromDig, classify, panLoad, panRecovery, panSeconds, sieveSeconds, PAN_CAPACITY_ML } from "./goldrush-material.js";
+import { MaterialBatch, STAGE, batchFromDig, classify, panLoad, panRecovery, panSeconds, sieveSeconds, PAN_CAPACITY_ML, pour } from "./goldrush-material.js";
 import { ProcessModels, bucketFillHeight, panFillHeight, panRadius } from "./goldrush-processmodels.js";
+import { MechModels, BARROW } from "./goldrush-mechmodels.js";
+import { Wheelbarrow } from "./goldrush-wheelbarrow.js";
+import { Sluice, SLUICE_AT, SLUICE_SPOTS, CLEAN_S } from "./goldrush-sluice.js";
 import { FIND } from "./goldrush-resources.js";
 
 // the wash place, next to the water tank (-19.5, 1.8)
@@ -36,7 +49,12 @@ export const WASH = {
   classifier: { x: -16.95, z: 4.8 },
   sieveSpot: { x: -15.9, z: 4.8, yaw: Math.PI / 2 },
   supplyDrop: { x: -17.35, z: 9.55 },                      // a bought bucket waits in front of the shed
+  barrowDrop: { x: -15.2, z: 9.2, yaw: -Math.PI / 2 },     // ... a bought wheelbarrow next to it
+  feedZone: { x: -16.0, z: 3.4, r: 3.1 },                  // a barrow parked here feeds screen and pan
 };
+export const EQUIP = ["bucket", "pan", "classifier", "wheelbarrow", "sluice"];
+const BARROW_REACH = 2.6;        // m: a parked barrow this close (its tray) catches what you dig
+const HOPPER_AT = { x: SLUICE_AT.x - 0.27, z: SLUICE_AT.z };
 export const BUCKET_ML = 10000;
 export const TUB_ML = 30000;
 const CLASSIFIER_ML = 14000;
@@ -55,6 +73,8 @@ export const HELD_GRIPS = {
   bucket: [{ side: 1, pos: [0, 0.428, 0], axis: "x", roll: -0.2, flip: 1 }],
   pan: [{ side: 1, pos: [0.2, 0.05, 0.02], axis: "z", roll: 1.75, flip: 1 }, { side: -1, pos: [0.2, 0.05, 0.02], axis: "z", roll: 1.75, flip: 1 }],
   sieve: [{ side: 1, pos: [0.16, 0, 0], axis: "z", roll: 2.4, flip: 1 }, { side: -1, pos: [0.16, 0, 0], axis: "z", roll: 2.4, flip: 1 }],
+  // the barrow's grips: placed every frame where the world grips are seen (see _barrowHands)
+  barrow: [{ side: 1, pos: [0.2, 0, 0], axis: "x", roll: 0, flip: 1 }, { side: -1, pos: [0.2, 0, 0], axis: "x", roll: 0, flip: 1 }],
 };
 const COLORS = { raw: 0x8a6a4c, conc: 0x6a5846, black: 0x3a332c };
 
@@ -77,7 +97,9 @@ export class ProcessingSystem {
     this.upgrades = ctx.upgrades || (() => new Set());
     this.models = new ProcessModels(THREE, { envMap: ctx.envMap, goldMat: ctx.goldMat, woodTex: world.woodTex });
     const s = saved || {};
-    this.owned = new Set((Array.isArray(s.owned) ? s.owned : []).filter((id) => ["bucket", "pan", "classifier"].includes(id)));
+    this.ctx = ctx;
+    this.camera = ctx.camera || null;
+    this.owned = new Set((Array.isArray(s.owned) ? s.owned : []).filter((id) => EQUIP.includes(id)));
     this.nextBatch = Number.isInteger(s.nextBatch) && s.nextBatch > 0 ? s.nextBatch : 1;
     const sb = s.bucket || null;
     this.bucket = this.owned.has("bucket") ? {
@@ -105,6 +127,14 @@ export class ProcessingSystem {
     this.reveal = null;            // the gold left in the pan at the end (what is shown)
     this.panDone = false;
     this._build();
+    this.barrow = this.owned.has("wheelbarrow") ? new Wheelbarrow(THREE, this.scene, this.world, this.mech, s.wheelbarrow, WASH.barrowDrop) : null;
+    this.sluice = this.owned.has("sluice") ? this._newSluice(s.sluice) : null;
+  }
+
+  _newSluice(saved) {
+    return new Sluice(this.THREE, this.scene, this.world, this.mech, saved, {
+      ledger: this.ledger, economy: this.economy, nextId: () => this.nextBatch++, upgrades: this.upgrades,
+    });
   }
 
   _batch(stage) { return new MaterialBatch({ id: this.nextBatch++, stage }); }
@@ -138,6 +168,12 @@ export class ProcessingSystem {
     this.handBucket = M.bucket();
     this.handPan = M.pan({ hand: true });
     this.handSieve = new THREE.Group();                        // nothing drawn: the gloves on the (world) frame's handles
+    // phase 6: the wheelbarrow and the sluice share one model kit
+    this.mech = new MechModels(THREE, { envMap: this.ctx.envMap, woodTex: this.world.woodTex });
+    this.handBarrow = new THREE.Group();                       // nothing drawn: the gloves on the barrow's (world) grips
+    this._barrowGrips = HELD_GRIPS.barrow.map((g) => ({ ...g, pos: [...g.pos] }));
+    this._ga = new THREE.Vector3();
+    this._gb = new THREE.Vector3();
     this._sync();
   }
 
@@ -161,7 +197,7 @@ export class ProcessingSystem {
     this._fills();
   }
 
-  ownedList() { return ["bucket", "pan", "classifier"].filter((id) => this.owned.has(id)); }
+  ownedList() { return EQUIP.filter((id) => this.owned.has(id)); }
 
   // loading: every part once through the GPU (fill surfaces, heap, stones, flakes - all
   // hidden at first), so nothing is uploaded the first time a bucket fills
@@ -183,14 +219,16 @@ export class ProcessingSystem {
 
   // a purchase: the thing appears on the claim
   grant(id) {
-    if (!["bucket", "pan", "classifier"].includes(id) || this.owned.has(id)) return false;
+    if (!EQUIP.includes(id) || this.owned.has(id)) return false;
     this.owned.add(id);
     if (id === "bucket") this.bucket = { x: WASH.supplyDrop.x, z: WASH.supplyDrop.z, ry: 0.3, carried: false, batch: this._batch(STAGE.RAW) };
+    if (id === "wheelbarrow") this.barrow = new Wheelbarrow(this.THREE, this.scene, this.world, this.mech, null, WASH.barrowDrop);
+    if (id === "sluice") this.sluice = this._newSluice(null);           // delivered: boards by the tank, to be built
     this._sync();
     return true;
   }
 
-  applyUpgrades() { this._sync(); }
+  applyUpgrades() { this._sync(); if (this.sluice) this.sluice.applyUpgrades(); }
 
   _placeBucket() {
     const b = this.bucket;
@@ -204,10 +242,39 @@ export class ProcessingSystem {
   get bucketKg() { return this.bucket ? this.bucket.batch.massG / 1000 : 0; }
   bucketAtWash() { const b = this.bucket; return !!(b && !b.carried && Math.hypot(b.x - WASH.bucketSpot.x, b.z - WASH.bucketSpot.z) < 0.9); }
 
-  // walking speed with what you carry (a full bucket: a little slower)
+  get pushing() { return !!(this.barrow && this.barrow.pushing); }
+
+  // walking speed with what you carry / push (a full bucket: a little slower;
+  // the barrow: by its load and the slope ahead of its wheel)
   speedFactor() {
+    if (this.pushing) return this.barrow.speedFactor(this.barrow.gradeAhead());
     if (!this.carrying) return 1;
     return 1 - FULL_SLOW * Math.min(1.4, this.bucketKg / 16);
+  }
+
+  // a container at the wash place that screen and pan can take from (bucket first, then a parked barrow)
+  _washSource() {
+    if (this.bucketAtWash() && this.bucket.batch.volumeMl > 0) return { kind: "bucket", batch: this.bucket.batch };
+    if (this.barrowAtWash() && this.barrow.batch.volumeMl > 0) return { kind: "wheelbarrow", batch: this.barrow.batch };
+    return null;
+  }
+
+  barrowAtWash() {
+    const w = this.barrow;
+    if (!w || w.pushing) return false;
+    const c = w.trayCenter(this._tw || (this._tw = {}));
+    return Math.hypot(c.x - WASH.feedZone.x, c.z - WASH.feedZone.z) <= WASH.feedZone.r;
+  }
+
+  // where a dig goes: a parked barrow within reach (its tray), else the bucket - if they have room
+  _digTarget(p) {
+    const w = this.barrow, b = this.bucket;
+    if (w && !w.pushing && !w.dump && w.batch.volumeMl < w.capacityMl) {
+      const c = w.trayCenter(this._td || (this._td = {}));
+      if (Math.hypot(c.x - p.x, c.z - p.z) <= BARROW_REACH) return { kind: "wheelbarrow", batch: w.batch, capacityMl: w.capacityMl };
+    }
+    if (b && !b.carried && b.batch.volumeMl < this.capacityMl && Math.hypot(b.x - p.x, b.z - p.z) <= REACH) return { kind: "bucket", batch: b.batch, capacityMl: this.capacityMl };
+    return null;
   }
 
   // ------------------------------------------------------------ digging into the bucket
@@ -222,17 +289,19 @@ export class ProcessingSystem {
   collect(r, player, source) {
     const out = this._out || (this._out = { finds: [], count: 0, intoMl: 0, spilledMl: 0, intoG: 0, spilledG: 0, intoUg: 0 });
     out.finds = r.finds; out.count = r.findCount; out.intoMl = 0; out.spilledMl = 0; out.intoG = 0; out.spilledG = 0; out.intoUg = 0;
+    out.into = null;
     if (!r.ok || r.kind !== "dig" || !(r.removedVolume > 0)) return out;
-    const b = this.bucket;
-    const room = b && !b.carried && Math.hypot(b.x - player.x, b.z - player.z) <= REACH ? this.capacityMl - b.batch.volumeMl : 0;
+    const tgt = this._digTarget(player);
+    const room = tgt ? tgt.capacityMl - tgt.batch.volumeMl : 0;
     if (room <= 0) { this.ledger.spoilFineUg += int(r.fineUg); return out; }
+    out.into = tgt.kind;
     const dig = batchFromDig(r, source, this.nextBatch++);
     const total = dig.volumeMl;
     let part = dig;
     if (dig.volumeMl > room) part = dig.take(room, this.nextBatch++);
     this.ledger.inUg += part.goldUg; this.ledger.inFineUg += part.fineUg; this.ledger.inG += part.massG; this.ledger.inMl += part.volumeMl;
     out.intoMl = part.volumeMl; out.intoG = part.massG; out.intoUg = part.goldUg;
-    b.batch.absorb(part);
+    tgt.batch.absorb(part);
     // what did not fit spills: its pieces are found like any dig, its fine gold is spoil
     if (part !== dig && dig.volumeMl > 0) {
       out.spilledMl = dig.volumeMl;
@@ -243,7 +312,8 @@ export class ProcessingSystem {
       for (let i = 0; i < r.findCount; i++) if (keep.has(r.finds[i].key)) { out.finds.push(r.finds[i]); out.count++; }
     } else { out.finds = []; out.count = 0; }
     if (total > 0) this._fills();
-    this.fullNow = b.batch.volumeMl >= this.capacityMl - 50;
+    this.fullNow = tgt.batch.volumeMl >= tgt.capacityMl - 50;
+    this.fullKind = tgt.kind;
     return out;
   }
 
@@ -257,32 +327,83 @@ export class ProcessingSystem {
     const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
     const facing = (x, z) => { const dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz) || 1; return (fx * dx + fz * dz) / d; };
     const near = (s, r) => Math.hypot(p.x - s.x, p.z - s.z) <= r;
-    const b = this.bucket;
+    const b = this.bucket, w = this.barrow, sl = this.sluice;
+    // 1 - pushing the wheelbarrow: tip it into the hopper, or set it down
+    if (w && w.pushing) {
+      if (w.dump) return null;
+      const c = w.trayCenter(this._ti || (this._ti = {}));
+      if (sl && sl.installed && w.batch.volumeMl > 0 && Math.hypot(c.x - HOPPER_AT.x, c.z - HOPPER_AT.z) <= 1.5) {
+        // a full hopper: set the barrow down here and let the water work it off
+        if (sl.hopper.batch.volumeMl >= sl.capacityMl - 200) return { id: "barrow-park", action: "Schubkarre abstellen – der Trichter ist voll", short: "ABSTELLEN" };
+        return { id: "barrow-dump", action: "Schubkarre in den Trichter kippen", short: "AUSKIPPEN" };
+      }
+      return { id: "barrow-park", action: this._atWash(c) ? "Schubkarre am Waschplatz abstellen" : "Schubkarre abstellen", short: "ABSTELLEN" };
+    }
+    // 2 - carrying the bucket: into the hopper / the barrow, or set it down
     if (b && b.carried) {
+      if (b.batch.volumeMl > 0 && sl && sl.installed && near(SLUICE_SPOTS.feed, 1.5)) {
+        if (sl.hopper.batch.volumeMl >= sl.capacityMl - 200) return { id: "hopper-full", action: "Der Trichter ist voll", short: "", disabled: true };
+        return { id: "bucket-hopper", action: "Eimer in den Trichter kippen", short: "KIPPEN" };
+      }
+      if (b.batch.volumeMl > 0 && w && !w.pushing && w.batch.volumeMl < w.capacityMl - 200) {
+        const c = w.trayCenter(this._ti || (this._ti = {}));
+        if (Math.hypot(c.x - p.x, c.z - p.z) <= 1.7) return { id: "bucket-barrow", action: "Eimer in die Schubkarre kippen", short: "KIPPEN" };
+      }
       if (near(WASH.bucketSpot, 2.4)) return { id: "bucket-wash", action: "Eimer am Waschplatz abstellen", short: "ABSTELLEN" };
       return { id: "bucket-drop", action: "Eimer abstellen", short: "ABSTELLEN" };
     }
+    // 3 - the sluice: build it, water on / off, clean the riffles out
+    if (sl) {
+      if (!sl.installed) {
+        if (sl.build < 0 && (near(SLUICE_SPOTS.feed, 1.7) || near(SLUICE_SPOTS.clean, 1.7))) return { id: "sluice-build", action: "Waschrinne aufbauen", short: "AUFBAUEN" };
+      } else if (near(SLUICE_SPOTS.feed, 1.3) && facing(HOPPER_AT.x, HOPPER_AT.z) > 0.3) {
+        if (sl.running) return { id: "sluice-stop", action: "Wasser abstellen", short: "WASSER AUS" };
+        return { id: "sluice-start", action: sl.hopper.batch.volumeMl > 0 ? "Wasser anstellen – die Rinne wäscht" : "Wasser anstellen", short: "WASSER AN" };
+      } else if (near(SLUICE_SPOTS.clean, 1.3) && facing(SLUICE_AT.x + 1.35, SLUICE_AT.z) > 0.3) {
+        if (sl.running) return { id: "sluice-stop", action: "Wasser abstellen (zum Reinigen)", short: "WASSER AUS" };
+        if (sl.canClean()) return { id: "sluice-clean", action: sl.riffleLoad >= 1 ? "Riffelmatte reinigen – sie ist voll" : "Riffelmatte reinigen", short: "REINIGEN" };
+        return { id: "sluice-empty", action: "In den Riffeln liegt noch nichts", short: "", disabled: true };
+      }
+    }
+    // 4 - the gold pan at the trough (heavy concentrate, the tub, a bucket or a barrow at the wash place)
     if (this.owned.has("pan") && near(WASH.panSpot, USE_R) && facing(WASH.trough.x, WASH.panSpot.z) > 0.3) {
       if (this.pan.batch.volumeMl > 0 || this.pan.batch.goldUg > 0) return { id: "pan-work", action: "Weiter waschen", short: "WASCHEN" };
+      if (sl && (sl.tray.batch.volumeMl > 0 || sl.tray.batch.goldUg > 0)) return { id: "pan-fill", action: "Goldpfanne mit Schwerkonzentrat füllen", short: "WASCHEN" };
       if (this.tub.volumeMl > 0) return { id: "pan-fill", action: "Goldpfanne mit Konzentrat füllen", short: "WASCHEN" };
-      if (this.bucketAtWash() && this.bucket.batch.volumeMl > 0) return { id: "pan-fill", action: "Goldpfanne aus dem Eimer füllen", short: "WASCHEN" };
+      const src = this._washSource();
+      if (src) return { id: "pan-fill", action: src.kind === "wheelbarrow" ? "Goldpfanne aus der Schubkarre füllen" : "Goldpfanne aus dem Eimer füllen", short: "WASCHEN" };
       if (!this.bucket || !(b && b.batch.volumeMl > 0)) return { id: "pan-none", action: "Erst Erde im Eimer herbringen", short: "", disabled: true };
       return { id: "pan-none", action: "Den Eimer hier am Waschplatz abstellen", short: "", disabled: true };
     }
+    // 5 - the classifier
     if (this.owned.has("classifier") && near(WASH.sieveSpot, USE_R) && facing(WASH.classifier.x, WASH.sieveSpot.z) > 0.3) {
       if (this.sieve.batch.volumeMl > 0) return { id: "sieve-work", action: "Weiter sieben", short: "SIEBEN" };
-      if (this.bucketAtWash() && this.bucket.batch.volumeMl > 0) {
+      const src = this._washSource();
+      if (src) {
         if (this.tub.volumeMl >= TUB_ML - 500) return { id: "sieve-full", action: "Die Wanne ist voll – erst waschen", short: "", disabled: true };
-        return { id: "sieve-load", action: "Eimer aufs Sieb kippen", short: "SIEBEN" };
+        return { id: "sieve-load", action: src.kind === "wheelbarrow" ? "Aus der Schubkarre aufs Sieb schaufeln" : "Eimer aufs Sieb kippen", short: "SIEBEN" };
       }
       return { id: "sieve-none", action: "Erst einen vollen Eimer herbringen", short: "", disabled: true };
     }
+    // 6 - pick up the bucket / take the barrow by its grips: the nearer one you face
+    let best = null, bestD = Infinity;
     if (b && near(b, PICK_R) && facing(b.x, b.z) > 0.55) {
       const l = (b.batch.volumeMl / 1000).toFixed(1).replace(".", ",");
-      return { id: "bucket-pick", action: `Eimer aufnehmen (${l} l)`, short: "AUFNEHMEN" };
+      best = { id: "bucket-pick", action: `Eimer aufnehmen (${l} l)`, short: "AUFNEHMEN" };
+      bestD = Math.hypot(b.x - p.x, b.z - p.z);
     }
-    return null;
+    if (w && !w.dump) {
+      const gc = w.gripsCenter(this._tg || (this._tg = {})), d = Math.hypot(gc.x - p.x, gc.z - p.z);
+      const behind = (-Math.sin(w.yaw)) * fx + (-Math.cos(w.yaw)) * fz;          // you look the way it points
+      if (d < 1.25 && behind > 0.45 && d < bestD) {
+        const l = Math.round(w.batch.volumeMl / 1000);
+        best = { id: "barrow-take", action: `Schubkarre greifen${l ? ` (${l} l)` : ""}`, short: "GREIFEN" };
+      }
+    }
+    return best;
   }
+
+  _atWash(c) { return Math.hypot(c.x - WASH.feedZone.x, c.z - WASH.feedZone.z) <= WASH.feedZone.r; }
 
   /**
    * Do it. -> a short result for the HUD / sounds:
@@ -305,6 +426,26 @@ export class ProcessingSystem {
       this._sync();
       return { ok: true, kind: "drop" };
     }
+    const w = this.barrow, sl = this.sluice;
+    if (id === "barrow-take" && w && !w.pushing && !(b && b.carried)) { w.take(); this._sync(); return { ok: true, kind: "barrow" }; }
+    if (id === "barrow-park" && w && w.pushing) { w.park(); this._sync(); return { ok: true, kind: "drop" }; }
+    if (id === "barrow-dump" && w && w.pushing && sl && sl.installed) {
+      const ok = w.startDump(sl.hopper, (ml) => { if (this.onDumped) this.onDumped(ml); });
+      return ok ? { ok: true, kind: "dump" } : { ok: false };
+    }
+    if (id === "bucket-hopper" && b && b.carried && sl && sl.installed) {
+      const ml = pour({ batch: b.batch }, sl.hopper, Infinity, this.nextBatch++);
+      this._fills();
+      return ml > 0 ? { ok: true, kind: "feed", ml } : { ok: false };
+    }
+    if (id === "bucket-barrow" && b && b.carried && w) {
+      const ml = pour({ batch: b.batch }, w, Infinity, this.nextBatch++);
+      this._fills();
+      return ml > 0 ? { ok: true, kind: "feed", ml } : { ok: false };
+    }
+    if (id === "sluice-build" && sl) return sl.startBuild() ? { ok: true, kind: "build" } : { ok: false };
+    if ((id === "sluice-start" || id === "sluice-stop") && sl) return sl.setWater(id === "sluice-start") ? { ok: true, kind: "water", on: sl.running } : { ok: false };
+    if (id === "sluice-clean" && sl && sl.canClean()) { this.startWork("clean"); return { ok: true, kind: "work" }; }
     if (id === "pan-fill") return this.fillPan() ? { ok: true, kind: "work" } : { ok: false };
     if (id === "pan-work") { this.startWork("pan"); return { ok: true, kind: "work" }; }
     if (id === "sieve-load") return this.loadSieve() ? { ok: true, kind: "work" } : { ok: false };
@@ -387,6 +528,12 @@ export class ProcessingSystem {
     if (!this.owned.has(id)) return false;
     if (this.work) this.stopWork();
     if (id === "bucket" && this.bucket) { this._devTail(this.bucket.batch); this.bucket = null; }
+    if (id === "wheelbarrow" && this.barrow) { this._devTail(this.barrow.batch); this.barrow.dispose(this.scene); this.barrow = null; }
+    if (id === "sluice" && this.sluice) {
+      const sl = this.sluice;
+      this._devTail(sl.hopper.batch); this._devTail(sl.riffles); this._devTail(sl.tray.batch);
+      sl.dispose(this.scene); this.sluice = null;
+    }
     if (id === "pan") { this._devTail(this.pan.batch); this.pan.batch = this._batch(STAGE.RAW); this.pan.progress = 0; this.panDone = false; this.reveal = null; }
     if (id === "classifier") {
       this._devTail(this.sieve.batch); this._devTail(this.tub);
@@ -395,6 +542,46 @@ export class ProcessingSystem {
     }
     this.owned.delete(id);
     this._sync();
+    return true;
+  }
+
+  // the barrow's whole content becomes `batch` (null = empty)
+  devSetBarrow(batch) {
+    const w = this.barrow;
+    if (!w || (batch && batch.volumeMl > w.capacityMl)) return false;
+    this._devTail(w.batch);
+    w.batch = batch || this._batch(STAGE.RAW);
+    if (batch) { batch.id = this.nextBatch++; this._devIn(batch); }
+    return true;
+  }
+
+  devPlaceBarrow(x, z, yaw) {
+    const w = this.barrow;
+    if (!w || w.dump) return false;
+    if (w.pushing) w.park();
+    w.x = x; w.z = z; w.yaw = yaw;
+    w.park();
+    return true;
+  }
+
+  // the sluice: hopper content (null = empty), riffles loaded up to the clean-out point
+  devSetHopper(batch) {
+    const sl = this.sluice;
+    if (!sl || (batch && batch.volumeMl > sl.capacityMl)) return false;
+    this._devTail(sl.hopper.batch);
+    sl.hopper.batch = batch || this._batch(STAGE.RAW);
+    if (batch) { batch.id = this.nextBatch++; this._devIn(batch); }
+    return true;
+  }
+
+  devInstallSluice() { const sl = this.sluice; if (!sl) return false; sl.state = "ready"; sl.build = -1; sl._sync(); return true; }
+
+  devRiffles(batch, loadMl) {
+    const sl = this.sluice;
+    if (!sl) return false;
+    if (batch) { batch.id = this.nextBatch++; batch.stage = STAGE.HEAVY; this._devIn(batch); sl.riffles.absorb(batch); }
+    sl.loadMl = Math.max(sl.loadMl, loadMl);
+    sl._sync();
     return true;
   }
 
@@ -411,12 +598,14 @@ export class ProcessingSystem {
   // the pan takes up to 2,5 l: concentrate from the tub first, else raw from the bucket
   fillPan() {
     if (this.pan.batch.volumeMl > 0 || this.pan.batch.goldUg > 0) { this.startWork("pan"); return true; }
-    let src = null;
-    if (this.tub.volumeMl > 0) src = this.tub;
-    else if (this.bucketAtWash() && this.bucket.batch.volumeMl > 0) src = this.bucket.batch;
+    let src = null, stage = STAGE.RAW;
+    const tray = this.sluice ? this.sluice.tray.batch : null;
+    if (tray && (tray.volumeMl > 0 || tray.goldUg > 0)) { src = tray; stage = STAGE.HEAVY; }
+    else if (this.tub.volumeMl > 0) { src = this.tub; stage = STAGE.CONCENTRATE; }
+    else { const w = this._washSource(); if (w) src = w.batch; }
     if (!src) return false;
     const load = src.take(PAN_CAPACITY_ML, this.nextBatch++);
-    load.stage = src === this.tub ? STAGE.CONCENTRATE : STAGE.RAW;
+    load.stage = stage;
     // tiny rest volumes (rounding) go along with the last load
     if (src.volumeMl < 60) load.absorb(src);
     this.pan.batch = load;
@@ -428,10 +617,11 @@ export class ProcessingSystem {
 
   // the bucket (up to the screen's capacity) onto the classifier
   loadSieve() {
-    if (!this.bucketAtWash() || this.bucket.batch.volumeMl <= 0) return false;
     if (this.sieve.batch.volumeMl > 0) { this.startWork("sieve"); return true; }
-    const load = this.bucket.batch.take(CLASSIFIER_ML, this.nextBatch++);
-    if (this.bucket.batch.volumeMl < 60) load.absorb(this.bucket.batch);
+    const w = this._washSource();
+    if (!w) return false;
+    const load = w.batch.take(CLASSIFIER_ML, this.nextBatch++);
+    if (w.batch.volumeMl < 60) load.absorb(w.batch);
     this.sieve.batch = load;
     this.sieve.progress = 0;
     this._fills();
@@ -445,7 +635,8 @@ export class ProcessingSystem {
       this.panDone = this.pan.progress >= 1;
       this.reveal = this.panDone ? this._revealOf(this.pan.batch) : null;
       this._panLook(true);
-    } else this.sieve.need = sieveSeconds(this.sieve.batch);
+    } else if (kind === "clean") this.sluice.clean.progress = 0;
+    else this.sieve.need = sieveSeconds(this.sieve.batch);
     this.work = kind;
     this._sync();
     this._fills();
@@ -463,6 +654,7 @@ export class ProcessingSystem {
   workPose() {
     if (this.work === "pan") return { x: WASH.panSpot.x, z: WASH.panSpot.z, yaw: WASH.panSpot.yaw, pitch: -0.82 };
     if (this.work === "sieve") return { x: WASH.sieveSpot.x, z: WASH.sieveSpot.z, yaw: WASH.sieveSpot.yaw, pitch: -0.72 };
+    if (this.work === "clean") return { x: SLUICE_SPOTS.clean.x, z: SLUICE_SPOTS.clean.z, yaw: SLUICE_SPOTS.clean.yaw, pitch: -0.82 };
     return null;
   }
 
@@ -487,6 +679,14 @@ export class ProcessingSystem {
         this.reveal = this._revealOf(this.pan.batch);
         return "pan-ready";
       }
+      return null;
+    }
+    if (this.work === "clean") {                    // brushing the mat out: back and forth
+      const side = Math.abs(dx) + Math.abs(dy) * 0.4, c = this.sluice.clean;
+      this.swirlK += (Math.min(1, side / Math.max(1e-4, dt) / 1.2) - this.swirlK) * Math.min(1, dt * 8);
+      this.shakeX = Math.sin(this.time * 18) * 0.03 * this.swirlK;
+      c.progress = Math.min(1, c.progress + Math.min(dt / CLEAN_S, side / CLEAN_S));
+      if (c.progress >= 1) { const r = this.sluice.finishClean(); this.stopWork(); return { kind: "cleaned", ...r }; }
       return null;
     }
     // sieve
@@ -668,8 +868,14 @@ export class ProcessingSystem {
   /**
    * Per frame. Hands: the bucket you carry / the pan you swirl (view space).
    */
-  update(dt) {
+  update(dt, player = null) {
     this.time += dt;
+    if (this.barrow) this.barrow.update(dt, this.barrow.pushing ? player : null);
+    if (this.sluice) {
+      if (!this.simWork) this.sluice.process(dt);              // (tests simulating a pan load: the machine has its own clock there)
+      const near = player ? Math.hypot(player.x - (SLUICE_AT.x + 1.2), player.z - SLUICE_AT.z) < 9 : false;
+      this.sluice.update(dt, near, this.onSound);
+    }
     // the bucket stands on whatever the ground is now
     if (this.bucket && !this.bucket.carried) this.worldBucket.position.y = this.world.groundAt(this.bucket.x, this.bucket.z);
     // trough water: a slow shimmer, the trickle
@@ -704,11 +910,14 @@ export class ProcessingSystem {
       this._panLook(false);
       // muddy water over the rim while it is swirled
       if (k > 0.25 && this.pan.progress < 0.9 && Math.random() < dt * 14 * k) H.splash && H.splash(this.handPan);
-    } else if (this.work === "sieve") {
+    } else if (this.work === "sieve" || this.work === "clean") {
       if (H.held !== "sieve") H.setHeld("sieve", this.handSieve, HELD_GRIPS.sieve);
       const pose = this.handSieve.userData.pose || (this.handSieve.userData.pose = { p: [0, 0, 0], r: [0, 0, 0] });
       pose.p[0] = HELD.sieve.p[0] - this.shakeX * 1.6; pose.p[1] = HELD.sieve.p[1]; pose.p[2] = HELD.sieve.p[2];
       pose.r[0] = HELD.sieve.r[0]; pose.r[1] = HELD.sieve.r[1]; pose.r[2] = HELD.sieve.r[2];
+    } else if (this.pushing) {
+      if (H.held !== "barrow") H.setHeld("barrow", this.handBarrow, this._barrowGrips);
+      this._barrowHands(H);
     } else if (this.carrying) {
       if (H.held !== "bucket") H.setHeld("bucket", this.handBucket, HELD_GRIPS.bucket);
       const pose = this.handBucket.userData.pose || (this.handBucket.userData.pose = { p: [0, 0, 0], r: [0, 0, 0] });
@@ -717,6 +926,34 @@ export class ProcessingSystem {
       pose.r[0] = HELD.bucket.r[0] + sw; pose.r[1] = HELD.bucket.r[1]; pose.r[2] = HELD.bucket.r[2] + sw * 0.6;
     } else if (H.held) H.setHeld(null);
   }
+
+  // the gloves where the barrow's grips are seen: each grip's world point is
+  // projected with the world camera and put at the same screen spot in the
+  // hands' own view (they have their own camera / field of view)
+  _barrowHands(H) {
+    const cam = this.camera, hc = H.camera, w = this.barrow;
+    if (!cam || !hc) return;
+    const a = w.gripWorld(1, this._ga).project(cam), b = w.gripWorld(-1, this._gb).project(cam);
+    const d = 0.62, t = Math.tan((hc.fov * Math.PI) / 360);
+    const ax = a.x * d * t * hc.aspect, ay = a.y * d * t, bx = b.x * d * t * hc.aspect, by = b.y * d * t;
+    const pose = this.handBarrow.userData.pose || (this.handBarrow.userData.pose = { p: [0, 0, 0], r: [0, 0, 0] });
+    pose.p[0] = (ax + bx) / 2 / (H.aspectK || 1); pose.p[1] = (ay + by) / 2 - 0.02; pose.p[2] = -d;
+    pose.r[0] = 0; pose.r[1] = 0; pose.r[2] = Math.atan2(ay - by, ax - bx);
+    const hw = Math.max(0.08, Math.min(0.32, Math.hypot(ax - bx, ay - by) / 2));
+    for (const g of this._barrowGrips) g.pos[0] = hw;
+  }
+
+  // tests / benchmark: material from one container to another - the same pour() the actions use
+  pourBetween(from, to) {
+    const H = { bucket: this.bucket ? { batch: this.bucket.batch, capacityMl: this.capacityMl } : null, barrow: this.barrow, hopper: this.sluice ? this.sluice.hopper : null };
+    if (!H[from] || !H[to]) return 0;
+    const ml = pour(H[from], H[to], Infinity, this.nextBatch++);
+    this._fills();
+    return ml;
+  }
+
+  // the simulation (benchmark): the sluice runs for `seconds` (nothing drawn)
+  tickSim(seconds) { return this.sluice ? this.sluice.process(seconds) : 0; }
 
   // ------------------------------------------------------------ save
 
@@ -730,16 +967,20 @@ export class ProcessingSystem {
       pan: { batch: this.pan.batch.serialize(), progress: +this.pan.progress.toFixed(3) },
       sieve: { batch: this.sieve.batch.serialize(), progress: +this.sieve.progress.toFixed(3) },
       ledger: { ...this.ledger },
+      wheelbarrow: this.barrow ? this.barrow.serialize() : null,
+      sluice: this.sluice ? this.sluice.serialize() : null,
     };
   }
 
   // gold in containers right now (ledger check)
   goldInContainers() {
-    return (this.bucket ? this.bucket.batch.goldUg : 0) + this.tub.goldUg + this.pan.batch.goldUg + this.sieve.batch.goldUg;
+    return (this.bucket ? this.bucket.batch.goldUg : 0) + this.tub.goldUg + this.pan.batch.goldUg + this.sieve.batch.goldUg
+      + (this.barrow ? this.barrow.batch.goldUg : 0) + (this.sluice ? this.sluice.goldUg() : 0);
   }
 
   massInContainers() {
-    return (this.bucket ? this.bucket.batch.massG : 0) + this.tub.massG + this.pan.batch.massG + this.sieve.batch.massG;
+    return (this.bucket ? this.bucket.batch.massG : 0) + this.tub.massG + this.pan.batch.massG + this.sieve.batch.massG
+      + (this.barrow ? this.barrow.batch.massG : 0) + (this.sluice ? this.sluice.massG() : 0);
   }
 
   dispose() {
@@ -747,6 +988,9 @@ export class ProcessingSystem {
     const i = this.world.colliders.indexOf(this.clsCollider);
     if (i >= 0) this.world.colliders.splice(i, 1);
     this.scene.remove(this.group);
+    if (this.barrow) this.barrow.dispose(this.scene);
+    if (this.sluice) this.sluice.dispose(this.scene);
     this.models.dispose();
+    this.mech.dispose();
   }
 }
