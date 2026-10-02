@@ -323,7 +323,7 @@ def desktop_suite(browser, base, user, shots):
     # (phase 4: the collected gold is in the pouch - its value is what the HUD shows under the cash)
     money_txt = (hs["pouch"] or "€ 0,00").replace(" ", " ")
     euros = int(money_txt.split("€")[1].strip().replace(".", "").split(",")[0]), int(money_txt.split(",")[1])
-    doc = A.evaluate("() => { window.__goldrush.save(); return JSON.parse(localStorage.getItem('goldrush.save')); }")
+    doc = A.evaluate("() => { window.__goldrush.save(); return JSON.parse(localStorage.getItem(grKey())); }")
     pc = doc["economy"]["pouchSummary"]["estimatedSaleCents"]
     ok("T13 money is integer cents end to end (save, economy, HUD text) - no float residue",
        isinstance(pc, int) and isinstance(doc["economy"]["cashCents"], int) and pc + doc["economy"]["cashCents"] == e["moneyCents"]
@@ -498,11 +498,11 @@ def determinism_and_save_suite(browser, base, user, shots):
 
     # ---- TEST 7: save / reload - same spot, no duplicate loot; no save-scumming
     A.evaluate("() => window.__goldrush.save()")
-    saved = A.evaluate("() => localStorage.getItem('goldrush.save')")
+    saved = A.evaluate("() => localStorage.getItem(grKey())")
     pose = st(A)
     run_a = A.evaluate("(a) => { const G = window.__goldrush, out = []; for (let n = 0; n < 60; n++) { const q = G.digAtCrosshair(1, { visuals: false }); out.push(...q.keys); } return { keys: out, h: G.hashes() }; }", tg["ang"])
     gr_close(A)
-    A.evaluate("(s) => localStorage.setItem('goldrush.save', s)", saved)         # back to the saved state, discard the run
+    A.evaluate("(s) => localStorage.setItem(grKey(), s)", saved)         # back to the saved state, discard the run
     A.reload()
     A.wait_for_function("() => typeof ws !== 'undefined' && ws && ws.readyState === 1", timeout=15000)
     open_game(A, start=False)
@@ -544,12 +544,12 @@ def determinism_and_save_suite(browser, base, user, shots):
     v1 = {"saveVersion": 1, "worldSeed": 77, "createdAt": 1, "updatedAt": 2, "money": 0, "tool": "hand",
           "player": {"x": 0.6, "z": 10.2, "yaw": 0, "pitch": 0.1}, "settings": {"quality": "auto"}, "stats": {"digs": 12}, "terrain": None}
     gr_close(A)
-    A.evaluate("(d) => { localStorage.setItem('goldrush.save', JSON.stringify(d)); localStorage.removeItem('goldrush.save.backup'); }", v1)
+    A.evaluate("(d) => { localStorage.setItem(grKey(), JSON.stringify(d)); localStorage.removeItem(grKey('.backup')); }", v1)
     open_game(A, start=False)
     e = eco(A)
-    ok("v1 -> current migration: seed + digs kept, money in cents, written back as the current version (4)",
+    ok("v1 -> current migration: seed + digs kept, money in cents, written back as the current version (5)",
        st(A)["seed"] == 77 and e["stats"]["totalDigs"] == 12 and e["moneyCents"] == 0
-       and A.evaluate("() => { window.__goldrush.save(); return JSON.parse(localStorage.getItem('goldrush.save')).saveVersion; }") == 4)
+       and A.evaluate("() => { window.__goldrush.save(); return JSON.parse(localStorage.getItem(grKey())).saveVersion; }") == 5)
     errs = errors(A)
     ok("determinism/save: no JS errors", not errs, "; ".join(errs[:3]))
     gr_close(A)

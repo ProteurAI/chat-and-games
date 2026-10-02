@@ -55,7 +55,7 @@ def eco(page):
 
 def fresh(page, seed=SEED):
     gr_close(page)
-    page.evaluate("(s) => { for (const k of ['goldrush.save', 'goldrush.save.backup', 'goldrush.save.corrupt']) localStorage.removeItem(k); localStorage.setItem('goldrush.testSeed', String(s)); }", seed)
+    page.evaluate("(s) => { for (const k of [grKey(), grKey('.backup'), grKey('.corrupt')]) localStorage.removeItem(k); localStorage.setItem('goldrush.testSeed', String(s)); }", seed)
     open_game(page)
 
 
@@ -278,7 +278,7 @@ def loop(A, shots):
     # 15: save in the middle of the sale animation
     mid = G(A, "() => window.__goldrush.uiState().sale")
     G(A, "() => window.__goldrush.save()")
-    saved = json.loads(G(A, "() => localStorage.getItem('goldrush.save')"))["economy"]
+    saved = json.loads(G(A, "() => localStorage.getItem(grKey())"))["economy"]
     time.sleep(2.0)
     e = eco(A)
     ok("13 SELL ALL: the cash rises by exactly the pouch's value, the pouch is empty, the sale is counted",
@@ -474,24 +474,24 @@ def mobile(browser, base, user, shots):
 def saves(A):
     def load(doc):
         gr_close(A)
-        A.evaluate("(d) => { localStorage.setItem('goldrush.save', JSON.stringify(d)); localStorage.removeItem('goldrush.save.backup'); }", doc)
+        A.evaluate("(d) => { localStorage.setItem(grKey(), JSON.stringify(d)); localStorage.removeItem(grKey('.backup')); }", doc)
         open_game(A)
         G(A, "() => window.__goldrush.save()")
-        return json.loads(G(A, "() => localStorage.getItem('goldrush.save')"))
+        return json.loads(G(A, "() => localStorage.getItem(grKey())"))
     v1 = {"saveVersion": 1, "worldSeed": 77, "createdAt": 1, "updatedAt": 2, "money": 3.5, "tool": "hand",
           "player": {"x": 0.6, "z": 10.2, "yaw": 0, "pitch": 0.1}, "stats": {"digs": 12}, "terrain": None}
     d = load(v1)
-    ok("49 a phase-1 save (v1) loads: € 3,50 as cash, written as v4", d["saveVersion"] == 4 and d["economy"]["cashCents"] == 350 and d["tools"]["owned"] == ["hand"], str(d["economy"]["cashCents"]))
+    ok("49 a phase-1 save (v1) loads: € 3,50 as cash, written as v5", d["saveVersion"] == 5 and d["economy"]["cashCents"] == 350 and d["tools"]["owned"] == ["hand"], str(d["economy"]["cashCents"]))
     fx2 = json.loads((FIX / "goldrush_save_v2.json").read_text(encoding="utf-8"))
     d = load(fx2["doc"])
     h = G(A, "() => window.__goldrush.hashes()")
-    ok("50 a real phase-2 save (v2) loads: the same ground, € 1,20 as cash, written as v4", d["saveVersion"] == 4 and d["economy"]["cashCents"] == fx2["phase2"]["money"] and h["height"] == fx2["phase2"]["hashes"]["height"],
+    ok("50 a real phase-2 save (v2) loads: the same ground, € 1,20 as cash, written as v5", d["saveVersion"] == 5 and d["economy"]["cashCents"] == fx2["phase2"]["money"] and h["height"] == fx2["phase2"]["hashes"]["height"],
        f"cash {d['economy']['cashCents']}")
     fx3 = json.loads((FIX / "goldrush_save_v3.json").read_text(encoding="utf-8"))
     d = load(fx3["doc"])
     h = G(A, "() => window.__goldrush.hashes()")
     ok("51 a real phase-3 save (v3) loads: its cash stays exactly (gold sold back then is NOT turned back into gold), the pouch starts empty, the ground is the same",
-       d["saveVersion"] == 4 and d["economy"]["cashCents"] == fx3["doc"]["economy"]["moneyCents"] and d["economy"]["pouchSummary"]["totalGoldUg"] == 0
+       d["saveVersion"] == 5 and d["economy"]["cashCents"] == fx3["doc"]["economy"]["moneyCents"] and d["economy"]["pouchSummary"]["totalGoldUg"] == 0
        and d["economy"]["sold"]["legacyUg"] == fx3["doc"]["economy"]["inventory"]["totalGoldUg"] and h["height"] == fx3["phase2"]["hashes"]["height"],
        f"cash {fx3['doc']['economy']['moneyCents']} -> {d['economy']['cashCents']}, legacy gold {d['economy']['sold']['legacyUg']} ug")
     # 52: a v4 save reloads deterministically
@@ -517,7 +517,7 @@ def saves(A):
     gather(A, 10, 6)
     G(A, "() => window.__goldrush.save()")                    # previous good one becomes the backup
     gr_close(A)
-    A.evaluate("() => localStorage.setItem('goldrush.save', '{\"saveVersion\":4,\"worldSeed\":4242,\"econ')")
+    A.evaluate("() => localStorage.setItem(grKey(), '{\"saveVersion\":4,\"worldSeed\":4242,\"econ')")
     gr_open(A)
     gr_ready(A)
     notice = wait_for(lambda: A.is_visible(".gr-notice") and "Sicherung" in A.inner_text(".gr-notice"), 6)

@@ -18,7 +18,7 @@ import { MiningSystem } from "./goldrush-mining.js";
 import { QUALITY, QUALITY_LEVELS, applyRendererQuality, createRenderer, guessQuality, isMobileDevice } from "./goldrush-renderer.js";
 import { FIND, FIND_IDS, VOXEL_H } from "./goldrush-resources.js";
 import { RockSystem } from "./goldrush-rocks.js";
-import { SAVE_VERSION, writeSave } from "./goldrush-save.js";
+import { DEFAULT_SETTINGS, SAVE_VERSION } from "./goldrush-save.js";
 import { SHOP_ITEMS, itemStatus, shopItem } from "./goldrush-shop.js";
 import { STATIONS, Stations } from "./goldrush-stations.js";
 import { FLOOR_Y } from "./goldrush-terrain.js";
@@ -82,13 +82,14 @@ export class GoldRushGame {
    * @param ui    DOM bridge from goldrush.js (root, canvas, controls, callbacks)
    * @param doc   the save document (new or loaded, already at the current version)
    */
-  constructor(ui, doc, { touch, debug }) {
+  constructor(ui, doc, { touch, debug, settings }) {
     this.ui = ui;
     this.doc = doc;
     this.touch = !!touch;
     this.mobile = isMobileDevice() || this.touch;
     this.debug = !!debug;
-    this.settings = { quality: "auto", headBob: true, reducedMotion: false, sound: true, vibration: true, ...(doc.settings || {}) };
+    // device settings (goldrush-save.js) - not part of the mine
+    this.settings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
     this.economy = new Economy(doc.economy);
     // finds that were still on their way when the last session ended go
     // into the pouch now, in one go (they are in the save as pending)
@@ -451,26 +452,31 @@ export class GoldRushGame {
     this.reducedMotion = this.systemReducedMotion || !!on;
     if (this.hands) this.hands.reducedMotion = this.reducedMotion;
     if (this.hud) this.hud.reducedMotion = this.reducedMotion;
-    this.dirty = true;
+    this.persistSettings();
   }
 
   setSound(on) {
     this.settings.sound = !!on;
     this.audio.setEnabled(!!on);
     if (on) this.audio.unlock();
-    this.dirty = true;
+    this.persistSettings();
   }
 
   setVibration(on) {
     this.settings.vibration = !!on;
-    this.dirty = true;
+    this.persistSettings();
   }
 
   setQualitySetting(value) {
     this.settings.quality = value;
     this.applyQuality(value === "auto" ? this.autoLevel : value);
-    this.dirty = true;
+    this.persistSettings();
     this.render();
+  }
+
+  // settings belong to the device (a new mine keeps them), not to the mine
+  persistSettings() {
+    if (this.ui.saveSettings) this.ui.saveSettings({ ...this.settings });
   }
 
   // AUTO only steps DOWN, once per cooldown, when frames are really slow
@@ -948,7 +954,6 @@ export class GoldRushGame {
       updatedAt: Date.now(),
       tools: this.tools.serialize(),
       player: { x: round3(p.x), z: round3(p.z), yaw: round3(p.yaw), pitch: round3(p.pitch) },
-      settings: { ...this.settings },
       economy: this.economy.serialize(),
       terrain: this.terrain.serialize(),
       resources: this.mining.serialize(),
@@ -960,7 +965,7 @@ export class GoldRushGame {
     if (!this.ready) return 0;                     // never overwrite a save with a half-built game
     if (this.disposed && reason !== "exit") return 0;
     try {
-      const bytes = writeSave(this.buildDoc());
+      const bytes = this.ui.writeSave(this.buildDoc());
       this.dirty = false;
       this.lastSave = performance.now();
       this.lastSaveBytes = bytes;
@@ -1081,9 +1086,8 @@ export function newWorldDoc(seed) {
     worldSeed: seed,
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    tools: { owned: ["hand"], equipped: "hand", upgrades: [] },  // a new game owns ONLY the hand, € 0,00
+    tools: { owned: ["hand"], equipped: "hand", upgrades: [] },  // a new mine owns ONLY the hand, € 0,00
     player: { x: SPAWN.x, z: SPAWN.z, yaw: SPAWN.yaw, pitch: SPAWN.pitch },
-    settings: { quality: "auto", headBob: true, reducedMotion: false, sound: true, vibration: true },
     economy: null,
     terrain: null,
     resources: null,

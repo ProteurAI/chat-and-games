@@ -2469,7 +2469,8 @@ async function openGoldRush() {
   closeDrawers();
   try {
     const mod = await import("/games/goldrush/goldrush.js");
-    mod.open({ onExit: () => { renderGamesPanel(); } });
+    // the mine belongs to this account (stable internal id; never the token)
+    mod.open({ onExit: () => { renderGamesPanel(); }, user: me ? { id: me.id, name: me.name } : null });
   } catch (err) {
     console.error(err);
     toast("GoldRush konnte nicht geladen werden. Bitte versuche es gleich noch einmal.", "error");

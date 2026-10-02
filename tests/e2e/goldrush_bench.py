@@ -27,7 +27,7 @@ import time
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, os.path.dirname(__file__))
-from goldrush_e2e import GPU_ARGS, gr_close, gr_open, gr_ready  # noqa: E402
+from goldrush_e2e import GPU_ARGS, GRKEY, gr_close, gr_open, gr_ready  # noqa: E402
 from kopfkicker_e2e import login, start_server  # noqa: E402
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -64,7 +64,7 @@ def dist(values, unit=""):
 
 
 def run_seed(page, seed, minutes, tool, strategy=None):
-    page.evaluate("(s) => { localStorage.removeItem('goldrush.save'); localStorage.removeItem('goldrush.save.backup'); localStorage.setItem('goldrush.testSeed', String(s)); }", seed)
+    page.evaluate("(s) => { localStorage.removeItem(grKey()); localStorage.removeItem(grKey('.backup')); localStorage.setItem('goldrush.testSeed', String(s)); }", seed)
     gr_open(page)
     gr_ready(page)
     page.evaluate("() => window.__goldrush.setPaused(true)")
@@ -83,9 +83,9 @@ def run_seed(page, seed, minutes, tool, strategy=None):
     res = page.evaluate("() => window.__grBench.result()")
     res["seed"] = seed
     res["pileM3"] = pile
-    page.evaluate("() => { localStorage.removeItem('goldrush.save'); }")
+    page.evaluate("() => { localStorage.removeItem(grKey()); }")
     gr_close(page)
-    page.evaluate("() => { localStorage.removeItem('goldrush.save'); localStorage.removeItem('goldrush.save.backup'); }")
+    page.evaluate("() => { localStorage.removeItem(grKey()); localStorage.removeItem(grKey('.backup')); }")
     return res
 
 
@@ -154,6 +154,7 @@ def main():
             b = p.chromium.launch(args=GPU_ARGS)
             ctx = b.new_context(viewport={"width": 960, "height": 600})
             ctx.add_init_script(f"localStorage.setItem('instachat_token', {json.dumps(user['token'])}); localStorage.setItem('instachat_user', {json.dumps(json.dumps(user['user']))});")
+            ctx.add_init_script(GRKEY)
             page = ctx.new_page()
             page.goto(base + "/")
             page.wait_for_function("() => typeof ws !== 'undefined' && ws && ws.readyState === 1", timeout=15000)

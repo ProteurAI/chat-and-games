@@ -1,11 +1,13 @@
 // GoldRush - entry point (ES module, loaded on demand by app.js).
 //
-// Owns the immersive layer: loading screen, HUD, pause/settings, dialogs,
-// the WebGL fallback. The heavy part (three.js + the game itself) is
-// imported only after the loading screen is up. At most ONE GoldRush runs
-// at a time; open() while it is open just returns the running instance.
+// Owns the immersive layer: the start screen (continue / new mine), the
+// loading screen, HUD, pause/settings, dialogs, the WebGL fallback. The
+// heavy part (three.js + the game itself) is fetched while the start
+// screen is up and built only once the player chose a mine. At most ONE
+// GoldRush runs at a time; open() while it is open returns that instance.
+// Every save goes through the save service, per player (goldrush-save.js).
 
-import { BACKUP_KEY, loadSave, quarantineCorrupt, resetSave } from "./goldrush-save.js";
+import { GoldRushSaveService } from "./goldrush-save.js";
 import { formatEuro, formatMass } from "./goldrush-economy.js";
 import { webglAvailable } from "./goldrush-renderer.js";
 
@@ -13,9 +15,10 @@ let current = null;
 
 export function isOpen() { return !!current; }
 
-export function open({ onExit } = {}) {
+// user: { id, name } of the logged-in Chat & Games account (app.js)
+export function open({ onExit, user } = {}) {
   if (current) return current;
-  current = new GoldRushShell(onExit);
+  current = new GoldRushShell(onExit, user);
   current.start();
   return current;
 }
@@ -34,6 +37,17 @@ const CLASS_LABEL = { traceGold: "Goldstaub", fineGold: "Feiner Goldstaub", gold
 const SHOP_GROUPS = [["tool", null, "Werkzeug"], ["upgrade", "shovel", "Für die Schaufel"], ["upgrade", "pickaxe", "Für die Spitzhacke"]];
 
 const fmtMoney = (v) => `€ ${v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const TOOL_NAME = { hand: "Hand", shovel: "Schaufel", pickaxe: "Spitzhacke", bucket: "Eimer", pan: "Goldpfanne", classifier: "Sieb" };
+
+// "1 h 12 min" / "8 min" / "< 1 min"
+function fmtPlay(ms) {
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return "< 1 min";
+  return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
+}
+
+// "640 kg" / "3,2 t"
+const fmtKg = (kg) => (kg >= 1000 ? `${(kg / 1000).toFixed(1).replace(".", ",")} t` : `${kg} kg`);
 
 function newSeed() {
   const a = new Uint32Array(1);
@@ -42,8 +56,10 @@ function newSeed() {
 }
 
 class GoldRushShell {
-  constructor(onExit) {
+  constructor(onExit, user) {
     this.onExit = onExit || (() => {});
+    this.saves = new GoldRushSaveService(user);
+    this.settings = this.saves.loadSettings();           // device settings: a new mine keeps them
     this.touch = window.matchMedia("(pointer: coarse)").matches;
     let dbg = false;
     try { dbg = localStorage.getItem("goldrush.debug") === "1" || /[?&]goldrush-debug\b/.test(location.search); } catch (e) { /* ignore */ }
@@ -146,15 +162,9 @@ class GoldRushShell {
           <div class="gr-sub" data-role="bob-note" hidden>Dein System wünscht reduzierte Bewegung – sie ist hier immer an.</div>
           <label class="gr-toggle"><input type="checkbox" data-role="sound" /><span>Sound <em>(vorläufige Platzhalter-Klänge)</em></span></label>
           <label class="gr-toggle" data-role="vibration-row" hidden><input type="checkbox" data-role="vibration" /><span>Vibration <em>(dezent, bei Treffern und Funden)</em></span></label>
-          <div class="gr-danger-zone">
-            <button type="button" class="ghost-btn gr-reset" data-act="reset">Spielstand zurücksetzen …</button>
-            <div class="gr-confirm" hidden>
-              <p>Deinen GoldRush-Fortschritt wirklich löschen? Der Berg wird komplett neu aufgeschüttet.</p>
-              <div class="gr-actions">
-                <button type="button" class="ghost-btn" data-act="reset-cancel">Abbrechen</button>
-                <button type="button" class="primary-btn danger-btn" data-act="reset-confirm">Endgültig zurücksetzen</button>
-              </div>
-            </div>
+          <div class="gr-danger-zone" data-role="danger-zone">
+            <button type="button" class="ghost-btn gr-reset" data-act="new-mine">Neue Mine starten …</button>
+            <div class="gr-sub">Löscht deinen Fortschritt und schüttet einen neuen Berg auf. Diese Einstellungen bleiben.</div>
           </div>
           <div class="gr-actions gr-actions--end">
             <button type="button" class="ghost-btn" data-act="exit">GoldRush verlassen</button>
@@ -162,7 +172,31 @@ class GoldRushShell {
           </div>
         </div>
       </div>
-      <div class="gr-loading">
+      <div class="gr-start" hidden>
+        <div class="gr-start-inner">
+          <div class="gr-loading-brand"><span aria-hidden="true">⛏️</span><span>GoldRush</span></div>
+          <p class="gr-start-tag" data-role="start-tag">Ein Claim, ein riesiger Berg – und erst einmal nur deine Hände.</p>
+          <div class="gr-start-card" data-role="start-mine" hidden>
+            <div class="gr-start-card-title">Deine Mine</div>
+            <dl class="gr-start-stats" data-role="start-stats"></dl>
+          </div>
+          <div class="gr-start-card gr-start-legacy" data-role="start-legacy" hidden>
+            <div class="gr-start-card-title">Eine ältere Mine auf diesem Gerät</div>
+            <p class="gr-start-note">Sie stammt aus der Zeit, bevor Spielstände einem Konto gehörten. Ist es deine, übernimm sie – danach gehört sie nur dir und wird niemandem sonst angeboten.</p>
+            <dl class="gr-start-stats" data-role="legacy-stats"></dl>
+            <button type="button" class="gr-btn-gold gr-btn-wide" data-act="legacy-take">Diese Mine übernehmen</button>
+          </div>
+          <div class="gr-start-actions">
+            <button type="button" class="gr-btn-gold gr-btn-wide" data-act="start-continue" hidden>Fortsetzen</button>
+            <button type="button" class="gr-btn-wide" data-act="start-new">Neue Mine starten</button>
+            <div class="gr-start-row">
+              <button type="button" class="gr-btn-quiet" data-act="start-settings">Einstellungen</button>
+              <button type="button" class="gr-btn-quiet" data-act="exit">Zurück</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="gr-loading" hidden>
         <div class="gr-loading-inner">
           <div class="gr-loading-brand"><span class="gr-pick" aria-hidden="true">⛏️</span><span>GoldRush</span></div>
           <div class="gr-loading-text" data-role="load-text">Mine wird vorbereitet …</div>
@@ -185,7 +219,7 @@ class GoldRushShell {
     this.el = {
       canvas: q(".gr-canvas"), hud: q(".gr-hud"), money: q(".gr-money"), crosshair: q(".gr-crosshair"), hint: q(".gr-hint"),
       notice: q(".gr-notice"), stick: q(".gr-stick"), knob: q(".gr-stick-knob"), digBtn: q(".gr-dig-btn"),
-      pause: q(".gr-pause"), pauseText: q("[data-role=pause-text]"), panel: q(".gr-panel"), loading: q(".gr-loading"),
+      pause: q(".gr-pause"), pauseText: q("[data-role=pause-text]"), panel: q(".gr-panel"), loading: q(".gr-loading"), start: q(".gr-start"),
       loadText: q("[data-role=load-text]"), loadStep: q("[data-role=load-step]"), progress: q(".gr-progress"),
       dialog: q(".gr-dialog"), debug: q(".gr-debug"), tool: q(".gr-tool"), belt: q(".gr-belt"),
       digLabel: q(".gr-dig-label"), digIco: q(".gr-dig-ico"), toolIco: q(".gr-tool-ico"), toolName: q(".gr-tool-name"),
@@ -210,18 +244,19 @@ class GoldRushShell {
       const b = e.target.closest("[data-act]");
       if (b) this._act(b.dataset.act);
       const qb = e.target.closest("[data-q]");
-      if (qb && this.game) { this.game.setQualitySetting(qb.dataset.q); this._syncSettings(); }
+      if (qb) {
+        if (this.game) this.game.setQualitySetting(qb.dataset.q);
+        else this._setSetting("quality", qb.dataset.q);
+        this._syncSettings();
+      }
     });
     this.on(root.querySelector("[data-role=headbob]"), "change", (e) => {
-      if (!this.game) return;
-      this.game.settings.headBob = e.target.checked;
-      this.game.dirty = true;
+      if (this.game) { this.game.settings.headBob = e.target.checked; this.game.persistSettings(); } else this._setSetting("headBob", e.target.checked);
     });
-    this.on(root.querySelector("[data-role=sound]"), "change", (e) => { if (this.game) this.game.setSound(e.target.checked); });
-    this.on(root.querySelector("[data-role=vibration]"), "change", (e) => { if (this.game) this.game.setVibration(e.target.checked); });
+    this.on(root.querySelector("[data-role=sound]"), "change", (e) => { if (this.game) this.game.setSound(e.target.checked); else this._setSetting("sound", e.target.checked); });
+    this.on(root.querySelector("[data-role=vibration]"), "change", (e) => { if (this.game) this.game.setVibration(e.target.checked); else this._setSetting("vibration", e.target.checked); });
     this.on(root.querySelector("[data-role=reduced]"), "change", (e) => {
-      if (!this.game) return;
-      this.game.setReducedMotion(e.target.checked);
+      if (this.game) this.game.setReducedMotion(e.target.checked); else this._setSetting("reducedMotion", e.target.checked);
       this._syncSettings();
     });
     this.on(window, "keydown", (e) => {
@@ -233,35 +268,115 @@ class GoldRushShell {
   // ------------------------------------------------------------ flow
 
   async start() {
-    this._progress(0.04, "Mine wird vorbereitet …");
     if (!webglAvailable()) {
       this._fallback("GoldRush benötigt WebGL auf diesem Gerät.", "Dein Browser oder Gerät stellt gerade keine 3D-Grafik bereit. Aktiviere die Hardwarebeschleunigung oder probiere einen anderen Browser.");
       return;
     }
-    let doc;
-    const res = loadSave();
-    if (res.status === "ok") doc = res.doc;
-    else if (res.status === "backup") { doc = res.doc; this.pendingNotice = "Der letzte Spielstand war beschädigt – die Sicherung wurde geladen."; }
-    else if (res.status === "corrupt") {
+    // the engine is fetched in the background while the player looks at the start screen
+    this.enginePromise = import("./goldrush-engine.js").catch(() => null);
+    this.enginePromise.then((mod) => { if (mod && !this.closed) this.engine = mod; });
+    let res = this.saves.peek();
+    if (res.status === "corrupt") {
       const choice = await this._ask("Spielstand beschädigt",
         `Dein GoldRush-Spielstand konnte nicht gelesen werden (${res.error}). Du kannst neu beginnen – der alte Stand wird zur Sicherheit beiseitegelegt.`,
-        [{ id: "exit", label: "Zurück", ghost: true }, { id: "new", label: "Neues Spiel starten" }]);
+        [{ id: "exit", label: "Zurück", ghost: true }, { id: "new", label: "Neue Mine starten" }]);
       if (this.closed) return;
       if (choice !== "new") { this.close(); return; }
-      quarantineCorrupt();
-    }
-    this._progress(0.1, "Grafik-Engine wird geladen …");
-    let engine;
-    try {
-      engine = await import("./goldrush-engine.js");
-    } catch (e) {
-      if (!this.closed) this._fallback("GoldRush konnte nicht geladen werden.", "Bitte prüfe deine Verbindung und versuche es gleich noch einmal.");
+      this.saves.quarantineCorrupt();
+      this._launch(null);
       return;
     }
+    if (res.status === "backup") this.pendingNotice = "Der letzte Spielstand war beschädigt – die Sicherung wurde geladen.";
+    if (this.saves.notice) this.pendingNotice = this.saves.notice;
+    // a v4 mine brings its settings along once (they live on the device now)
+    if (res.settings && !this.saves.hasSettings()) { this.settings = { ...this.settings, ...res.settings }; this.saves.saveSettings(this.settings); }
+    this.found = res;
+    this._showStart();
+  }
+
+  // ---- the start screen: continue the mine, start a new one, settings, back
+  _showStart() {
+    const el = this.el, res = this.found, has = !!(res && res.doc);
+    const lg = has ? null : this.saves.legacy();
+    this.legacyOffer = lg;
+    el.loading.hidden = true;
+    el.start.hidden = false;
+    const mineCard = this.root.querySelector("[data-role=start-mine]");
+    mineCard.hidden = !has;
+    if (has) this._fillStats(this.root.querySelector("[data-role=start-stats]"), res.summary);
+    const lgCard = this.root.querySelector("[data-role=start-legacy]");
+    lgCard.hidden = !lg;
+    if (lg) this._fillStats(this.root.querySelector("[data-role=legacy-stats]"), lg.summary);
+    const cont = el.start.querySelector("[data-act=start-continue]"), fresh = el.start.querySelector("[data-act=start-new]");
+    cont.hidden = !has;
+    // no mine yet: starting one IS the main action (no empty "continue")
+    fresh.className = has || lg ? "gr-btn-quiet gr-btn-wide" : "gr-btn-gold gr-btn-wide";
+    fresh.textContent = has ? "Neue Mine" : "Neue Mine starten";
+    this.root.querySelector("[data-role=start-tag]").textContent = has
+      ? "Dein Claim wartet – der Berg ist noch lange nicht abgetragen."
+      : "Ein Claim, ein riesiger Berg – und erst einmal nur deine Hände.";
+    const first = has ? cont : lg ? lgCard.querySelector("button") : fresh;
+    if (!this.touch) first.focus({ preventScroll: true });
+  }
+
+  _fillStats(dl, sum) {
+    dl.innerHTML = "";
+    if (!sum) return;
+    const gear = [...sum.tools, ...sum.equipment].map((t) => TOOL_NAME[t] || t).join(" · ");
+    const rows = [["Spielzeit", fmtPlay(sum.playMs)], ["Kontostand", formatEuro(sum.cashCents)], ["Goldbeutel", sum.pouchCents ? `≈ ${formatEuro(sum.pouchCents)}` : "leer"],
+      ["Ausrüstung", gear], ["Bewegt", `${fmtKg(sum.kgMoved)} Erde`]];
+    for (const [k, v] of rows) {
+      const dt = document.createElement("dt"), dd = document.createElement("dd");
+      dt.textContent = k; dd.textContent = v;
+      dl.append(dt, dd);
+    }
+  }
+
+  async _startNew() {
+    if (this.found && this.found.doc) {
+      const ok = await this._confirmNewMine(this.found.summary);
+      if (!ok || this.closed) return;
+      this.saves.reset();
+      this.found = null;
+      this._launch(null, true);
+      return;
+    }
+    this._launch(null);
+  }
+
+  // destructive: one clear question, saying what goes
+  async _confirmNewMine(sum) {
+    const what = sum ? ` (${fmtPlay(sum.playMs)} Spielzeit, ${formatEuro(sum.cashCents)}, ${[...sum.tools, ...sum.equipment].map((t) => TOOL_NAME[t] || t).join(", ")})` : "";
+    const choice = await this._ask("Neue Mine starten?",
+      `Dein aktueller GoldRush-Fortschritt${what} wird gelöscht und durch eine neue Mine ersetzt.`,
+      [{ id: "cancel", label: "Abbrechen", ghost: true }, { id: "new", label: "Neue Mine", danger: true }]);
+    return choice === "new";
+  }
+
+  _takeLegacy() {
+    const r = this.saves.migrateLegacy();
+    if (!r.ok) { this.found = this.saves.peek(); this._showStart(); return; }
+    if (r.settings && !this.saves.hasSettings()) { this.settings = { ...this.settings, ...r.settings }; this.saves.saveSettings(this.settings); }
+    this.pendingNotice = "Die Mine gehört jetzt deinem Konto.";
+    this._launch(r.doc);
+  }
+
+  // the chosen mine (null = a new one) -> loading screen -> the game;
+  // replaces = a mine was just given up: always a fresh seed
+  async _launch(doc, replaces = false) {
+    const el = this.el;
+    el.start.hidden = true;
+    el.loading.hidden = false;
+    el.loading.classList.remove("is-done");
+    this._progress(0.06, "Mine wird vorbereitet …");
+    this._progress(0.1, "Grafik-Engine wird geladen …");
+    const engine = await this.enginePromise;
     if (this.closed) return;
-    if (!doc) doc = engine.newWorldDoc(this._testSeed() ?? newSeed());
+    if (!engine) { this._fallback("GoldRush konnte nicht geladen werden.", "Bitte prüfe deine Verbindung und versuche es gleich noch einmal."); return; }
     this.engine = engine;
-    const game = (this.game = new engine.GoldRushGame(this._bridge(), doc, { touch: this.touch, debug: this.debug }));
+    // a new mine: a fresh seed (tests may pin the very first one, never a replacement)
+    if (!doc) doc = engine.newWorldDoc((replaces ? null : this._testSeed()) ?? newSeed());
+    const game = (this.game = new engine.GoldRushGame(this._bridge(), doc, { touch: this.touch, debug: this.debug, settings: this.settings }));
     try {
       await game.init((p, text) => this._progress(p, text));
     } catch (e) {
@@ -273,20 +388,22 @@ class GoldRushShell {
       return;
     }
     if (this.closed) { game.dispose(); return; }
-    this.el.loading.classList.add("is-done");
+    game.save("start");                                         // the mine exists now (a new one, or migrated) - for this player only
+    el.loading.classList.add("is-done");
     setTimeout(() => { if (this.el) this.el.loading.hidden = true; }, 420);
-    this.el.hud.hidden = false;
-    if (this.debug) this.el.debug.hidden = false;
+    el.hud.hidden = false;
+    if (this.debug) el.debug.hidden = false;
     this._syncSettings();
     this._renderTools(game.toolState());
     if (this.pendingNotice || game.loadNotice) this.notice(this.pendingNotice || game.loadNotice);
+    this.pendingNotice = null;
     if (this.touch) {
       game.setPaused(false);
       if (window.matchMedia("(orientation: portrait)").matches) setTimeout(() => { if (!this.closed) this.notice("Tipp: Für mehr Übersicht das Gerät drehen."); }, 1800);
     } else {
-      this.el.pauseText.textContent = "Klicke, um zu starten. Die Maus steuert dann den Blick.";
-      this.el.pause.querySelector("[data-act=resume]").textContent = "Loslegen";
-      this.el.pause.hidden = false;
+      el.pauseText.textContent = "Klicke, um zu starten. Die Maus steuert dann den Blick.";
+      el.pause.querySelector("[data-act=resume]").textContent = "Loslegen";
+      el.pause.hidden = false;
       this._hintT = setTimeout(() => { if (this.el) this.el.hint.classList.add("is-faded"); }, 9000);
     }
     this._exposeTestHooks();
@@ -296,6 +413,8 @@ class GoldRushShell {
     const el = this.el;
     return {
       root: this.root, canvas: el.canvas, stick: el.stick, knob: el.knob, digBtn: el.digBtn, moneyEl: el.money,
+      writeSave: (doc) => this.saves.save(doc),
+      saveSettings: (st) => { this.settings = { ...st }; this.saves.saveSettings(this.settings); },
       setCrosshair: (state) => { if (el.crosshair.dataset.state !== state) el.crosshair.dataset.state = state; },
       onDig: () => {
         el.crosshair.classList.remove("is-pulse");
@@ -366,6 +485,11 @@ class GoldRushShell {
   _act(act) {
     const g = this.game;
     if (act === "exit") { this.close(); return; }
+    if (act === "start-continue") { if (this.found && this.found.doc) this._launch(this.found.doc); return; }
+    if (act === "start-new") { this._startNew(); return; }
+    if (act === "start-settings") { this._openSettings(); return; }
+    if (act === "legacy-take") { this._takeLegacy(); return; }
+    if (act === "new-mine") { this._newMineInGame(); return; }
     if (act === "resume") {
       if (!g) return;
       if (this.touch) { g.setPaused(false); this.el.pause.hidden = true; } else g.input.requestLock();
@@ -377,9 +501,6 @@ class GoldRushShell {
     if (act === "sell-all") { this._sellAll(); return; }
     if (act === "tools") { if (this.touch) this._toolSheet(!this._sheetOpen); return; }
     if (act === "close-settings") { this._closeSettings(); return; }
-    if (act === "reset") { this.root.querySelector(".gr-confirm").hidden = false; this.root.querySelector(".gr-reset").hidden = true; return; }
-    if (act === "reset-cancel") { this.root.querySelector(".gr-confirm").hidden = true; this.root.querySelector(".gr-reset").hidden = false; return; }
-    if (act === "reset-confirm") { this._resetGame(); return; }
     if (act.startsWith("dlg:")) { const r = this._dlgResolve; this._hideDialog(); if (r) r(act.slice(4)); else if (act === "dlg:exit") this.close(); }
   }
 
@@ -532,11 +653,12 @@ class GoldRushShell {
   }
 
   _openSettings() {
-    if (!this.game) return;
     this.el.panel.hidden = false;
     this.el.pause.hidden = true;
-    this.game.setPaused(true);
-    this.game.input.exitLock();
+    // before a mine is chosen: only the device settings, no new-mine button
+    this.root.querySelector("[data-role=danger-zone]").hidden = !this.game;
+    this.el.panel.querySelector("[data-act=close-settings]").textContent = this.game ? "Zurück zum Spiel" : "Fertig";
+    if (this.game) { this.game.setPaused(true); this.game.input.exitLock(); }
     this._syncSettings();
     const first = this.el.panel.querySelector(".gr-seg button[aria-checked=true]") || this.el.panel.querySelector("button");
     if (first) first.focus({ preventScroll: true });
@@ -544,43 +666,73 @@ class GoldRushShell {
 
   _closeSettings() {
     this.el.panel.hidden = true;
-    this.root.querySelector(".gr-confirm").hidden = true;
-    this.root.querySelector(".gr-reset").hidden = false;
-    if (!this.game) return;
+    if (!this.game) { const b = this.el.start.querySelector("[data-act=start-settings]"); if (b && !this.el.start.hidden && !this.touch) b.focus({ preventScroll: true }); return; }
     if (this.touch) this.game.setPaused(false);
     else { this.el.pauseText.textContent = "Klicke, um weiterzugraben."; this.el.pause.hidden = false; }
   }
 
+  // the panel reflects the device settings (and, in a running mine, what the game made of them)
   _syncSettings() {
     const g = this.game;
-    if (!g) return;
-    const s = g.settings;
+    const s = g ? g.settings : this.settings;
+    const sysRM = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reduced = g ? g.reducedMotion : sysRM || !!s.reducedMotion;
     for (const b of this.root.querySelectorAll("[data-q]")) b.setAttribute("aria-checked", String(b.dataset.q === s.quality));
     const names = { low: "Niedrig", medium: "Mittel", high: "Hoch" };
     this.root.querySelector("[data-role=q-note]").textContent = s.quality === "auto"
-      ? `Auto nutzt gerade: ${names[g.level]} – passt sich an, wenn es ruckelt.` : "Gilt sofort, ohne Neustart.";
+      ? (g ? `Auto nutzt gerade: ${names[g.level]} – passt sich an, wenn es ruckelt.` : "Auto wählt beim Start passend zu deinem Gerät.") : "Gilt sofort, ohne Neustart.";
     const bob = this.root.querySelector("[data-role=headbob]");
-    bob.checked = !!s.headBob && !g.reducedMotion;
-    bob.disabled = g.reducedMotion;
+    bob.checked = !!s.headBob && !reduced;
+    bob.disabled = reduced;
     const rm = this.root.querySelector("[data-role=reduced]");
-    rm.checked = g.reducedMotion;
-    rm.disabled = g.systemReducedMotion;
-    this.root.querySelector("[data-role=bob-note]").hidden = !g.systemReducedMotion;
+    rm.checked = reduced;
+    rm.disabled = g ? g.systemReducedMotion : sysRM;
+    this.root.querySelector("[data-role=bob-note]").hidden = !(g ? g.systemReducedMotion : sysRM);
     this.root.querySelector("[data-role=sound]").checked = s.sound !== false;
     const canVibrate = this.touch && typeof navigator.vibrate === "function";
     this.root.querySelector("[data-role=vibration-row]").hidden = !canVibrate;
     this.root.querySelector("[data-role=vibration]").checked = s.vibration !== false;
-    this.root.classList.toggle("gr-reduced", g.reducedMotion);
+    this.root.classList.toggle("gr-reduced", reduced);
   }
 
-  async _resetGame() {
-    const onExit = this.onExit;
-    this.onExit = () => {};
-    if (this.game) { this.game.dispose(); this.game = null; }
-    resetSave();
-    this.close();
-    current = null;
-    open({ onExit });                                 // a fresh mine with a new seed
+  _setSetting(key, value) {
+    this.settings = { ...this.settings, [key]: value };
+    this.saves.saveSettings(this.settings);
+  }
+
+  // settings -> "Neue Mine starten …": confirm, then a fresh mine right away
+  async _newMineInGame() {
+    const g = this.game;
+    if (!g) return;
+    g.flushLoot();
+    g.save("before-new-mine");
+    const ok = await this._confirmNewMine(this._liveSummary());
+    if (!ok || this.closed || this.game !== g) return;
+    this.el.panel.hidden = true;
+    this.el.hud.hidden = true;
+    this.el.pause.hidden = true;
+    for (const el of Object.values(this.el.sheets)) el.hidden = true;
+    this._openSheet = null;
+    g.dispose();
+    this.game = null;
+    if (window.__goldrush) delete window.__goldrush;
+    // the old game handed its GL context back (forceContextLoss): a fresh canvas for the new mine
+    const fresh = document.createElement("canvas");
+    fresh.className = "gr-canvas";
+    fresh.tabIndex = -1;
+    this.el.canvas.replaceWith(fresh);
+    this.el.canvas = fresh;
+    this.saves.reset();
+    this.found = null;
+    this._launch(null, true);
+  }
+
+  _liveSummary() {
+    const g = this.game;
+    if (!g) return null;
+    const e = g.economy, m = e.stats.massG;
+    return { playMs: e.stats.playTimeMs, cashCents: e.cashCents, pouchCents: e.pouchCents, tools: g.tools.ownedList(), equipment: g.processing ? g.processing.ownedList() : [],
+      kgMoved: Math.round((m.dirt + m.compactDirt + m.gravel + m.stone) / 1000) };
   }
 
   // fixed world seed for automated tests (goldrush.testSeed), never in normal play
@@ -625,7 +777,7 @@ class GoldRushShell {
     for (const b of buttons) {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = b.ghost ? "ghost-btn" : "primary-btn";
+      btn.className = b.ghost ? "ghost-btn" : b.danger ? "primary-btn danger-btn" : "primary-btn";
       btn.dataset.act = `dlg:${b.id}`;
       btn.textContent = b.label;
       box.appendChild(btn);
@@ -814,12 +966,13 @@ class GoldRushShell {
       heightAt: (x, z) => g.terrain.getHeightAt(x, z),
       baseSignature: () => { let h = 0; const b = g.terrain.base; for (let k = 0; k < b.length; k += 97) h = (h * 31 + Math.round(b[k] * 1000)) | 0; return h; },
       save: () => g.save("test"),
-      saveBytes: () => { try { return (localStorage.getItem("goldrush.save") || "").length; } catch (e) { return -1; } },
+      saveBytes: () => this.saves.bytes(),
+      saveKeys: () => ({ ...this.saves.keys }),
       setQuality: (v) => { g.setQualitySetting(v); this._syncSettings(); return g.level; },
       loseContext: () => { const ext = g.renderer.getContext().getExtension("WEBGL_lose_context"); if (ext) { ext.loseContext(); setTimeout(() => ext.restoreContext(), 400); } return !!ext; },
       sampleAt: (x, y, z) => g.terrain.field.sample(x, y, z, {}),
       three: this.engine.THREE_REVISION,
-      backupKey: BACKUP_KEY,
+      backupKey: this.saves.keys.backup,
     };
   }
 

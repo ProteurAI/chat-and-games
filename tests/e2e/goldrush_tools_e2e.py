@@ -65,7 +65,7 @@ def open_game(page, start=True):
 def fresh(page, seed=SEED):
     """close GoldRush, wipe its save, open a brand-new world on `seed`"""
     gr_close(page)
-    page.evaluate("(s) => { for (const k of ['goldrush.save', 'goldrush.save.backup', 'goldrush.save.corrupt']) localStorage.removeItem(k); localStorage.setItem('goldrush.testSeed', String(s)); }", seed)
+    page.evaluate("(s) => { for (const k of [grKey(), grKey('.backup'), grKey('.corrupt')]) localStorage.removeItem(k); localStorage.setItem('goldrush.testSeed', String(s)); }", seed)
     open_game(page)
 
 
@@ -678,14 +678,14 @@ def foundation_and_tools(browser, base, user, shots):
 
     # ---------------- T21: dev unlock is debug/test only and never saved as owned
     G(A, "() => window.__goldrush.save()")
-    saved = json.loads(G(A, "() => localStorage.getItem('goldrush.save')"))
+    saved = json.loads(G(A, "() => localStorage.getItem(grKey())"))
     ui_dev = G(A, "() => !!document.querySelector('.gr-root [data-act*=dev], .gr-root [data-role*=dev]')")
     ok("T21 the dev unlock exists only for debug / tests: no control in the game UI, never saved as owned",
        saved["tools"]["owned"] == ["hand"] and not ui_dev and tools(A)["dev"], str(saved["tools"]))
 
     # ---------------- T41/T45: save v3, owning a tool for real
     ok("T41 the save (now v4) holds owned tools, pending finds, boulders, carried finds, 0.1 mm terrain, 1 cm slices",
-       saved["saveVersion"] == 4 and set(saved["tools"]) == {"owned", "equipped", "upgrades"} and isinstance(saved["economy"]["pending"], list)
+       saved["saveVersion"] == 5 and set(saved["tools"]) == {"owned", "equipped", "upgrades"} and isinstance(saved["economy"]["pending"], list)
        and saved["rocks"]["v"] == 1 and isinstance(saved["resources"]["carried"], list) and saved["terrain"]["unit"] == "0.1mm"
        and saved["resources"]["unit"] == "slice1cm+0.1mm", str({k: saved[k] for k in ("saveVersion", "tools")}))
     h_before = G(A, "() => window.__goldrush.hashes()")
@@ -728,23 +728,23 @@ def progression(browser, base, user, shots, bench):
     # T42: migration 1 -> 2 -> 3 and a REAL phase-2 save
     fix = json.loads(FIXTURE_V2.read_text(encoding="utf-8"))
     gr_close(A)
-    A.evaluate("(d) => { localStorage.setItem('goldrush.save', JSON.stringify(d)); localStorage.removeItem('goldrush.save.backup'); }", fix["doc"])
+    A.evaluate("(d) => { localStorage.setItem(grKey(), JSON.stringify(d)); localStorage.removeItem(grKey('.backup')); }", fix["doc"])
     open_game(A)
     h = G(A, "() => window.__goldrush.hashes()")
     A.evaluate("() => window.__goldrush.save()")
-    d3 = json.loads(G(A, "() => localStorage.getItem('goldrush.save')"))
+    d3 = json.loads(G(A, "() => localStorage.getItem(grKey())"))
     ok("T42 a real phase-2 save (v2) loads: identical ground, same money, only the hand owned; written back as the current version and still small",
        h["height"] == fix["phase2"]["hashes"]["height"] and h["money"] == fix["phase2"]["money"] and h["tools"]["owned"] == ["hand"]
-       and d3["saveVersion"] == 4 and len(json.dumps(d3)) < 8000, f"hash {h['height']} vs {fix['phase2']['hashes']['height']}, money {h['money']}, {len(json.dumps(d3))} B")
+       and d3["saveVersion"] == 5 and len(json.dumps(d3)) < 8000, f"hash {h['height']} vs {fix['phase2']['hashes']['height']}, money {h['money']}, {len(json.dumps(d3))} B")
     v1 = {"saveVersion": 1, "worldSeed": 77, "createdAt": 1, "updatedAt": 2, "money": 3.5, "tool": "hand",
           "player": {"x": 0.6, "z": 10.2, "yaw": 0, "pitch": 0.1}, "stats": {"digs": 12}, "terrain": None}
     gr_close(A)
-    A.evaluate("(d) => { localStorage.setItem('goldrush.save', JSON.stringify(d)); localStorage.removeItem('goldrush.save.backup'); }", v1)
+    A.evaluate("(d) => { localStorage.setItem(grKey(), JSON.stringify(d)); localStorage.removeItem(grKey('.backup')); }", v1)
     open_game(A)
     A.evaluate("() => window.__goldrush.save()")
-    d = json.loads(G(A, "() => localStorage.getItem('goldrush.save')"))
+    d = json.loads(G(A, "() => localStorage.getItem(grKey())"))
     ok("T42b a phase-1 save (v1, money as a float) goes 1 -> 2 -> 3 -> 4: € 3,50 kept as 350 cents, only the hand",
-       d["saveVersion"] == 4 and d["economy"]["cashCents"] == 350 and d["tools"]["owned"] == ["hand"] and d["worldSeed"] == 77, str({k: d[k] for k in ("saveVersion", "tools")}))
+       d["saveVersion"] == 5 and d["economy"]["cashCents"] == 350 and d["tools"]["owned"] == ["hand"] and d["worldSeed"] == 77, str({k: d[k] for k in ("saveVersion", "tools")}))
 
     # T17: pending -> collected, exactly once, also across exit and reload
     fresh(A)
@@ -766,7 +766,7 @@ def progression(browser, base, user, shots, bench):
     m3 = eco(A)["moneyCents"]
     c3 = G(A, "() => window.__goldrush.debugFind(5, 15500)")
     A.evaluate("() => window.__goldrush.save()")        # crash right now: the save holds it as pending
-    saved_pending = json.loads(G(A, "() => localStorage.getItem('goldrush.save')"))["economy"]["pending"]
+    saved_pending = json.loads(G(A, "() => localStorage.getItem(grKey())"))["economy"]["pending"]
     A.reload()
     A.wait_for_function("() => typeof ws !== 'undefined' && ws && ws.readyState === 1", timeout=15000)
     open_game(A)
@@ -855,7 +855,7 @@ def economy(browser, base, user):
     fair = []
     for seed in range(2001, 2021):
         gr_close(A)
-        A.evaluate("(s) => { localStorage.removeItem('goldrush.save'); localStorage.setItem('goldrush.testSeed', String(s)); }", seed)
+        A.evaluate("(s) => { localStorage.removeItem(grKey()); localStorage.setItem('goldrush.testSeed', String(s)); }", seed)
         open_game(A, start=False)
         fair.append(G(A, r"""() => {
           const G = window.__goldrush, t = G.terrain(), f = t.field, st = f.starter;

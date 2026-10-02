@@ -38,6 +38,10 @@ NO_WEBGL = """(() => {
 })();"""
 
 READY = "() => !!(window.__goldrush && document.querySelector('.gr-loading') && document.querySelector('.gr-loading').hidden)"
+START = "() => { const s = document.querySelector('.gr-start'); return !!(s && !s.hidden); }"
+# the logged-in player's save key (phase 5: one mine per account) - tests use grKey() / grKey('.backup')
+GRKEY = ("window.grKey = (suffix = '') => { let id = 'guest'; try { const u = JSON.parse(localStorage.getItem('instachat_user') || 'null');"
+         " if (u && u.id != null) id = 'u' + u.id; } catch (e) { /* none */ } return 'goldrush.save.' + id + suffix; };")
 
 # stand in front of the mound's foot (measured along a line towards its
 # centre) and look down until the hand reaches the flank
@@ -87,8 +91,16 @@ GEOMETRY_OK = """() => {
 # ms; returns the load progress (%) at that moment, -1 if it had finished
 CANCEL_WHILE_LOADING = """(delay) => new Promise((res) => {
   launchGameByType('goldrush');
-  const t0 = performance.now();
+  let t0 = null;
   const tick = () => {
+    // phase 5: the start screen first - continue (or start) the mine, then leave while it loads
+    if (t0 == null) {
+      const st = document.querySelector('.gr-start');
+      if (!st || st.hidden) { setTimeout(tick, 4); return; }
+      const c = st.querySelector('[data-act=start-continue]');
+      (c && !c.hidden ? c : st.querySelector('[data-act=start-new]')).click();
+      t0 = performance.now();
+    }
     const b = document.querySelector('.gr-loading-cancel'), l = document.querySelector('.gr-loading');
     if (b && performance.now() - t0 >= delay) {
       if (l.hidden || l.classList.contains('is-done')) { res(-1); return; }
@@ -170,6 +182,7 @@ def client(browser, base, user, ctx_kw, extra_init=()):
     ctx.add_init_script(f"localStorage.setItem('instachat_token', {json.dumps(user['token'])});"
                         f"localStorage.setItem('instachat_user', {json.dumps(json.dumps(user['user']))});")
     ctx.add_init_script(RECORDER)
+    ctx.add_init_script(GRKEY)
     for s in extra_init:
         ctx.add_init_script(s)
     page = ctx.new_page()
@@ -195,7 +208,19 @@ def gr_open(page, via_library=False):
         page.evaluate("() => launchGameByType('goldrush')")
 
 
-def gr_ready(page, timeout=60000):
+def gr_ready(page, timeout=60000, choice="auto"):
+    """Through the start screen (continue the player's mine - or start one), until the world is up.
+    choice: "auto" | "continue" | "new" | None (leave the start screen to the caller)"""
+    page.wait_for_function(f"() => ({READY})() || ({START})()", timeout=timeout)
+    if page.evaluate(START) and choice:
+        has = page.is_visible(".gr-start [data-act=start-continue]")
+        if choice == "continue" or (choice == "auto" and has):
+            page.click(".gr-start [data-act=start-continue]")
+        else:
+            page.click(".gr-start [data-act=start-new]")
+            if has:                                        # a mine exists: the destructive question
+                page.wait_for_selector(".gr-dialog:not([hidden]) [data-act='dlg:new']", timeout=5000)
+                page.click(".gr-dialog [data-act='dlg:new']")
     page.wait_for_function(READY, timeout=timeout)
 
 
@@ -228,6 +253,8 @@ def gr_close(page):
         page.click(".gr-panel [data-act=exit]")
     elif page.is_visible(".gr-dialog"):
         page.click(".gr-dialog [data-act='dlg:exit']")
+    elif page.is_visible(".gr-start"):                  # phase 5: still on the start screen -> "Zurück"
+        page.click(".gr-start [data-act=exit]")
     else:
         page.click(".gr-hud [data-act=exit]")
     return wait_for(lambda: page.evaluate("() => !document.querySelector('.gr-root') && !document.documentElement.classList.contains('goldrush-active')"), 5)
@@ -280,8 +307,15 @@ def desktop_suite(browser, base, user, shots, engine):
         const s = step.textContent; if (s && window.__load.steps[window.__load.steps.length - 1] !== s) window.__load.steps.push(s);
       }).observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
     }""")
-    t0 = time.time()
     gr_open(A, via_library=True)
+    # phase 5: a start screen first - a first visit has no mine, so starting one is the main action
+    A.wait_for_selector(".gr-start:not([hidden])", timeout=8000)
+    first = A.evaluate("""() => ({ cont: !document.querySelector('.gr-start [data-act=start-continue]').hidden, label: document.querySelector('.gr-start [data-act=start-new]').textContent,
+      main: document.querySelector('.gr-start [data-act=start-new]').classList.contains('gr-btn-gold'), mine: !document.querySelector('[data-role=start-mine]').hidden })""")
+    ok("T1 first visit: the start screen offers 'Neue Mine starten' as the main action (no empty 'Fortsetzen')",
+       not first["cont"] and first["label"] == "Neue Mine starten" and first["main"] and not first["mine"], str(first))
+    t0 = time.time()
+    A.click(".gr-start [data-act=start-new]")
     A.wait_for_selector(".gr-loading", timeout=5000)
     brand = A.inner_text(".gr-loading-inner")
     gr_ready(A)
@@ -469,10 +503,10 @@ def desktop_suite(browser, base, user, shots, engine):
       return { seed: s.seed, h: pts.map(([x, z]) => G.heightAt(x, z)) }; }""", probe_pts)
     dh2 = max(abs(a - b) for a, b in zip(before["h"], again["h"]))
     ok("T10 ... also after a full page reload", again["seed"] == before["seed"] and dh2 < 0.0015, f"max dh {dh2 * 1000:.2f} mm")
-    doc = A.evaluate("() => JSON.parse(localStorage.getItem('goldrush.save'))")
-    ok("T10 save document: current version, seed, money as integer cents, only the hand owned, timestamps, compact terrain",
-       doc["saveVersion"] == 4 and doc["worldSeed"] == before["seed"] and isinstance(doc["economy"]["cashCents"], int) and doc["tools"]["owned"] == ["hand"]
-       and doc["createdAt"] <= doc["updatedAt"] and doc["terrain"] and "settings" in doc,
+    doc = A.evaluate("() => JSON.parse(localStorage.getItem(grKey()))")
+    ok("T10 save document: current version, seed, money as integer cents, only the hand owned, timestamps, compact terrain, the player's own (settings on the device)",
+       doc["saveVersion"] == 5 and doc["worldSeed"] == before["seed"] and isinstance(doc["economy"]["cashCents"], int) and doc["tools"]["owned"] == ["hand"]
+       and doc["createdAt"] <= doc["updatedAt"] and doc["terrain"] and "settings" not in doc and doc.get("owner", {}).get("id") == str(user["user"]["id"]),
        f"{len(json.dumps(doc))} B, terrain keys {list(doc['terrain'].keys())}")
 
     # ---- TEST 13: LOW / MEDIUM / HIGH without reload
@@ -509,14 +543,14 @@ def desktop_suite(browser, base, user, shots, engine):
 
     # ---- TEST 16: tab hidden / visible
     gr_start(A)
-    upd0 = A.evaluate("() => JSON.parse(localStorage.getItem('goldrush.save')).updatedAt")
+    upd0 = A.evaluate("() => JSON.parse(localStorage.getItem(grKey())).updatedAt")
     A.evaluate("() => window.__goldrush.digAtCrosshair(0)")
     A.evaluate("""() => { Object.defineProperty(document, 'hidden', { value: true, configurable: true });
       Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
       document.dispatchEvent(new Event('visibilitychange')); }""")
     hid = st(A)
     rafs = idle(A)
-    upd1 = A.evaluate("() => JSON.parse(localStorage.getItem('goldrush.save')).updatedAt")
+    upd1 = A.evaluate("() => JSON.parse(localStorage.getItem(grKey())).updatedAt")
     A.evaluate("""() => { delete document.hidden; delete document.visibilityState;
       document.dispatchEvent(new Event('visibilitychange')); }""")
     vis = wait_for(lambda: st(A)["running"], 3)
@@ -593,9 +627,9 @@ def desktop_suite(browser, base, user, shots, engine):
 
     # ---- TEST 12: corrupt save
     gr_close(A)
-    good = A.evaluate("() => localStorage.getItem('goldrush.save')")
+    good = A.evaluate("() => localStorage.getItem(grKey())")
     seed_good = json.loads(good)["worldSeed"]
-    A.evaluate("(g) => { localStorage.setItem('goldrush.save', '{\"saveVersion\":1,\"worldSeed\":12,\"terr'); localStorage.setItem('goldrush.save.backup', g); }", good)
+    A.evaluate("(g) => { localStorage.setItem(grKey(), '{\"saveVersion\":1,\"worldSeed\":12,\"terr'); localStorage.setItem(grKey('.backup'), g); }", good)
     gr_open(A)
     gr_ready(A)
     note = wait_for(lambda: A.is_visible(".gr-notice") and A.inner_text(".gr-notice"), 3)
@@ -603,40 +637,41 @@ def desktop_suite(browser, base, user, shots, engine):
        note and "Sicherung" in note and st(A)["seed"] == seed_good, str(note))
     gr_close(A)
     # digs saved against another mound generator must not land on this mound
-    A.evaluate("() => { const d = JSON.parse(localStorage.getItem('goldrush.save')); d.terrain.gen = 999; localStorage.setItem('goldrush.save', JSON.stringify(d)); }")
+    A.evaluate("() => { const d = JSON.parse(localStorage.getItem(grKey())); d.terrain.gen = 999; localStorage.setItem(grKey(), JSON.stringify(d)); }")
     gr_open(A)
     gr_ready(A)
     note2 = wait_for(lambda: A.is_visible(".gr-notice") and A.inner_text(".gr-notice"), 3)
     ok("T12 save from another mound generator -> fresh mound, player told, seed + position kept",
        note2 and "neu aufgeschüttet" in note2 and st(A)["seed"] == seed_good and st(A)["revision"] == 0, str(note2))
     gr_close(A)
-    A.evaluate("() => { localStorage.setItem('goldrush.save', 'x{broken'); localStorage.setItem('goldrush.save.backup', '[]'); }")
+    A.evaluate("() => { localStorage.setItem(grKey(), 'x{broken'); localStorage.setItem(grKey('.backup'), '[]'); }")
     gr_open(A)
     A.wait_for_selector(".gr-dialog:not([hidden])", timeout=8000)
     dlg = A.inner_text(".gr-dialog")
-    ok("T12 corrupt save without backup -> dialog 'Spielstand beschädigt' with new game / back", "Spielstand beschädigt" in dlg and "Neues Spiel starten" in dlg, dlg[:90])
+    ok("T12 corrupt save without backup -> dialog 'Spielstand beschädigt' with new mine / back", "Spielstand beschädigt" in dlg and "Neue Mine starten" in dlg, dlg[:90])
     A.click(".gr-dialog [data-act='dlg:exit']")
     ok("T12 'Zurück' leaves GoldRush, the broken save is untouched",
-       wait_for(lambda: A.evaluate("() => !document.querySelector('.gr-root')"), 3) and A.evaluate("() => localStorage.getItem('goldrush.save')") == "x{broken")
+       wait_for(lambda: A.evaluate("() => !document.querySelector('.gr-root')"), 3) and A.evaluate("() => localStorage.getItem(grKey())") == "x{broken")
     gr_open(A)
     A.wait_for_selector(".gr-dialog:not([hidden])", timeout=8000)
     A.click(".gr-dialog [data-act='dlg:new']")
     gr_ready(A)
-    q = A.evaluate("() => ({ corrupt: localStorage.getItem('goldrush.save.corrupt'), seed: window.__goldrush.state().seed, digs: window.__goldrush.state().digs })")
-    ok("T12 'Neues Spiel starten' -> fresh mine, the broken text is kept aside", q["corrupt"] and "broken" in q["corrupt"] and q["digs"] == 0, str(q)[:120])
+    q = A.evaluate("() => ({ corrupt: localStorage.getItem(grKey('.corrupt')), seed: window.__goldrush.state().seed, digs: window.__goldrush.state().digs })")
+    ok("T12 'Neue Mine starten' -> fresh mine, the broken text is kept aside", q["corrupt"] and "broken" in q["corrupt"] and q["digs"] == 0, str(q)[:120])
 
-    # dev reset (two-step)
+    # settings -> "Neue Mine starten …": a destructive question first
     gr_start(A)
     A.evaluate(AIM_AT_MOUND, {"ang": 0.0, "back": 1.3})
     A.evaluate(DIG_HERE, {"ang": 0.0, "n": 5})
     seed_before = st(A)["seed"]
     gr_pause(A)
     A.click(".gr-pause [data-act=settings]")
-    A.click(".gr-panel [data-act=reset]")
-    confirm_shown = A.is_visible(".gr-confirm")
-    A.click(".gr-panel [data-act=reset-confirm]")
+    A.click(".gr-panel [data-act=new-mine]")
+    A.wait_for_selector(".gr-dialog:not([hidden]) [data-act='dlg:new']", timeout=5000)
+    confirm_shown = "Neue Mine starten?" in A.inner_text(".gr-dialog")
+    A.click(".gr-dialog [data-act='dlg:new']")
     gr_ready(A)
-    ok("reset needs a confirmation and starts a new mine", confirm_shown and st(A)["digs"] == 0 and st(A)["seed"] != seed_before)
+    ok("a new mine needs a confirmation and starts a new mine (new seed, nothing dug)", confirm_shown and st(A)["digs"] == 0 and st(A)["seed"] != seed_before)
 
     # ---- TEST 20 (part): the chat still works after GoldRush
     gr_close(A)
@@ -777,7 +812,7 @@ def fallback_and_motion_suite(browser, base, user, shots):
         offs.append(round(s["camY"] - s["y"], 4))
     B.keyboard.up("w")
     B.evaluate("() => window.__goldrush.save()")
-    saved = B.evaluate("() => JSON.parse(localStorage.getItem('goldrush.save')).settings.reducedMotion")
+    saved = B.evaluate("() => JSON.parse(localStorage.getItem('goldrush.settings')).reducedMotion")      # device settings (phase 5)
     ok("T19 in-game 'Reduzierte Bewegung' switch: bob off, HUD animations off, saved",
        st(B)["reducedMotion"] and all(o == 0 for o in offs) and saved is True and B.evaluate("() => document.querySelector('.gr-root').classList.contains('gr-reduced')"),
        f"offsets {set(offs)} saved {saved}")

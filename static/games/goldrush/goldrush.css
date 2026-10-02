@@ -341,6 +341,40 @@ button.gr-tool { border: none; font-family: inherit; cursor: default; }
 .gr-reset { align-self: flex-start; color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
 .gr-confirm p { margin: 0 0 var(--space-2); font-size: var(--text-sm); color: var(--text-secondary); }
 
+/* ---------- start screen: continue / new mine (before the world is built) ---------- */
+.gr-start {
+  position: absolute; inset: 0; z-index: 5; display: flex; justify-content: center; overflow-y: auto; overscroll-behavior: contain;
+  padding: max(var(--space-5), env(safe-area-inset-top)) max(var(--space-4), env(safe-area-inset-right)) max(var(--space-5), env(safe-area-inset-bottom)) max(var(--space-4), env(safe-area-inset-left));
+  background: radial-gradient(120% 80% at 50% 100%, #6b4a2c 0%, #2b2118 55%, #17120d 100%); color: #f6ecd9; touch-action: pan-y;
+}
+.gr-start[hidden] { display: none; }
+.gr-start-inner { width: min(420px, 100%); margin: auto 0; display: flex; flex-direction: column; align-items: stretch; gap: 14px; text-align: center; }
+.gr-start-inner .gr-loading-brand { justify-content: center; }
+.gr-start-tag { margin: -4px 0 4px; color: #e5d2ad; font-size: 14px; line-height: 1.45; }
+.gr-start-card {
+  text-align: left; border-radius: 14px; padding: 14px 16px; border: 1px solid #4a3a2b;
+  background: linear-gradient(180deg, #2d2219 0%, #231a13 100%); box-shadow: 0 12px 34px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 236, 200, 0.06);
+}
+.gr-start-card[hidden] { display: none; }
+.gr-start-card-title { font-family: Georgia, "Times New Roman", serif; font-size: 17px; font-weight: 700; color: #f7e3b5; margin-bottom: 8px; }
+.gr-start-note { margin: 0 0 10px; font-size: 13px; line-height: 1.45; color: #d8c6a2; }
+.gr-start-legacy { border-color: #8f6a22; }
+.gr-start-legacy .gr-btn-gold { margin-top: 10px; }
+.gr-start-stats { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; margin: 0; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.gr-start-stats dt { color: #a8977a; }
+.gr-start-stats dd { margin: 0; color: #f3e9d6; font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+.gr-start-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
+.gr-start-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.gr-btn-wide { width: 100%; min-height: 50px; font-size: 15px; }
+.gr-btn-quiet {
+  min-height: 46px; padding: 0 16px; border-radius: 12px; cursor: pointer; font: inherit; font-weight: 600; font-size: 14px;
+  border: 1px solid rgba(246, 236, 217, 0.26); background: rgba(246, 236, 217, 0.06); color: #f1e3c4;
+}
+.gr-btn-quiet:hover, .gr-btn-quiet:focus-visible { background: rgba(246, 236, 217, 0.12); }
+.gr-start button:focus-visible { outline: 3px solid #f0c463; outline-offset: 2px; }
+.gr-start button[hidden] { display: none; }
+@media (max-height: 480px) { .gr-start-inner { gap: 10px; } .gr-start-inner .gr-loading-brand { font-size: 28px; } .gr-btn-wide { min-height: 46px; } }
+
 /* ---------- loading ---------- */
 .gr-loading {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 5;
@@ -348,6 +382,7 @@ button.gr-tool { border: none; font-family: inherit; cursor: default; }
   transition: opacity 0.4s ease;
 }
 .gr-loading.is-done { opacity: 0; pointer-events: none; }
+.gr-loading[hidden] { display: none; }
 .gr-loading-inner { width: min(360px, 84%); display: flex; flex-direction: column; align-items: center; gap: var(--space-3); text-align: center; }
 .gr-loading-brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-weight: var(--font-bold); font-size: clamp(30px, 8vw, 44px); letter-spacing: -0.01em; }
 .gr-pick { display: inline-block; animation: gr-swing 1.3s ease-in-out infinite; transform-origin: 70% 70%; }
