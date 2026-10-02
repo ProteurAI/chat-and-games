@@ -38,6 +38,20 @@
 // own minimum time + 15 %: a person, not a machine), takes the gold out,
 // sells / shops from there when due, walks back and sets the bucket down
 // again - all with the game's real transactions.
+// Phase 6 (primitive mechanisation, up to 360 min):
+//   A6    the old upgrades first (all of phase 1-5), then wheelbarrow, sluice, its upgrades
+//   B6    wheelbarrow as early as possible (after bucket + pan)
+//   C6    sluice as early as possible (right after the pan), then the barrow, then the usual order
+//   D6    balanced
+// With the wheelbarrow it digs into the barrow (parked next to it), pushes
+// the full barrow (slower with the load - the game's own speed factor) to
+// the sluice hopper and tips it in (water on), or - no sluice / hopper full
+// - to the wash place and screens + pans the rest by hand. A sluice without a
+// barrow is fed by the bucket (carried to the hopper). The sluice runs
+// on in SIMULATED time while the bot does anything else (procTick); once the
+// riffles are full it stops the water, cleans out (the game's work, +15 %)
+// and pans the heavy concentrate. A new sluice is built on the way back
+// from the shop. Pushing, dumping, parking all cost their seconds.
 // No timers, no pity: whatever the ground holds is what it finds.
 //
 // window.__grBench.init(seed, opts) / .run(untilSeconds) / .result()
@@ -46,8 +60,12 @@
   const G = window.__goldrush;
   const WALK = 3.4, TRIP = 4.6;                    // m/s digging around / walking to the camp (partly sprinting)
   const SWITCH = 0.42;                             // lower + raise a tool
-  const CHECK = [60, 300, 600, 1200, 1800, 2700, 3600, 5400, 7200, 9000, 10800];
+  const CHECK = [60, 300, 600, 1200, 1800, 2700, 3600, 5400, 7200, 9000, 10800, 12600, 14400, 16200, 18000, 19800, 21600];
   const WASH_SPOT = { x: -16.15, z: 3.5 };
+  const HOPPER_SPOT = { x: -20.82, z: -4.9 };          // behind a barrow in front of the sluice hopper
+  const HOPPER_FEED = { x: -20.82, z: -1.12 };         // at the hopper with a bucket
+  const BARROW_WASH = { x: -15.2, z: 5.6, yaw: Math.PI / 2 };   // parked at the wash place (feeds screen + pan)
+  const BARROW_FULL_KG = 153;
   const MOUND = { x: 0, z: -6 };
   const SLOW = 1.15;                               // real work vs the game's minimum time per load
   const PICKUP = { 1: 0.4, 2: 0.4, 3: 1.0, 4: 1.1, 5: 1.4 };
@@ -58,6 +76,14 @@
     P: ["shovel", "bucket", "pan", "pickaxe", "shovel.blade", "shovel.handle", "classifier", "pan.riffles", "bucket.large", "pickaxe.tip", "pickaxe.head"],
     K: ["shovel", "bucket", "pan", "classifier", "pan.riffles", "bucket.large", "pickaxe", "shovel.blade", "shovel.handle", "pickaxe.tip", "pickaxe.head"],
     M: ["shovel", "pickaxe", "shovel.blade", "bucket", "pan", "shovel.handle", "classifier", "pan.riffles", "bucket.large", "pickaxe.tip", "pickaxe.head"],
+    A6: ["shovel", "pickaxe", "shovel.blade", "bucket", "pan", "shovel.handle", "classifier", "pan.riffles", "bucket.large", "pickaxe.tip", "pickaxe.head",
+      "wheelbarrow", "sluice", "sluice.hopper", "sluice.mat"],
+    B6: ["shovel", "bucket", "pan", "wheelbarrow", "pickaxe", "shovel.blade", "shovel.handle", "classifier", "sluice", "pan.riffles", "bucket.large",
+      "sluice.hopper", "sluice.mat", "pickaxe.tip", "pickaxe.head"],
+    C6: ["shovel", "bucket", "pan", "sluice", "wheelbarrow", "pickaxe", "shovel.blade", "classifier", "shovel.handle", "sluice.hopper", "pan.riffles",
+      "bucket.large", "sluice.mat", "pickaxe.tip", "pickaxe.head"],
+    D6: ["shovel", "pickaxe", "shovel.blade", "bucket", "pan", "shovel.handle", "wheelbarrow", "classifier", "sluice", "pan.riffles", "bucket.large",
+      "sluice.hopper", "sluice.mat", "pickaxe.tip", "pickaxe.head"],
   };
 
   function rng(seed) {
@@ -88,6 +114,7 @@
       this.kg = 0;
       this.trips = 0; this.tripTime = 0; this.lastTrip = 0; this.log = [];
       this.procOn = false; this.bk = null; this.bucketMl = 0; this.capMl = 10000; this.procRounds = 0; this.procTime = 0; this.pans = 0;
+      this.mechOn = false; this.bw = null; this.mechRounds = 0; this.mechTime = 0; this.cleanouts = 0; this.dumps = 0; this.ticked = this.t;
       this.win = { n: 0, hard: 0 }; this.good = null; this.side = this.r() < 0.5 ? -1 : 1; this.returns = 0;
       this.bought = {};
       this.state = "walk";
@@ -142,6 +169,13 @@
       this.yaw += (this.r() - 0.5) * 0.9;
       this.t += 0.6;
       return this._scan(this.yaw);
+    },
+
+    // the sluice works on while the bot does anything else (simulated time)
+    _tick() {
+      const dt = this.t - this.ticked;
+      if (dt > 0) G.procTick(dt);
+      this.ticked = this.t;
     },
 
     _check() {
@@ -209,7 +243,9 @@
         this._defs();
         const pr = G.proc();
         this.procOn = pr.owned.includes("bucket") && pr.owned.includes("pan");
+        this.mechOn = this.procOn && pr.owned.includes("wheelbarrow");
         this.capMl = pr.capacityMl;
+        if (pr.sluice && pr.sluice.state !== "ready") { G.procInstallSluice(); dt += 12 + 2.4; }     // over to the tank, build it
       }
       dt += d / TRIP + 1.5;                                     // back to the spot, find it again
       entry.cash = G.economy().cashCents;
@@ -249,9 +285,140 @@
       this.t += 1.0;
     },
 
+    // ---------------- phase 6: the wheelbarrow next to the bot, a full one goes to the sluice / wash place
+
+    _ensureBarrow() {
+      if (this.bw && Math.hypot(this.bw.x - this.x, this.bw.z - this.z) < 1.9) return;
+      const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw), fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
+      // its tray beside the bot, pointing the way the bot looks
+      const yaw = this.yaw, tray = { x: this.x + rx * 1.15 - fx * 0.2, z: this.z + rz * 1.15 - fz * 0.2 };
+      const wheel = { x: tray.x + fx * 0.61, z: tray.z + fz * 0.61 };
+      G.procBarrowPlace(wheel.x, wheel.z, yaw);
+      this.bw = { x: this.x, z: this.z };
+      this.t += 2.0;
+    },
+
+    // pushing speed with a load (the game's own factor; slopes on the way averaged out)
+    _push(d, kg) {
+      const f = Math.max(0.42, 0.96 - 0.3 * Math.min(1, kg / BARROW_FULL_KG));
+      return d / (WALK * f);
+    },
+
+    _panAll(maxLoads = 40) {
+      let dt = 0;
+      for (let i = 0; i < maxLoads; i++) {
+        const f = G.procAct("pan-fill");
+        if (!f.ok) break;
+        const w = G.procWork(30);
+        if (!w.done) break;
+        G.procCollect();
+        dt += 1.5 + w.t * SLOW + 1.0;
+        this.pans++;
+      }
+      return dt;
+    },
+
+    // the barrow parked at the wash place: screen (when owned) and pan it empty, the tub in between
+    _manualFromBarrow() {
+      let dt = 0;
+      G.procBarrowPlace(BARROW_WASH.x, BARROW_WASH.z, BARROW_WASH.yaw);
+      const hasCls = G.proc().owned.includes("classifier");
+      for (let guard = 0; guard < 60; guard++) {
+        const p = G.proc();
+        if (!p.barrow || p.barrow.batch.volumeMl <= 0) break;
+        if (hasCls && p.tub.volumeMl < 29500 - 14000) {
+          const r = G.procAct("sieve-load");
+          if (!r.ok) break;
+          const w = G.procWork(30);
+          dt += 2.5 + w.t * SLOW + 1.2;
+        } else {
+          dt += this._panAll(hasCls ? 12 : 1);
+        }
+        this.t += dt; dt = 0; this._tick();
+      }
+      dt += this._panAll();
+      return dt;
+    },
+
+    _cleanout() {
+      let dt = 0;
+      G.procWater(false);
+      const c = G.procAct("sluice-clean");
+      if (!c.ok) { G.procWater(true); return 0; }
+      const w = G.procWork(30);
+      dt += 1.5 + 1.0 + w.t * SLOW + 2.0;
+      G.procWater(true);
+      this.cleanouts++;
+      dt += 6 / WALK + this._panAll();                          // to the trough, pan the heavy concentrate
+      return dt;
+    },
+
+    // a full barrow: push it to the hopper (and tip it), or to the wash place
+    _mechCycle() {
+      const p0 = G.proc();
+      const kg = p0.barrow.massG / 1000;
+      const sl = p0.sluice && p0.sluice.state === "ready";
+      const dest = sl ? HOPPER_SPOT : WASH_SPOT;
+      let dt = 2.0 + this._push(Math.hypot(dest.x - this.x, dest.z - this.z), kg);
+      this.t += dt; this.mechTime += dt; this._tick(); dt = 0;
+      if (sl) {
+        const moved = G.procPour("barrow", "hopper");
+        if (moved > 0) { this.dumps++; dt += 3.0; }
+        if (!G.proc().sluice.running) { G.procWater(true); dt += 1.5; }
+        this.t += dt; this.mechTime += dt; this._tick(); dt = 0;
+        if (G.proc().sluice.loadMl >= 240000) dt += this._cleanout();
+        // what did not fit: to the wash place, by hand
+        const left = G.proc().barrow.batch.volumeMl;
+        if (left > 1500) dt += this._push(Math.hypot(WASH_SPOT.x - HOPPER_SPOT.x, WASH_SPOT.z - HOPPER_SPOT.z), left * 1.4 / 1000) + 2.0;
+        this.t += dt; this.mechTime += dt; this._tick(); dt = 0;
+        if (left > 1500) dt += this._manualFromBarrow();
+      } else dt += this._manualFromBarrow();
+      // heavy concentrate waiting in the tray (a cleanout earlier): pan it
+      if (G.proc().sluice && G.proc().sluice.tray.volumeMl > 0) dt += this._panAll();
+      this.t += dt; this.mechTime += dt; this.mechRounds++; this._tick();
+      this.bucketMl = 0;
+      this._check();
+      const from = sl ? HOPPER_SPOT : WASH_SPOT;
+      if (!this._maybeTrip(from)) {
+        const back = 2.0 + this._push(Math.hypot(from.x - this.x, from.z - this.z), 0);
+        this.t += back; this.mechTime += back;
+      }
+      this._tick();
+      this.bw = null;
+      this._ensureBarrow();
+      G.aimAt({ x: this.x, z: this.z, yaw: this.yaw, pitch: this.pitch });
+    },
+
+    // a sluice but no barrow (yet): the full bucket goes into the hopper (water on);
+    // the riffles are cleaned out once loaded, the heavy concentrate panned
+    _bucketToHopper(p0) {
+      const kg = p0.bucket.massG / 1000, carry = WALK * (1 - 0.15 * Math.min(1.4, kg / 16));
+      let dt = 1.0 + Math.hypot(HOPPER_FEED.x - this.x, HOPPER_FEED.z - this.z) / carry + 1.5;    // pick it up, carry it over, tip it in
+      G.procPour("bucket", "hopper");
+      this.dumps++;
+      if (!G.proc().sluice.running) { G.procWater(true); dt += 1.5; }
+      this.t += dt; this.procTime += dt; this._tick(); dt = 0;
+      if (G.proc().sluice.loadMl >= 240000) dt += this._cleanout();
+      if (G.proc().sluice.tray.volumeMl > 0) dt += this._panAll();
+      this.t += dt; this.procTime += dt; this.procRounds++; this._tick();
+      this.bucketMl = 0;
+      this._check();
+      if (!this._maybeTrip(HOPPER_FEED)) {
+        const back = Math.hypot(HOPPER_FEED.x - this.x, HOPPER_FEED.z - this.z) / WALK + 1.0;
+        this.t += back; this.procTime += back;
+      }
+      this._tick();
+      this.bk = null;
+      this._ensureBucket();
+      G.aimAt({ x: this.x, z: this.z, yaw: this.yaw, pitch: this.pitch });
+    },
+
     // a full bucket: carry it to the wash place, sieve, pan everything, back
+    // (or into the sluice hopper when there is a sluice with room)
     _procCycle() {
       const p0 = G.proc();
+      const sl0 = p0.sluice && p0.sluice.state === "ready" ? p0.sluice : null;
+      if (sl0 && sl0.hopper.volumeMl + p0.bucket.batch.volumeMl <= sl0.capacityMl) return this._bucketToHopper(p0);
       const kg = p0.bucket.massG / 1000, carry = WALK * (1 - 0.15 * Math.min(1.4, kg / 16));
       const d = Math.hypot(WASH_SPOT.x - this.x, WASH_SPOT.z - this.z);
       let dt = 1.0 + d / carry + 1.0;                           // pick it up, carry it over, set it down
@@ -338,7 +505,9 @@
           this._move(0.25, this.yaw);
           continue;
         }
-        if (this.procOn) this._ensureBucket();
+        this._tick();
+        if (this.mechOn) this._ensureBarrow();
+        else if (this.procOn) this._ensureBucket();
         this._loosen();
         const res = G.act({ visuals: false, tool: this.tool });
         this.actions++;
@@ -370,7 +539,10 @@
           if (res.best >= 5) { if (this.first.nugget == null) this.first.nugget = at; this.nuggets.push(at); }
         }
         this._check();
-        if (this.procOn) {
+        if (this.mechOn) {
+          this.bucketMl += res.intoMl || 0;
+          if (this.bucketMl >= 85000 - 200 || res.spilledMl > 0) { this._mechCycle(); continue; }
+        } else if (this.procOn) {
           this.bucketMl += res.intoMl || 0;
           if (this.bucketMl >= this.capMl - 50 || res.spilledMl > 0) { this._procCycle(); continue; }
         }
@@ -401,6 +573,9 @@
         massG: e.stats.massG, x: +this.x.toFixed(2), z: +this.z.toFixed(2), starter: G.starter(),
         trips: this.trips, tripTime: +this.tripTime.toFixed(1), bought: this.bought, tripLog: this.log,
         procRounds: this.procRounds, procTime: +this.procTime.toFixed(1), pans: this.pans, ledger: G.proc().ledger, equipment: G.proc().owned,
+        mechRounds: this.mechRounds, mechTime: +this.mechTime.toFixed(1), cleanouts: this.cleanouts, dumps: this.dumps,
+        sluice: G.proc().sluice ? { processedMl: G.proc().sluice.stats.processedMl, cleanouts: G.proc().sluice.stats.cleanouts, tailMl: G.proc().sluice.tailMl } : null,
+        containersUg: G.proc().inContainersUg,
         firstSale: this.firstSaleT != null ? +this.firstSaleT.toFixed(1) : null,
         removedM3: e.stats.volumeMl / 1e6,
         cash: e.cashCents, earned: e.sold.totalCashCents, spent: e.shop.spentCents, sales: e.sold.sales, largestSale: e.sold.largestSaleCents,

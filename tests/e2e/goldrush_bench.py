@@ -35,9 +35,10 @@ if hasattr(sys.stdout, "reconfigure"):
 
 BOT = open(os.path.join(os.path.dirname(__file__), "goldrush_bench.js"), encoding="utf-8").read()
 CHECK = [60, 300, 600, 1200, 1800]
-CHECK4 = [600, 1200, 1800, 2700, 3600, 5400, 7200, 9000, 10800]
-ITEMS = ["shovel", "pickaxe", "shovel.blade", "shovel.handle", "pickaxe.tip", "pickaxe.head", "bucket", "pan", "classifier", "pan.riffles", "bucket.large"]
-OWNED_AT = (1800, 3600, 5400, 7200, 10800)
+CHECK4 = [600, 1200, 1800, 2700, 3600, 5400, 7200, 9000, 10800, 14400, 18000, 21600]
+ITEMS = ["shovel", "pickaxe", "shovel.blade", "shovel.handle", "pickaxe.tip", "pickaxe.head", "bucket", "pan", "classifier", "pan.riffles", "bucket.large",
+         "wheelbarrow", "sluice", "sluice.hopper", "sluice.mat"]
+OWNED_AT = (1800, 3600, 5400, 7200, 10800, 14400, 18000, 21600)
 
 
 def arg(name, default):
