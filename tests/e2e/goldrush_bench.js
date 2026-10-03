@@ -52,6 +52,17 @@
 // riffles are full it stops the water, cleans out (the game's work, +15 %)
 // and pans the heavy concentrate. A new sluice is built on the way back
 // from the shop. Pushing, dumping, parking all cost their seconds.
+// Phase 7 (first automation, up to 660 min):
+//   A7    the old upgrades first (all of phase 1-6), then bulk hopper, feeder, their upgrades
+//   B7    bulk hopper right after the sluice
+//   C7    bulk hopper and feeder right after the sluice
+//   D7    balanced
+// With the bulk hopper the bot pushes a full barrow to the ramp's foot and up
+// it (the game's own speed factor at the ramp's grade), tips it in and - no
+// feeder yet - walks to the control post and pulls the slide gate (the sluice
+// hopper fills while there is room). With the feeder on AUTO it only keeps
+// the water on and cleans the riffles out; the bulk hopper feeds the sluice on
+// its own in simulated time while the bot digs.
 // No timers, no pity: whatever the ground holds is what it finds.
 //
 // window.__grBench.init(seed, opts) / .run(untilSeconds) / .result()
@@ -60,10 +71,14 @@
   const G = window.__goldrush;
   const WALK = 3.4, TRIP = 4.6;                    // m/s digging around / walking to the camp (partly sprinting)
   const SWITCH = 0.42;                             // lower + raise a tool
-  const CHECK = [60, 300, 600, 1200, 1800, 2700, 3600, 5400, 7200, 9000, 10800, 12600, 14400, 16200, 18000, 19800, 21600];
+  const CHECK = [60, 300, 600, 1200, 1800, 2700, 3600, 5400, 7200, 9000, 10800, 12600, 14400, 16200, 18000, 19800, 21600, 25200, 28800, 32400, 36000, 39600];
   const WASH_SPOT = { x: -16.15, z: 3.5 };
   const HOPPER_SPOT = { x: -20.82, z: -4.9 };          // behind a barrow in front of the sluice hopper
   const HOPPER_FEED = { x: -20.82, z: -1.12 };         // at the hopper with a bucket
+  const RAMP_FOOT = { x: -20.82, z: -10.0 };           // phase 7: behind a barrow at the loading ramp (Zone B, west)
+  const RAMP_UP = 4.25 + 0.4, RAMP_GRADE = 0.4;        // up to the bulk hopper's rim
+  const CONTROL = { x: -22.45, z: -2.72 };             // the control post (slide gate / lever)
+  const PLATFORM = { x: -20.82, z: -4.55 };
   const BARROW_WASH = { x: -15.2, z: 5.6, yaw: Math.PI / 2 };   // parked at the wash place (feeds screen + pan)
   const BARROW_FULL_KG = 153;
   const MOUND = { x: 0, z: -6 };
@@ -84,6 +99,14 @@
       "bucket.large", "sluice.mat", "pickaxe.tip", "pickaxe.head"],
     D6: ["shovel", "pickaxe", "shovel.blade", "bucket", "pan", "shovel.handle", "wheelbarrow", "classifier", "sluice", "pan.riffles", "bucket.large",
       "sluice.hopper", "sluice.mat", "pickaxe.tip", "pickaxe.head"],
+    A7: ["shovel", "pickaxe", "shovel.blade", "bucket", "pan", "shovel.handle", "classifier", "pan.riffles", "bucket.large", "pickaxe.tip", "pickaxe.head",
+      "wheelbarrow", "sluice", "sluice.hopper", "sluice.mat", "bulkhopper", "feeder", "bulk.extension", "feeder.fine"],
+    B7: ["shovel", "pickaxe", "shovel.blade", "bucket", "pan", "shovel.handle", "wheelbarrow", "classifier", "sluice", "bulkhopper", "pan.riffles", "bucket.large",
+      "sluice.hopper", "feeder", "bulk.extension", "sluice.mat", "feeder.fine", "pickaxe.tip", "pickaxe.head"],
+    C7: ["shovel", "pickaxe", "shovel.blade", "bucket", "pan", "shovel.handle", "wheelbarrow", "classifier", "sluice", "bulkhopper", "feeder", "pan.riffles",
+      "bucket.large", "sluice.hopper", "feeder.fine", "sluice.mat", "bulk.extension", "pickaxe.tip", "pickaxe.head"],
+    D7: ["shovel", "pickaxe", "shovel.blade", "bucket", "pan", "shovel.handle", "wheelbarrow", "classifier", "sluice", "pan.riffles", "bucket.large",
+      "sluice.hopper", "bulkhopper", "pickaxe.tip", "feeder", "sluice.mat", "bulk.extension", "pickaxe.head", "feeder.fine"],
   };
 
   function rng(seed) {
@@ -115,6 +138,7 @@
       this.trips = 0; this.tripTime = 0; this.lastTrip = 0; this.log = [];
       this.procOn = false; this.bk = null; this.bucketMl = 0; this.capMl = 10000; this.procRounds = 0; this.procTime = 0; this.pans = 0;
       this.mechOn = false; this.bw = null; this.mechRounds = 0; this.mechTime = 0; this.cleanouts = 0; this.dumps = 0; this.ticked = this.t;
+      this.bulkDumps = 0; this.gates = 0;
       this.win = { n: 0, hard: 0 }; this.good = null; this.side = this.r() < 0.5 ? -1 : 1; this.returns = 0;
       this.bought = {};
       this.state = "walk";
@@ -246,6 +270,12 @@
         this.mechOn = this.procOn && pr.owned.includes("wheelbarrow");
         this.capMl = pr.capacityMl;
         if (pr.sluice && pr.sluice.state !== "ready") { G.procInstallSluice(); dt += 12 + 2.4; }     // over to the tank, build it
+        // phase 7: build the bulk hopper / mount the feeder at the control post, the lever on AUTO
+        if ((pr.bulk && pr.bulk.state !== "ready") || (pr.feeder && pr.feeder.state !== "ready")) {
+          const r = G.procInstallAuto();
+          dt += 14 + (pr.bulk && pr.bulk.state !== "ready" ? 2.6 : 0) + (pr.feeder && pr.feeder.state !== "ready" ? 1.8 : 0);
+          if (r.feeder) { G.procFeederMode("auto"); dt += 1.5; }
+        }
       }
       dt += d / TRIP + 1.5;                                     // back to the spot, find it again
       entry.cash = G.economy().cashCents;
@@ -296,6 +326,13 @@
       G.procBarrowPlace(wheel.x, wheel.z, yaw);
       this.bw = { x: this.x, z: this.z };
       this.t += 2.0;
+    },
+
+    // up the loading ramp: the game's factor at its grade (a full barrow: the slowest it goes)
+    _pushUp(d, kg) {
+      const load = Math.min(1, kg / BARROW_FULL_KG);
+      const f = Math.max(0.42, (0.96 - 0.3 * load) * (1 - Math.min(0.5, RAMP_GRADE) * (0.45 + 0.9 * load)));
+      return d / (WALK * f);
     },
 
     // pushing speed with a load (the game's own factor; slopes on the way averaged out)
@@ -353,9 +390,50 @@
       return dt;
     },
 
+    // phase 7: a full barrow up the ramp into the bulk hopper; no feeder: pull the slide gate
+    _bulkCycle(p0) {
+      const kg = p0.barrow.massG / 1000;
+      let dt = 2.0 + this._push(Math.hypot(RAMP_FOOT.x - this.x, RAMP_FOOT.z - this.z), kg) + this._pushUp(RAMP_UP, kg);
+      this.t += dt; this.mechTime += dt; this._tick(); dt = 0;
+      const moved = G.procPour("barrow", "bulk");
+      if (moved > 0) { this.dumps++; this.bulkDumps++; dt += 3.0; }
+      let at = PLATFORM;
+      const p1 = G.proc();
+      const sl = p1.sluice && p1.sluice.state === "ready";
+      if (sl && !p1.sluice.running) { dt += 1.5 + Math.hypot(HOPPER_FEED.x - at.x, HOPPER_FEED.z - at.z) / WALK; at = HOPPER_FEED; G.procWater(true); }
+      if (!(p1.feeder && p1.feeder.state === "ready") && sl) {
+        // down to the control post: the gate fills the sluice hopper (it closes by itself)
+        dt += Math.hypot(CONTROL.x - at.x, CONTROL.z - at.z) / WALK + 1.5; at = CONTROL;
+        if (G.procAct("bulk-gate").ok) this.gates++;
+      }
+      this.t += dt; this.mechTime += dt; this._tick(); dt = 0;
+      if (G.proc().sluice && G.proc().sluice.loadMl >= 240000) dt += this._cleanout();
+      // what did not fit (the bulk hopper full): to the wash place, by hand
+      const left = G.proc().barrow.batch.volumeMl;
+      if (left > 1500) {
+        dt += this._push(RAMP_UP + Math.hypot(WASH_SPOT.x - RAMP_FOOT.x, WASH_SPOT.z - RAMP_FOOT.z), left * 1.4 / 1000) + 2.0;
+        this.t += dt; this.mechTime += dt; this._tick(); dt = 0;
+        dt += this._manualFromBarrow();
+        at = WASH_SPOT;
+      } else if (at === PLATFORM) at = RAMP_FOOT;
+      if (G.proc().sluice && G.proc().sluice.tray.volumeMl > 0) dt += this._panAll();
+      this.t += dt; this.mechTime += dt; this.mechRounds++; this._tick();
+      this.bucketMl = 0;
+      this._check();
+      if (!this._maybeTrip(at)) {
+        const back = 2.0 + this._push(Math.hypot(at.x - this.x, at.z - this.z) + (at === RAMP_FOOT ? RAMP_UP : 0), 0);
+        this.t += back; this.mechTime += back;
+      }
+      this._tick();
+      this.bw = null;
+      this._ensureBarrow();
+      G.aimAt({ x: this.x, z: this.z, yaw: this.yaw, pitch: this.pitch });
+    },
+
     // a full barrow: push it to the hopper (and tip it), or to the wash place
     _mechCycle() {
       const p0 = G.proc();
+      if (p0.bulk && p0.bulk.state === "ready") return this._bulkCycle(p0);
       const kg = p0.barrow.massG / 1000;
       const sl = p0.sluice && p0.sluice.state === "ready";
       const dest = sl ? HOPPER_SPOT : WASH_SPOT;
@@ -575,6 +653,9 @@
         procRounds: this.procRounds, procTime: +this.procTime.toFixed(1), pans: this.pans, ledger: G.proc().ledger, equipment: G.proc().owned,
         mechRounds: this.mechRounds, mechTime: +this.mechTime.toFixed(1), cleanouts: this.cleanouts, dumps: this.dumps,
         sluice: G.proc().sluice ? { processedMl: G.proc().sluice.stats.processedMl, cleanouts: G.proc().sluice.stats.cleanouts, tailMl: G.proc().sluice.tailMl } : null,
+        bulk: G.proc().bulk ? { inMl: G.proc().bulk.stats.inMl, outMl: G.proc().bulk.stats.outMl, loads: G.proc().bulk.stats.loads, left: G.proc().bulk.volumeMl } : null,
+        feeder: G.proc().feeder ? { moved: G.proc().feeder.moved, mode: G.proc().feeder.mode } : null,
+        bulkDumps: this.bulkDumps, gates: this.gates, activeProcTime: +(this.procTime + this.mechTime).toFixed(1), pouchCents: e.pouchCents,
         containersUg: G.proc().inContainersUg,
         firstSale: this.firstSaleT != null ? +this.firstSaleT.toFixed(1) : null,
         removedM3: e.stats.volumeMl / 1e6,
