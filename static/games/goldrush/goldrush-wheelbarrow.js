@@ -12,11 +12,13 @@
 //            leave the claim simply does not go there.
 //   DUMPED   at the sluice hopper it is tipped over the wheel: the tray
 //            tilts, the load slides out (a visible moment), the batch goes
-//            over with pour() - what does not fit stays in the barrow.
+//            over with transfer() (goldrush-transfer.js: a sluice hopper or a
+//            bulk hopper alike) - what does not fit stays in the barrow.
 //
 // No vehicle physics, no stamina: a few ground samples per frame.
 
-import { MaterialBatch, STAGE, pour } from "./goldrush-material.js";
+import { MaterialBatch, STAGE } from "./goldrush-material.js";
+import { transfer } from "./goldrush-transfer.js";
 import { BARROW } from "./goldrush-mechmodels.js";
 
 export const BARROW_ML = 85000;                 // 85 l (tuned with the phase-6 benchmark)
@@ -176,9 +178,9 @@ export class Wheelbarrow {
   }
 
   // ---- dumping over the wheel into `target` ({ batch, capacityMl })
-  startDump(target, onPeak) {
+  startDump(target, onPeak, id = 0) {
     if (this.dump || this.batch.volumeMl <= 0) return false;
-    this.dump = { t: 0, target, onPeak, moved: -1 };
+    this.dump = { t: 0, target, onPeak, moved: -1, id };
     return true;
   }
 
@@ -188,7 +190,7 @@ export class Wheelbarrow {
       const d = this.dump;
       d.t += dt;
       if (d.moved < 0 && d.t >= DUMP_S * 0.5) {
-        d.moved = pour(this, d.target, Infinity);
+        d.moved = transfer(this, d.target, Infinity, d.id);
         if (d.onPeak) d.onPeak(d.moved);
       }
       if (d.t >= DUMP_S) this.dump = null;
