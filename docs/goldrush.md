@@ -22,7 +22,7 @@ Liegt bewusst außerhalb von `static/`, wird also nicht ausgeliefert.
 | Modelle Vorratstrichter / Rampe / Dosierer | `goldrush-automodels.js` (`AutoModels`, nutzt die Materialien von `MechModels`) |
 | Begehbare Aufbauten (Rampe, Plattform) | `goldrush-world.js` (`addDeck` / `deckAt`, in `groundAt` eingerechnet) |
 | Grab-Gefühl: Partikel pro Material und Werkzeug | `goldrush-vfx.js` (`DigEffects`, `DIG_PROFILES`, `DIG_TOOLS`) |
-| Entwickler-/QA-Werkzeuge | `goldrush-dev*.js` (siehe unten; Phase 6: `goldrush-devcommands6.js`) |
+| Entwickler-/QA-Werkzeuge | `goldrush-dev*.js` (siehe unten; Phase 6 / 7: `goldrush-devcommands6.js`, `goldrush-devcommands7.js`) |
 
 ## Materialfluss und Maschinen (Phase 6)
 

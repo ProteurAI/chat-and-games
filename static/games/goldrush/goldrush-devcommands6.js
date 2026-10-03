@@ -6,7 +6,7 @@
 import { registerDevCommand as reg } from "./goldrush-devregistry.js";
 import { DEV_MATERIALS, devBatch, giveItem, setLoadout, fillBucket } from "./goldrush-devactions.js";
 import { SLUICE_TUNING } from "./goldrush-material.js";
-import { SLUICE_AT, SLUICE_SPOTS, FEED_LPM } from "./goldrush-sluice.js";
+import { SLUICE_AT, SLUICE_SPOTS } from "./goldrush-sluice.js";
 import { FIND } from "./goldrush-resources.js";
 
 const ok = (text) => ({ ok: true, text });
@@ -103,7 +103,7 @@ reg({ id: "sluice.debug", category: "material", group: "Waschrinne", kind: "info
     return [
       ["Zustand", `${sl.state}${sl.build >= 0 ? " (Aufbau)" : ""} · Wasser ${sl.running ? "an" : "aus"}${sl.processing ? " · wäscht" : ""}`],
       ["Trichter", `${l(sl.hopper.batch.volumeMl)} / ${l(sl.capacityMl)} · ${sl.hopper.batch.goldUg.toLocaleString("de-DE")} µg Gold`],
-      ["Durchsatz", `${FEED_LPM} l/min · Rückhalt Feingold ${Math.round(sl.efficiency() * 100)} %`],
+      ["Durchsatz", `${sl.rateLpm} l/min · Rückhalt Feingold ${Math.round(sl.efficiency() * 100)} %`],
       ["Riffel", `${Math.round(sl.riffleLoad * 100)} % beladen · ${l(sl.riffles.volumeMl)} · ${sl.riffles.goldUg.toLocaleString("de-DE")} µg · ${sl.riffles.finds.length} Stück(e)`],
       ["Konzentratschale", `${l(sl.tray.batch.volumeMl)} · ${sl.tray.batch.goldUg.toLocaleString("de-DE")} µg`],
       ["Abraum (Halde)", l(sl.tailMl)],
