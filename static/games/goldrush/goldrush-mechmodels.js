@@ -47,12 +47,13 @@ function heapTex(THREE, seed) {
 // the riffle bed: a ribbed rubber mat (dark, rows of ridges across the flow)
 function matTex(THREE) {
   return canvasTex(THREE, 64, 128, (g, w, h) => {
-    g.fillStyle = "#2c2a28"; g.fillRect(0, 0, w, h);
+    // a grey-green rubber / carpet mat: light enough that the black sand behind the bars shows on it
+    g.fillStyle = "#5d6257"; g.fillRect(0, 0, w, h);
     for (let y = 0; y < h; y += 8) {
-      g.fillStyle = "#3d3a36"; g.fillRect(0, y, w, 3);
-      g.fillStyle = "#1c1b1a"; g.fillRect(0, y + 3, w, 1);
+      g.fillStyle = "#6d7266"; g.fillRect(0, y, w, 3);
+      g.fillStyle = "#43473f"; g.fillRect(0, y + 3, w, 1);
     }
-    for (let i = 0; i < 90; i++) { g.fillStyle = `rgba(90,84,76,${0.15 + (i % 5) * 0.05})`; g.fillRect((i * 37) % w, (i * 53) % h, 1, 1); }
+    for (let i = 0; i < 90; i++) { g.fillStyle = `rgba(130,128,112,${0.15 + (i % 5) * 0.05})`; g.fillRect((i * 37) % w, (i * 53) % h, 1, 1); }
   });
 }
 
@@ -67,6 +68,58 @@ function flowTex(THREE, seed) {
     }
     g.putImageData(img, 0, 0);
   });
+}
+
+// the riffle bed's dark sand: a band just downstream of each bar (where the
+// eddy drops the heavies), faint in between - an alpha map (white = sand)
+function heavyTex(THREE, n, u0, du) {
+  return canvasTex(THREE, 256, 16, (g, w, h) => {
+    g.fillStyle = "#151515"; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < n; i++) {
+      const x = (u0 + i * du) * w, grad = g.createLinearGradient(x, 0, x + du * w * 0.75, 0);
+      grad.addColorStop(0, "#ffffff"); grad.addColorStop(0.35, "#c8c8c8"); grad.addColorStop(1, "#151515");
+      g.fillStyle = grad; g.fillRect(x, 0, du * w * 0.75, h);
+    }
+  }, false);
+}
+
+// white water at the riffles: streaks along the flow
+function foamTex(THREE, seed) {
+  return canvasTex(THREE, 64, 32, (g, w, h) => {
+    const img = g.createImageData(w, h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const n = noise2(x * 0.18, y * 0.5, seed) * 0.7 + noise2(x * 0.5, y * 1.3, seed + 3) * 0.3, edge = Math.min(1, Math.min(x, w - x) / 10);
+      const a = Math.max(0, Math.min(1, (n - 0.15) * 1.8)) * edge, i = (y * w + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = 255; img.data[i + 3] = Math.round(a * 255);
+    }
+    g.putImageData(img, 0, 0);
+  });
+}
+
+// the tailings fan: a polar grid on the unit disc, the west half pressed short, height
+// (1 - r)^1.15 with a little noise; vertex colours wet / dark at the top, dry and lighter outside
+function heapFan(THREE) {
+  const R = 11, N = 36, pos = [], col = [], idx = [];
+  for (let r = 0; r <= R; r++) for (let k = 0; k < N; k++) {
+    const rho = r / R, th = (k / N) * Math.PI * 2, cx = Math.cos(th), cz = Math.sin(th);
+    const n = (noise2(cx * rho * 2.6 + 3, cz * rho * 2.6, 61) - 0.5) * 0.18 * rho;
+    const x = cx * rho * (cx < 0 ? 0.3 : 1), z = cz * rho, y = r === R ? 0 : Math.max(0, Math.pow(1 - rho, 1.15) + n * (1 - rho));
+    pos.push(x, y, z);
+    const dry = Math.min(1, rho * 1.6), v = 0.82 + (noise2(x * 6, z * 6, 63) - 0.5) * 0.18;
+    col.push((0.47 + 0.2 * dry) * v, (0.4 + 0.18 * dry) * v, (0.32 + 0.15 * dry) * v);
+  }
+  for (let r = 0; r < R; r++) for (let k = 0; k < N; k++) {
+    const a = r * N + k, b = r * N + ((k + 1) % N), c = (r + 1) * N + k, d = (r + 1) * N + ((k + 1) % N);
+    idx.push(a, b, c, b, d, c);                                   // counter-clockwise from above: facing up
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  const uv = []; for (let i = 0; i < pos.length; i += 3) uv.push(pos[i] * 2, pos[i + 2] * 2);
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
 }
 
 export class MechModels {
@@ -92,10 +145,16 @@ export class MechModels {
     this.heavy = mat(new THREE.MeshStandardMaterial({ color: 0x15130f, roughness: 0.7, transparent: true, opacity: 0, depthWrite: false }));
     this.flowMap = tex(flowTex(THREE, 9));
     this.flowMap.repeat.set(3, 1);
-    this.water = mat(new THREE.MeshStandardMaterial({ color: 0x8fa3a6, roughness: 0.12, transparent: true, opacity: 0.55, bumpMap: this.flowMap, bumpScale: 0.5, map: this.flowMap, depthWrite: false, envMap: envMap || null, envMapIntensity: 0.7 }));
+    // running water: little sky in it (no milky sheet) - clear you see the mat, silty it is brown (goldrush-sluice.js)
+    this.water = mat(new THREE.MeshStandardMaterial({ color: 0x8fa3a6, roughness: 0.24, transparent: true, opacity: 0.55, bumpMap: this.flowMap, bumpScale: 0.6, map: this.flowMap, depthWrite: false, envMap: envMap || null, envMapIntensity: 0.22 }));
     this.stream = mat(new THREE.MeshStandardMaterial({ color: 0xc9d6d8, roughness: 0.1, transparent: true, opacity: 0.5, depthWrite: false, map: this.flowMap }));
-    this.tailMat = mat(new THREE.MeshStandardMaterial({ map: this.heapMap, color: 0x8e7b66, roughness: 0.96 }));
+    this.tailMat = mat(new THREE.MeshStandardMaterial({ map: this.heapMap, vertexColors: true, roughness: 0.97 }));
     this.pebbleMat = mat(new THREE.MeshStandardMaterial({ color: 0x8e877d, roughness: 0.85, flatShading: true }));
+    // phase 7: processing polish - white water at the riffles, droplets, fine gold in the riffles / the tray
+    this.foamMap = tex(foamTex(THREE, 21));
+    this.foam = mat(new THREE.MeshStandardMaterial({ map: this.foamMap, color: 0xf2efe6, roughness: 0.4, transparent: true, opacity: 0.55, depthWrite: false }));
+    this.drop = mat(new THREE.MeshStandardMaterial({ color: 0xc6d2d0, roughness: 0.1, transparent: true, opacity: 0.6, depthWrite: false, envMap: envMap || null }));
+    this.goldSpeck = mat(new THREE.MeshStandardMaterial({ color: 0xd9a93c, metalness: 0.9, roughness: 0.35, envMap: envMap || null, envMapIntensity: 0.9 }));
     this.box = geo(new THREE.BoxGeometry(1, 1, 1));
     this.cyl = geo(new THREE.CylinderGeometry(1, 1, 1, 12));
     this.plane = geo(new THREE.PlaneGeometry(1, 1));
@@ -215,8 +274,27 @@ export class MechModels {
     riffles.castShadow = true;
     box.add(riffles);
     parts.push(riffles);
-    // the heavy (dark) sand collecting behind the riffles: shows how loaded the mat is
-    const heavy = this._mesh(this.plane, this.heavy, S.len - 0.3, 1, S.width - 0.02, S.len / 2 + 0.06, 0.006, 0, box, false);
+    // the heavy (dark) sand collecting behind the riffles: shows how loaded the mat is (bands behind
+    // each bar first, then more and more of the mat); fine gold specks in it
+    const hx0 = S.len / 2 + 0.06 - (S.len - 0.3) / 2, hdu = ((S.len - 0.35) / 10) / (S.len - 0.3);
+    const heavyMat = this.heavy.clone();
+    this.mats.push(heavyMat);
+    heavyMat.alphaMap = this._tex(heavyTex(THREE, 11, (0.25 - hx0) / (S.len - 0.3) + 0.004, hdu));
+    const heavy = this._mesh(this.plane, heavyMat, S.len - 0.3, 1, S.width - 0.02, S.len / 2 + 0.06, 0.006, 0, box, false);
+    const specks = new THREE.InstancedMesh(this.pebble, this.goldSpeck, 40);
+    specks.count = 0;
+    specks.frustumCulled = false;
+    box.add(specks);
+    // white water just below each bar
+    const foam = new THREE.InstancedMesh(this.plane, this.foam, 11);
+    foam.frustumCulled = false;
+    box.add(foam);
+    foam.visible = false;
+    // droplets where the water falls in / leaves (pooled, moved every frame)
+    const drops = new THREE.InstancedMesh(this.pebble, this.drop, 24);
+    drops.count = 0;
+    drops.frustumCulled = false;
+    g.add(drops);
     // water running down the box
     const water = this._mesh(this.plane, this.water.clone(), S.len, 1, S.width - 0.01, S.len / 2, 0.028, 0, box, false);
     this.mats.push(water.material);
@@ -251,10 +329,12 @@ export class MechModels {
     out.rotation.z = Math.asin((x1 - x0) / sheet);
     this.mats.push(out.material);
     out.visible = false;
-    // the tailings heap below the outlet (the sheet lands on its near slope)
-    const heap = this._mesh(this._geo(new THREE.ConeGeometry(1, 1, 18, 1, true)), this.tailMat, 0.01, 0.01, 0.01, S.len + 0.5, 0, 0, g);
+    // the tailings heap below the outlet: a fan of washed sand, its top under the outlet, spreading
+    // east (unit size: apex at the origin, x -0.3..1, z -1..1, height 1; scaled with the volume, goldrush-sluice.js)
+    const hg = this._geo(heapFan(THREE));
+    const heap = this._mesh(hg, this.tailMat, 0.01, 0.01, 0.01, S.len + 0.5, 0, 0, g);
     heap.visible = false;
-    g.userData = { box, bed, heavy, water, gravel, hop, hopFill, pipe, fall, out, heap, slope, parts };
+    g.userData = { box, bed, heavy, specks, foam, drops, water, gravel, hop, hopFill, pipe, fall, out, heap, slope, parts };
     return g;
   }
 

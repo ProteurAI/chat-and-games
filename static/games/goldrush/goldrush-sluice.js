@@ -43,7 +43,18 @@ const STEP_ML = 500;
 const BUILD_S = 2.4;
 const CLEAN_S = 4;
 
+const HEAP_B_MAX = 2.5;                            // the fan's half width at most (it reaches the mound's foot / Zone B); beyond it only gets higher
 const finite = (v) => typeof v === "number" && Number.isFinite(v);
+
+// the tailings heap's shape for a volume (m3): a fan of washed sand at about the
+// angle of repose, its top under the outlet, spreading east / north-east onto the
+// free ground (between the outlet, the ramp's Zone B and the wash place).
+// volume of the unit fan (goldrush-mechmodels.js heapFan): 0.603 a b h; a = 1.3 b, h = 0.55 b
+export function heapShape(m3) {
+  const v = Math.max(0, m3), vCap = 0.431 * HEAP_B_MAX ** 3, b = Math.min(HEAP_B_MAX, Math.cbrt(v / 0.431));
+  const extra = v > vCap ? Math.min(0.6, (v - vCap) / 20) : 0;
+  return { a: 1.3 * b, b, h: 0.55 * b * (1 + extra), x: SLUICE.len + 0.22, z: -0.15 * b };
+}
 const int = (v) => (Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0);
 
 export class Sluice {
@@ -102,9 +113,17 @@ export class Sluice {
     this.trayFill.material.opacity = 1;
     this.trayFill.material.transparent = false;
     this.trayFill.material.depthWrite = true;
+    // the gold that shows in the black sand of the concentrate tray (after a clean out: the reward)
+    this.traySpecks = new THREE.InstancedMesh(M.pebble, M.goldSpeck, 24);
+    this.traySpecks.count = 0;
+    this.traySpecks.frustumCulled = false;
+    this.trayModel.add(this.traySpecks);
     scene.add(this.trayModel);
     this.collider = { type: "box", x: SLUICE_AT.x + 1.25, z: SLUICE_AT.z, hw: 1.62, hd: 0.34, rot: 0 };
     this.world.colliders.push(this.collider);
+    this.heapCollider = { type: "box", x: 0, z: 0, hw: 0, hd: 0, rot: 0 };     // once the heap is high enough to be in the way
+    this._drops = Array.from({ length: 24 }, () => ({ t: -1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, s: 0 }));
+    this._silt = 0;
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._v = new THREE.Vector3(); this._s = new THREE.Vector3();
     this._sync();
   }
@@ -217,11 +236,45 @@ export class Sluice {
     const hv = this.hopper.batch.volumeMl, frac = Math.min(1, hv / this.hopper.capacityMl);
     u.hopFill.visible = hv > 50;
     u.hopFill.position.y = 0.03 + frac * (H.h - 0.06);
-    u.heavy.material.opacity = Math.min(0.78, this.riffleLoad * 0.7 + (this.riffles.volumeMl > 0 ? 0.08 : 0));
-    const t = Math.cbrt(this.tailMl / 1e6);
+    u.heavy.material.opacity = Math.min(0.85, this.riffleLoad * 0.75 + (this.riffles.volumeMl > 0 ? 0.12 : 0));
+    // fine gold in the riffles: a few specks, more with the gold held (subtle - no glitter carpet)
+    const nG = this.riffles.goldUg > 0 ? Math.min(40, Math.round(Math.sqrt(this.riffles.goldUg / 1500))) : 0;
+    if (nG !== u.specks.count) {
+      u.specks.count = nG;
+      for (let i = 0; i < nG; i++) {
+        const bar = i % 11, x = 0.25 + bar * ((SLUICE.len - 0.35) / 10) + 0.012 + ((i * 0.618) % 1) * 0.05;
+        const z = (((i * 0.5698403 + 0.37) % 1) - 0.5) * (SLUICE.width - 0.06), sz = 0.0018 + ((i * 7919) % 5) * 0.0004;
+        this._q.setFromAxisAngle(this._v.set(0, 1, 0), i * 2.3);
+        this._m.compose(this._v.set(x, 0.009, z), this._q, this._s.set(sz, sz * 0.35, sz));
+        u.specks.setMatrixAt(i, this._m);
+      }
+      u.specks.instanceMatrix.needsUpdate = true;
+    }
+    // the tailings heap: its shape from the volume (300 l small, 10 m3 big), out of the way once high
     u.heap.visible = this.tailMl > 2000;
-    if (u.heap.visible) { const r = Math.min(1.35, 0.18 + t * 0.95); u.heap.scale.set(r, Math.min(0.85, 0.08 + t * 0.55), r); u.heap.position.y = u.heap.scale.y / 2; }
+    const cols = this.world.colliders, hc = this.heapCollider, hi = cols.indexOf(hc);
+    if (u.heap.visible) {
+      const H = heapShape(this.tailMl / 1e6);
+      u.heap.scale.set(H.a, H.h, H.b);
+      u.heap.position.set(H.x, 0, H.z);
+      if (H.h > 0.5) {
+        hc.x = SLUICE_AT.x + H.x + 0.32 * H.a; hc.z = SLUICE_AT.z + H.z; hc.hw = H.a * 0.5; hc.hd = H.b * 0.55;
+        if (hi < 0) cols.push(hc);
+      } else if (hi >= 0) cols.splice(hi, 1);
+    } else if (hi >= 0) cols.splice(hi, 1);
     this.trayFill.visible = this.installed && (this.tray.batch.volumeMl > 0 || this.tray.batch.goldUg > 0);
+    if (this.traySpecks) {
+      const nT = this.trayFill.visible ? Math.min(24, Math.round(Math.sqrt(this.tray.batch.goldUg / 2500))) : 0;
+      if (nT !== this.traySpecks.count) {
+        this.traySpecks.count = nT;
+        for (let i = 0; i < nT; i++) {
+          const sz = 0.002 + ((i * 7919) % 5) * 0.0005;
+          this._m.compose(this._v.set((((i * 0.7548777 + 0.21) % 1) - 0.5) * 0.26, 0.475, (((i * 0.5698403 + 0.63) % 1) - 0.5) * 0.18), this._q.identity(), this._s.set(sz, sz * 0.35, sz));
+          this.traySpecks.setMatrixAt(i, this._m);
+        }
+        this.traySpecks.instanceMatrix.needsUpdate = true;
+      }
+    }
   }
 
   // per frame: build animation, water, moving gravel, fills; onSound(kind) for the water loop
@@ -249,29 +302,73 @@ export class Sluice {
     const run = this.installed && this.running;
     if (run) {
       this.models.flowMap.offset.x = (this.models.flowMap.offset.x - dt * 0.9) % 1;
-      // clear water; brown and silty while material runs through
+      // clear (green-grey, you see the mat) - silty brown while material runs through, clearing again over some seconds
       const silty = this.processing ? 1 : 0;
-      this._silt = (this._silt || 0) + (silty - (this._silt || 0)) * Math.min(1, dt * 2);
-      u.water.material.color.setRGB(0.56 - 0.2 * this._silt, 0.64 - 0.28 * this._silt, 0.65 - 0.36 * this._silt);
-      u.water.material.opacity = 0.5 + 0.25 * this._silt;
+      this._silt += (silty - this._silt) * Math.min(1, dt * (silty > this._silt ? 1.8 : 0.35));
+      const k = this._silt;
+      u.water.material.color.setRGB(0.2 + 0.26 * k, 0.29 + 0.07 * k, 0.29 - 0.04 * k);
+      u.water.material.opacity = 0.3 + 0.55 * k;
       u.out.material.color.copy(u.water.material.color);
+      u.out.material.opacity = 0.5 + 0.35 * k;
       this._waterT = (this._waterT || 0) - dt;
       if (nearPlayer && this._waterT <= 0) { this._waterT = 1.4; if (onSound) onSound("sluice_water"); }
+    } else this._silt *= Math.exp(-dt * 0.35);
+    // white water just below the bars: streaks that shift with the flow (tinted when silty)
+    const fm = u.foam;
+    fm.visible = run;
+    if (run) {
+      this.models.foam.color.setRGB(0.95 - 0.25 * this._silt, 0.93 - 0.3 * this._silt, 0.88 - 0.38 * this._silt);
+      for (let i = 0; i < 11; i++) {
+        const x = 0.25 + i * ((SLUICE.len - 0.35) / 10) + 0.045, j = 0.75 + 0.25 * Math.sin(this.time * 9 + i * 1.7);
+        this._m.compose(this._v.set(x, 0.031, 0), this._q.identity(), this._s.set(0.06 * j, 1, (SLUICE.width - 0.04) * (0.85 + 0.15 * Math.sin(this.time * 6.3 + i))));
+        fm.setMatrixAt(i, this._m);
+      }
+      fm.instanceMatrix.needsUpdate = true;
     }
-    // gravel tumbling down the box while it processes
+    // gravel tumbling down the box and off the end onto the heap - as much as the feed brings
     const g = u.gravel, n = run && this.processing ? 12 : 0;
     if (g.count !== n || n) {
       g.count = n;
       for (let i = 0; i < n; i++) {
-        const ph = (this.time * 0.35 + i / n) % 1, x = 0.15 + ph * (SLUICE.len - 0.25);
-        const z = Math.sin(i * 7.3) * (SLUICE.width * 0.32), s = 0.012 + ((i * 37) % 7) * 0.003;
+        const ph = (this.time * 0.35 + i / n) % 1.12, s = 0.012 + ((i * 37) % 7) * 0.003, z = Math.sin(i * 7.3) * (SLUICE.width * 0.32);
+        let x = 0.15 + Math.min(1, ph) * (SLUICE.len - 0.25), y = 0.026 + s * 0.5;
+        if (ph > 1) { const f = (ph - 1) / 0.12; x = SLUICE.len - 0.1 + f * 0.2; y -= f * f * 0.5; }      // over the end, down
         this._q.setFromAxisAngle(this._v.set(0, 0, 1), -this.time * 6 - i);
-        this._m.compose(this._v.set(x, 0.026 + s * 0.5, z), this._q, this._s.set(s, s * 0.8, s));
+        this._m.compose(this._v.set(x, y, z), this._q, this._s.set(s, s * 0.8, s));
         g.setMatrixAt(i, this._m);
       }
       g.instanceMatrix.needsUpdate = true;
     }
+    // droplets: where the pipe's water hits the head box, and at the outlet (more while it washes; none on LOW)
+    if (run && !this.lowDetail) this._spray(dt, this.processing);
+    else if (u.drops.count) u.drops.count = 0;
     this._fill();
+  }
+
+  // a few pooled droplets thrown up at the head and the outlet (ballistic, short-lived)
+  _spray(dt, washing) {
+    const u = this.model.userData, D = this._drops;
+    const rate = washing ? 26 : 12;
+    this._dropAcc = (this._dropAcc || 0) + dt * rate;
+    while (this._dropAcc >= 1) {
+      this._dropAcc -= 1;
+      const d = D.find((q) => q.t < 0);
+      if (!d) break;
+      const atHead = Math.random() < 0.45;
+      d.t = 0; d.s = 0.006 + Math.random() * 0.007;
+      if (atHead) { d.x = 0.05; d.y = SLUICE.headY + 0.04; d.z = (Math.random() - 0.5) * 0.2; d.vx = 0.2 + Math.random() * 0.5; d.vy = 0.5 + Math.random() * 0.6; d.vz = (Math.random() - 0.5) * 0.7; }
+      else { d.x = SLUICE.len + 0.28; d.y = 0.06; d.z = (Math.random() - 0.5) * 0.25; d.vx = 0.3 + Math.random() * 0.5; d.vy = 0.6 + Math.random() * 0.7; d.vz = (Math.random() - 0.5) * 0.8; }
+    }
+    let n = 0;
+    for (const d of D) {
+      if (d.t < 0) continue;
+      d.t += dt; d.vy -= 9.8 * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+      if (d.t > 0.6 || d.y < 0) { d.t = -1; continue; }
+      this._m.compose(this._v.set(d.x, d.y, d.z), this._q.identity(), this._s.set(d.s, d.s, d.s));
+      u.drops.setMatrixAt(n++, this._m);
+    }
+    u.drops.count = n;
+    if (n) u.drops.instanceMatrix.needsUpdate = true;
   }
 
   serialize() {
@@ -283,8 +380,7 @@ export class Sluice {
   }
 
   dispose(scene) {
-    const i = this.world.colliders.indexOf(this.collider);
-    if (i >= 0) this.world.colliders.splice(i, 1);
+    for (const c of [this.collider, this.heapCollider]) { const i = this.world.colliders.indexOf(c); if (i >= 0) this.world.colliders.splice(i, 1); }
     scene.remove(this.root);
     scene.remove(this.trayModel);
   }

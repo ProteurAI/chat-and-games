@@ -26,7 +26,8 @@ const GRAVITY = 9.81;
 
 // shapes (per-instance scale of one faceted rock): soil crumbs and clods are
 // lumpy, pebbles rounded, stone chips flat and sharp
-const ROCK_GREY = [0.25, 0.24, 0.22], PEBBLE_GREY = [0.27, 0.245, 0.215];
+// (pebbles a little darker than raw rock and mixed with the ground: light, but no white sparks in the sun)
+const ROCK_GREY = [0.25, 0.24, 0.22], PEBBLE_GREY = [0.2, 0.183, 0.163];
 const SHAPE = { crumb: [1, 0.8, 0.9], clod: [1, 0.72, 0.95], pebble: [0.95, 0.68, 0.82], chip: [1, 0.3, 0.68] };
 
 // per material (MAT index): the three layers - count at medium density,
@@ -35,7 +36,7 @@ const PROFILES = [
   { // DIRT - soft: a puff of fine dust, crumbs, a few loose clods; no bounce
     dust: { n: 14, s0: 0.1, s1: 0.24, speed: 0.75, life: 1.15, alpha: 0.44, tint: 1.1 },
     debris: { n: 9, s0: 0.006, s1: 0.013, speed: 1.3, bounce: 0.07, rest: 4.5, shape: "crumb", tint: 0.8 },
-    chunks: { n: 2, s0: 0.022, s1: 0.04, speed: 1.1, bounce: 0.04, rest: 6, shape: "clod", tint: 0.76 },
+    chunks: { n: 0.7, s0: 0.022, s1: 0.04, speed: 1.1, bounce: 0.04, rest: 6, shape: "clod", tint: 0.76 },      // big clods: rare
   },
   { // COMPACT DIRT - harder: less dust, firm heavy lumps, a duller impact
     dust: { n: 6, s0: 0.08, s1: 0.18, speed: 0.55, life: 0.9, alpha: 0.36, tint: 1.05 },
@@ -154,6 +155,8 @@ export class DigEffects {
   }
 
   _rand() { this._seed = (this._seed * 16807) % 2147483647; return this._seed / 2147483647; }
+  // a count from an expected value: 0.7 -> one piece 70 % of the time (rare things stay rare)
+  _count(x) { const f = Math.floor(x); return f + (this._rand() < x - f ? 1 : 0); }
 
   // pool limits from the graphics quality (renderer QUALITY): LOW fewer, HIGH more
   setLimits(dust, frags) {
@@ -241,9 +244,9 @@ export class DigEffects {
     const tc = this._tc;
     if (!(this.terrain.surfaceColor && this.terrain.surfaceColor(hit.x, hit.z, tc))) { tc[0] = 0.42; tc[1] = 0.3; tc[2] = 0.2; }
     this.impacts++;
-    this._dust(hit, P.dust, Math.round(P.dust.n * T.dust * k), T, mat);
-    this._frags(hit, P.debris, Math.round(P.debris.n * T.count * k), T, mat, 1);
-    const nc = Math.round(P.chunks.n * T.chunks * Math.min(1.3, k));
+    this._dust(hit, P.dust, this._count(P.dust.n * T.dust * k), T, mat);
+    this._frags(hit, P.debris, this._count(P.debris.n * T.count * k), T, mat, 1);
+    const nc = this._count(P.chunks.n * T.chunks * Math.min(1.3, k));
     this._frags(hit, P.chunks, tool === "hand" ? Math.min(nc, 1) : nc, T, mat, 2);
   }
 
@@ -300,8 +303,9 @@ export class DigEffects {
     const v = 0.85 + this._rand() * 0.3;
     if (L.stone) {                                          // pebbles / chips: grey-brown rock, a little varied
       const base = mat === 3 ? ROCK_GREY : PEBBLE_GREY;
-      const w = this._rand() * 0.25;
-      this._c.setRGB((base[0] * (1 - w) + tc[0] * w) * v, (base[1] * (1 - w) + tc[1] * w) * v, (base[2] * (1 - w) + tc[2] * w) * v);
+      const w = mat === 3 ? this._rand() * 0.25 : 0.15 + this._rand() * 0.3, g = mat === 3 ? 1 : 0.5;     // pebbles: the ground's colour (as rendered) mixed in
+      const q = mat !== 3 && this._rand() < 0.1 ? 1.25 : 1;                                              // now and then a lighter quartz pebble
+      this._c.setRGB((base[0] * (1 - w) + tc[0] * g * w) * v * q, (base[1] * (1 - w) + tc[1] * g * w) * v * q, (base[2] * (1 - w) + tc[2] * g * w) * v * q);
     } else {                                                // soil: the ground's own colour (as rendered: x0.5), moist and darker
       const t = (L.tint || 0.8) * v * 0.5;
       this._c.setRGB(tc[0] * t, tc[1] * t, tc[2] * t);
@@ -318,6 +322,7 @@ export class DigEffects {
   // material sliding off a shovel blade / out of a bucket or a barrow:
   // clods dropping from a point (world space), a low puff where they land
   spill(x, y, z, def, strength = 1) {
+    this.spills = (this.spills || 0) + 1;
     const mat = def && Number.isInteger(def.index) ? def.index : 0, P = PROFILES[mat] || PROFILES[0];
     const tc = this._tc;
     if (!(this.terrain.surfaceColor && this.terrain.surfaceColor(x, z, tc))) { tc[0] = 0.42; tc[1] = 0.3; tc[2] = 0.2; }

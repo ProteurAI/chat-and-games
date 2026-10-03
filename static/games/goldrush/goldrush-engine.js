@@ -217,6 +217,7 @@ export class GoldRushGame {
     // the wash place: bucket, classifier, gold pan (phase 5)
     this.processing = new ProcessingSystem(THREE, world.scene, world, this.doc.processing, {
       economy: this.economy, effects: this.effects, hands: this.hands, envMap, goldMat: this.loot.goldMat, upgrades: () => this.tools.upgrades, camera,
+      quality: () => this.level,
     });
     // phase 6: the sluice's water (near it), a barrow load landing in the hopper
     this.processing.onSound = (kind) => this.audio.play(kind, { dist: 2.5, strength: 0.7 });
@@ -252,17 +253,21 @@ export class GoldRushGame {
     const pr = this.processing, shown = [pr.restPan.visible, pr.cls.visible, pr.worldBucket.visible];
     pr.restPan.visible = pr.cls.visible = pr.worldBucket.visible = true;
     pr.warmup(true);
+    pr.warmMachines(true);
+    pr.warmPending = false;
     this.hands.scene.add(pr.handPan, pr.handBucket);
     world.scene.traverse((o) => { if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; } });
     renderer.compile(world.scene, camera);
     renderer.compile(this.hands.scene, this.hands.camera);
     if (this.rocks.tex) renderer.initTexture(this.rocks.tex);   // no upload hitch when the first boulder comes into view
+    for (const t of pr.textures()) renderer.initTexture(t);   // the machines' shared maps (heap, load) before a heap first comes into view
     this.render();                                        // uploads the gold pieces' buffers too
     for (const o of culled) o.frustumCulled = true;
     renderer.autoClear = false;
     renderer.render(this.hands.scene, this.hands.camera);
     renderer.autoClear = true;
     this.hands.scene.remove(pr.handPan, pr.handBucket);
+    pr.warmMachines(false);
     pr.warmup(false);
     [pr.restPan.visible, pr.cls.visible, pr.worldBucket.visible] = shown;
     held.visible = false;
@@ -710,7 +715,17 @@ export class GoldRushGame {
 
   render() {
     if (this.glLost || this.disposed) return;
-    const r = this.renderer;
+    const r = this.renderer, pr = this.processing;
+    if (pr && pr.warmPending && this.ready) {
+      // a machine was just bought: all its parts once through the GPU, drawn into one pixel the frame covers
+      pr.warmPending = false;
+      pr.warmMachines(true);
+      r.setScissorTest(true);
+      r.setScissor(0, 0, 1, 1);
+      r.render(this.world.scene, this.camera);
+      r.setScissorTest(false);
+      pr.warmMachines(false);
+    }
     r.render(this.world.scene, this.camera);
     // draw calls of the main pass (as in phase 1; the shadow pass comes on top) + the hands pass
     this.frameCalls = r.info.render.calls;
@@ -727,6 +742,8 @@ export class GoldRushGame {
   // ------------------------------------------------------------ simulation
 
   update(dt) {
+    // the shovel's load leaves the blade a moment after the cut (thrown aside / dropped into the bucket or barrow)
+    if (this._release && (this._release.t -= dt) <= 0) { this._shovelRelease(this._release); this._release = null; }
     const p = this.player, input = this.input, world = this.world;
     const look = input.takeLook();
     if (this.processing.work) { this._workUpdate(dt, look); return; }
@@ -1105,6 +1122,7 @@ export class GoldRushGame {
     // come out of the ground now (pending), shown now (loot), money on pickup
     const routed = this.processing.collect(r, this.player, def.id);
     this._intoBucket(routed);
+    if (def.id === "shovel" && r.removedMassKg > 0.05) this._release = { t: 0.3, mat: r.material, into: routed.intoMl > 0 ? routed.into : null, kg: r.removedMassKg };
     const disc = this.economy.discover(routed.finds, routed.count);
     if (disc.items.length) {
       if (disc.firstNugget) for (const it of disc.items) if (it.cls === FIND.NUGGET) { it.first = true; break; }
@@ -1117,6 +1135,18 @@ export class GoldRushGame {
     this.lastStroke.intoBucket = routed.intoMl > 0;
     this.lastStroke.into = routed.into;
     this.dirty = true;
+  }
+
+  // the shovel's load sliding off the blade: into the bucket / barrow it went (at its rim), else thrown
+  // aside in front of you (the blade as it comes up: below and right of the view's centre)
+  _shovelRelease(rl) {
+    if (!this.effects) return;
+    const pr = this.processing, def = MATERIALS[rl.mat] || MATERIALS[0], k = Math.min(0.8, 0.3 + rl.kg / 4);
+    if (rl.into === "wheelbarrow" && pr.barrow) { const c = pr.barrow.trayCenter(); this.effects.spill(c.x, this.world.groundAt(c.x, c.z) + 0.62, c.z, def, k); return; }
+    if (rl.into === "bucket" && pr.bucket) { const b = pr.bucket; this.effects.spill(b.x, this.world.groundAt(b.x, b.z) + 0.34 * pr.bucketScale, b.z, def, k); return; }
+    const p = this.player, cp = Math.cos(p.pitch), fx = -Math.sin(p.yaw) * cp, fz = -Math.cos(p.yaw) * cp, rx = Math.cos(p.yaw), rz = -Math.sin(p.yaw);
+    const x = p.x + fx * 0.75 + rx * 0.22, z = p.z + fz * 0.75 + rz * 0.22;
+    this.effects.spill(x, Math.max(this.world.groundAt(x, z) + 0.15, this.camera.position.y - 0.55), z, def, k);
   }
 
   // the bucket caught a dig: a puff at its rim (hand / pickaxe; the shovel dumps into it), a tip once it is full

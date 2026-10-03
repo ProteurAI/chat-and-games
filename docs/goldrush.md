@@ -48,7 +48,11 @@ Eine neue Maschine (spätere Prompts) braucht:
    `tickSim(sec)` – **kein Offline-Fortschritt**, kein direktes Geld: Gold
    landet als Finds im Goldbeutel oder als Konzentrat, das noch gewaschen wird,
 6. eine Save-Migration (`SAVE_VERSION` + `migrate` in `goldrush-save.js`),
-7. ein eigenes Dev-Paket (wie `goldrush-devcommands6.js`).
+7. ein eigenes Dev-Paket (wie `goldrush-devcommands6.js`),
+8. ihre Modell-Wurzeln in `warmMachines()` und `warmPending` in `grant()`
+   (`goldrush-processing.js`): Teile, die erst später sichtbar werden (Halde,
+   Füllung, Partikel), gehen so vorab einmal durch die GPU – kein Ruckler beim
+   ersten Anblick.
 
 Die Waschrinne arbeitet in Schritten von 0,5 l (`STEP_ML`), 10 l/min
 (`FEED_LPM`); `sluiceSplit` trennt deterministisch in Schwerkonzentrat

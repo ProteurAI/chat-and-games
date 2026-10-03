@@ -173,6 +173,7 @@ export class ProcessingSystem {
     this.wash = M.washPlace(true);
     this.wash.position.set(WASH.trough.x, 0, WASH.trough.z);
     this.group.add(this.wash);
+    this._wetGround();
     this.world.colliders.push({ type: "box", x: WASH.trough.x, z: WASH.trough.z, hw: 0.34, hd: 1.06, rot: 0 });
     // the pan lying on the trough's near rim (when owned and not in your hands)
     this.restPan = M.pan();
@@ -201,6 +202,50 @@ export class ProcessingSystem {
     this._sync();
   }
 
+  // phase 7: wet ground where water is used - darker, a little mud, a few small puddles
+  // (cosmetic decals on the flat camp ground; the sluice's only once it has run)
+  _wetGround() {
+    const THREE = this.THREE, c = document.createElement("canvas");
+    c.width = c.height = 128;
+    const g2 = c.getContext("2d"), img = g2.createImageData(128, 128);
+    for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) {
+      const dx = x / 64 - 1, dy = y / 64 - 1, r = Math.hypot(dx, dy);
+      const n = Math.sin(x * 0.21 + Math.sin(y * 0.13) * 2) * 0.5 + Math.sin(y * 0.17 + Math.sin(x * 0.11) * 3) * 0.5;
+      const a = Math.max(0, Math.min(1, (1 - r) * 1.6 + n * 0.25 - 0.1)), i = (y * 128 + x) * 4;
+      img.data[i] = 34 + n * 6; img.data[i + 1] = 26 + n * 5; img.data[i + 2] = 18 + n * 4; img.data[i + 3] = Math.round(a * 255);
+    }
+    g2.putImageData(img, 0, 0);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    this._wetTex = tex;
+    const mk = (opacity, rough) => new THREE.MeshStandardMaterial({ map: tex, transparent: true, opacity, roughness: rough, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, envMap: this.ctx.envMap || null });
+    this._wetMats = [mk(0.55, 0.75), mk(0.8, 0.12)];
+    const geo = (this._wetGeo = new THREE.PlaneGeometry(1, 1));
+    geo.rotateX(-Math.PI / 2);
+    const SA = SLUICE_AT;
+    // [x, z, size (m), stretch, puddle?, which: wash | sluice]
+    const spots = [[WASH.trough.x + 0.55, WASH.trough.z - 0.1, 2.0, 1.4, 0, "wash"], [WASH.panSpot.x - 0.05, WASH.panSpot.z - 0.35, 0.55, 1.2, 1, "wash"],
+      [WASH.classifier.x + 0.35, WASH.classifier.z - 0.1, 1.4, 1.2, 0, "wash"], [-19.5 + 0.9, 1.8 - 0.9, 0.9, 1, 0, "wash"],
+      [SA.x + SLUICE_LEN + 0.2, SA.z + 0.55, 2.2, 1.5, 0, "sluice"], [SA.x + SLUICE_LEN - 0.4, SA.z + 0.95, 0.6, 1.4, 1, "sluice"],
+      [SA.x - 0.25, SA.z + 0.95, 1.3, 1.2, 0, "sluice"], [SA.x + 1.3, SA.z + 0.75, 0.45, 1.6, 1, "sluice"]];
+    this._wet = spots.map(([x, z, size, st, puddle, which], i) => {
+      const m = new THREE.Mesh(geo, this._wetMats[puddle]);
+      m.position.set(x, 0.004 + i * 0.0004, z);
+      m.scale.set(size * st, 1, size);
+      m.rotation.y = i * 1.37;
+      m.renderOrder = 1;
+      m.userData = { which, puddle: !!puddle };
+      this.group.add(m);
+      return m;
+    });
+  }
+
+  // which wet patches show: the wash place always, the sluice's once it ran; LOW quality: no puddles
+  _wetSync() {
+    const low = this.ctx.quality && this.ctx.quality() === "low", ran = !!(this.sluice && this.sluice.installed && this.sluice.stats.processedMl > 0);
+    for (const m of this._wet) m.visible = (m.userData.which === "wash" || ran) && !(low && m.userData.puddle);
+  }
+
   // what is visible where (after a purchase / load)
   _sync() {
     const has = (id) => this.owned.has(id);
@@ -219,6 +264,7 @@ export class ProcessingSystem {
     this.worldBucket.visible = !!this.bucket && !this.bucket.carried;
     this._placeBucket();
     this._fills();
+    this._wetSync();
   }
 
   ownedList() { return EQUIP.filter((id) => this.owned.has(id)); }
@@ -241,6 +287,31 @@ export class ProcessingSystem {
     }
   }
 
+  // every texture of the camp's models (shown or not) - uploaded while loading
+  textures() {
+    return [...this.models.texs, ...this.mech.texs, ...(this._wetTex ? [this._wetTex] : [])];
+  }
+
+  // the machines' parts that only show later (the heap, foam, droplets, specks, a fill, the crates):
+  // all visible, one instance each, for one pass - nothing is uploaded when they first come into view
+  // (at loading; after a purchase the engine draws that pass into a single pixel - warmPending)
+  warmMachines(on) {
+    const w = this._warmM || (this._warmM = []);
+    if (!on) {
+      for (const [o, v, f, c] of w) { o.visible = v; o.frustumCulled = f; if (c != null) o.count = c; }
+      w.length = 0;
+      return;
+    }
+    const sl = this.sluice, bk = this.bulk;
+    const roots = [this.barrow && this.barrow.group, sl && sl.root, sl && sl.trayModel, bk && bk.root, bk && bk.rampModel, bk && bk.post, bk && bk.kit, this.feeder && this.feeder.kit];
+    for (const r of roots) if (r) r.traverse((o) => {
+      w.push([o, o.visible, o.frustumCulled, o.isInstancedMesh ? o.count : null]);
+      o.visible = true;
+      o.frustumCulled = false;
+      if (o.isInstancedMesh) o.count = Math.max(1, o.count);
+    });
+  }
+
   // a purchase: the thing appears on the claim
   grant(id) {
     if (!EQUIP.includes(id) || this.owned.has(id)) return false;
@@ -253,6 +324,7 @@ export class ProcessingSystem {
       if (!this.bulk) { this.owned.delete(id); return false; }
       this.feeder = new Feeder(this.THREE, this.scene, this.world, this.auto, null, this._autoCtx());                      // delivered: a crate by the control post
     }
+    if (["wheelbarrow", "sluice", "bulkhopper", "feeder"].includes(id)) this.warmPending = true;
     this._sync();
     return true;
   }
@@ -997,7 +1069,9 @@ export class ProcessingSystem {
     if (this.sluice) {
       if (!this.simWork) this.sluice.process(dt);              // (tests simulating a pan load: the machine has its own clock there)
       const near = player ? Math.hypot(player.x - (SLUICE_AT.x + 1.2), player.z - SLUICE_AT.z) < 9 : false;
+      this.sluice.lowDetail = !!(this.ctx.quality && this.ctx.quality() === "low");
       this.sluice.update(dt, near, this.onSound);
+      if ((this._wetT = (this._wetT || 0) - dt) <= 0) { this._wetT = 1; this._wetSync(); }
     }
     // phase 7: the feeder / the hand gate refill what the sluice took (downstream first)
     if (!this.simWork) { if (this.feeder) this.feeder.process(dt); if (this.bulk) this.bulk.process(dt); }
@@ -1146,5 +1220,6 @@ export class ProcessingSystem {
     if (this.bulk) this.bulk.dispose(this.scene);
     this.models.dispose();
     this.mech.dispose();
+    if (this._wetTex) { this._wetTex.dispose(); this._wetGeo.dispose(); for (const m of this._wetMats) m.dispose(); }
   }
 }

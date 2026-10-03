@@ -995,7 +995,7 @@ class GoldRushShell {
         return g.effects.stats();
       },
       fxUpdate: (sec, step = 1 / 60) => { for (let t = 0; t < sec; t += step) g.effects.update(step); return g.effects.stats(); },
-      fxStats: () => ({ ...g.effects.stats(), pools: g.effects.pools(), impacts: g.effects.impacts, trickles: g.effects.trickles }),
+      fxStats: () => ({ ...g.effects.stats(), pools: g.effects.pools(), impacts: g.effects.impacts, trickles: g.effects.trickles, spills: g.effects.spills || 0 }),
       contact: () => { g.player.kick = 0; g.hands.shake = 0; g._contact(); return { kick: g.player.kick, shake: g.hands.shake, stroke: g.lastStroke }; },
       procPour: (from, to) => g.processing.pourBetween(from, to),
       procWater: (on) => (g.processing.sluice ? g.processing.sluice.setWater(!!on) : false),
