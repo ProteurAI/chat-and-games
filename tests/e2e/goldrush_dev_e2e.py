@@ -28,7 +28,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, os.path.dirname(__file__))
-from goldrush_e2e import GPU_ARGS, PHONE, client, errors, gr_close, gr_open, gr_ready, gr_start, wait_for  # noqa: E402
+from goldrush_e2e import CURRENT_SAVE, GPU_ARGS, PHONE, client, errors, gr_close, gr_open, gr_ready, gr_start, wait_for  # noqa: E402
 from goldrush_tools_e2e import open_game, seeded  # noqa: E402
 from goldrush_process_e2e import bare_context, bucket_here, dig_spot, fill_bucket, kit, start_screen, ui_login, ui_logout  # noqa: E402
 from kopfkicker_e2e import ROOT, free_port, login  # noqa: E402
@@ -491,12 +491,12 @@ def world_and_tools(browser, base, user, shots):
     info = dict(zip(A.locator(".gr-dev-info dt").all_inner_texts(), A.locator(".gr-dev-info dd").all_inner_texts()))
     ok("save info: version, user id, seed, play time, cash, pouch, moved mass, items, size, devModified - no token / password / secret",
        all(k in info for k in ("Save-Version", "User-ID", "World Seed", "Spielzeit", "Kontostand", "Goldbeutel", "Bewegte Masse", "Items", "Save-Größe", "devModified"))
-       and info["Save-Version"] == "6" and info["User-ID"] == str(user["user"]["id"]) and user["token"] not in A.inner_text(".gr-dev-body") and CODE not in A.inner_text(".gr-dev-body"), str(info)[:300])
+       and info["Save-Version"] == str(CURRENT_SAVE) and info["User-ID"] == str(user["user"]["id"]) and user["token"] not in A.inner_text(".gr-dev-body") and CODE not in A.inner_text(".gr-dev-body"), str(info)[:300])
     with A.expect_download() as dl:
         A.click("[data-dev-cmd='save.export']")
     path = dl.value.path()
     exported = json.loads(Path(path).read_text(encoding="utf-8"))
-    ok("save export: a JSON file of this mine (valid current-version document, no token inside)", exported["saveVersion"] == 6 and exported["devModified"] is True and user["token"] not in Path(path).read_text(encoding="utf-8"), dl.value.suggested_filename)
+    ok("save export: a JSON file of this mine (valid current-version document, no token inside)", exported["saveVersion"] == CURRENT_SAVE and exported["devModified"] is True and user["token"] not in Path(path).read_text(encoding="utf-8"), dl.value.suggested_filename)
     # import: a broken file is refused, the mine untouched
     fp = fingerprint(A)
     bad = Path(tempfile.mkdtemp()) / "broken.json"

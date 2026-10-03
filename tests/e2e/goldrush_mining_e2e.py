@@ -23,7 +23,7 @@ from playwright.sync_api import sync_playwright
 sys.path.insert(0, os.path.dirname(__file__))
 from goldrush_e2e import (  # noqa: E402
     AIM_AT_MOUND, DIG_HERE, FRAME_REC, FRAME_STOP, GPU_ARGS, PHONE, client, errors, gr_close, gr_open, gr_pause,
-    gr_ready, gr_start, heap_mb, touch, wait_for,
+    CURRENT_SAVE, gr_ready, gr_start, heap_mb, touch, wait_for,
 )
 from kopfkicker_e2e import login, start_server  # noqa: E402
 
@@ -547,9 +547,9 @@ def determinism_and_save_suite(browser, base, user, shots):
     A.evaluate("(d) => { localStorage.setItem(grKey(), JSON.stringify(d)); localStorage.removeItem(grKey('.backup')); }", v1)
     open_game(A, start=False)
     e = eco(A)
-    ok("v1 -> current migration: seed + digs kept, money in cents, written back as the current version (5)",
+    ok("v1 -> current migration: seed + digs kept, money in cents, written back as the current version",
        st(A)["seed"] == 77 and e["stats"]["totalDigs"] == 12 and e["moneyCents"] == 0
-       and A.evaluate("() => { window.__goldrush.save(); return JSON.parse(localStorage.getItem(grKey())).saveVersion; }") == 6)
+       and A.evaluate("() => { window.__goldrush.save(); return JSON.parse(localStorage.getItem(grKey())).saveVersion; }") == CURRENT_SAVE)
     errs = errors(A)
     ok("determinism/save: no JS errors", not errs, "; ".join(errs[:3]))
     gr_close(A)

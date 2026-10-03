@@ -26,7 +26,7 @@ from playwright.sync_api import sync_playwright
 sys.path.insert(0, os.path.dirname(__file__))
 from goldrush_bench import run_seed as bench_seed, summarize as bench_summary  # noqa: E402
 from goldrush_e2e import (  # noqa: E402
-    FRAME_REC, FRAME_STOP, GPU_ARGS, PHONE, client, errors, gr_close, gr_open, gr_ready, gr_start, heap_mb, wait_for,
+    CURRENT_SAVE, FRAME_REC, FRAME_STOP, GPU_ARGS, PHONE, client, errors, gr_close, gr_open, gr_ready, gr_start, heap_mb, wait_for,
 )
 from kopfkicker_e2e import login, start_server  # noqa: E402
 
@@ -687,7 +687,7 @@ def foundation_and_tools(browser, base, user, shots):
 
     # ---------------- T41/T45: save v3, owning a tool for real
     ok("T41 the save (now v4) holds owned tools, pending finds, boulders, carried finds, 0.1 mm terrain, 1 cm slices",
-       saved["saveVersion"] == 6 and set(saved["tools"]) == {"owned", "equipped", "upgrades"} and isinstance(saved["economy"]["pending"], list)
+       saved["saveVersion"] == CURRENT_SAVE and set(saved["tools"]) == {"owned", "equipped", "upgrades"} and isinstance(saved["economy"]["pending"], list)
        and saved["rocks"]["v"] == 1 and isinstance(saved["resources"]["carried"], list) and saved["terrain"]["unit"] == "0.1mm"
        and saved["resources"]["unit"] == "slice1cm+0.1mm", str({k: saved[k] for k in ("saveVersion", "tools")}))
     h_before = G(A, "() => window.__goldrush.hashes()")
@@ -737,7 +737,7 @@ def progression(browser, base, user, shots, bench):
     d3 = json.loads(G(A, "() => localStorage.getItem(grKey())"))
     ok("T42 a real phase-2 save (v2) loads: identical ground, same money, only the hand owned; written back as the current version and still small",
        h["height"] == fix["phase2"]["hashes"]["height"] and h["money"] == fix["phase2"]["money"] and h["tools"]["owned"] == ["hand"]
-       and d3["saveVersion"] == 6 and len(json.dumps(d3)) < 8000, f"hash {h['height']} vs {fix['phase2']['hashes']['height']}, money {h['money']}, {len(json.dumps(d3))} B")
+       and d3["saveVersion"] == CURRENT_SAVE and len(json.dumps(d3)) < 8000, f"hash {h['height']} vs {fix['phase2']['hashes']['height']}, money {h['money']}, {len(json.dumps(d3))} B")
     v1 = {"saveVersion": 1, "worldSeed": 77, "createdAt": 1, "updatedAt": 2, "money": 3.5, "tool": "hand",
           "player": {"x": 0.6, "z": 10.2, "yaw": 0, "pitch": 0.1}, "stats": {"digs": 12}, "terrain": None}
     gr_close(A)
@@ -746,7 +746,7 @@ def progression(browser, base, user, shots, bench):
     A.evaluate("() => window.__goldrush.save()")
     d = json.loads(G(A, "() => localStorage.getItem(grKey())"))
     ok("T42b a phase-1 save (v1, money as a float) goes 1 -> 2 -> 3 -> 4: € 3,50 kept as 350 cents, only the hand",
-       d["saveVersion"] == 6 and d["economy"]["cashCents"] == 350 and d["tools"]["owned"] == ["hand"] and d["worldSeed"] == 77, str({k: d[k] for k in ("saveVersion", "tools")}))
+       d["saveVersion"] == CURRENT_SAVE and d["economy"]["cashCents"] == 350 and d["tools"]["owned"] == ["hand"] and d["worldSeed"] == 77, str({k: d[k] for k in ("saveVersion", "tools")}))
 
     # T17: pending -> collected, exactly once, also across exit and reload
     fresh(A)

@@ -243,6 +243,7 @@ def dig_feel(A, shots):
         if G(A, f"() => {GR}.fxUpdate(0.05).trickle") > 0 or G(A, f"() => {GR}.fxStats().trickles") > tr0:
             break
     G(A, f"() => {GR}.fxUpdate(1.0)")
+    G(A, f"() => {GR}.flushLoot()")                      # finds still flying to the pouch would land during the window
     h_before = G(A, f"() => [{GR}.hashes(), {GR}.economy().earnedCents, {GR}.state().revision, {GR}.volume().delta]")
     G(A, f"() => {GR}.fxUpdate(3)")
     h_after = G(A, f"() => [{GR}.hashes(), {GR}.economy().earnedCents, {GR}.state().revision, {GR}.volume().delta]")
@@ -308,7 +309,7 @@ def wheelbarrow(A, shots):
        f"price {price}, at {b and (round(b['x'], 2), round(b['z'], 2))}")
     G(A, f"() => {GR}.save()")
     saved = json.loads(G(A, "() => localStorage.getItem(grKey())"))
-    ok("W2 ownership in the save (v6): owned, position, orientation, (empty) load", saved["saveVersion"] == 6 and "wheelbarrow" in saved["processing"]["owned"] and saved["processing"]["wheelbarrow"]["batch"]["volumeMl"] == 0
+    ok("W2 ownership in the save (v6+): owned, position, orientation, (empty) load", saved["saveVersion"] >= 6 and "wheelbarrow" in saved["processing"]["owned"] and saved["processing"]["wheelbarrow"]["batch"]["volumeMl"] == 0
        and abs(saved["processing"]["wheelbarrow"]["x"] - b["x"]) < 1e-9, str(saved["processing"]["wheelbarrow"])[:160])
     # W3 / W4: dig into the parked barrow
     sp = dig_spot(A, 0.3)
@@ -619,8 +620,8 @@ def saves(A):
     open_game(A)
     G(A, f"() => {GR}.save()")
     d = json.loads(G(A, "() => localStorage.getItem(grKey())"))
-    ok("save v6: a phase-5 document (v5) loads as it was (cash, tools, bucket), gains nothing of phase 6, is written as v6",
-       d["saveVersion"] == 6 and d["economy"]["cashCents"] == 4321 and d["processing"]["owned"] == ["bucket"] and d["processing"]["wheelbarrow"] is None and d["processing"]["sluice"] is None, str(d["processing"]["owned"]))
+    ok("save v6+: a phase-5 document (v5) loads as it was (cash, tools, bucket), gains nothing of phase 6 (or 7), is written as the current version",
+       d["saveVersion"] >= 6 and d["processing"].get("bulkHopper") is None and d["economy"]["cashCents"] == 4321 and d["processing"]["owned"] == ["bucket"] and d["processing"]["wheelbarrow"] is None and d["processing"]["sluice"] is None, str(d["processing"]["owned"]))
 
 
 def mech_state(page):

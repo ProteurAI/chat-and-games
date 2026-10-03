@@ -25,7 +25,7 @@ from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, os.path.dirname(__file__))
 from goldrush_bench import run_seed as bench_seed, summarize4  # noqa: E402
-from goldrush_e2e import GPU_ARGS, PHONE, client, errors, gr_close, gr_open, gr_ready, gr_start, heap_mb, wait_for  # noqa: E402
+from goldrush_e2e import CURRENT_SAVE, GPU_ARGS, PHONE, client, errors, gr_close, gr_open, gr_ready, gr_start, heap_mb, wait_for  # noqa: E402
 from goldrush_tools_e2e import ACT_N, LEDGER, SHAPE, SPOT, open_game, seeded, select, tools  # noqa: E402
 from kopfkicker_e2e import login, start_server  # noqa: E402
 
@@ -481,17 +481,17 @@ def saves(A):
     v1 = {"saveVersion": 1, "worldSeed": 77, "createdAt": 1, "updatedAt": 2, "money": 3.5, "tool": "hand",
           "player": {"x": 0.6, "z": 10.2, "yaw": 0, "pitch": 0.1}, "stats": {"digs": 12}, "terrain": None}
     d = load(v1)
-    ok("49 a phase-1 save (v1) loads: € 3,50 as cash, written as the current version (v6)", d["saveVersion"] == 6 and d["economy"]["cashCents"] == 350 and d["tools"]["owned"] == ["hand"], str(d["economy"]["cashCents"]))
+    ok("49 a phase-1 save (v1) loads: € 3,50 as cash, written as the current version", d["saveVersion"] == CURRENT_SAVE and d["economy"]["cashCents"] == 350 and d["tools"]["owned"] == ["hand"], str(d["economy"]["cashCents"]))
     fx2 = json.loads((FIX / "goldrush_save_v2.json").read_text(encoding="utf-8"))
     d = load(fx2["doc"])
     h = G(A, "() => window.__goldrush.hashes()")
-    ok("50 a real phase-2 save (v2) loads: the same ground, € 1,20 as cash, written as the current version (v6)", d["saveVersion"] == 6 and d["economy"]["cashCents"] == fx2["phase2"]["money"] and h["height"] == fx2["phase2"]["hashes"]["height"],
+    ok("50 a real phase-2 save (v2) loads: the same ground, € 1,20 as cash, written as the current version", d["saveVersion"] == CURRENT_SAVE and d["economy"]["cashCents"] == fx2["phase2"]["money"] and h["height"] == fx2["phase2"]["hashes"]["height"],
        f"cash {d['economy']['cashCents']}")
     fx3 = json.loads((FIX / "goldrush_save_v3.json").read_text(encoding="utf-8"))
     d = load(fx3["doc"])
     h = G(A, "() => window.__goldrush.hashes()")
     ok("51 a real phase-3 save (v3) loads: its cash stays exactly (gold sold back then is NOT turned back into gold), the pouch starts empty, the ground is the same",
-       d["saveVersion"] == 6 and d["economy"]["cashCents"] == fx3["doc"]["economy"]["moneyCents"] and d["economy"]["pouchSummary"]["totalGoldUg"] == 0
+       d["saveVersion"] == CURRENT_SAVE and d["economy"]["cashCents"] == fx3["doc"]["economy"]["moneyCents"] and d["economy"]["pouchSummary"]["totalGoldUg"] == 0
        and d["economy"]["sold"]["legacyUg"] == fx3["doc"]["economy"]["inventory"]["totalGoldUg"] and h["height"] == fx3["phase2"]["hashes"]["height"],
        f"cash {fx3['doc']['economy']['moneyCents']} -> {d['economy']['cashCents']}, legacy gold {d['economy']['sold']['legacyUg']} ug")
     # 52: a v4 save reloads deterministically

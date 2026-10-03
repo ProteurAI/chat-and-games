@@ -29,6 +29,8 @@ if hasattr(sys.stdout, "reconfigure"):       # Windows consoles: the check names
 
 RESULTS = []
 GPU_ARGS = ["--use-angle=d3d11", "--enable-gpu", "--ignore-gpu-blocklist", "--js-flags=--expose-gc"]
+# the save version the game writes now (goldrush-save.js) - the suites compare against it, not a number of their phase
+CURRENT_SAVE = int(__import__("re").search(r"export const SAVE_VERSION = (\d+)", (Path(__file__).resolve().parents[2] / "static" / "games" / "goldrush" / "goldrush-save.js").read_text(encoding="utf-8")).group(1))
 NOISE = ("favicon", "WebSocket connection", 'Viewport argument key "interactive-widget"')
 
 # a browser without WebGL: every webgl/webgl2 context request fails
@@ -506,7 +508,7 @@ def desktop_suite(browser, base, user, shots, engine):
     ok("T10 ... also after a full page reload", again["seed"] == before["seed"] and dh2 < 0.0015, f"max dh {dh2 * 1000:.2f} mm")
     doc = A.evaluate("() => JSON.parse(localStorage.getItem(grKey()))")
     ok("T10 save document: current version, seed, money as integer cents, only the hand owned, timestamps, compact terrain, the player's own (settings on the device)",
-       doc["saveVersion"] == 6 and doc["worldSeed"] == before["seed"] and isinstance(doc["economy"]["cashCents"], int) and doc["tools"]["owned"] == ["hand"]
+       doc["saveVersion"] == CURRENT_SAVE and doc["worldSeed"] == before["seed"] and isinstance(doc["economy"]["cashCents"], int) and doc["tools"]["owned"] == ["hand"]
        and doc["createdAt"] <= doc["updatedAt"] and doc["terrain"] and "settings" not in doc and doc.get("owner", {}).get("id") == str(user["user"]["id"]),
        f"{len(json.dumps(doc))} B, terrain keys {list(doc['terrain'].keys())}")
 
