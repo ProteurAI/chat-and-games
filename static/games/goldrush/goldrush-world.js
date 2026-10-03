@@ -182,6 +182,7 @@ export class GoldRushWorld {
     this.assets = assets;
     this.disposables = [];
     this.colliders = [];
+    this.decks = [];               // phase 7: walkable timber (a loading ramp, a platform) - see addDeck
     const scene = (this.scene = new THREE.Scene());
     scene.fog = new THREE.FogExp2(FOG_COLOR, 0.0062);
     scene.background = new THREE.Color(FOG_COLOR);
@@ -822,8 +823,27 @@ export class GoldRushWorld {
 
   groundAt(x, z) {
     const t = this.terrain;
-    if (x >= t.x0 && x <= t.x0 + t.size && z >= t.z0 && z <= t.z0 + t.size) return t.getHeightAt(x, z);
-    return this.groundHeightAt(x, z);
+    const g = x >= t.x0 && x <= t.x0 + t.size && z >= t.z0 && z <= t.z0 + t.size ? t.getHeightAt(x, z) : this.groundHeightAt(x, z);
+    return this.decks.length ? Math.max(g, this.deckAt(x, z)) : g;
+  }
+
+  /**
+   * Walkable timber on the claim (phase 7): an axis-aligned rectangle
+   * { x0, x1, z0, z1 } whose height runs linearly from h0 (at a) to h1 (at b)
+   * along `axis` ("x" | "z") - a ramp; h0 == h1: a platform. You stand / push a
+   * barrow on it (groundAt is its height there); its sides are too high to
+   * step onto - only the low end of a ramp is.
+   */
+  addDeck(d) { if (!this.decks.includes(d)) this.decks.push(d); return d; }
+  removeDeck(d) { const i = this.decks.indexOf(d); if (i >= 0) this.decks.splice(i, 1); }
+  deckAt(x, z) {
+    let h = -Infinity;
+    for (const d of this.decks) {
+      if (x < d.x0 || x > d.x1 || z < d.z0 || z > d.z1) continue;
+      const u = d.axis === "z" ? z : x, f = d.b === d.a ? 0 : Math.max(0, Math.min(1, (u - d.a) / (d.b - d.a)));
+      h = Math.max(h, d.h0 + (d.h1 - d.h0) * f);
+    }
+    return h;
   }
 
   dispose() {

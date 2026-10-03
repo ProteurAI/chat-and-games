@@ -3,13 +3,13 @@
 Interne Notizen für die Weiterentwicklung (Prompt 6–12). Nicht für Spieler.
 Liegt bewusst außerhalb von `static/`, wird also nicht ausgeliefert.
 
-## Module (Stand Phase 6)
+## Module (Stand Phase 7)
 
 | Bereich | Datei(en) |
 |---|---|
 | Einstieg, Startscreen, Menüs, Dialoge | `static/games/goldrush/goldrush.js` |
 | Spiel, Loop, Spieler, Kauf | `goldrush-engine.js` |
-| Spielstände (pro Konto), Migrationen, Dev-Snapshot | `goldrush-save.js` (`GoldRushSaveService`, Version 6) |
+| Spielstände (pro Konto), Migrationen, Dev-Snapshot | `goldrush-save.js` (`GoldRushSaveService`, Version 7) |
 | Geld, Goldbeutel, Verkauf | `goldrush-economy.js` |
 | Shop-Registry (Items, Preise, Voraussetzungen) | `goldrush-shop.js` (`SHOP_ITEMS`) |
 | Gelände, Ressourcen, Abbau | `goldrush-terrain.js`, `goldrush-resources.js`, `goldrush-mining.js` |
@@ -17,6 +17,10 @@ Liegt bewusst außerhalb von `static/`, wird also nicht ausgeliefert.
 | Schubkarre (Phase 6) | `goldrush-wheelbarrow.js` (`Wheelbarrow`) |
 | Waschrinne / Sluice (Phase 6) | `goldrush-sluice.js` (`Sluice`) |
 | Modelle Schubkarre / Rinne | `goldrush-mechmodels.js` (`MechModels`) |
+| Material-Transfer zwischen Maschinen (Phase 7) | `goldrush-transfer.js` (`MaterialBuffer`, `transfer`, `TransferLink`, `stepChain`) |
+| Vorratstrichter, Dosierer (Phase 7) | `goldrush-automation.js` (`BulkHopper`, `Feeder`) |
+| Modelle Vorratstrichter / Rampe / Dosierer | `goldrush-automodels.js` (`AutoModels`, nutzt die Materialien von `MechModels`) |
+| Begehbare Aufbauten (Rampe, Plattform) | `goldrush-world.js` (`addDeck` / `deckAt`, in `groundAt` eingerechnet) |
 | Grab-Gefühl: Partikel pro Material und Werkzeug | `goldrush-vfx.js` (`DigEffects`, `DIG_PROFILES`, `DIG_TOOLS`) |
 | Entwickler-/QA-Werkzeuge | `goldrush-dev*.js` (siehe unten; Phase 6: `goldrush-devcommands6.js`) |
 
@@ -68,6 +72,62 @@ Neue Item-Arten (z. B. Maschinen) bekommen ihre Besitz-Logik an einer Stelle:
 `GoldRushGame.canGrant / ownsItem / _grantItem` (genutzt von Kauf **und**
 Entwicklertools).
 
+## Automation und Transfer-Schicht (Phase 7) – die Schnittstelle für Prompt 8
+
+Phase 7 bringt die erste Automation: **Vorratstrichter** (360 l, Aufsatzbretter
+540 l) am Kopf der Waschrinne, befüllt über eine Holzrampe aus dem Westteil
+von Zone B, und **Dosierer** (Rüttelrinne mit Motor) darunter. Kette:
+Schubkarre / Eimer → Vorratstrichter → (Dosierer) → Trichter der Rinne → Rinne.
+
+`goldrush-transfer.js` ist die kleine, generische Grundlage – kein ECS:
+
+- **Halter** (`volumeOf` / `roomOf` / `takeFrom` / `putInto` / `goldOf` / `massOf`):
+  entweder ein Batch-Halter `{ batch, capacityMl }` (Eimer, Schubkarre,
+  Rinnen-Trichter) oder ein `MaterialBuffer`.
+- **`MaterialBuffer`** = INPUT + BUFFER + OUTPUT in einem: jede Eingabe bleibt
+  eine eigene Schicht (Herkunft, Zusammensetzung, Gold getrennt, höchstens 24
+  – darüber werden ältere zusammengelegt), entnommen wird von unten, die
+  älteste zuerst (FIFO). `serialize()` / Konstruktor für den Spielstand.
+- **`transfer(from, to, maxMl, id)`** – ein Umfüllvorgang, exakt, bei vollem
+  Ziel nur der passende Teil; der Rest bleibt, wo er war.
+- **`TransferLink`** – Motor / Schieber zwischen OUTPUT und INPUT mit
+  `rateLpm`, bewegt ganze Schritte (`stepMl`). Zustände `moving` / `blocked`
+  (Ziel voll = **Backpressure**) / `starved` (Quelle leer) / `off`. Einziger
+  Zustand ist der Schritt-Akku (gespeichert) – kein Rückstau, der später
+  „ausbricht“, nichts doppelt, nichts verloren.
+- **`stepChain(links, dt, nextId)`** – eine Kette von Links stromabwärts
+  zuerst, in Schritten ≤ 0,5 s: unabhängig von Bildrate und Simulation.
+
+**Ein Förderband (Prompt 8)** ist damit: ein `MaterialBuffer` (das Band;
+Kapazität = Länge × Beladung pro Meter) + ein `TransferLink` mit der
+Bandgeschwindigkeit in den nächsten Eingang. Eine Kette Lader → Trichter →
+Band → Trommel wird mit `stepChain` vorgerückt; wenn das Ende voll ist, staut
+sich alles zurück und läuft von selbst weiter. Vorratstrichter und Rinne müssen
+dafür nicht angefasst werden: Ein Band kann `bulk.buffer` als Quelle oder
+`sluice.hopper` als Ziel nehmen. Zu tun pro neuer Maschine wie in Phase 6
+(Shop-Eintrag, `EQUIP`, Ledger-Summen `goldInContainers` / `massInContainers`,
+Interaktion, Save-Migration, Dev-Paket) – plus ihr Platz in `stepChain`.
+
+Regeln, die die Automation einhält: läuft nur im Spiel-Loop
+(`ProcessingSystem.update`) oder im Sim-Hook `tickSim` (1-s-Schritte, Rinne
+zuerst, dann was sie nachfüllt) – **kein Offline-Fortschritt**; Gold wird nur
+bewegt (Ledger exakt); ein gleichmäßig dosierender Dosierer lässt die Rinne
+12 statt 10 l/min verarbeiten (`Sluice.steadyLpm`, Feindosierung 14, höchstens
+`STEADY_MAX_LPM`) – Stöße überlasten sie, eine gleichmäßige Aufgabe nicht.
+
+Phase-7-Ökonomie (Benchmark `tests/e2e/goldrush_bench.py --strategy A7|B7|C7|D7 --minutes 660`,
+100 Seeds je Strategie): Vorratstrichter 1.050 €, Dosierer 1.200 €, Aufsatzbretter
+1.000 €, Feindosierung 1.400 €. Vorratstrichter Median 380 min (A7 446, D7 394),
+Dosierer 482 min, erstes Phase-7-Upgrade 539 min; Bargeld pro Minute 10,7 €
+(300–360 min) → 13,1 € (600–660 min); Seed für Seed liegt keine Strategie mehr
+als 5 % vorn. Nach 660 min sind 16,4 m³ (24 t) bewegt – 1,5 % des Bergs: für
+Förderbänder, Lader und Bagger bleibt Spielraum um Größenordnungen.
+
+Bedienung: Kontrollpfosten westlich des Auslasses – ohne Dosierer „Schieber
+ziehen“ (füllt den Rinnen-Trichter, schließt von selbst), mit Dosierer der
+Hebel AUS → AUTO (läuft, solange das Wasser an ist) → AN → AUS; Kontrolllampe
+grün / bernstein / aus. Status-Chip in der Nähe: Vorrat · Dosierer · Rinne · Riffel.
+
 ## Entwicklertools (QA-Modus, Prompt 5.5)
 
 - **Zugang nur serverseitig:** Umgebungsvariable `GOLDRUSH_DEV_CODE`
@@ -118,7 +178,8 @@ neue Systeme dürfen ihnen nicht widersprechen.
    übergeordnete Ziel ist: **den Berg entfernen.**
 3. **Der Berg ist endlich** (das Haufenvolumen wird bereits gemessen; nach
    180 min sind < 1,5 % abgetragen, nach 360 min mit Schubkarre und
-   Waschrinne < 1,1 % – rund 1.100 m³).
+   Waschrinne < 1,1 %, nach 660 min mit der ersten Automation ~1,5 % –
+   rund 1.100 m³).
 4. **Open Pit:** Nach dem vollständigen Abbau geht die Mine unter das
    ursprüngliche Bodenniveau weiter. (Technisch vorbereitet: die
    Abbaugrenze `FLOOR_Y` ist vom Ursprung des Ressourcen-Rasters

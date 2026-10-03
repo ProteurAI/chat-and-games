@@ -21,10 +21,14 @@
 //   SLUICE       (phase 6) the first continuous processing by the water tank
 //                (goldrush-sluice.js): hopper -> riffles -> tailings; its
 //                cleaned heavy concentrate is panned here like the rest
+//   BULK HOPPER  (phase 7) several barrow loads in store at the sluice's head,
+//   FEEDER       a motor dosing it into the sluice hopper (goldrush-automation.js,
+//                on the transfer layer goldrush-transfer.js)
 //
 // Every move of material between containers goes through pour()
-// (goldrush-material.js) - the bucket, the barrow, the hopper today, a
-// loader or a conveyor later.
+// (goldrush-material.js) or its generic form transfer() (goldrush-transfer.js:
+// batch holders and layered buffers alike) - the bucket, the barrow, the
+// hoppers, the feeder today, a loader or a conveyor later.
 //
 // The material is a MaterialBatch all the way (goldrush-material.js):
 // nothing is re-rolled, gold is only ever moved or - what a process does
@@ -39,6 +43,9 @@ import { ProcessModels, bucketFillHeight, panFillHeight, panRadius } from "./gol
 import { MechModels, BARROW } from "./goldrush-mechmodels.js";
 import { Wheelbarrow } from "./goldrush-wheelbarrow.js";
 import { Sluice, SLUICE_AT, SLUICE_SPOTS, CLEAN_S } from "./goldrush-sluice.js";
+import { AutoModels, BULK } from "./goldrush-automodels.js";
+import { BulkHopper, Feeder, BULK_AT, AUTO_SPOTS, inAutomationFoot } from "./goldrush-automation.js";
+import { transfer, roomOf } from "./goldrush-transfer.js";
 import { FIND } from "./goldrush-resources.js";
 
 // the wash place, next to the water tank (-19.5, 1.8)
@@ -52,7 +59,7 @@ export const WASH = {
   barrowDrop: { x: -15.2, z: 9.2, yaw: -Math.PI / 2 },     // ... a bought wheelbarrow next to it
   feedZone: { x: -16.0, z: 3.4, r: 3.1 },                  // a barrow parked here feeds screen and pan
 };
-export const EQUIP = ["bucket", "pan", "classifier", "wheelbarrow", "sluice"];
+export const EQUIP = ["bucket", "pan", "classifier", "wheelbarrow", "sluice", "bulkhopper", "feeder"];
 const BARROW_REACH = 2.6;        // m: a parked barrow this close (its tray) catches what you dig
 const HOPPER_AT = { x: SLUICE_AT.x - 0.27, z: SLUICE_AT.z };
 export const BUCKET_ML = 10000;
@@ -77,6 +84,11 @@ export const HELD_GRIPS = {
   barrow: [{ side: 1, pos: [0.2, 0, 0], axis: "x", roll: 0, flip: 1 }, { side: -1, pos: [0.2, 0, 0], axis: "x", roll: 0, flip: 1 }],
 };
 const COLORS = { raw: 0x8a6a4c, conc: 0x6a5846, black: 0x3a332c };
+// the feeder lever: what [E] sets next
+const MODE_TEXT = { auto: "Dosierer auf AUTO – läuft, solange das Wasser an ist", on: "Dosierer einschalten (AN)", stop: "Dosierer ausschalten" };
+const MODE_SHORT = { auto: "AUTO", on: "START", stop: "STOP" };
+const BULK_KIT = { x: BULK_AT.x + 1.45, z: BULK_AT.z - 1.2 };
+const SLUICE_LEN = 2.7;               // SLUICE.len (goldrush-mechmodels.js): where the wet ground lies
 
 const int = (v) => (Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0);
 const ease = (t) => t * t * (3 - 2 * t);
@@ -129,6 +141,17 @@ export class ProcessingSystem {
     this._build();
     this.barrow = this.owned.has("wheelbarrow") ? new Wheelbarrow(THREE, this.scene, this.world, this.mech, s.wheelbarrow, WASH.barrowDrop) : null;
     this.sluice = this.owned.has("sluice") ? this._newSluice(s.sluice) : null;
+    this.bulk = this.owned.has("bulkhopper") ? new BulkHopper(THREE, this.scene, this.world, this.auto, s.bulkHopper, this._autoCtx()) : null;
+    this.feeder = this.owned.has("feeder") && this.bulk ? new Feeder(THREE, this.scene, this.world, this.auto, s.feeder, this._autoCtx()) : null;
+    if (this.owned.has("feeder") && !this.bulk) this.owned.delete("feeder");
+    this._refitBarrow();                                       // parked on the platform: it stands on the deck (made just now)
+  }
+
+  // a parked barrow onto whatever the ground is now (decks appear / go with the bulk hopper)
+  _refitBarrow() { const w = this.barrow; if (w && !w.pushing && !w.dump) w.fit(null); }
+
+  _autoCtx() {
+    return this._actx || (this._actx = { nextId: () => this.nextBatch++, upgrades: this.upgrades, sluice: () => this.sluice, bulk: () => this.bulk });
   }
 
   _newSluice(saved) {
@@ -170,6 +193,7 @@ export class ProcessingSystem {
     this.handSieve = new THREE.Group();                        // nothing drawn: the gloves on the (world) frame's handles
     // phase 6: the wheelbarrow and the sluice share one model kit
     this.mech = new MechModels(THREE, { envMap: this.ctx.envMap, woodTex: this.world.woodTex });
+    this.auto = new AutoModels(this.mech);                     // phase 7: the bulk hopper, the feeder (same materials)
     this.handBarrow = new THREE.Group();                       // nothing drawn: the gloves on the barrow's (world) grips
     this._barrowGrips = HELD_GRIPS.barrow.map((g) => ({ ...g, pos: [...g.pos] }));
     this._ga = new THREE.Vector3();
@@ -224,11 +248,40 @@ export class ProcessingSystem {
     if (id === "bucket") this.bucket = { x: WASH.supplyDrop.x, z: WASH.supplyDrop.z, ry: 0.3, carried: false, batch: this._batch(STAGE.RAW) };
     if (id === "wheelbarrow") this.barrow = new Wheelbarrow(this.THREE, this.scene, this.world, this.mech, null, WASH.barrowDrop);
     if (id === "sluice") this.sluice = this._newSluice(null);           // delivered: boards by the tank, to be built
+    if (id === "bulkhopper") this.bulk = new BulkHopper(this.THREE, this.scene, this.world, this.auto, null, this._autoCtx());     // delivered: a pallet by the sluice
+    if (id === "feeder") {
+      if (!this.bulk) { this.owned.delete(id); return false; }
+      this.feeder = new Feeder(this.THREE, this.scene, this.world, this.auto, null, this._autoCtx());                      // delivered: a crate by the control post
+    }
     this._sync();
     return true;
   }
 
-  applyUpgrades() { this._sync(); if (this.sluice) this.sluice.applyUpgrades(); }
+  applyUpgrades() {
+    this._sync();
+    if (this.sluice) this.sluice.applyUpgrades();
+    if (this.bulk) this.bulk.applyUpgrades();
+    if (this.feeder) this.feeder.applyUpgrades();
+  }
+
+  // the bulk hopper goes up: a barrow or bucket standing where it will stand goes to the shed
+  _clearAutomationFoot() {
+    const w = this.barrow, b = this.bucket;
+    if (w && !w.pushing && !w.dump) {
+      const c = w.trayCenter(this._tc2 || (this._tc2 = {}));
+      if (inAutomationFoot(w.x, w.z) || inAutomationFoot(c.x, c.z)) this.devPlaceBarrow(WASH.barrowDrop.x, WASH.barrowDrop.z, WASH.barrowDrop.yaw);
+    }
+    if (b && !b.carried && inAutomationFoot(b.x, b.z)) { b.x = WASH.supplyDrop.x; b.z = WASH.supplyDrop.z; this._sync(); }
+  }
+
+  // a barrow on the platform, pointing at the bulk hopper, its tray over the rim
+  _atBulkDump(w, c) {
+    const bk = this.bulk;
+    if (!bk || !bk.installed) return false;
+    // its wheel up on the platform, pushed up against the hopper's frame (it stops there), pointing south:
+    // tipped, the load goes over the rim into the funnel
+    return Math.hypot(w.x - AUTO_SPOTS.dumpWheel.x, w.z - AUTO_SPOTS.dumpWheel.z) <= 0.25 && this.world.groundAt(w.x, w.z) > BULK.deckY - 0.03 && w.fwd().z > 0.8;
+  }
 
   _placeBucket() {
     const b = this.bucket;
@@ -332,6 +385,10 @@ export class ProcessingSystem {
     if (w && w.pushing) {
       if (w.dump) return null;
       const c = w.trayCenter(this._ti || (this._ti = {}));
+      if (w.batch.volumeMl > 0 && this._atBulkDump(w, c)) {
+        if (this.bulk.buffer.room <= 200) return { id: "barrow-park", action: "Schubkarre abstellen – der Vorratstrichter ist voll", short: "ABSTELLEN" };
+        return { id: "bulk-dump", action: "Schubkarre in den Vorratstrichter kippen", short: "AUSKIPPEN" };
+      }
       if (sl && sl.installed && w.batch.volumeMl > 0 && Math.hypot(c.x - HOPPER_AT.x, c.z - HOPPER_AT.z) <= 1.5) {
         // a full hopper: set the barrow down here and let the water work it off
         if (sl.hopper.batch.volumeMl >= sl.capacityMl - 200) return { id: "barrow-park", action: "Schubkarre abstellen – der Trichter ist voll", short: "ABSTELLEN" };
@@ -340,7 +397,12 @@ export class ProcessingSystem {
       return { id: "barrow-park", action: this._atWash(c) ? "Schubkarre am Waschplatz abstellen" : "Schubkarre abstellen", short: "ABSTELLEN" };
     }
     // 2 - carrying the bucket: into the hopper / the barrow, or set it down
+    const bk = this.bulk;
     if (b && b.carried) {
+      if (b.batch.volumeMl > 0 && bk && bk.installed && near(AUTO_SPOTS.bucket, 0.9) && this.world.groundAt(p.x, p.z) > BULK.deckY - 0.15 && facing(BULK_AT.x, BULK_AT.z) > 0.5) {
+        if (bk.buffer.room <= 200) return { id: "bulk-full", action: "Der Vorratstrichter ist voll", short: "", disabled: true };
+        return { id: "bucket-bulk", action: "Eimer in den Vorratstrichter kippen", short: "KIPPEN" };
+      }
       if (b.batch.volumeMl > 0 && sl && sl.installed && near(SLUICE_SPOTS.feed, 1.5)) {
         if (sl.hopper.batch.volumeMl >= sl.capacityMl - 200) return { id: "hopper-full", action: "Der Trichter ist voll", short: "", disabled: true };
         return { id: "bucket-hopper", action: "Eimer in den Trichter kippen", short: "KIPPEN" };
@@ -351,6 +413,22 @@ export class ProcessingSystem {
       }
       if (near(WASH.bucketSpot, 2.4)) return { id: "bucket-wash", action: "Eimer am Waschplatz abstellen", short: "ABSTELLEN" };
       return { id: "bucket-drop", action: "Eimer abstellen", short: "ABSTELLEN" };
+    }
+    // 3a - the automation: build the bulk hopper, mount the feeder, the lever / the hand gate
+    if (bk) {
+      const atPost = near(AUTO_SPOTS.control, 0.95) && facing(AUTO_SPOTS.post.x, AUTO_SPOTS.post.z) > 0.5;
+      if (!bk.installed) {
+        if (bk.build < 0 && (atPost || (near(BULK_KIT, 1.7) && facing(BULK_KIT.x, BULK_KIT.z) > 0.3))) return { id: "bulk-build", action: "Vorratstrichter aufbauen", short: "AUFBAUEN" };
+      } else if (atPost) {
+        const fd = this.feeder;
+        if (fd && !fd.installed) return fd.build < 0 ? { id: "feeder-mount", action: "Dosierer montieren", short: "MONTIEREN" } : null;
+        if (fd) { const nx = fd.nextMode(); return { id: "feeder-mode", action: MODE_TEXT[nx], short: MODE_SHORT[nx] }; }
+        if (bk.gateOpen) return { id: "gate-busy", action: "Der Schieber ist offen – es rutscht nach", short: "", disabled: true };
+        if (bk.volumeMl <= 0) return { id: "gate-none", action: "Der Vorratstrichter ist leer", short: "", disabled: true };
+        if (!sl || !sl.installed) return { id: "gate-none", action: "Erst die Waschrinne aufbauen", short: "", disabled: true };
+        if (roomOf(sl.hopper) <= 0) return { id: "gate-none", action: "Der Trichter der Rinne ist voll", short: "", disabled: true };
+        return { id: "bulk-gate", action: "Schieber ziehen – Trichter der Rinne füllen", short: "SCHIEBER" };
+      }
     }
     // 3 - the sluice: build it, water on / off, clean the riffles out
     if (sl) {
@@ -430,9 +508,23 @@ export class ProcessingSystem {
     if (id === "barrow-take" && w && !w.pushing && !(b && b.carried)) { w.take(); this._sync(); return { ok: true, kind: "barrow" }; }
     if (id === "barrow-park" && w && w.pushing) { w.park(); this._sync(); return { ok: true, kind: "drop" }; }
     if (id === "barrow-dump" && w && w.pushing && sl && sl.installed) {
-      const ok = w.startDump(sl.hopper, (ml) => { if (this.onDumped) this.onDumped(ml); });
+      const ok = w.startDump(sl.hopper, (ml) => { if (this.onDumped) this.onDumped(ml); }, this.nextBatch++);
       return ok ? { ok: true, kind: "dump" } : { ok: false };
     }
+    const bk = this.bulk, fd = this.feeder;
+    if (id === "bulk-dump" && w && w.pushing && bk && bk.installed) {
+      const ok = w.startDump(bk.buffer, (ml) => { bk.stats.inMl += ml; if (ml > 0) bk.stats.loads++; bk._fill(); if (this.onDumped) this.onDumped(ml, "bulk"); }, this.nextBatch++);
+      return ok ? { ok: true, kind: "dump" } : { ok: false };
+    }
+    if (id === "bucket-bulk" && b && b.carried && bk && bk.installed) {
+      const ml = bk.pourIn({ batch: b.batch, capacityMl: this.capacityMl });
+      this._fills();
+      return ml > 0 ? { ok: true, kind: "feed", ml, into: "bulk" } : { ok: false };
+    }
+    if (id === "bulk-build" && bk) { const ok = bk.startBuild(); if (ok) this._clearAutomationFoot(); return ok ? { ok: true, kind: "build", what: "bulk" } : { ok: false }; }
+    if (id === "feeder-mount" && fd) return fd.startMount() ? { ok: true, kind: "build", what: "feeder" } : { ok: false };
+    if (id === "feeder-mode" && fd && fd.installed) { fd.setMode(fd.nextMode()); return { ok: true, kind: "mode", mode: fd.mode }; }
+    if (id === "bulk-gate" && bk) return bk.openGate() ? { ok: true, kind: "gate" } : { ok: false };
     if (id === "bucket-hopper" && b && b.carried && sl && sl.installed) {
       const ml = pour({ batch: b.batch }, sl.hopper, Infinity, this.nextBatch++);
       this._fills();
@@ -529,6 +621,9 @@ export class ProcessingSystem {
     if (this.work) this.stopWork();
     if (id === "bucket" && this.bucket) { this._devTail(this.bucket.batch); this.bucket = null; }
     if (id === "wheelbarrow" && this.barrow) { this._devTail(this.barrow.batch); this.barrow.dispose(this.scene); this.barrow = null; }
+    if (id === "bulkhopper" && this.owned.has("feeder")) this.devRemove("feeder");
+    if (id === "feeder" && this.feeder) { for (const l of this.feeder.tray.layers) this._devTail(l); this.feeder.dispose(this.scene); this.feeder = null; }
+    if (id === "bulkhopper" && this.bulk) { for (const l of this.bulk.buffer.layers) this._devTail(l); this.bulk.dispose(this.scene); this.bulk = null; }
     if (id === "sluice" && this.sluice) {
       const sl = this.sluice;
       this._devTail(sl.hopper.batch); this._devTail(sl.riffles); this._devTail(sl.tray.batch);
@@ -542,6 +637,7 @@ export class ProcessingSystem {
     }
     this.owned.delete(id);
     this._sync();
+    this._refitBarrow();
     return true;
   }
 
@@ -575,6 +671,33 @@ export class ProcessingSystem {
   }
 
   devInstallSluice() { const sl = this.sluice; if (!sl) return false; sl.state = "ready"; sl.build = -1; sl._sync(); return true; }
+
+  // phase 7: the bulk hopper built / its content (null = empty), the feeder mounted and its lever
+  devInstallBulk() {
+    const bk = this.bulk;
+    if (!bk) return false;
+    if (!bk.installed) { this._clearAutomationFoot(); bk.state = "ready"; bk.build = -1; bk._sync(); }
+    return true;
+  }
+
+  devSetBulk(batch) {
+    const bk = this.bulk;
+    if (!bk || (batch && batch.volumeMl > bk.capacityMl)) return false;
+    for (const l of bk.buffer.layers) this._devTail(l);
+    bk.buffer.layers = [];
+    if (batch) { batch.id = this.nextBatch++; this._devIn(batch); bk.buffer.put(batch); }
+    bk._fill();
+    return true;
+  }
+
+  devInstallFeeder() {
+    const fd = this.feeder;
+    if (!fd || !this.devInstallBulk()) return false;
+    if (!fd.installed) { fd.state = "ready"; fd.build = -1; fd._sync(); }
+    return true;
+  }
+
+  devFeederMode(mode) { return !!(this.feeder && this.feeder.installed && this.feeder.setMode(mode)); }
 
   devRiffles(batch, loadMl) {
     const sl = this.sluice;
@@ -876,6 +999,11 @@ export class ProcessingSystem {
       const near = player ? Math.hypot(player.x - (SLUICE_AT.x + 1.2), player.z - SLUICE_AT.z) < 9 : false;
       this.sluice.update(dt, near, this.onSound);
     }
+    // phase 7: the feeder / the hand gate refill what the sluice took (downstream first)
+    if (!this.simWork) { if (this.feeder) this.feeder.process(dt); if (this.bulk) this.bulk.process(dt); }
+    this._steady();
+    if (this.feeder) this.feeder.update(dt, this.onSound, player ? Math.hypot(player.x - BULK_AT.x, player.z - BULK_AT.z) < 10 : false);
+    if (this.bulk) this.bulk.update(dt, this.feeder && this.feeder.installed ? this.feeder.flow() : null);
     // the bucket stands on whatever the ground is now
     if (this.bucket && !this.bucket.carried) this.worldBucket.position.y = this.world.groundAt(this.bucket.x, this.bucket.z);
     // trough water: a slow shimmer, the trickle
@@ -945,15 +1073,35 @@ export class ProcessingSystem {
 
   // tests / benchmark: material from one container to another - the same pour() the actions use
   pourBetween(from, to) {
-    const H = { bucket: this.bucket ? { batch: this.bucket.batch, capacityMl: this.capacityMl } : null, barrow: this.barrow, hopper: this.sluice ? this.sluice.hopper : null };
+    const H = { bucket: this.bucket ? { batch: this.bucket.batch, capacityMl: this.capacityMl } : null, barrow: this.barrow, hopper: this.sluice ? this.sluice.hopper : null,
+      bulk: this.bulk && this.bulk.installed ? this.bulk.buffer : null, tray: this.feeder ? this.feeder.tray : null };
     if (!H[from] || !H[to]) return 0;
-    const ml = pour(H[from], H[to], Infinity, this.nextBatch++);
+    const ml = transfer(H[from], H[to], Infinity, this.nextBatch++);
+    if (ml > 0 && to === "bulk") { this.bulk.stats.inMl += ml; this.bulk.stats.loads++; }
+    if (this.bulk) this.bulk._fill();
     this._fills();
     return ml;
   }
 
-  // the simulation (benchmark): the sluice runs for `seconds` (nothing drawn)
-  tickSim(seconds) { return this.sluice ? this.sluice.process(seconds) : 0; }
+  // the simulation (benchmark): the machines run for `seconds` (nothing drawn) - with the
+  // phase-7 machines in short steps (sluice first, then what refills it), exactly like frames
+  tickSim(seconds) {
+    if (!this.bulk && !this.feeder) return this.sluice ? this.sluice.process(seconds) : 0;
+    let done = 0;
+    for (let t = 0; t < seconds - 1e-9; t += 1) {
+      const h = Math.min(1, seconds - t);
+      if (this.sluice) done += this.sluice.process(h);
+      if (this.feeder) this.feeder.process(h);
+      if (this.bulk) this.bulk.process(h);
+      this._steady();
+    }
+    return done;
+  }
+
+  // a running feeder doses evenly: the sluice takes its rate (FEED_LPM .. STEADY_MAX_LPM)
+  _steady() {
+    if (this.sluice) this.sluice.steadyLpm = this.feeder && this.feeder.installed && this.feeder.running ? this.feeder.rateLpm : 0;
+  }
 
   // ------------------------------------------------------------ save
 
@@ -969,18 +1117,22 @@ export class ProcessingSystem {
       ledger: { ...this.ledger },
       wheelbarrow: this.barrow ? this.barrow.serialize() : null,
       sluice: this.sluice ? this.sluice.serialize() : null,
+      bulkHopper: this.bulk ? this.bulk.serialize() : null,
+      feeder: this.feeder ? this.feeder.serialize() : null,
     };
   }
 
   // gold in containers right now (ledger check)
   goldInContainers() {
     return (this.bucket ? this.bucket.batch.goldUg : 0) + this.tub.goldUg + this.pan.batch.goldUg + this.sieve.batch.goldUg
-      + (this.barrow ? this.barrow.batch.goldUg : 0) + (this.sluice ? this.sluice.goldUg() : 0);
+      + (this.barrow ? this.barrow.batch.goldUg : 0) + (this.sluice ? this.sluice.goldUg() : 0)
+      + (this.bulk ? this.bulk.goldUg() : 0) + (this.feeder ? this.feeder.goldUg() : 0);
   }
 
   massInContainers() {
     return (this.bucket ? this.bucket.batch.massG : 0) + this.tub.massG + this.pan.batch.massG + this.sieve.batch.massG
-      + (this.barrow ? this.barrow.batch.massG : 0) + (this.sluice ? this.sluice.massG() : 0);
+      + (this.barrow ? this.barrow.batch.massG : 0) + (this.sluice ? this.sluice.massG() : 0)
+      + (this.bulk ? this.bulk.massG() : 0) + (this.feeder ? this.feeder.massG() : 0);
   }
 
   dispose() {
@@ -990,6 +1142,8 @@ export class ProcessingSystem {
     this.scene.remove(this.group);
     if (this.barrow) this.barrow.dispose(this.scene);
     if (this.sluice) this.sluice.dispose(this.scene);
+    if (this.feeder) this.feeder.dispose(this.scene);
+    if (this.bulk) this.bulk.dispose(this.scene);
     this.models.dispose();
     this.mech.dispose();
   }

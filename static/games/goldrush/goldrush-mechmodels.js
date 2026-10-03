@@ -76,7 +76,7 @@ export class MechModels {
     const geo = (g) => { this.geos.push(g); return g; };
     const mat = (m) => { this.mats.push(m); return m; };
     const tex = (t) => { this.texs.push(t); return t; };
-    this._geo = geo; this._mat = mat;
+    this._geo = geo; this._mat = mat; this._tex = tex;
     this.galv = mat(new THREE.MeshStandardMaterial({ color: 0x8d9295, roughness: 0.52, metalness: 0.55, envMap: envMap || null, envMapIntensity: 0.5, side: THREE.DoubleSide }));
     this.galvDark = mat(new THREE.MeshStandardMaterial({ color: 0x5e6366, roughness: 0.55, metalness: 0.5, envMap: envMap || null }));
     this.rubber = mat(new THREE.MeshStandardMaterial({ color: 0x1f1e1d, roughness: 0.9 }));

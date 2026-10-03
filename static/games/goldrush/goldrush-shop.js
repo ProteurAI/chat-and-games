@@ -23,6 +23,11 @@
 // trip) and a sluice box by the water tank (continuous washing while you
 // work on), with two small sluice upgrades. They raise THROUGHPUT - litres
 // per minute - far more than gold per litre; real machines come later.
+//
+// Phase 7 - first automation (goldrush-automation.js): a bulk hopper at the
+// sluice's head that stores several barrow loads, and a motorised feeder that
+// doses it into the sluice on its own, with one small upgrade each. They save
+// ATTENTION - the sluice keeps running while you dig - not gold per litre.
 
 export const SHOP_ITEMS = [
   {
@@ -106,13 +111,33 @@ export const SHOP_ITEMS = [
     effect: { capture: 0.75 },
     requires: { equipment: ["sluice"] },
   },
+  {
+    id: "bulkhopper", kind: "equipment", label: "Vorratstrichter", price: 105000,
+    text: "Ein großer Stahltrichter auf Holzgerüst am Kopf der Waschrinne, mit Rampe: fasst rund 360 Liter – über vier Schubkarren. Oben hineinkippen; am Kontrollpfosten den Schieber ziehen, und er füllt den Trichter der Rinne nach.",
+    requires: { equipment: ["sluice"] },
+  },
+  {
+    id: "feeder", kind: "equipment", label: "Dosierer", price: 120000,
+    text: "Eine Rüttelrinne mit Motor unter dem Vorratstrichter: führt das Material gleichmäßig in die Waschrinne, von selbst – so gefüttert verkraftet die Rinne 12 statt 10 Liter pro Minute. Auf AUTO läuft er, solange das Wasser an ist; ist der Trichter der Rinne voll, wartet er.",
+    requires: { equipment: ["bulkhopper"] },
+  },
+  {
+    id: "bulk.extension", kind: "upgrade", tool: "bulkhopper", label: "Aufsatzbretter", price: 100000,
+    text: "Ein Bretterkranz auf dem Trichterrand: 540 statt 360 Liter – die Rinne läuft länger, ohne dass du nachfüllst.",
+    requires: { equipment: ["bulkhopper"] },
+  },
+  {
+    id: "feeder.fine", kind: "upgrade", tool: "feeder", label: "Feindosierung", price: 140000,
+    text: "Ein genauer einstellbarer Auslass: 14 statt 12 Liter pro Minute, ohne die Rinne zu überladen – mehr nimmt sie nicht.",
+    requires: { equipment: ["feeder"] },
+  },
 ];
 
 export const shopItem = (id) => SHOP_ITEMS.find((i) => i.id === id) || null;
 export const upgradesFor = (tool) => SHOP_ITEMS.filter((i) => i.kind === "upgrade" && i.tool === tool);
 export const EQUIPMENT = SHOP_ITEMS.filter((i) => i.kind === "equipment").map((i) => i.id);
 const NEED_TEXT = { shovel: "Schaufel besitzen", pickaxe: "Spitzhacke besitzen", bucket: "Eimer besitzen", pan: "Goldpfanne besitzen", classifier: "Sieb besitzen",
-  wheelbarrow: "Schubkarre besitzen", sluice: "Waschrinne besitzen" };
+  wheelbarrow: "Schubkarre besitzen", sluice: "Waschrinne besitzen", bulkhopper: "Vorratstrichter besitzen", feeder: "Dosierer besitzen" };
 
 /**
  * What an item is for this player right now:

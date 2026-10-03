@@ -41,7 +41,7 @@
 //     terrain: { gen, cols, cell, unit, encoding, changed, data, loose },
 //     resources: { unit, encoding, changed, slices, level, carried, carriedFine },
 //     rocks: { v, count, list },
-//     processing: { owned, nextBatch, bucket, pan, classifier, tub, ledger, wheelbarrow, sluice },
+//     processing: { owned, nextBatch, bucket, pan, classifier, tub, ledger, wheelbarrow, sluice, bulkHopper, feeder },
 //     devModified?, devModifiedAt? }  (only once a developer / QA command changed the mine)
 //
 // The terrain is stored as integer height deltas against the seeded
@@ -61,11 +61,13 @@
 // to a player (owner), settings live outside the mine, physical gold
 // processing (bucket, pan, classifier, material batches, fine gold); 6 =
 // primitive mechanisation (a wheelbarrow and a sluice box with their loads,
-// the sluice's riffles, concentrate tray and tailings).
-// Older documents are upgraded on load step by step (1 -> 2 -> ... -> 6)
-// and written back as 6. A new mine owns only the hand and has € 0,00.
+// the sluice's riffles, concentrate tray and tailings); 7 = first automation
+// (a bulk hopper - its layers, gate - and a motorised feeder - its lever, the
+// material on its tray, the links' step accumulators).
+// Older documents are upgraded on load step by step (1 -> 2 -> ... -> 7)
+// and written back as 7. A new mine owns only the hand and has € 0,00.
 
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 const PREFIX = "goldrush.save";
 const LEGACY_KEY = "goldrush.save";
 const LEGACY_BACKUP_KEY = "goldrush.save.backup";
@@ -144,6 +146,8 @@ export function validate(doc) {
     const pr = doc.processing;
     if (pr.wheelbarrow != null && (typeof pr.wheelbarrow !== "object" || !finite(pr.wheelbarrow.x) || !finite(pr.wheelbarrow.z))) return "Schubkarrendaten ungültig";
     if (pr.sluice != null && typeof pr.sluice !== "object") return "Waschrinnendaten ungültig";
+    if (pr.bulkHopper != null && (typeof pr.bulkHopper !== "object" || (pr.bulkHopper.buffer != null && !Array.isArray(pr.bulkHopper.buffer.layers)))) return "Vorratstrichterdaten ungültig";
+    if (pr.feeder != null && (typeof pr.feeder !== "object" || (pr.feeder.mode != null && !["stop", "auto", "on"].includes(pr.feeder.mode)))) return "Dosiererdaten ungültig";
   }
   return null;
 }
@@ -218,6 +222,10 @@ export function migrate(doc) {
   if (doc.saveVersion === 5) {
     // phase 6: no wheelbarrow, no sluice yet - everything else exactly as it was
     doc = { ...doc, saveVersion: 6, migratedFrom: doc.migratedFrom || 5 };
+  }
+  if (doc.saveVersion === 6) {
+    // phase 7: no bulk hopper, no feeder yet - the sluice, the barrow and everything else exactly as it was
+    doc = { ...doc, saveVersion: 7, migratedFrom: doc.migratedFrom || 6 };
   }
   return doc;
 }

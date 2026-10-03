@@ -34,6 +34,8 @@ const ICONS = {
   pan: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.8 10.5c0 3.8 4.1 6.5 9.2 6.5s9.2-2.7 9.2-6.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none"/><ellipse cx="12" cy="10.5" rx="9.2" ry="2.6" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="10" cy="13.6" r="1" fill="#c7922f"/><circle cx="13.2" cy="14.2" r=".8" fill="#c7922f"/></svg>`,
   wheelbarrow: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 9.5h12l-1.6 5.2H6.1z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" fill="none"/><circle cx="17.6" cy="17.4" r="2.3" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M14 14.7l2.3 1.6M6.4 14.7L4.6 19M3.5 9.5L1.5 7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>`,
   sluice: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 8.5l19 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none"/><path d="M2.5 11.5l19 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/><path d="M6 9.4l-.6 2.4M10 10.5l-.6 2.4M14 11.5l-.6 2.4M18 12.6l-.6 2.4" stroke="currentColor" stroke-width="1.2" opacity=".7"/><path d="M4 12v7M19.5 16v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M2.5 5.5h4v3" stroke="currentColor" stroke-width="1.4" fill="none" opacity=".75"/></svg>`,
+  bulkhopper: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 4.5h17l-6 8h-5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" fill="none"/><path d="M10.5 12.5v3h3v-3M5 4.5V21M19 4.5V21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/><path d="M6.5 7h11" stroke="currentColor" stroke-width="1.1" opacity=".6"/></svg>`,
+  feeder: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9.5l15 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M3 12.5l15 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/><circle cx="8" cy="18" r="2.3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M19.5 15.5v4M21.5 14.5v4M6 6.5l1.5 1M9.5 5.5l1 1.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none"/></svg>`,
   classifier: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5h18l-1.5 4H4.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" fill="none"/><path d="M6 8.5l1 4M10 8.5l.4 4M14 8.5l-.4 4M18 8.5l-1 4" stroke="currentColor" stroke-width="1" opacity=".65"/><path d="M5 12.5v7M19 12.5v7M7 16h10v3.5H7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" fill="none"/></svg>`,
 };
 
@@ -41,13 +43,15 @@ const ICONS = {
 const ACTION = { hand: "GRABEN", shovel: "SCHAUFELN", pickaxe: "HACKEN" };
 const CLASS_LABEL = { traceGold: "Goldstaub", fineGold: "Feiner Goldstaub", goldFlake: "Goldflitter", tinyGoldPiece: "Kleine Goldstücke", smallNugget: "Nuggets", washedGold: "Waschgold (Feingold)" };
 const SHOP_GROUPS = [["tool", null, "Werkzeug"], ["upgrade", "shovel", "Für die Schaufel"], ["upgrade", "pickaxe", "Für die Spitzhacke"],
-  ["equipment", null, "Verarbeitung & Transport"], ["upgrade", "bucket", "Für den Eimer"], ["upgrade", "pan", "Für die Goldpfanne"], ["upgrade", "sluice", "Für die Waschrinne"]];
+  ["equipment", null, "Verarbeitung & Transport"], ["upgrade", "bucket", "Für den Eimer"], ["upgrade", "pan", "Für die Goldpfanne"], ["upgrade", "sluice", "Für die Waschrinne"],
+  ["upgrade", "bulkhopper", "Für den Vorratstrichter"], ["upgrade", "feeder", "Für den Dosierer"]];
 // where a bought piece of equipment is now (the claim, not an inventory)
 const EQUIP_WHERE = { bucket: "Steht vor dem Schuppen – stell ihn neben dich und grab hinein.", pan: "Liegt am Waschplatz beim Wassertank.", classifier: "Steht am Waschplatz über der Wanne.",
-  wheelbarrow: "Steht neben dem Schuppen – an den Griffen greifen [E] und losschieben.", sluice: "Die Bretter liegen beim Wassertank – dort [E]: Waschrinne aufbauen." };
+  wheelbarrow: "Steht neben dem Schuppen – an den Griffen greifen [E] und losschieben.", sluice: "Die Bretter liegen beim Wassertank – dort [E]: Waschrinne aufbauen.",
+  bulkhopper: "Die Teile liegen am Kopf der Waschrinne – am Kontrollpfosten [E]: Vorratstrichter aufbauen.", feeder: "Die Kiste steht am Kontrollpfosten – dort [E]: Dosierer montieren." };
 
 const fmtMoney = (v) => `€ ${v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const TOOL_NAME = { hand: "Hand", shovel: "Schaufel", pickaxe: "Spitzhacke", bucket: "Eimer", pan: "Goldpfanne", classifier: "Sieb", wheelbarrow: "Schubkarre", sluice: "Waschrinne" };
+const TOOL_NAME = { hand: "Hand", shovel: "Schaufel", pickaxe: "Spitzhacke", bucket: "Eimer", pan: "Goldpfanne", classifier: "Sieb", wheelbarrow: "Schubkarre", sluice: "Waschrinne", bulkhopper: "Vorratstrichter", feeder: "Dosierer" };
 
 // "1 h 12 min" / "8 min" / "< 1 min"
 function fmtPlay(ms) {
@@ -972,7 +976,12 @@ class GoldRushShell {
             y: pr.barrow.group.position.y, ground: g.world.groundAt(pr.barrow.x, pr.barrow.z), fill: pr.barrow.group.userData.fill.visible } : null,
           sluice: pr.sluice ? { state: pr.sluice.state, building: pr.sluice.build >= 0, running: pr.sluice.running, processing: pr.sluice.processing, capacityMl: pr.sluice.capacityMl,
             hopper: pr.sluice.hopper.batch.serialize(), riffles: pr.sluice.riffles.serialize(), tray: pr.sluice.tray.batch.serialize(), loadMl: pr.sluice.loadMl, tailMl: pr.sluice.tailMl,
-            efficiency: pr.sluice.efficiency(), stats: { ...pr.sluice.stats }, goldUg: pr.sluice.goldUg(), heap: pr.sluice.model.userData.heap.visible } : null };
+            efficiency: pr.sluice.efficiency(), stats: { ...pr.sluice.stats }, goldUg: pr.sluice.goldUg(), heap: pr.sluice.model.userData.heap.visible } : null,
+          bulk: pr.bulk ? { state: pr.bulk.state, building: pr.bulk.build >= 0, volumeMl: pr.bulk.volumeMl, capacityMl: pr.bulk.capacityMl, goldUg: pr.bulk.goldUg(), massG: pr.bulk.massG(),
+            fineUg: pr.bulk.buffer.fineUg, pieces: pr.bulk.buffer.pieces, layers: pr.bulk.buffer.layers.map((l) => ({ id: l.id, ml: l.volumeMl, ug: l.goldUg, g: l.massG, source: l.source })),
+            gateOpen: pr.bulk.gateOpen, gate: pr.bulk.gate.state, stats: { ...pr.bulk.stats }, fill: pr.bulk.model.userData.fill.visible, decks: g.world.decks.length } : null,
+          feeder: pr.feeder ? { state: pr.feeder.state, building: pr.feeder.build >= 0, mode: pr.feeder.mode, running: pr.feeder.running, status: pr.feeder.status(), rateLpm: pr.feeder.rateLpm,
+            trayMl: pr.feeder.tray.volumeMl, trayUg: pr.feeder.tray.goldUg, inState: pr.feeder.inLink.state, outState: pr.feeder.outLink.state, moved: pr.feeder.outLink.moved, rateNow: pr.feeder.outLink.rateNow } : null };
       },
       // phase 6: the sluice runs for `s` seconds of game time (no frames drawn)
       procTick: (sec) => g.processing.tickSim(sec),
@@ -992,6 +1001,10 @@ class GoldRushShell {
       procWater: (on) => (g.processing.sluice ? g.processing.sluice.setWater(!!on) : false),
       procBarrowPlace: (x, z, yaw) => { const ok = g.processing.devPlaceBarrow(x, z, yaw); g._stationSig = null; return ok; },
       procInstallSluice: () => g.processing.devInstallSluice(),
+      // phase 7: the bulk hopper built, the feeder mounted (no animation), the lever, the ground / decks there
+      procInstallAuto: () => { const pr = g.processing; const a = pr.devInstallBulk(); const b = pr.feeder ? pr.devInstallFeeder() : null; g._stationSig = null; return { bulk: a, feeder: b }; },
+      procFeederMode: (mode) => g.processing.devFeederMode(mode),
+      groundAt: (x, z) => g.world.groundAt(x, z),
       // walk: `sec` seconds of the real movement code with the stick / keys held at (mx, my)
       walk: (sec, mx = 0, my = 1, turn = 0) => {
         const input = g.input, steps = Math.round(sec * 60);
@@ -1025,8 +1038,17 @@ class GoldRushShell {
       procCollect: () => { const r = g.processing.finishPan(); g._leaveWork(); return r; },
       procStop: () => { g._leaveWork(); return true; },
       useStation: () => g.useStation(),
+      // visual QA: the world seen from anywhere (no hands; the next frame puts the camera back on the player)
+      camLook: ({ x, y, z, tx, ty, tz, fov }) => {
+        const c = g.camera, f0 = c.fov;
+        if (fov) { c.fov = fov; c.updateProjectionMatrix(); }
+        c.position.set(x, y, z); c.lookAt(tx, ty, tz); c.updateMatrixWorld();
+        g.renderer.render(g.world.scene, c);
+        if (fov) { c.fov = f0; c.updateProjectionMatrix(); }
+        return true;
+      },
       // what [E] would do right here, now (without waiting for a frame: tests pose the player and act at once)
-      stationNow: () => { g._stationTick(0); return g.station ? { id: g.station.id, kind: g.station.kind, action: g.station.action } : null; },
+      stationNow: () => { g._stationTick(0); return g.station ? { id: g.station.id, kind: g.station.kind, action: g.station.action, short: g.station.short || "" } : null; },
       workAction: () => { g._workAction(); return g.processing.work; },
       // phase-3 polish probes: this stroke's hand variation, the tool's roll, the boulders' crack seeds
       handVar: () => ({ side: g.hands._activeSide, v: g.hands._var ? { ...g.hands._var } : null, cycle: g.tools.cycles }),

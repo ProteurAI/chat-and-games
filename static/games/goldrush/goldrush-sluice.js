@@ -38,6 +38,7 @@ export const SLUICE_SPOTS = {
 };
 export const HOPPER_ML = 50000;                     // large hopper (upgrade): 90 l
 export const FEED_LPM = 10;                         // litres a minute through the box (tuned, benchmark)
+export const STEADY_MAX_LPM = 14;                   // fed steadily by a feeder (phase 7) it takes up to this - surges overload it, an even feed does not
 const STEP_ML = 500;
 const BUILD_S = 2.4;
 const CLEAN_S = 4;
@@ -109,6 +110,8 @@ export class Sluice {
   }
 
   get installed() { return this.state === "ready"; }
+  // litres a minute through the box: FEED_LPM, more while a feeder doses it evenly (set every step by the processing system)
+  get rateLpm() { return Math.max(FEED_LPM, Math.min(STEADY_MAX_LPM, this.steadyLpm || 0)); }
   get capacityMl() { return this.hopper.capacityMl; }
   get riffleLoad() { return this.loadMl / 1000 / SLUICE_TUNING.riffleL; }       // 1 = time to clean out
   get processing() { return this.installed && this.running && this.hopper.batch.volumeMl > 0; }
@@ -169,7 +172,7 @@ export class Sluice {
   // ---- running: called every frame (and by the simulation) with the time that passed
   process(dt) {
     if (!this.processing) { this.acc = 0; return 0; }
-    this.acc += (FEED_LPM * 1000 / 60) * dt;
+    this.acc += (this.rateLpm * 1000 / 60) * dt;
     let done = 0;
     const L = this.ctx.ledger;
     while (this.acc >= STEP_ML && this.hopper.batch.volumeMl > 0) {

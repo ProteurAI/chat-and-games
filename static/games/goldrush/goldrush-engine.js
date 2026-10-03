@@ -23,6 +23,8 @@ import { DEFAULT_SETTINGS, SAVE_VERSION } from "./goldrush-save.js";
 import { SHOP_ITEMS, itemStatus, shopItem } from "./goldrush-shop.js";
 import { STATIONS, Stations } from "./goldrush-stations.js";
 import { ProcessingSystem } from "./goldrush-processing.js";
+import { BULK_AT } from "./goldrush-automation.js";
+import { BULK } from "./goldrush-automodels.js";
 import { SLICE_ORIGIN_Y } from "./goldrush-terrain.js";
 import { TOOL_DEFS, TOOL_ORDER, ToolController, cycleSeconds, effectiveDef, toolEfficiency } from "./goldrush-tools.js";
 import { DigEffects } from "./goldrush-vfx.js";
@@ -218,7 +220,7 @@ export class GoldRushGame {
     });
     // phase 6: the sluice's water (near it), a barrow load landing in the hopper
     this.processing.onSound = (kind) => this.audio.play(kind, { dist: 2.5, strength: 0.7 });
-    this.processing.onDumped = (ml) => this._dumped(ml);
+    this.processing.onDumped = (ml, where) => this._dumped(ml, where);
     const ring = new THREE.RingGeometry(0.88, 1, 48);
     this.reticle = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({
       color: 0xfff3d6, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, fog: false,
@@ -415,7 +417,14 @@ export class GoldRushGame {
     else if (r.kind === "barrow") { this.audio.play("swap", { dist: 0.3 }); this.player.pitch = Math.min(this.player.pitch, -0.28); this.hud.tip("barrow", this.touch ? "Mit dem Stick schieben · ABSTELLEN tippen zum Abstellen" : "W schieben · [E] abstellen · am Trichter: [E] auskippen", 30); }
     else if (r.kind === "dump") this.audio.play("wheelbarrow_dump", { dist: 1.2 });
     else if (r.kind === "feed") { this.audio.play("sluice_feed", { dist: 0.8 }); this._fedEffect(s.id); }
-    else if (r.kind === "build") { this.audio.play("purchase", { dist: 1 }); this.hud.message("Waschrinne", "wird aufgebaut …"); }
+    else if (r.kind === "build") { this.audio.play("purchase", { dist: 1 }); this.hud.message(r.what === "bulk" ? "Vorratstrichter" : r.what === "feeder" ? "Dosierer" : "Waschrinne", r.what === "feeder" ? "wird montiert …" : "wird aufgebaut …"); }
+    else if (r.kind === "gate") { this.audio.play("gate_open", { dist: 0.8 }); this.hud.message("Schieber offen", "Es rutscht in den Trichter der Rinne – er schließt, wenn der voll ist."); }
+    else if (r.kind === "mode") {
+      this.audio.play("swap", { dist: 0.4 });
+      const t = { auto: "AUTO – läuft, solange das Wasser der Rinne an ist", on: "AN – läuft, bis der Vorrat leer oder der Rinnen-Trichter voll ist", stop: "AUS" };
+      this.hud.message("Dosierer", t[r.mode]);
+      if (r.mode !== "stop") this.hud.tip("feeder-on", "Der Dosierer füllt die Rinne nach, solange Vorrat da ist – du kannst derweil weitergraben.", 40);
+    }
     else if (r.kind === "water") { this.audio.play("splash", { dist: 1, strength: 0.8 }); if (r.on) this.hud.tip("sluice-on", "Die Rinne läuft, solange Material im Trichter ist – du kannst derweil weiterarbeiten.", 40); }
     else if (r.kind === "work") this._enterWork();
     this._stationSig = null;
@@ -423,15 +432,22 @@ export class GoldRushGame {
     return true;
   }
 
-  // a barrow load went into the hopper (at the top of the tip)
-  _dumped(ml) {
-    const pr = this.processing, sl = pr.sluice;
+  // a barrow load went into a hopper (at the top of the tip): the sluice's, or the bulk hopper (phase 7)
+  _dumped(ml, where) {
+    const pr = this.processing, sl = pr.sluice, bk = pr.bulk;
+    const l = (ml / 1000).toFixed(0), rest = pr.barrow && pr.barrow.batch.volumeMl > 0 ? " – der Rest bleibt in der Karre" : "";
+    if (where === "bulk" && bk) {
+      if (this.effects) this.effects.spill(bk.root.position.x + 0.35, BULK.outletY + 0.55, bk.root.position.z, MATERIALS[0], 1.0);
+      this.audio.play("sluice_feed", { dist: 1.2, strength: 0.9 });
+      this.hud.message("Ausgekippt", `${l} l im Vorratstrichter (${Math.round(bk.volumeMl / 1000)} / ${Math.round(bk.capacityMl / 1000)} l)${rest}`);
+      this.dirty = true;
+      return;
+    }
     if (!sl) return;
     const x = sl.root.position.x - 0.27, z = sl.root.position.z;
     if (this.effects) this.effects.spill(x, 1.35, z, MATERIALS[0], 0.9);
     this.audio.play("sluice_feed", { dist: 1.2 });
-    const l = (ml / 1000).toFixed(0);
-    this.hud.message("Ausgekippt", `${l} l im Trichter${pr.barrow && pr.barrow.batch.volumeMl > 0 ? " – der Rest bleibt in der Karre" : ""}`);
+    this.hud.message("Ausgekippt", `${l} l im Trichter${rest}`);
     this.dirty = true;
   }
 
@@ -440,6 +456,7 @@ export class GoldRushGame {
     const pr = this.processing;
     if (!this.effects) return;
     if (id === "bucket-hopper" && pr.sluice) this.effects.spill(pr.sluice.root.position.x - 0.27, 1.3, pr.sluice.root.position.z, MATERIALS[0], 0.5);
+    else if (id === "bucket-bulk" && pr.bulk) this.effects.spill(pr.bulk.root.position.x + 0.3, BULK.outletY + 0.5, pr.bulk.root.position.z, MATERIALS[0], 0.5);
     else if (id === "bucket-barrow" && pr.barrow) { const c = pr.barrow.trayCenter(); this.effects.spill(c.x, this.world.groundAt(c.x, c.z) + 0.6, c.z, MATERIALS[0], 0.5); }
   }
 
@@ -888,6 +905,15 @@ export class GoldRushGame {
     } else if (w && (w.pushing || dW < 3.6)) {
       this.hud.load(`Schubkarre ${Math.round(w.volumeMl / 1000)} / ${Math.round(w.capacityMl / 1000)} l${w.pushing ? ` · ${Math.round(w.massKg)} kg` : ""}`);
       this.hud.loadEl.classList.toggle("is-full", w.full);
+    } else if (pr.bulk && pr.bulk.installed && Math.hypot(BULK_AT.x - P.x, BULK_AT.z - P.z) < 4.6) {
+      // the automation at a glance: store, feeder, the sluice's hopper, the riffles
+      const bk = pr.bulk, fd = pr.feeder && pr.feeder.installed ? pr.feeder : null;
+      const parts = [`Vorrat ${Math.round(bk.volumeMl / 1000)} / ${Math.round(bk.capacityMl / 1000)} l`];
+      if (fd) { const st = fd.status(); parts.push(st.key === "moving" ? `Dosierer ${String(fd.rateLpm).replace(".", ",")} l/min` : st.key === "off" ? "Dosierer aus" : "Dosierer wartet"); }
+      else if (bk.gateOpen) parts.push("Schieber offen");
+      if (sl && sl.installed) { parts.push(`Rinne ${Math.min(100, Math.round((sl.hopper.batch.volumeMl / sl.capacityMl) * 100))} %${sl.running ? "" : " (Wasser aus)"}`); parts.push(`Riffel ${Math.min(100, Math.round(sl.riffleLoad * 100))} %`); }
+      this.hud.load(parts.join(" · "));
+      this.hud.loadEl.classList.toggle("is-full", !!(sl && sl.riffleLoad >= 1));
     } else if (sl && sl.installed && dS < 4.2) {
       this.hud.load(`Trichter ${Math.round(sl.hopper.batch.volumeMl / 1000)} / ${Math.round(sl.capacityMl / 1000)} l · Riffel ${Math.min(100, Math.round(sl.riffleLoad * 100))} %${sl.running ? " · Wasser an" : ""}`);
       this.hud.loadEl.classList.toggle("is-full", sl.riffleLoad >= 1);
