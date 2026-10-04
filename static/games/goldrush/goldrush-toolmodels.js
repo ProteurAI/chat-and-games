@@ -212,8 +212,19 @@ export class ToolModels {
     soilG.computeVertexNormals();
     this.soil = new THREE.Mesh(soilG, this.soilMat);
     this.soil.position.set(0, 0.03, -0.76 - HEAD_Z);
+    this.soil.userData = { y0: 0.03, z0: -0.76 - HEAD_Z };
     this.soil.visible = false;
     head.add(this.soil);
+    // crumbs / pebbles lying on the load (phase 7A): the scoop reads as loose material, not one lump
+    const cg = track(new THREE.IcosahedronGeometry(1, 0));
+    this.crumbs = new THREE.InstancedMesh(cg, this.soilMat, 14);
+    this.crumbs.count = 0;
+    this.crumbs.frustumCulled = false;
+    this.crumbs.userData = { max: 14 };
+    const white = new THREE.Color(1, 1, 1);
+    for (let i = 0; i < 14; i++) this.crumbs.setColorAt(i, white);
+    head.add(this.crumbs);
+    this._cm = new THREE.Matrix4(); this._cq = new THREE.Quaternion(); this._ce = new THREE.Euler(); this._cv = new THREE.Vector3(); this._cs = new THREE.Vector3(); this._cc = new THREE.Color();
     shovel.userData.grips = [
       { z: 0.42, dir: 1, side: 1 },               // right hand on the D-grip
       { z: -0.18, dir: 1, side: -1 },             // left hand down the shaft
@@ -295,6 +306,32 @@ export class ToolModels {
   }
 
   // a little dirt sticks to the working ends while you use them
+  // the crumbs on the shovel's load: n of them on its top, following the load as it
+  // slides off (slide 0..1); gravel shows pebbles (a little lighter / greyer)
+  setCrumbs(n, load, slide = 0, mat = 0) {
+    const C = this.crumbs, S = this.soil;
+    if (!C) return;
+    C.count = n;
+    const sx = 0.45 + load * 0.6, sy = 0.3 + load * 0.8, sz = 0.45 + load * 0.6;
+    const gravel = mat === 2;
+    for (let i = 0; i < n; i++) {
+      const a = i * 2.39996, rr = 0.25 + 0.65 * Math.sqrt((i + 0.5) / C.userData.max);
+      const x = Math.cos(a) * rr * 0.085 * sx, z = Math.sin(a) * rr * 0.105 * sz;
+      const top = 0.045 * sy * Math.max(0, 1 - rr * rr) + 0.004;
+      const s = (gravel ? 0.0065 : 0.005) + ((i * 7919) % 7) / 7 * (gravel ? 0.005 : 0.004);
+      const fall = slide * (0.6 + ((i * 31) % 5) * 0.15);
+      this._ce.set(i * 1.3, i * 0.7, i * 2.1); this._cq.setFromEuler(this._ce);
+      this._cv.set(S.position.x + x, S.position.y + top - fall * 0.03, S.position.z + z - fall * 0.03);
+      this._cm.compose(this._cv, this._cq, this._cs.set(s, s * (gravel ? 0.75 : 0.85), s));
+      C.setMatrixAt(i, this._cm);
+      const v = 0.82 + ((i * 5113) % 9) / 9 * 0.36;
+      if (gravel && i % 2 === 0) this._cc.setRGB(v * 1.12, v * 1.1, v * 1.06); else this._cc.setRGB(v, v, v);
+      C.setColorAt(i, this._cc);
+    }
+    C.instanceMatrix.needsUpdate = true;
+    if (C.instanceColor) C.instanceColor.needsUpdate = true;
+  }
+
   setDirt(amount) {
     const d = Math.max(0, Math.min(1, amount));
     this.steel.color.setRGB(0.54 - d * 0.12, 0.55 - d * 0.15, 0.56 - d * 0.19);

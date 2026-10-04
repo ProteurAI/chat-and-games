@@ -291,7 +291,8 @@ export class FirstPersonHands {
     this.sway = { x: 0, y: 0 };
     this.grab = 0;                                  // free-hand grab pulse (piece arrives)
     this.dirt = 0;
-    this.load = 0;                                  // soil on the shovel blade, 0..1
+    this.load = 0;                                  // soil on the shovel blade, 0..1 (what is shown)
+    this.loadT = 0;                                 // ... and what this cut brought (the shown load grows to it while scooping)
     this.visible = true;
     this.reducedMotion = false;
     this.hit = "ok";                                // what the last contact hit: ok | blocked | air
@@ -399,7 +400,8 @@ export class FirstPersonHands {
     this.hitMat = mat;
     if (kind === "ok") {
       this.dirt = Math.min(1, this.dirt + (this.tool === "hand" ? 0.0035 : 0.002));
-      if (this.tool === "shovel") this.load = Math.min(1, massKg / 2.2);
+      // the blade went in: a little lies on it at once, the rest comes up while scooping (see _update)
+      if (this.tool === "shovel") { this.loadT = Math.min(1, massKg / 2.2); this.load = this.loadT * 0.3; this.loadMat = mat; }
       // a short recoil through the handle: hard ground answers harder, the pick more than the shovel
       if (!this.reducedMotion) {
         const hard = [0.35, 0.65, 0.75, 1][mat] || 0.5;
@@ -583,13 +585,26 @@ export class FirstPersonHands {
       const f = 1 - Math.exp(-dt * 8);
       for (let i = 0; i < 3; i++) { pose.p[i] += (rest.p[i] - pose.p[i]) * f; pose.r[i] += (rest.r[i] - pose.r[i]) * f; }
     }
-    // the shovel's load: on the blade from the contact until it is tipped off
+    // the shovel's load: penetrate -> loosen -> scoop (it builds up on the blade) -> carried ->
+    // tipped (it slides towards the tip and off, getting less; crumbs fly in the world)
     if (id === "shovel") {
-      if (view.phase === "dump" && view.u > 0.45) this.load = 0;
-      if (view.state !== "action" && !(view.phase === "dump")) this.load = Math.max(0, this.load - dt * 4);
-      const soil = this.models.soil;
+      const L = this.loadT || 0;
+      let slide = 0;
+      if (view.state === "action" && view.phase === "scoop") this.load = L * (0.3 + 0.7 * Math.min(1, view.u * 1.2));
+      else if (view.state === "action" && view.phase === "dump") { const k = Math.max(0, Math.min(1, (view.u - 0.12) / 0.5)); this.load = L * (1 - k * k * (3 - 2 * k)); slide = k; }
+      else if (view.state !== "action") this.load = Math.max(0, this.load - dt * 4);
+      if (view.state === "action" && view.phase === "recover") this.load = 0;
+      const soil = this.models.soil, crumbs = this.models.crumbs;
       soil.visible = this.load > 0.02;
-      if (soil.visible) soil.scale.set(0.5 + this.load * 0.55, 0.35 + this.load * 0.75, 0.5 + this.load * 0.55);
+      if (soil.visible) {
+        soil.scale.set(0.45 + this.load * 0.6, 0.3 + this.load * 0.8, 0.45 + this.load * 0.6);
+        soil.position.z = soil.userData.z0 - slide * 0.07;            // towards the tip as it slides off
+        soil.position.y = soil.userData.y0 - slide * 0.012;
+      }
+      if (crumbs) {
+        const n = soil.visible ? Math.round(crumbs.userData.max * Math.min(1, this.load * 1.15)) : 0;
+        if (crumbs.count !== n || slide > 0) this.models.setCrumbs(n, this.load, slide, this.loadMat);
+      }
     }
     const shake = this.shake > 0 ? Math.sin(this.time * 70) * 0.012 * (this.shake / 0.22) : 0;
     const T = this.toolRoot;

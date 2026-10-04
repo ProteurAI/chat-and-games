@@ -64,6 +64,8 @@ const PALETTE = {
   // per material: weathered surface / fresh cut
   compactS: 0x7c5436, compactF: 0x684129, gravelS: 0x8a7f71, gravelL: 0xab9d88, gravelD: 0x5d544a, gravelF: 0x776b5d,
   stoneS: 0x8d857a, stoneD: 0x5f5850, fill: 0x93714f, stoneCut: 0xb1a899,
+  // phase 7A: a mineralised streak at the surface - rust-stained, with dark heavy-mineral grains
+  streak: 0x8c5b34, streakD: 0x4c4038,
 };
 const REC_MAX = 256;                                  // cells one stroke can touch (radius <= 0.9 m)
 
@@ -319,7 +321,7 @@ export class DiggableTerrain {
       for (let cx = 0; cx < this.chunksPerSide; cx++) {
         const n = vpc * vpc;
         const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3), uv = new Float32Array(n * 2);
-        const matw = new Float32Array(n * 2);          // (gravel, stone) weight -> detail textures
+        const matw = new Float32Array(n * 4);          // (gravel, stone, cut, streak) -> detail textures, fresh-cut relief, streak marks
         const fresh = new Float32Array(n).fill(-1e5);  // when the ground here was last dug (fades in the shader)
         const i0 = cx * cc, j0 = cz * cc;
         for (let j = 0; j < vpc; j++) {
@@ -336,7 +338,7 @@ export class DiggableTerrain {
         geom.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
         geom.setAttribute("color", new THREE.BufferAttribute(col, 3));
         geom.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
-        geom.setAttribute("aMat", new THREE.BufferAttribute(matw, 2));
+        geom.setAttribute("aMat", new THREE.BufferAttribute(matw, 4));
         geom.setAttribute("aFresh", new THREE.BufferAttribute(fresh, 1));
         geom.setIndex(this.stride === 2 ? this.indexHalf : this.indexFull);
         const mesh = new THREE.Mesh(geom, this.material);
@@ -379,12 +381,24 @@ export class DiggableTerrain {
         // what shows at the surface: stone only where it really is exposed
         // (a lens a few cm under the soil stays hidden until dug free)
         const mat = this.field.materialAt(x, h - 0.006, z, k);
+        // a mineralised streak right under the surface (it shows - goldrush-resources.js)
+        this._st = mat === MAT.STONE || !this.field.streakAt ? 0 : this.field.streakAt(x, h - 0.02, z);
         this._colorAt(k, x, z, h, inv, curv, mat, rgb);
+        // untouched flat ground around the pile looks like the camp ground outside this square
+        // (no gravel carpet ending in a straight line at the terrain's edge - phase 7A)
+        let gw = 0;
+        if (this.groundColor && this.base[k] < 0.12 && this.base[k] - h < CHANGED_EPS && this.qh[k] === 0) {
+          gw = 1 - smoothstep(0.0, 0.12, this.base[k]);
+          this.groundColor(x, z, this._gc || (this._gc = [0, 0, 0]));
+          for (let c = 0; c < 3; c++) rgb[c] += (this._gc[c] - rgb[c]) * gw;
+        }
         col[v * 3] = rgb[0];
         col[v * 3 + 1] = rgb[1];
         col[v * 3 + 2] = rgb[2];
-        matw[v * 2] = mat === MAT.GRAVEL ? 1 : 0;
-        matw[v * 2 + 1] = mat === MAT.STONE ? 1 : 0;
+        matw[v * 4] = (mat === MAT.GRAVEL ? 1 : 0) * (1 - gw);
+        matw[v * 4 + 1] = (mat === MAT.STONE ? 1 : 0) * (1 - gw);
+        matw[v * 4 + 2] = smoothstep(CHANGED_EPS, 0.06, this.base[k] - h);     // worked ground: crumb relief in the shader
+        matw[v * 4 + 3] = this._st;
         fresh[v] = this.freshAt[k];
       }
     }
@@ -433,6 +447,12 @@ export class DiggableTerrain {
       blend(P.spill, 1 - smoothstep(0.02, 0.22, h));                                // spilled material around the pile
       blend(P.ground, smoothstep(0.02, 0, h) * 0.7);
       if (cut > 0) blend(P.fresh, cut);                                            // shallow slides / scraped rims
+    }
+    // a mineralised streak: rust stain, dark heavy-mineral grains (the shader adds quartz flecks)
+    const st = this._st || 0;
+    if (st > 0) {
+      blend(P.streak, Math.min(0.55, st * 0.75));
+      if (grain > 0.74) blend(P.streakD, st * 0.55);
     }
     // worked-over loose fill (slid into a hole): lighter and mixed
     const C = this.consumed;

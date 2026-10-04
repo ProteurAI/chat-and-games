@@ -988,6 +988,13 @@ class GoldRushShell {
       procObj: () => g.processing,
       // phase 6: dig feel - impacts straight into the effects (no mining), their stats; a real contact
       fxClear: () => { g.effects.clear(); return g.effects.stats(); },
+      // phase 7A: the luminance band of the fragments in the air / lying (no black lumps, no white sparks)
+      fxColors: () => {
+        const e = g.effects, c = e.frags.instanceColor && e.frags.instanceColor.array;
+        let lo = 9, hi = 0, n = 0;
+        if (c) e.fragState.forEach((f, i) => { if (!f.on) return; const l = 0.2126 * c[i * 3] + 0.7152 * c[i * 3 + 1] + 0.0722 * c[i * 3 + 2]; lo = Math.min(lo, l); hi = Math.max(hi, l); n++; });
+        return { lo: n ? lo : null, hi: n ? hi : null, n };
+      },
       fxImpact: (mat, tool, n = 1, dt = 0) => {
         g._aim();
         const hit = g.target || { x: g.player.x, y: g.world.groundAt(g.player.x, g.player.z), z: g.player.z - 1, normal: { x: 0, y: 1, z: 0 } };
@@ -1064,7 +1071,7 @@ class GoldRushShell {
       probe: () => g.probe(),
       aim: () => ({ state: g.aimState, material: g.target ? g.target.material : null, distance: g.target ? g.target.distance : g.farTarget ? g.farTarget.distance : null }),
       hand: () => ({ state: g.tools.state, phase: g.tools.phase, cycle: g.tools.cycles, inspecting: !!g.hands.inspecting, dirt: g.hands.dirt, tool: g.tools.equipped, view: g.tools.view(),
-        soil: g.hands.models.soil.visible, load: g.hands.load, shake: g.hands.shake, kick: g.player.kick, shown: g.hands.tool }),
+        soil: g.hands.models.soil.visible, load: g.hands.load, loadT: g.hands.loadT, crumbs: g.hands.models.crumbs ? g.hands.models.crumbs.count : 0, shake: g.hands.shake, kick: g.player.kick, shown: g.hands.tool }),
       // tool models: size / materials, and how far each glove sits from its grip (m)
       toolCheck: () => {
         const out = {};
@@ -1085,7 +1092,7 @@ class GoldRushShell {
       tools: () => ({ ...g.toolState(), state: g.tools.state, phase: g.tools.phase, blocked: g.tools.blocked, cycles: g.tools.cycles, saved: g.tools.serialize() }),
       selectTool: (id) => g.selectTool(id),
       // tests / benchmark only: the tool in the hands right away (no lower / raise), if usable
-      equipNow: (id) => { if (!g.tools.canUse(id)) return false; g.tools.equipped = id; g.tools.target = null; g.tools.state = "idle"; g.tools.phase = null; g._aim(); return true; },
+      equipNow: (id) => { if (!g.tools.canUse(id)) return false; g.tools.equipped = id; g.tools.target = null; g.tools.state = "idle"; g.tools.phase = null; g._aim(); g.ui.onTool && g.ui.onTool(g.toolState()); return true; },
       devUnlock: (on = true) => { g.setDevUnlock(on); return g.toolState(); },
       toolDefs: () => JSON.parse(JSON.stringify(this.engine.TOOL_INFO([...g.tools.upgrades]))),
       toolPose: (pose) => { g.hands.debugToolPose = pose; g.hands.update(0, g.tools.view(), { camera: g.camera, sunDir: g.world.sun.position.clone().normalize(), sunVisible: true, walk: 0, bob: 0 }); g.render(); },

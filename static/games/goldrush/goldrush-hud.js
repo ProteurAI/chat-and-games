@@ -50,6 +50,18 @@ export class GoldRushHud {
     toast.className = "gr-toast";
     toast.hidden = true;
     toast.setAttribute("role", "status");
+    // built once (icon, title, value) - a nugget and a message only change texts and what shows,
+    // so the page keeps the same nodes however many toasts come and go (phase 7A)
+    const ico = (this._toastIco = document.createElement("span"));
+    ico.className = "gr-toast-ico";
+    ico.innerHTML = NUGGET_ICON;
+    const txt = document.createElement("span");
+    txt.className = "gr-toast-text";
+    this._toastTitle = document.createElement("b");
+    this._toastValue = document.createElement("span");
+    this._toastValue.className = "gr-toast-value";
+    txt.append(this._toastTitle, this._toastValue);
+    toast.append(ico, txt);
     hud.appendChild(toast);
     const tip = (this.tipEl = document.createElement("div"));
     tip.className = "gr-tip";
@@ -173,19 +185,10 @@ export class GoldRushHud {
 
   nugget(cents, first) {
     const t = this.toast;
-    t.innerHTML = "";
-    const ico = document.createElement("span");
-    ico.className = "gr-toast-ico";
-    ico.innerHTML = NUGGET_ICON;
-    const txt = document.createElement("span");
-    txt.className = "gr-toast-text";
-    const title = document.createElement("b");
-    title.textContent = first ? "Erster Nugget!" : "✨ Kleiner Nugget";
-    const val = document.createElement("span");
-    val.className = "gr-toast-value";
-    val.textContent = `≈ ${formatEuro(cents)} im Goldbeutel`;
-    txt.append(title, val);
-    t.append(ico, txt);
+    this._toastIco.hidden = false;
+    this._toastTitle.textContent = first ? "Erster Nugget!" : "✨ Kleiner Nugget";
+    this._toastValue.textContent = `≈ ${formatEuro(cents)} im Goldbeutel`;
+    this._toastValue.hidden = false;
     t.classList.toggle("is-first", !!first);
     t.hidden = false;
     t.classList.remove("is-on");
@@ -197,14 +200,10 @@ export class GoldRushHud {
   // a short message in the toast slot (first sale, a purchase)
   message(title, value) {
     const t = this.toast;
-    t.innerHTML = "";
-    const txt = document.createElement("span");
-    txt.className = "gr-toast-text";
-    const b = document.createElement("b");
-    b.textContent = title;
-    txt.append(b);
-    if (value) { const v = document.createElement("span"); v.className = "gr-toast-value"; v.textContent = value; txt.append(v); }
-    t.append(txt);
+    this._toastIco.hidden = true;
+    this._toastTitle.textContent = title;
+    this._toastValue.textContent = value || "";
+    this._toastValue.hidden = !value;
     t.classList.remove("is-first");
     t.hidden = false;
     t.classList.remove("is-on");

@@ -33,27 +33,36 @@ const SHAPE = { crumb: [1, 0.8, 0.9], clod: [1, 0.72, 0.95], pebble: [0.95, 0.68
 // per material (MAT index): the three layers - count at medium density,
 // size range (m), launch speed (m/s), restitution, how long it lies (s)
 const PROFILES = [
-  { // DIRT - soft: a puff of fine dust, crumbs, a few loose clods; no bounce
-    dust: { n: 14, s0: 0.1, s1: 0.24, speed: 0.75, life: 1.15, alpha: 0.44, tint: 1.1 },
-    debris: { n: 9, s0: 0.006, s1: 0.013, speed: 1.3, bounce: 0.07, rest: 4.5, shape: "crumb", tint: 0.8 },
-    chunks: { n: 0.7, s0: 0.022, s1: 0.04, speed: 1.1, bounce: 0.04, rest: 6, shape: "clod", tint: 0.76 },      // big clods: rare
+  { // DIRT - soft: mostly fine crumbs and a puff of dust; a loose clod only now and then; no bounce
+    dust: { n: 16, s0: 0.1, s1: 0.24, speed: 0.75, life: 1.15, alpha: 0.44, tint: 1.1 },
+    debris: { n: 12, s0: 0.004, s1: 0.0095, speed: 1.3, bounce: 0.07, rest: 4.5, shape: "crumb", tint: 0.8 },
+    chunks: { n: 0.4, s0: 0.016, s1: 0.03, speed: 1.1, bounce: 0.04, rest: 6, shape: "clod", tint: 0.76 },      // clods: rare and small
   },
-  { // COMPACT DIRT - harder: less dust, firm heavy lumps, a duller impact
+  { // COMPACT DIRT - harder: less dust, firm earthy lumps, a duller impact
     dust: { n: 6, s0: 0.08, s1: 0.18, speed: 0.55, life: 0.9, alpha: 0.36, tint: 1.05 },
     debris: { n: 7, s0: 0.008, s1: 0.017, speed: 1.15, bounce: 0.1, rest: 5, shape: "clod", tint: 0.72 },
-    chunks: { n: 4, s0: 0.026, s1: 0.052, speed: 0.95, bounce: 0.07, rest: 7, shape: "clod", tint: 0.68 },
+    chunks: { n: 3.2, s0: 0.026, s1: 0.05, speed: 0.95, bounce: 0.07, rest: 7, shape: "clod", tint: 0.68 },
   },
-  { // GRAVEL - grainy: many pebbles with a few short clicks, little dust
+  { // GRAVEL - grainy: many small irregular pebbles with a few short clicks, little dust
     dust: { n: 4, s0: 0.07, s1: 0.15, speed: 0.5, life: 0.8, alpha: 0.28, tint: 1.0 },
-    debris: { n: 15, s0: 0.007, s1: 0.016, speed: 1.9, bounce: 0.34, rest: 6, shape: "pebble", stone: true },
-    chunks: { n: 2, s0: 0.018, s1: 0.03, speed: 1.6, bounce: 0.28, rest: 8, shape: "pebble", stone: true },
+    debris: { n: 15, s0: 0.006, s1: 0.014, speed: 1.9, bounce: 0.34, rest: 6, shape: "pebble", stone: true },
+    chunks: { n: 1.6, s0: 0.016, s1: 0.026, speed: 1.6, bounce: 0.28, rest: 8, shape: "pebble", stone: true },
   },
-  { // STONE - hard: sharp chips, fast and focused, almost no dust, no sparks
+  { // STONE - hard: sharp, bigger splinters, fast and focused, almost no dust, no sparks
     dust: { n: 2, s0: 0.05, s1: 0.1, speed: 0.4, life: 0.6, alpha: 0.24, tint: 1.15 },
-    debris: { n: 11, s0: 0.004, s1: 0.01, speed: 3.1, bounce: 0.3, rest: 5, shape: "chip", stone: true },
-    chunks: { n: 2, s0: 0.012, s1: 0.022, speed: 2.3, bounce: 0.24, rest: 7, shape: "chip", stone: true },
+    debris: { n: 10, s0: 0.006, s1: 0.013, speed: 3.1, bounce: 0.3, rest: 5, shape: "chip", stone: true },
+    chunks: { n: 2.2, s0: 0.016, s1: 0.03, speed: 2.3, bounce: 0.24, rest: 7, shape: "chip", stone: true },
   },
 ];
+
+// what a fragment may look like (linear luminance): from the ground's colour, but never
+// a black "coal" lump in brown earth nor a white speck in the sun (phase 7A)
+const LUM = { soil: [0.05, 0.19], stone: [0.06, 0.2] };
+function bandColor(c, lo, hi) {
+  const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+  if (l > 1e-5 && (l < lo || l > hi)) c.multiplyScalar((l < lo ? lo : hi) / l);
+  return c;
+}
 
 // per tool: how much of each layer, how big, how fast, which way
 const TOOLS = {
@@ -306,9 +315,11 @@ export class DigEffects {
       const w = mat === 3 ? this._rand() * 0.25 : 0.15 + this._rand() * 0.3, g = mat === 3 ? 1 : 0.5;     // pebbles: the ground's colour (as rendered) mixed in
       const q = mat !== 3 && this._rand() < 0.1 ? 1.25 : 1;                                              // now and then a lighter quartz pebble
       this._c.setRGB((base[0] * (1 - w) + tc[0] * g * w) * v * q, (base[1] * (1 - w) + tc[1] * g * w) * v * q, (base[2] * (1 - w) + tc[2] * g * w) * v * q);
+      bandColor(this._c, LUM.stone[0], LUM.stone[1]);
     } else {                                                // soil: the ground's own colour (as rendered: x0.5), moist and darker
       const t = (L.tint || 0.8) * v * 0.5;
       this._c.setRGB(tc[0] * t, tc[1] * t, tc[2] * t);
+      bandColor(this._c, LUM.soil[0], LUM.soil[1]);
     }
     this.frags.setColorAt(k, this._c);
   }

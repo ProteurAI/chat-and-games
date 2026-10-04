@@ -1277,7 +1277,13 @@ export class GoldRushGame {
     const sl = Math.hypot(gx, gz);
     if (sl < 0.7) return;                                   // ~35 degrees and steeper
     const x = hit.x - (gx / sl) * 0.22, z = hit.z - (gz / sl) * 0.22;
-    if (this.effects.queueTrickle(x, T.getHeightAt(x, z) + 0.012, z, gx / sl, gz / sl, mat, 0.25 + Math.random() * 0.6)) this._trickleCool = performance.now() + 700;
+    // a really steep fresh face (phase 7A): a little more runs down, a moment later a second trickle beside it
+    const steep = sl > 1.1;
+    if (this.effects.queueTrickle(x, T.getHeightAt(x, z) + 0.012, z, gx / sl, gz / sl, mat, 0.25 + Math.random() * 0.6)) this._trickleCool = performance.now() + (steep ? 450 : 700);
+    if (steep) {
+      const sx = x + (gz / sl) * 0.14, sz = z - (gx / sl) * 0.14;
+      this.effects.queueTrickle(sx, T.getHeightAt(sx, sz) + 0.012, sz, gx / sl, gz / sl, mat, 0.7 + Math.random() * 0.7);
+    }
   }
 
   _dir = new THREE.Vector3();

@@ -9,6 +9,8 @@
 // shape, not a cut-out) and the face they dig into is in good light.
 
 import { DiggableTerrain } from "./goldrush-terrain.js";
+import { CampDressing } from "./goldrush-campdressing.js";
+import { mergeStatic } from "./goldrush-merge.js";
 import { fbm2, hash3, mulberry32, noise2, ridged2, smoothstep } from "./goldrush-noise.js";
 
 export const CLAIM = { minX: -24, maxX: 24, minZ: -30, maxZ: 20 };      // fenced play area
@@ -197,16 +199,32 @@ export class GoldRushWorld {
     this._sky();
     this._lights();
     this._ground();
+    const n0 = this.scene.children.length;
     this._fence();
     this._props();
     this._machineZones();
+    // phase 7A: paths, ruts and the things a working claim collects (merged, cosmetic)
+    this.dressing = new CampDressing(this.THREE, this.scene, { woodTex: this.woodTex });
+    this.disposables.push({ dispose: () => this.dressing.dispose(this.scene) });
     this._boulders();
+    this._mergeProps(this.scene.children.slice(n0));
     this._grass();
     this._pebbles();
     this._distantRidges();
   }
 
   track(o) { this.disposables.push(o); return o; }
+
+  // phase 7A draw calls: the fence, the shed, barrels, tank, lamps, the zones' slabs / paint /
+  // stakes / flags and the rocks outside the pile never move - baked per material (each keeping
+  // its own shadow) and the parts taken out of the scene (colliders are separate data)
+  _mergeProps(list) {
+    const parts = list.filter((o) => o.isMesh && !o.isInstancedMesh && !o.name);
+    const merged = mergeStatic(this.THREE, this.scene, parts, { keepShadow: true });
+    for (const m of merged) this.track(m.geometry);
+    for (const p of parts) if (!p.visible) this.scene.remove(p);
+    this.propsMerged = merged.length;
+  }
 
   // procedural for now, through the asset manager (cached, disposed with the game)
   _textures() {
@@ -232,12 +250,19 @@ export class GoldRushWorld {
     // over a couple of minutes. Cheap: a few texture reads and two noises.
     this.terrainUniforms = { uTime: { value: 0 } };
     const uni = this.terrainUniforms;
+    // phase 7A: material borders follow world-space noise (no square carpets along the
+    // 12,5 cm grid), two samples per detail texture picked by macro noise (less tiling),
+    // worked ground gets a crumb relief (procedural bump - more on steep fresh cuts),
+    // and a mineralised streak shows quartz flecks and dark heavy-mineral streaks.
+    const bumpChunk = THREE.ShaderChunk.bumpmap_pars_fragment.replace(
+      "return vec2( dBx, dBy );",
+      "return vec2( dBx, dBy ) + grMicroD();");
     this.terrainMaterial.onBeforeCompile = (shader) => {
       shader.uniforms.uGravel = { value: gravel };
       shader.uniforms.uRock = { value: rock };
       shader.uniforms.uTime = uni.uTime;
       shader.vertexShader = shader.vertexShader
-        .replace("#include <common>", "#include <common>\nattribute vec2 aMat;\nattribute float aFresh;\nuniform float uTime;\nvarying vec2 vMat;\nvarying float vFresh;\nvarying float vFreshQ;\nvarying vec3 vWPos;")
+        .replace("#include <common>", "#include <common>\nattribute vec4 aMat;\nattribute float aFresh;\nuniform float uTime;\nvarying vec4 vMat;\nvarying float vFresh;\nvarying float vFreshQ;\nvarying vec3 vWPos;")
         // the fade weight (not the time stamp) is interpolated: a fresh vertex
         // next to untouched ones (-1e5) blends out softly instead of vanishing
         .replace("#include <uv_vertex>", "#include <uv_vertex>\nvMat = aMat;\nvFresh = aFresh > -1.0e4 ? exp(-max(0.0, uTime - aFresh) / 80.0) : 0.0;\nvFreshQ = aFresh > -1.0e4 ? exp(-max(0.0, uTime - aFresh) / 14.0) : 0.0;")
@@ -245,32 +270,60 @@ export class GoldRushWorld {
       shader.fragmentShader = shader.fragmentShader
         .replace("#include <common>", `#include <common>
           uniform sampler2D uGravel; uniform sampler2D uRock; uniform float uTime;
-          varying vec2 vMat; varying float vFresh; varying float vFreshQ; varying vec3 vWPos;
+          varying vec4 vMat; varying float vFresh; varying float vFreshQ; varying vec3 vWPos;
           float grHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
           float grNoise(vec2 p) {
             vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
             return mix(mix(grHash(i), grHash(i + vec2(1.0, 0.0)), f.x), mix(grHash(i + vec2(0.0, 1.0)), grHash(i + vec2(1.0, 1.0)), f.x), f.y) * 2.0 - 1.0;
+          }
+          // crumb relief of worked ground (m): three octaves, the finest fading with distance (no shimmer);
+          // the height also runs with y, so a steep face is not streaked
+          float grMicroH() {
+            vec2 q = vWPos.xz + vec2(vWPos.y * 0.83, -vWPos.y * 0.61);
+            float fine = clamp(1.0 - length(fwidth(q)) * 55.0, 0.0, 1.0);
+            return grNoise(q * 17.0) * 0.55 + grNoise(q * 41.0 + 1.7) * 0.3 * (0.4 + 0.6 * fine) + grNoise(q * 93.0 + 5.1) * 0.15 * fine;
+          }
+          vec2 grMicroD() {
+            vec3 wn = normalize(cross(dFdx(vWPos), dFdy(vWPos)));
+            float steep = 1.0 - abs(wn.y);
+            float a = (0.0026 * clamp(vMat.z, 0.0, 1.0) + 0.0018 * vFresh) * (1.0 + 0.9 * steep) * (1.0 - 0.6 * clamp(vMat.y, 0.0, 1.0));
+            float m = a * grMicroH();
+            return vec2(dFdx(m), dFdy(m));
           }`)
+        .replace("#include <bumpmap_pars_fragment>", bumpChunk)
         .replace("#include <map_fragment>", `
           vec2 wuv = vWPos.xz;
-          vec3 soilT = mix(texture2D(map, vMapUv).rgb, texture2D(map, mat2(0.8, -0.6, 0.6, 0.8) * wuv * 0.137 + 0.31).rgb, 0.35);
-          vec3 gravT = texture2D(uGravel, vMapUv * 1.7).rgb;
-          vec3 rockT = texture2D(uRock, vMapUv * 0.8).rgb;
+          float grMacro = smoothstep(-0.35, 0.35, grNoise(wuv * 0.31 + 4.7));
+          vec3 soilT = mix(texture2D(map, vMapUv).rgb, texture2D(map, mat2(0.8, -0.6, 0.6, 0.8) * wuv * 0.137 + 0.31).rgb, 0.25 + 0.2 * grMacro);
+          vec3 gravT = mix(texture2D(uGravel, vMapUv * 1.7).rgb, texture2D(uGravel, mat2(0.6, 0.8, -0.8, 0.6) * wuv * 0.71 + 0.43).rgb, grMacro);
+          vec3 rockT = mix(texture2D(uRock, vMapUv * 0.8).rgb, texture2D(uRock, mat2(-0.5, 0.87, -0.87, -0.5) * wuv * 0.33 + 0.19).rgb, grMacro);
           float grN1 = grNoise(wuv * 0.9), grN2 = grNoise(wuv * 3.7 + 7.1);
           float crust = 0.95 + 0.06 * grN1 + 0.03 * grN2;
-          diffuseColor.rgb *= mix(mix(soilT, gravT, clamp(vMat.x, 0.0, 1.0)), rockT, clamp(vMat.y, 0.0, 1.0)) * crust;
+          // material borders: the vertex weights pushed by world noise - ragged, organic edges
+          float grB = grNoise(wuv * 2.3 + 1.3) * 0.6 + grNoise(wuv * 7.9 + 3.3) * 0.4;
+          float grGW = smoothstep(0.16, 0.84, vMat.x + grB * 0.34), grRW = smoothstep(0.2, 0.8, vMat.y + grB * 0.26);
+          diffuseColor.rgb *= mix(mix(soilT, gravT, grGW), rockT, grRW) * crust;
+          // a mineralised streak: thin quartz veinlets (light), dark heavy-mineral streaks - subtle
+          float grS = clamp(vMat.w * 2.2, 0.0, 1.0);
+          vec2 sq = mat2(0.94, 0.34, -0.34, 0.94) * wuv;
+          float grQ = smoothstep(0.07, 0.0, abs(grNoise(sq * vec2(2.4, 9.5) + vWPos.y * 3.0)));
+          float grH = smoothstep(0.22, 0.0, abs(grNoise(sq * vec2(1.6, 6.1) + 11.0) - 0.3));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.84, 0.82, 0.77), grQ * grS * 0.5);
+          diffuseColor.rgb *= 1.0 - grH * grS * 0.3;
           float grFresh = vFresh;
-          vec3 freshTint = mix(vec3(0.8, 0.75, 0.71), vec3(1.07, 1.05, 1.02), clamp(vMat.x + vMat.y, 0.0, 1.0));
+          vec3 freshTint = mix(vec3(0.8, 0.75, 0.71), vec3(1.07, 1.05, 1.02), clamp(grGW + grRW, 0.0, 1.0));
           diffuseColor.rgb *= mix(vec3(1.0), freshTint, grFresh * 0.9);
           // just cut: moist and darker for some seconds (soil only), crumbly and uneven while fresh
-          float grSoil = 1.0 - clamp(vMat.x + vMat.y, 0.0, 1.0);
+          float grSoil = 1.0 - clamp(grGW + grRW, 0.0, 1.0);
           diffuseColor.rgb *= 1.0 - vFreshQ * 0.16 * grSoil;
           float grCrumb = grNoise(wuv * 23.0) * 0.6 + grNoise(wuv * 61.0) * 0.4;
-          diffuseColor.rgb *= 1.0 - grFresh * 0.11 * max(0.0, grCrumb) + grFresh * 0.04 * min(0.0, grCrumb);`)
+          diffuseColor.rgb *= 1.0 - grFresh * 0.11 * max(0.0, grCrumb) + grFresh * 0.04 * min(0.0, grCrumb);
+          // worked ground keeps a little crumb shading after the fresh look is gone
+          diffuseColor.rgb *= 1.0 - clamp(vMat.z, 0.0, 1.0) * (1.0 - grFresh) * 0.05 * max(0.0, grCrumb);`)
         .replace("#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
-          roughnessFactor *= (0.93 + 0.1 * grN2) * (1.0 - 0.14 * grFresh - 0.16 * vFreshQ * (1.0 - clamp(vMat.x + vMat.y, 0.0, 1.0)));`);
+          roughnessFactor *= (0.93 + 0.1 * grN2) * (1.0 - 0.14 * grFresh - 0.16 * vFreshQ * (1.0 - clamp(grGW + grRW, 0.0, 1.0)));`);
     };
-    this.terrainMaterial.customProgramCacheKey = () => "goldrush-terrain-v5";
+    this.terrainMaterial.customProgramCacheKey = () => "goldrush-terrain-v6";
     this.terrain = new DiggableTerrain(THREE, {
       seed: this.seed, center: { x: 0, z: -6 }, size: 30, cell: 0.125, chunkCells: 30,
       moundCenter: MOUND_CENTER, material: this.terrainMaterial, spawn: SPAWN,
@@ -313,9 +366,10 @@ export class GoldRushWorld {
 
   _lights() {
     const THREE = this.THREE;
-    const hemi = new THREE.HemisphereLight(0xb9d0ee, 0x86684a, 0.85);
+    // (phase 7A: a little less flat fill, a warmer sun, a warm bounce - shapes read, shadows stay cool-ish)
+    const hemi = new THREE.HemisphereLight(0xaec6e6, 0x7f6146, 0.74);
     this.scene.add(hemi);
-    const sun = (this.sun = new THREE.DirectionalLight(0xffecd0, 3.5));
+    const sun = (this.sun = new THREE.DirectionalLight(0xffe6c4, 3.7));
     const target = new THREE.Vector3(0, 0, -5);
     sun.position.set(target.x + SUN_DIR[0] * 70, SUN_DIR[1] * 70, target.z + SUN_DIR[2] * 70);
     sun.target.position.copy(target);
@@ -326,7 +380,7 @@ export class GoldRushWorld {
     sun.shadow.normalBias = 0.045;
     this.scene.add(sun, sun.target);
     // a faint bounce from the warm ground towards the shadowed faces
-    const bounce = new THREE.DirectionalLight(0xd6b48a, 0.28);
+    const bounce = new THREE.DirectionalLight(0xd9b387, 0.34);
     bounce.position.set(-SUN_DIR[0] * 40, 12, -SUN_DIR[2] * 40);
     this.scene.add(bounce);
   }
@@ -348,21 +402,33 @@ export class GoldRushWorld {
       return Math.max(0, hills) * smoothstep(2, 34, d) + (d > 0 ? 0.25 * fbm2(x * 0.1, z * 0.1, s + 211, 2) * smoothstep(0, 6, d) : 0);
     };
     this.groundHeightAt = heightAt;
+    // the ground's colour at a point (the terrain square uses it too where its ground is untouched)
+    const colorAt = (x, z, y, out) => {
+      const v = noise2(x * 0.08, z * 0.08, s + 221) * 0.5 + 0.5;
+      tmp.copy(cA).lerp(cB, v);
+      tmp.lerp(cDry, smoothstep(1, 6, y) * 0.8);
+      // a worn track from the gate to the mound
+      const track = Math.max(0, 1 - Math.abs(x - 0.8 * Math.sin(z * 0.08)) / 3.2) * smoothstep(CLAIM.maxZ + 2, 6, z) * (z > -2 ? 1 : 0);
+      tmp.lerp(cTrack, track * 0.6);
+      // phase 7A: paths worn between the camp's places (mine, shop, wash place, gold buyer, automation)
+      const wear = this._pathWear ? this._pathWear(x, z) : 0;
+      if (wear > 0) tmp.lerp(cTrack, wear * 0.45);
+      out[0] = tmp.r; out[1] = tmp.g; out[2] = tmp.b;
+      return out;
+    };
+    const c3 = [0, 0, 0];
     for (let j = 0; j <= n; j++) {
       for (let i = 0; i <= n; i++) {
         const x = -span / 2 + i * step, z = -span / 2 + j * step;
         const y = heightAt(x, z);
         pos.push(x, y, z);
         uv.push(x * 0.5, z * 0.5);
-        const v = noise2(x * 0.08, z * 0.08, s + 221) * 0.5 + 0.5;
-        tmp.copy(cA).lerp(cB, v);
-        tmp.lerp(cDry, smoothstep(1, 6, y) * 0.8);
-        // a worn track from the gate to the mound
-        const track = Math.max(0, 1 - Math.abs(x - 0.8 * Math.sin(z * 0.08)) / 3.2) * smoothstep(CLAIM.maxZ + 2, 6, z) * (z > -2 ? 1 : 0);
-        tmp.lerp(cTrack, track * 0.6);
-        col.push(tmp.r, tmp.g, tmp.b);
+        colorAt(x, z, y, c3);
+        col.push(c3[0], c3[1], c3[2]);
       }
     }
+    t.groundColor = (x, z, out) => colorAt(x, z, 0, out);
+    t.refreshAll();
     for (let j = 0; j < n; j++) {
       for (let i = 0; i < n; i++) {
         const x0 = -span / 2 + i * step, z0 = -span / 2 + j * step;
@@ -718,15 +784,24 @@ export class GoldRushWorld {
   }
 
   // hazy mountain ridges on the horizon
+  // two rings of distant mountains. Their haze is painted in (phase 7A) instead of
+  // the scene fog, which turned them into flat beige cut-outs: the nearer ring warmer
+  // with a little contrast, the far one cooler and paler, the sun side of each lit,
+  // the peaks a touch lighter, the feet lost in the dust over the plain.
   _distantRidges() {
     const THREE = this.THREE, s = this.seed;
-    const segs = 180, pos = [], idx = [];
-    for (const [radius, base, amp, seedOff] of [[250, 10, 48, 501], [330, 22, 78, 509]]) {
-      const start = pos.length / 3;
+    const segs = 180, pos = [], idx = [], col = [];
+    const sun = new THREE.Vector2(SUN_DIR[0], SUN_DIR[2]).normalize(), haze = new THREE.Color(0xcdb99a), c = new THREE.Color();
+    for (const [radius, base, amp, seedOff, tone, mist] of [[250, 10, 48, 501, 0x86796b, 0.5], [330, 22, 78, 509, 0x8f949d, 0.66]]) {
+      const start = pos.length / 3, rock = new THREE.Color(tone);
       for (let i = 0; i <= segs; i++) {
         const a = (i / segs) * Math.PI * 2;
         const h = base + amp * ridged2(Math.cos(a) * 3 + seedOff, Math.sin(a) * 3, s + seedOff, 4);
         pos.push(Math.cos(a) * radius, -10, Math.sin(a) * radius, Math.cos(a) * radius, h, Math.sin(a) * radius);
+        const lit = Math.max(0, -(Math.cos(a) * sun.x + Math.sin(a) * sun.y));        // its inner face turned to the sun
+        const k = 0.84 + 0.26 * lit + 0.08 * Math.max(0, (h - base) / amp);
+        c.copy(rock).multiplyScalar(k).lerp(haze, mist);
+        col.push(haze.r, haze.g, haze.b, c.r, c.g, c.b);                             // foot: in the dust; top: the rock in its haze
       }
       for (let i = 0; i < segs; i++) {
         const a = start + i * 2;
@@ -735,8 +810,9 @@ export class GoldRushWorld {
     }
     const g = this.track(new THREE.BufferGeometry());
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
     g.setIndex(idx);
-    const mat = this.track(new THREE.MeshBasicMaterial({ color: 0x8d8a86, side: THREE.DoubleSide }));
+    const mat = this.track(new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, fog: false }));
     const ridges = new THREE.Mesh(g, mat);
     ridges.name = "ridges";
     ridges.frustumCulled = false;

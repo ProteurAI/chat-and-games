@@ -166,6 +166,7 @@ button.gr-tool { border: none; font-family: inherit; cursor: default; }
 }
 .gr-toast-ico { width: 30px; height: 30px; display: grid; place-items: center; color: #d69a24; }
 .gr-toast-ico svg { width: 26px; height: 26px; display: block; }
+.gr-toast-ico[hidden], .gr-toast-value[hidden] { display: none; }
 .gr-toast-text { display: flex; flex-direction: column; line-height: 1.2; }
 .gr-toast-text b { font-size: var(--text-sm); }
 .gr-toast-value { font-size: var(--text-sm); font-weight: var(--font-bold); color: var(--accent-text); font-variant-numeric: tabular-nums; }
@@ -268,6 +269,20 @@ button.gr-tool { border: none; font-family: inherit; cursor: default; }
   .gr-sell-mass { display: none; }
 }
 .gr-reduced .gr-shop-item.is-bought { animation: none; }
+/* phase 7A micro-polish: a quiet scrollbar, a little material on the cards, clear hover / keyboard focus */
+.gr-sheet-card { scrollbar-width: thin; scrollbar-color: #6b5539 transparent; }
+.gr-sheet-card::-webkit-scrollbar { width: 8px; }
+.gr-sheet-card::-webkit-scrollbar-thumb { background: #5a4632; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+.gr-sheet-card::-webkit-scrollbar-track { background: transparent; }
+.gr-shop-group { display: flex; align-items: center; gap: 10px; }
+.gr-shop-group::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, #4a3a2b, transparent); }
+.gr-shop-item { background: linear-gradient(180deg, #33271c 0%, #2c2218 100%); transition: border-color 0.15s, background 0.15s; }
+.gr-shop-item.is-affordable:hover { background: linear-gradient(180deg, #3a2c1e 0%, #31261a 100%); }
+.gr-shop-item.is-owned { background: #241b14; }
+.gr-shop-ico { box-shadow: inset 0 -2px 0 rgba(58, 42, 27, 0.18), 0 1px 0 rgba(0, 0, 0, 0.25); }
+.gr-shop-item.is-owned .gr-shop-ico { background: #d6c8a8; }
+.gr-btn-gold:not(:disabled):hover { filter: brightness(1.06); }
+.gr-btn-gold:focus-visible, .gr-shop-item button:focus-visible { outline: 3px solid #f6ecd9; outline-offset: 2px; }
 
 /* short hints under the crosshair ("Zu weit entfernt") */
 .gr-tip {
