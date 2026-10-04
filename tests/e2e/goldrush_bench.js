@@ -63,6 +63,17 @@
 // hopper fills while there is room). With the feeder on AUTO it only keeps
 // the water on and cleans the riffles out; the bulk hopper feeds the sluice on
 // its own in simulated time while the bot digs.
+// Phase 7A: with a bucket alone it already processes - in the wooden wash bowl
+// (the free basic washing at the trough) until it owns a gold pan. Cemented
+// mineralised streaks: without a pickaxe they count as hard ground (it moves on),
+// with one it loosens them first like any hard ground.
+// Every moment a player would notice is logged for the first 45 minutes
+// (find, wash result, material change, streak, sale, purchase): the early-game
+// feedback trace - result().events / result().longestGap.
+// Method comparison (phase 7A): init(seed, { kit: ["shovel", "bucket", ...] })
+// starts with that kit, buys nothing and only sells now and then - the value
+// recovered per active minute of one way of working (dig to spoil, bucket +
+// bowl, bucket + pan, + classifier), every walk, carry and swirl included.
 // No timers, no pity: whatever the ground holds is what it finds.
 //
 // window.__grBench.init(seed, opts) / .run(untilSeconds) / .result()
@@ -141,6 +152,22 @@
       this.bulkDumps = 0; this.gates = 0;
       this.win = { n: 0, hard: 0 }; this.good = null; this.side = this.r() < 0.5 ? -1 : 1; this.returns = 0;
       this.bought = {};
+      this.ev = []; this.lastMat = null; this.lastMatT = -99; this.bowlLoads = 0;
+      // a fixed kit (method comparison): owned from the start, nothing else is bought
+      if (opts.kit) {
+        const tools = G.toolDefs().map((d) => d.id);
+        for (const id of opts.kit) {
+          if (id.includes(".")) { G.setCash(1e8); G.buy(id); G.setCash(0); }      // an upgrade: bought, the cash put back to nothing
+          else if (tools.includes(id)) G.grant(id);
+          else G.procGrant(id);
+          this.bought[id] = 0;
+        }
+        if (this.tool !== "hand") G.equipNow(this.tool);
+        this._defs();
+        const pr = G.proc();
+        this.procOn = pr.owned.includes("bucket");
+        this.capMl = pr.capacityMl;
+      }
       this.state = "walk";
       return true;
     },
@@ -202,6 +229,11 @@
       this.ticked = this.t;
     },
 
+    // a moment the player notices (the feedback trace, first 45 minutes)
+    _event(kind, extra) {
+      if (this.t <= 2700) this.ev.push([Math.round(this.t * 10) / 10, kind, extra == null ? 0 : extra]);
+    },
+
     _check() {
       for (const c of CHECK) {
         if (this.money[c] != null || this.t < c) continue;
@@ -250,6 +282,7 @@
       if (st.pouchUg > 0) {
         if (!st.flags.firstSaleSeen) this.firstSaleT = this.t + dt + 1.2;
         entry.sold = G.sell().cents; dt += 3.2;                 // the scale, the count, read it
+        this.t += dt; this._event("sale", entry.sold); this.t -= dt;
       }
       if (buy) {
         dt += Math.hypot(supply.x - assay.x, supply.z - assay.z) / TRIP + 4.0;   // next door, look at the shelf
@@ -259,6 +292,7 @@
           if (!r.ok) break;
           this.bought[item.id] = this.t + dt;
           entry.bought.push(item.id);
+          this.t += dt; this._event("buy", item.id); this.t -= dt;
           dt += 1.5;
           if (item.id === "shovel") { this.tool = "shovel"; dt += SWITCH; }
           item = this._next();
@@ -266,7 +300,7 @@
         G.equipNow(this.tool);
         this._defs();
         const pr = G.proc();
-        this.procOn = pr.owned.includes("bucket") && pr.owned.includes("pan");
+        this.procOn = pr.owned.includes("bucket");               // the wooden wash bowl until a gold pan replaces it
         this.mechOn = this.procOn && pr.owned.includes("wheelbarrow");
         this.capMl = pr.capacityMl;
         if (pr.sluice && pr.sluice.state !== "ready") { G.procInstallSluice(); dt += 12 + 2.4; }     // over to the tank, build it
@@ -348,9 +382,11 @@
         if (!f.ok) break;
         const w = G.procWork(30);
         if (!w.done) break;
-        G.procCollect();
+        const c = G.procCollect();
         dt += 1.5 + w.t * SLOW + 1.0;
         this.pans++;
+        if (c && c.tool === "bowl") this.bowlLoads++;
+        if (c && c.cents > 0) { this.t += dt; this._event("wash", c.cents); this.t -= dt; }
       }
       return dt;
     },
@@ -510,9 +546,11 @@
         if (!f.ok) break;
         const w = G.procWork(30);
         if (!w.done) break;
-        G.procCollect();
-        dt += 1.5 + w.t * SLOW + 1.0;                           // fill the pan, swirl, take the gold out
+        const c = G.procCollect();
+        dt += 1.5 + w.t * SLOW + 1.0;                           // fill the pan (or the bowl), swirl, take the gold out
         this.pans++;
+        if (c && c.tool === "bowl") this.bowlLoads++;
+        if (c && c.cents > 0) { this.t += dt; this._event("wash", c.cents); this.t -= dt; }
       }
       this.t += dt; this.procTime += dt; this.procRounds++;
       this.bucketMl = 0;
@@ -530,7 +568,7 @@
     _loosen() {
       if (!this.bought.pickaxe) return;
       const p = G.probe();
-      if (!p || p.boulder != null || p.loose > 0 || !(p.material === "compactDirt" || p.material === "gravel")) return;
+      if (!p || p.boulder != null || p.loose > 0 || !(p.cemented || p.material === "compactDirt" || p.material === "gravel")) return;
       const pc = this.info.pickaxe.cycle;
       this.t += SWITCH;
       for (let i = 0; i < 3; i++) {
@@ -607,10 +645,14 @@
         this.digs++;
         this.win.n++;
         if (res.material !== 0) this.win.hard++;
+        if (res.cemented && !this.bought.pickaxe) this.win.hard += 2;          // a cemented streak: the shovel skids off
+        if (res.streakFound) this._event("streak", 1);
+        if (res.material !== this.lastMat) { if (this.lastMat != null && this.t - this.lastMatT > 20) { this._event("material", res.material); this.lastMatT = this.t; } this.lastMat = res.material; }
         this.kg += res.massKg;
         this.t += this.cycle[res.material] || this.cycle[0];
         if (res.finds) {
           const at = this.t + (PICKUP[res.best] || 0.5);
+          this._event("find", res.best);
           if (this.first.find == null) this.first.find = at;
           if (res.best >= 3 && this.first.flake == null) this.first.flake = at;
           if (res.best >= 4 && this.first.tiny == null) this.first.tiny = at;
@@ -642,6 +684,14 @@
       return { t: this.t, actions: this.actions, cents: this.cents };
     },
 
+    // the longest stretch without anything to notice, in [0, until] s
+    // (strict: only what counts - flakes and better, wash results, streaks, sales, purchases)
+    _gap(until, keep = null) {
+      let last = 0, gap = 0;
+      for (const e of this.ev) { const t = e[0]; if (t > until) break; if (keep && !keep(e)) continue; gap = Math.max(gap, t - last); last = t; }
+      return Math.round(Math.max(gap, until - last));
+    },
+
     result() {
       const e = G.economy();
       return {
@@ -656,6 +706,8 @@
         bulk: G.proc().bulk ? { inMl: G.proc().bulk.stats.inMl, outMl: G.proc().bulk.stats.outMl, loads: G.proc().bulk.stats.loads, left: G.proc().bulk.volumeMl } : null,
         feeder: G.proc().feeder ? { moved: G.proc().feeder.moved, mode: G.proc().feeder.mode } : null,
         bulkDumps: this.bulkDumps, gates: this.gates, activeProcTime: +(this.procTime + this.mechTime).toFixed(1), pouchCents: e.pouchCents,
+        bowlLoads: this.bowlLoads, events: this.ev, longestGap: this._gap(Math.min(2700, this.t)),
+        longestGapStrict: this._gap(Math.min(2700, this.t), (e) => !((e[1] === "find" && e[2] < 3) || e[1] === "material")),
         containersUg: G.proc().inContainersUg,
         firstSale: this.firstSaleT != null ? +this.firstSaleT.toFixed(1) : null,
         removedM3: e.stats.volumeMl / 1e6,

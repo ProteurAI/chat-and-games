@@ -5,6 +5,9 @@ and reports the distribution - P10 / median / P90 / min / max:
 
   without a strategy (phase 3): time to the first find / flake / tiny piece /
   nugget and the gold value dug up after 1 / 5 / 10 / 20 / 30 minutes
+  with --kit shovel,bucket,pan (phase 7A): one way of working from the start,
+  nothing bought, sold now and then - the value recovered per active minute
+  (compare kits on the same seeds: dig to spoil vs bucket + bowl vs + pan ...)
   with --strategy A|B|C|D (phase 4): a whole early game with sales trips to
   the camp and real purchases - first sale, when the shovel / pickaxe /
   upgrades are bought, cash and cash earned after 10 / 20 / 30 / 45 / 60 /
@@ -65,7 +68,7 @@ def dist(values, unit=""):
             "min": round(min(got), 2), "max": round(max(got), 2), "n": len(got), "missing": missing}
 
 
-def run_seed(page, seed, minutes, tool, strategy=None):
+def run_seed(page, seed, minutes, tool, strategy=None, kit=None):
     page.evaluate("(s) => { localStorage.removeItem(grKey()); localStorage.removeItem(grKey('.backup')); localStorage.setItem('goldrush.testSeed', String(s)); }", seed)
     gr_open(page)
     gr_ready(page)
@@ -76,7 +79,7 @@ def run_seed(page, seed, minutes, tool, strategy=None):
         ok = page.evaluate("(t) => { window.__goldrush.devUnlock(true); return window.__goldrush.equipNow(t); }", tool)
         assert ok, f"tool {tool} not usable"
     pile = page.evaluate("() => window.__goldrush.volume().pile")
-    page.evaluate("([s, t, st]) => window.__grBench.init(s, { tool: t, strategy: st })", [seed, tool, strategy])
+    page.evaluate("([s, t, st, k]) => window.__grBench.init(s, { tool: t, strategy: st, kit: k })", [seed, tool, strategy, kit])
     end = minutes * 60
     t = 0
     while t < end:
@@ -84,6 +87,10 @@ def run_seed(page, seed, minutes, tool, strategy=None):
         page.evaluate("(u) => window.__grBench.run(u)", t)
     res = page.evaluate("() => window.__grBench.result()")
     res["seed"] = seed
+    if kit:
+        # everything recovered (cash + pouch; nothing is bought) per active minute
+        res["kit"] = kit
+        res["perMinCents"] = round((res["cash"] + res["pouchCents"]) / (res["t"] / 60), 2)
     res["pileM3"] = pile
     page.evaluate("() => { localStorage.removeItem(grKey()); }")
     gr_close(page)
@@ -151,6 +158,10 @@ def main():
     minutes = arg("--minutes", 30)
     tool = arg("--tool", "hand")
     strategy = arg("--strategy", "")
+    kit = [k for k in arg("--kit", "").split(",") if k] or None
+    if kit:
+        strategy = "kit"
+        tool = "shovel" if "shovel" in kit else tool
     first_seed = arg("--first", 1001)
     proc, base, tmp = start_server()
     results = []
@@ -167,10 +178,12 @@ def main():
             page.wait_for_function("() => typeof ws !== 'undefined' && ws && ws.readyState === 1", timeout=15000)
             for n in range(seeds):
                 seed = first_seed + n * 7
-                r = run_seed(page, seed, minutes, tool, strategy or None)
+                r = run_seed(page, seed, minutes, tool, strategy or None, kit)
                 results.append(r)
                 f = r["first"]
-                if strategy:
+                if kit:
+                    print(f"seed {seed} [kit {'+'.join(kit)}]: {r['perMinCents']} ct/min  cash {r['cash']} pouch {r['pouchCents']} kg {r['kg']} pans {r['pans']} bowl {r['bowlLoads']} proc {r['procTime']} s", flush=True)
+                elif strategy:
                     print(f"seed {seed} [{strategy}]: sale {r['firstSale']} bought {r['bought']} cash {r['cash']} earned {r['earned']} trips {r['trips']} kg {r['kg']}", flush=True)
                 else:
                     print(f"seed {seed}: find {f['find']} flake {f['flake']} tiny {f['tiny']} nugget {f['nugget']} | money {r['money']} | {r['actions']} actions {r['kg']} kg blocked {r['blocked']}", flush=True)
@@ -178,6 +191,9 @@ def main():
     finally:
         proc.terminate()
     summary = summarize4(results) if strategy else summarize(results)
+    if kit:
+        summary["kit"] = kit
+        summary["perMinCents"] = dist([r["perMinCents"] for r in results])
     summary["strategy"] = strategy or None
     summary["tool"] = tool
     summary["minutes"] = minutes
