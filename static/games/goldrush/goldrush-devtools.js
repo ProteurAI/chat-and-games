@@ -24,6 +24,7 @@ import { formatEuro, formatMass } from "./goldrush-economy.js";
 import "./goldrush-devcommands.js";
 import "./goldrush-devcommands6.js";
 import "./goldrush-devcommands7.js";
+import "./goldrush-devcommands7a.js";
 
 const DEV_ERROR = actions.DEV_ERROR;
 

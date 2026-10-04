@@ -223,6 +223,9 @@ export const DEV_MATERIALS = {
   compactDirt: { label: "Feste Erde", mix: [0, 1, 0, 0], fine: 8 },
   gravel: { label: "Kies", mix: [0, 0, 1, 0], fine: 8 },
   paydirt: { label: "Goldhaltiges Mischmaterial", mix: [0.55, 0.2, 0.2, 0.05], fine: 25, pieces: true },
+  // phase 7A: the ground's two extremes for the wash bowl / the pan
+  poordirt: { label: "Goldarme Erde", mix: [0.8, 0.15, 0.05, 0], fine: 3 },
+  streak: { label: "Mineralisierte Zone (verfestigter Kies)", mix: [0.05, 0.3, 0.6, 0.05], fine: 48, pieces: "streak" },
 };
 
 /** a deterministic test batch (marked source "dev": it did not come out of the mountain) */
@@ -236,9 +239,10 @@ export function devBatch(kind, ml, stage = STAGE.RAW) {
   if (d.pieces) {
     const f = ml / 10000;
     const pieces = [];
-    for (let i = 0; i < Math.max(1, Math.round(3 * f)); i++) pieces.push({ cls: FIND.FLAKE, ug: 1200 });
+    // a streak: more flakes, a tiny piece, no nugget (like the ground: flakes, not a nugget farm)
+    for (let i = 0; i < Math.max(1, Math.round((d.pieces === "streak" ? 6 : 3) * f)); i++) pieces.push({ cls: FIND.FLAKE, ug: 1200 });
     if (f >= 0.5) pieces.push({ cls: FIND.TINY, ug: 4000 });
-    if (f >= 0.95) pieces.push({ cls: FIND.NUGGET, ug: 12000 });
+    if (f >= 0.95 && d.pieces !== "streak") pieces.push({ cls: FIND.NUGGET, ug: 12000 });
     b.finds = pieces.map((p, i) => ({ ...p, key: `dev:${kind}:${i}` }));
   }
   b.history = [{ op: "dev", kind }];
