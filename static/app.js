@@ -112,7 +112,9 @@ async function api(path, options = {}) {
   try {
     res = await fetch(path, { ...options, headers });
   } catch (e) {
-    throw new Error(navigator.onLine === false ? "Du bist offline." : "Keine Verbindung zum Server.");
+    const err = new Error(navigator.onLine === false ? "Du bist offline." : "Keine Verbindung zum Server.");
+    err.network = true;
+    throw err;
   }
   if (res.status === 401 && headers["X-Auth-Token"]) {
     // the server doesn't know this token (any more) - never retry with it
@@ -126,7 +128,9 @@ async function api(path, options = {}) {
     // FastAPI validation errors come back as a list of objects - never
     // show "[object Object]" or raw server text to a user
     const detail = typeof err.detail === "string" ? err.detail : null;
-    throw new Error(detail || (res.status >= 500 ? "Der Server hat gerade ein Problem. Bitte gleich nochmal versuchen." : "Das hat leider nicht geklappt."));
+    const e = new Error(detail || (res.status >= 500 ? "Der Server hat gerade ein Problem. Bitte gleich nochmal versuchen." : "Das hat leider nicht geklappt."));
+    e.status = res.status;          // callers that need to tell a 404 from a 500 (GoldRush developer access)
+    throw e;
   }
   return res.status === 204 ? null : res.json();
 }

@@ -16,7 +16,7 @@
 
 import { devRegistry } from "./goldrush-devregistry.js";
 import * as actions from "./goldrush-devactions.js";
-import { DevAccess } from "./goldrush-devaccess.js";
+import { DevAccess, DEV_ERROR as ACCESS } from "./goldrush-devaccess.js";
 import { DevHud } from "./goldrush-devhud.js";
 import { SAVE_VERSION } from "./goldrush-save.js";
 import { formatEuro, formatMass } from "./goldrush-economy.js";
@@ -26,6 +26,36 @@ import "./goldrush-devcommands6.js";
 import "./goldrush-devcommands7.js";
 
 const DEV_ERROR = actions.DEV_ERROR;
+
+// what the developer sees when the server could not be asked / says no - one class each,
+// so a 404 or a dead connection never reads as "not configured"
+function accessText(st) {
+  switch (st.error) {
+    case ACCESS.NOT_CONFIGURED: {
+      const d = st.diagnosis || {}, lines = ["Entwicklerzugang ist auf diesem Server nicht konfiguriert."];
+      lines.push("", `Seite geöffnet über: ${location.origin}`);
+      const srv = [d.service, d.serviceId, d.instance && `Instanz ${d.instance}`, d.commit && `Commit ${d.commit}`].filter(Boolean).join(" · ");
+      if (srv) lines.push(`Antwortender Server: ${srv}`);
+      if (d.externalUrl) {
+        lines.push(`Adresse dieses Servers: ${d.externalUrl}`);
+        let other = false;
+        try { other = new URL(d.externalUrl).origin !== location.origin; } catch (e) { other = false; }
+        if (other) lines.push("Achtung: Die Seite läuft über eine andere Adresse als die dieses Servers.");
+      }
+      lines.push(d.variable === "empty" ? "GOLDRUSH_DEV_CODE ist gesetzt, aber leer."
+        : d.variable === "nearMiss" ? "Eine ähnlich benannte Variable existiert – Schreibweise / Leerzeichen von GOLDRUSH_DEV_CODE prüfen."
+        : "GOLDRUSH_DEV_CODE fehlt in der Umgebung dieses Servers.");
+      if (d.secretFile) lines.push("Eine Secret-Datei GOLDRUSH_DEV_CODE ist vorhanden, aber leer.");
+      lines.push("Die Variable muss an genau diesem Dienst gesetzt sein; danach neu deployen.");
+      if (d.serviceId) lines.push("Weicht die Service-ID von der im Render-Dashboard ab, antwortet ein anderer Dienst (alte Adresse / Lesezeichen?).");
+      return lines.join("\n");
+    }
+    case ACCESS.AUTH_ERROR: return "Deine Anmeldung ist abgelaufen – bitte neu anmelden.";
+    case ACCESS.ENDPOINT_NOT_FOUND: return "Dieser Server kennt den Entwicklerzugang nicht (ältere Version oder falsche Adresse).";
+    case ACCESS.SERVER_ERROR: return `Der Server hat gerade ein Problem${st.status ? ` (HTTP ${st.status})` : ""}. Bitte gleich nochmal versuchen.`;
+    default: return "Keine Verbindung zum Server.";
+  }
+}
 const CLOSE = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>`;
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const FOCUSABLE = "button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), [tabindex]:not([tabindex='-1'])";
@@ -113,10 +143,9 @@ export class GoldRushDevTools {
       return this._leave();
     }
     let st;
-    try { st = await this.access.status(); } catch (e) { st = null; }
+    try { st = await this.access.status(); } catch (e) { st = { configured: null, error: ACCESS.NETWORK_ERROR }; }
     if (!this.active) return;
-    if (!st) { await this._message("Entwicklertools", "Keine Verbindung zum Server."); return this._leave(); }
-    if (!st.configured) { await this._message("Entwicklerzugang", "Entwicklerzugang ist auf diesem Server nicht konfiguriert."); return this._leave(); }
+    if (st.error) { await this._message("Entwicklerzugang", accessText(st)); return this._leave(); }
     if (!st.unlocked && !(await this._accessDialog())) return this._leave();
     if (!this.active || !this.game) return this._leave();
     this.shell.devStateChanged();
@@ -178,6 +207,7 @@ export class GoldRushDevTools {
     const $ = this.$;
     $.mTitle.textContent = title;
     $.mText.textContent = text || "";
+    $.mText.style.whiteSpace = text && text.includes("\n") ? "pre-line" : "";
     $.mText.hidden = !text;
     $.mForm.hidden = !form;
     $.mError.textContent = "";
@@ -235,7 +265,8 @@ export class GoldRushDevTools {
     for (const b of $.mActions.querySelectorAll("button")) b.disabled = false;
     if (!this._modalResolve) return;
     if (r.ok) { this._resolveModal("unlocked"); return; }
-    $.mError.textContent = r.error || "Code nicht gültig.";
+    const own = !r.kind || r.kind === ACCESS.REJECTED || r.kind === ACCESS.NOT_CONFIGURED;      // the server's own words
+    $.mError.textContent = own ? r.error || "Code nicht gültig." : accessText({ error: r.kind });
     $.mInput.focus({ preventScroll: true });
   }
 

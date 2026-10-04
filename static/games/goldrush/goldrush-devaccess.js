@@ -7,6 +7,27 @@
 // never the code itself. Loaded on demand: a normal player never fetches it.
 
 const STORE = "goldrush.devSession";
+export const ROUTE_VERSION = 2;          // backend/goldrush_dev.py ROUTE_VERSION (the status's shape)
+
+// what can go wrong when asking the server - "not configured" is only ever the
+// server's own answer, never a guess from a failed request
+export const DEV_ERROR = {
+  NOT_CONFIGURED: "NOT_CONFIGURED", AUTH_ERROR: "AUTH_ERROR", NETWORK_ERROR: "NETWORK_ERROR",
+  ENDPOINT_NOT_FOUND: "ENDPOINT_NOT_FOUND", SERVER_ERROR: "SERVER_ERROR",
+  REJECTED: "REJECTED",                  // the server answered no (wrong code 403, too many tries 429): its own text
+};
+
+/** a failed request -> one of DEV_ERROR (the app's api() marks network / auth errors and the HTTP status) */
+export function classifyDevError(e) {
+  if (!e) return DEV_ERROR.SERVER_ERROR;
+  if (e.authError || e.status === 401) return DEV_ERROR.AUTH_ERROR;
+  if (e.name === "SyntaxError") return DEV_ERROR.ENDPOINT_NOT_FOUND;        // a 200 that is no JSON: some page, not the developer status
+  if (e.network) return DEV_ERROR.NETWORK_ERROR;
+  if (e.status === 404 || e.status === 405) return DEV_ERROR.ENDPOINT_NOT_FOUND;
+  if (e.status === 503 && /nicht konfiguriert/.test(e.message || "")) return DEV_ERROR.NOT_CONFIGURED;
+  if (e.status >= 500) return DEV_ERROR.SERVER_ERROR;
+  return e.status ? DEV_ERROR.REJECTED : DEV_ERROR.NETWORK_ERROR;
+}
 
 export class DevAccess {
   /**
@@ -39,14 +60,26 @@ export class DevAccess {
 
   _headers() { const t = this._token() || this._mem; return t ? { "X-GoldRush-Dev": t } : {}; }
 
-  /** -> { configured, unlocked } (the server's view; a stale token is dropped) */
+  /**
+   * -> { configured, unlocked, error?, diagnosis?, routeVersion } (the server's view; a stale token is dropped).
+   * error: a DEV_ERROR when the question itself failed - then `configured` is unknown (null), not false.
+   */
   async status() {
-    if (!this.available) return { configured: false, unlocked: false };
-    const r = await this.api("/api/goldrush/dev/status", { headers: this._headers() });
-    this.configured = !!r.configured;
+    if (!this.available) return { configured: false, unlocked: false, error: DEV_ERROR.AUTH_ERROR };
+    let r;
+    try {
+      r = await this.api("/api/goldrush/dev/status", { headers: this._headers() });
+    } catch (e) {
+      return { configured: null, unlocked: false, error: classifyDevError(e), status: e && e.status, message: e && e.message };
+    }
+    // a 200 that is not the developer status (an old server, a proxy page): not "not configured"
+    if (!r || typeof r.configured !== "boolean") return { configured: null, unlocked: false, error: DEV_ERROR.ENDPOINT_NOT_FOUND };
+    this.configured = r.configured;
     this.unlocked = !!r.unlocked;
     if (!this.unlocked) { this._keep(null); this._mem = null; }
-    return { configured: this.configured, unlocked: this.unlocked };
+    const out = { configured: this.configured, unlocked: this.unlocked, routeVersion: r.routeVersion || 1 };
+    if (!r.configured) { out.error = DEV_ERROR.NOT_CONFIGURED; out.diagnosis = r.diagnosis || null; }
+    return out;
   }
 
   /** -> { ok } | { ok: false, error } - the error text comes from the server */
@@ -61,7 +94,8 @@ export class DevAccess {
       this.unlocked = true;
       return { ok: true };
     } catch (e) {
-      return { ok: false, error: e && e.message ? e.message : "Code nicht gültig." };
+      const kind = classifyDevError(e);
+      return { ok: false, kind, error: e && e.message ? e.message : "Code nicht gültig." };
     }
   }
 
