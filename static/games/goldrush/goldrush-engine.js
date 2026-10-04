@@ -1402,6 +1402,30 @@ export class GoldRushGame {
     };
   }
 
+  // what the world pass draws (debug / performance tests): visible renderables in the camera's
+  // frustum and the shadow casters, grouped by the scene's top-level parts (their names)
+  drawStats() {
+    const cam = this.camera, fr = new THREE.Frustum(), m = new THREE.Matrix4();
+    cam.updateMatrixWorld();
+    m.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    fr.setFromProjectionMatrix(m);
+    const groups = new Map(), scene = this.world.scene;
+    let main = 0, shadow = 0;
+    scene.traverseVisible((o) => {
+      if (!(o.isMesh || o.isPoints || o.isLine || o.isSprite)) return;
+      if (o.isInstancedMesh && o.count === 0) return;
+      let top = o;
+      while (top.parent && top.parent !== scene) top = top.parent;
+      const key = top.name || `${top.type}#${scene.children.indexOf(top)}`;
+      const g = groups.get(key) || { key, main: 0, shadow: 0, objs: 0 };
+      g.objs++;
+      if (!o.frustumCulled || fr.intersectsObject(o)) { g.main++; main++; }
+      if (o.castShadow) { g.shadow++; shadow++; }
+      groups.set(key, g);
+    });
+    return { main, shadow, groups: [...groups.values()].sort((a, b) => b.main + b.shadow - a.main - a.shadow) };
+  }
+
   // what is under the crosshair right now (debug panel, tests)
   probe() {
     const hit = this.target || this.farTarget;

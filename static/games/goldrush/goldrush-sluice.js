@@ -26,6 +26,7 @@
 import { MaterialBatch, STAGE, SLUICE_TUNING, sluiceSplit } from "./goldrush-material.js";
 import { FIND } from "./goldrush-resources.js";
 import { SLUICE } from "./goldrush-mechmodels.js";
+import { mergeStatic } from "./goldrush-merge.js";
 
 // the place: head (hopper) south of the water tank, the box running east,
 // down; a wheelbarrow comes from the open side (south / west) - Zone B
@@ -228,6 +229,8 @@ export class Sluice {
     u.out.visible = run;
     this.trayModel.visible = this.installed;
     this.trayFill.visible = this.tray.batch.volumeMl > 0 || this.tray.batch.goldUg > 0;
+    // built: legs, box and hopper boards baked into a few meshes (phase 7A draw calls)
+    if (this.installed && !this._merged) { this._merged = mergeStatic(this.THREE, this.model, u.parts); if (this.ctx.warm) this.ctx.warm(); }
     this._fill();
   }
 
@@ -383,6 +386,7 @@ export class Sluice {
     for (const c of [this.collider, this.heapCollider]) { const i = this.world.colliders.indexOf(c); if (i >= 0) this.world.colliders.splice(i, 1); }
     scene.remove(this.root);
     scene.remove(this.trayModel);
+    for (const m of this._merged || []) m.geometry.dispose();
   }
 }
 

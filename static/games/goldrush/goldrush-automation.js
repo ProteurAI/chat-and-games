@@ -27,6 +27,7 @@
 import { STAGE } from "./goldrush-material.js";
 import { MaterialBuffer, TransferLink, stepChain, transfer, volumeOf, roomOf } from "./goldrush-transfer.js";
 import { BULK, bulkLevelFor } from "./goldrush-automodels.js";
+import { mergeStatic } from "./goldrush-merge.js";
 
 export const BULK_AT = { x: -20.82, z: -3.45 };
 export const BULK_ML = 360000;                 // 360 l (~4 wheelbarrow loads); extension 540 l (tuned, benchmark)
@@ -186,7 +187,21 @@ export class BulkHopper {
     if (!on && has(this.collider)) { cols.splice(cols.indexOf(this.collider), 1); cols.splice(cols.indexOf(this.postCollider), 1); }
     for (const d of this.decks) { if (this.installed) this.world.addDeck(d); else this.world.removeDeck(d); }
     this.model.userData.ext.visible = this.ctx.upgrades().has("bulk.extension") && on;
+    if (this.installed && !this._merged) this._mergeStatic();
     this._fill();
+  }
+
+  // built: frame, funnel, rim and the whole ramp baked into a few meshes (phase 7A draw calls);
+  // the gate, its handle, the chute (it shakes with a feeder) and the extension boards stay apart
+  _mergeStatic() {
+    const u = this.model.userData, keep = new Set([u.gate, u.handle]);
+    u.chute.traverse((o) => keep.add(o));
+    u.ext.traverse((o) => keep.add(o));
+    this._merged = [
+      ...mergeStatic(this.THREE, this.model, u.parts.filter((p) => !keep.has(p))),
+      ...mergeStatic(this.THREE, this.rampModel, this.rampModel.userData.parts),
+    ];
+    if (this.ctx.warm) this.ctx.warm();
   }
 
   // the level (a float pointer on the gauge) and the surface: mottled by what lies on top
@@ -276,6 +291,7 @@ export class BulkHopper {
     for (const c of [this.collider, this.postCollider]) { const i = this.world.colliders.indexOf(c); if (i >= 0) this.world.colliders.splice(i, 1); }
     for (const d of this.decks) this.world.removeDeck(d);
     scene.remove(this.root); scene.remove(this.rampModel); scene.remove(this.post); scene.remove(this.kit);
+    for (const m of this._merged || []) m.geometry.dispose();
   }
 }
 

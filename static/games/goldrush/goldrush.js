@@ -1149,6 +1149,7 @@ class GoldRushShell {
         const rocks = g.rocks.rocks.map((r) => `${Math.round(r.x * 1000)},${Math.round(r.y * 1000)},${Math.round(r.z * 1000)},${r.hp},${r.broken ? 1 : 0}`).join(";");
         return { height: h(g.terrain.height, 1000), qh: h(g.terrain.qh, 1), slices: h(g.mining.cidx, 1), money: g.economy.moneyCents, finds: g.economy.stats.finds, pending: g.economy.pending.size, carried: g.mining.carriedCount, rocks, tools: g.tools.serialize(), seed: g.doc.worldSeed };
       },
+      drawStats: () => g.drawStats(),
       sceneStats: () => {
         const out = { world: {}, hands: 0, shadowCasters: 0 };
         g.world.scene.traverseVisible((o) => {

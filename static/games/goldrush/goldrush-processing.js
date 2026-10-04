@@ -53,6 +53,7 @@ import { transfer, roomOf } from "./goldrush-transfer.js";
 import { FIND } from "./goldrush-resources.js";
 import { findSize } from "./goldrush-loot.js";
 import { centsForMass } from "./goldrush-economy.js";
+import { mergeStatic } from "./goldrush-merge.js";
 
 // the wash place, next to the water tank (-19.5, 1.8)
 export const WASH = {
@@ -161,12 +162,12 @@ export class ProcessingSystem {
   _refitBarrow() { const w = this.barrow; if (w && !w.pushing && !w.dump) w.fit(null); }
 
   _autoCtx() {
-    return this._actx || (this._actx = { nextId: () => this.nextBatch++, upgrades: this.upgrades, sluice: () => this.sluice, bulk: () => this.bulk });
+    return this._actx || (this._actx = { nextId: () => this.nextBatch++, upgrades: this.upgrades, sluice: () => this.sluice, bulk: () => this.bulk, warm: () => { this.warmPending = true; } });
   }
 
   _newSluice(saved) {
     return new Sluice(this.THREE, this.scene, this.world, this.mech, saved, {
-      ledger: this.ledger, economy: this.economy, nextId: () => this.nextBatch++, upgrades: this.upgrades,
+      ledger: this.ledger, economy: this.economy, nextId: () => this.nextBatch++, upgrades: this.upgrades, warm: () => { this.warmPending = true; },
     });
   }
 
@@ -200,6 +201,15 @@ export class ProcessingSystem {
     this.cls.position.set(WASH.classifier.x, 0, WASH.classifier.z);
     this.group.add(this.cls);
     this.clsCollider = { type: "box", x: WASH.classifier.x, z: WASH.classifier.z, hw: 0.5, hd: 0.4, rot: 0 };
+    // phase 7A draw calls: the trough with its pipe and sign, the classifier's tub and legs, its
+    // shaking frame with the handles - each baked per material (water, fills, heap, stones stay apart)
+    const wu = this.wash.userData, cu = this.cls.userData, keep = new Set([wu.water, wu.trickle, cu.conc, cu.heap, cu.stones]);
+    const plain = (list) => list.filter((o) => o.isMesh && !keep.has(o));
+    this._merged = [
+      ...mergeStatic(THREE, this.wash, plain(this.wash.children)),
+      ...mergeStatic(THREE, this.cls, plain([...cu.tub.children, ...this.cls.children])),
+      ...mergeStatic(THREE, cu.frame, plain(cu.frame.children)),
+    ];
     // the world bucket
     this.worldBucket = M.bucket();
     this.group.add(this.worldBucket);
@@ -235,7 +245,7 @@ export class ProcessingSystem {
     tex.colorSpace = THREE.SRGBColorSpace;
     this._wetTex = tex;
     const mk = (opacity, rough) => new THREE.MeshStandardMaterial({ map: tex, transparent: true, opacity, roughness: rough, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, envMap: this.ctx.envMap || null });
-    this._wetMats = [mk(0.55, 0.75), mk(0.8, 0.12)];
+    this._wetMats = [mk(0.72, 0.62), mk(0.85, 0.12)];
     const geo = (this._wetGeo = new THREE.PlaneGeometry(1, 1));
     geo.rotateX(-Math.PI / 2);
     const SA = SLUICE_AT;
@@ -244,15 +254,37 @@ export class ProcessingSystem {
       [WASH.classifier.x + 0.35, WASH.classifier.z - 0.1, 1.4, 1.2, 0, "wash"], [-19.5 + 0.9, 1.8 - 0.9, 0.9, 1, 0, "wash"],
       [SA.x + SLUICE_LEN + 0.2, SA.z + 0.55, 2.2, 1.5, 0, "sluice"], [SA.x + SLUICE_LEN - 0.4, SA.z + 0.95, 0.6, 1.4, 1, "sluice"],
       [SA.x - 0.25, SA.z + 0.95, 1.3, 1.2, 0, "sluice"], [SA.x + 1.3, SA.z + 0.75, 0.45, 1.6, 1, "sluice"]];
-    this._wet = spots.map(([x, z, size, st, puddle, which], i) => {
+    // one mesh per (place, kind) - four draws instead of eight (phase 7A); they toggle as groups
+    const groups = new Map();
+    spots.forEach(([x, z, size, st, puddle, which], i) => {
+      const key = `${which}:${puddle}`;
+      if (!groups.has(key)) groups.set(key, { which, puddle, parts: [] });
       const m = new THREE.Mesh(geo, this._wetMats[puddle]);
       m.position.set(x, 0.004 + i * 0.0004, z);
       m.scale.set(size * st, 1, size);
       m.rotation.y = i * 1.37;
-      m.renderOrder = 1;
-      m.userData = { which, puddle: !!puddle };
-      this.group.add(m);
-      return m;
+      groups.get(key).parts.push(m);
+    });
+    this._wetGeos = [];
+    this._wet = [...groups.values()].map(({ which, puddle, parts }) => {
+      const g = new THREE.BufferGeometry(), P = [], N = [], U = [], I = [];
+      for (const m of parts) {
+        m.updateMatrix();
+        const b = P.length / 3, pos = geo.attributes.position, uv = geo.attributes.uv, v = new THREE.Vector3();
+        for (let q = 0; q < pos.count; q++) { v.fromBufferAttribute(pos, q).applyMatrix4(m.matrix); P.push(v.x, v.y, v.z); N.push(0, 1, 0); U.push(uv.getX(q), uv.getY(q)); }
+        for (let q = 0; q < geo.index.count; q++) I.push(geo.index.getX(q) + b);
+      }
+      g.setAttribute("position", new THREE.Float32BufferAttribute(P, 3));
+      g.setAttribute("normal", new THREE.Float32BufferAttribute(N, 3));
+      g.setAttribute("uv", new THREE.Float32BufferAttribute(U, 2));
+      g.setIndex(I);
+      g.computeBoundingSphere();
+      this._wetGeos.push(g);
+      const mesh = new THREE.Mesh(g, this._wetMats[puddle]);
+      mesh.renderOrder = 1;
+      mesh.userData = { which, puddle: !!puddle, patches: parts.length };
+      this.group.add(mesh);
+      return mesh;
     });
   }
 
@@ -1261,6 +1293,7 @@ export class ProcessingSystem {
     if (this.bulk) this.bulk.dispose(this.scene);
     this.models.dispose();
     this.mech.dispose();
-    if (this._wetTex) { this._wetTex.dispose(); this._wetGeo.dispose(); for (const m of this._wetMats) m.dispose(); }
+    if (this._wetTex) { this._wetTex.dispose(); this._wetGeo.dispose(); for (const m of this._wetMats) m.dispose(); for (const g of this._wetGeos || []) g.dispose(); }
+    for (const m of this._merged || []) m.geometry.dispose();
   }
 }
