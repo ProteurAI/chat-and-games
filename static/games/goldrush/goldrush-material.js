@@ -32,12 +32,31 @@ export const MAT_KEYS = ["dirt", "compactDirt", "gravel", "stone"];
 export const COARSE = [0.16, 0.26, 0.62, 1.0];
 // fine gold the gold pan recovers from what it washes; the pan always keeps
 // the visible pieces (heavy, they sink to the bottom) - only the finest
-// gold washes over the rim with the mud
-export const PAN_RECOVERY = { raw: 0.58, concentrate: 0.68, heavy: 0.94 };
+// gold washes over the rim with the mud. A classified concentrate (no pebbles,
+// no clods) keeps a little more and pans a little faster per litre - the
+// classifier's real gain is the volume it takes off before the pan: a sixth
+// of plain dirt, almost two thirds of gravel (COARSE).
+// Phase 7A, per active minute with all walking, carrying and swirling and the
+// shovel + blade as baseline (goldrush_bench.py --kit, 12 seeds x 40 min at the
+// starter faces): digging to spoil 1.00x, bucket + bowl ~1.2x, bucket + pan
+// ~1.4x, classifier + pan ~1.5x on plain dirt (more in gravel).
+export const PAN_RECOVERY = { raw: 0.58, concentrate: 0.63, heavy: 0.94 };
 // seconds of steady panning per litre (raw ground is full of pebbles and
 // clods; a classified concentrate pans faster), clamped per load
-export const PAN_SECONDS = { raw: 3.7, concentrate: 2.7, heavy: 2.2, min: 6, max: 12 };
+export const PAN_SECONDS = { raw: 3.7, concentrate: 3.3, heavy: 2.2, min: 6, max: 12 };
 export const PAN_CAPACITY_ML = 2500;
+// WASH BOWL (phase 7A): the free wooden bowl at the trough - the primitive way to
+// wash a bucket before you own a gold pan. Same physics, worse at it: small, quick
+// loads (1,4 l in ~4,5 s - a 10 l bucket is seven of them, the pan's four take
+// about as long in all) and much more of the fine gold goes over its blunt rim
+// (0,48 vs 0,58): per load the pan brings about twice the gold, per bucket ~20 %
+// more. With slower loads (4,4 s/l) the bucket + bowl loop earned LESS per
+// minute than digging to spoil with the same shovel (a trap - phase-7A benchmark).
+export const BOWL_RECOVERY = { raw: 0.48, concentrate: 0.54, heavy: 0.9 };
+export const BOWL_SECONDS = { raw: 3.2, concentrate: 2.8, heavy: 2.4, min: 3, max: 6 };
+export const BOWL_CAPACITY_ML = 1400;
+// a rest smaller than this goes along with the last load (no 0,2 l mini load)
+export const BOWL_REST_ML = 300;
 export const SIEVE_SECONDS = { perL: 0.42, min: 3, max: 6 };
 // SLUICE (phase 6): water carries the material down the box, the riffles hold
 // the heavy fraction - every gold piece, `capture` of the fine gold and a
@@ -46,7 +65,7 @@ export const SIEVE_SECONDS = { perL: 0.42, min: 3, max: 6 };
 // out; past that they hold less and less (down to `overload` of capture at
 // twice the load). The heavy concentrate then pans with little loss (0.94):
 // a little more gold per litre than panning raw ground (0.65 x 0.94 = 0.61
-// vs 0.58), less than classifier + riffled pan (0.76) - its point is the
+// vs 0.58), less than classifier + riffled pan (0.71) - its point is the
 // litres per minute, while you do something else; no pan is skipped.
 export const SLUICE_TUNING = { capture: 0.65, heavyShare: 0.012, riffleL: 240, overload: 0.5 };
 
@@ -187,9 +206,16 @@ export function panRecovery(stage, recoveryMul = 1) {
 }
 
 // how long a load takes to pan (s of steady swirling)
-export function panSeconds(batch) {
-  const perL = batch.stage === STAGE.HEAVY ? PAN_SECONDS.heavy : batch.stage === STAGE.CONCENTRATE ? PAN_SECONDS.concentrate : PAN_SECONDS.raw;
-  return Math.max(PAN_SECONDS.min, Math.min(PAN_SECONDS.max, (batch.volumeMl / 1000) * perL));
+export function panSeconds(batch, tool = "pan") {
+  const T = tool === "bowl" ? BOWL_SECONDS : PAN_SECONDS;
+  const perL = batch.stage === STAGE.HEAVY ? T.heavy : batch.stage === STAGE.CONCENTRATE ? T.concentrate : T.raw;
+  return Math.max(T.min, Math.min(T.max, (batch.volumeMl / 1000) * perL));
+}
+
+// the fine-gold recovery of a washing tool ("pan" with its upgrades | "bowl": no upgrades)
+export function washRecovery(tool, stage, recoveryMul = 1) {
+  if (tool !== "bowl") return panRecovery(stage, recoveryMul);
+  return stage === STAGE.HEAVY ? BOWL_RECOVERY.heavy : stage === STAGE.CONCENTRATE ? BOWL_RECOVERY.concentrate : BOWL_RECOVERY.raw;
 }
 
 export function sieveSeconds(batch) {

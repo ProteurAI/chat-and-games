@@ -255,7 +255,7 @@ export class GoldRushGame {
     pr.warmup(true);
     pr.warmMachines(true);
     pr.warmPending = false;
-    this.hands.scene.add(pr.handPan, pr.handBucket);
+    this.hands.scene.add(pr.handPan, pr.handBowl, pr.handBucket);
     world.scene.traverse((o) => { if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; } });
     renderer.compile(world.scene, camera);
     renderer.compile(this.hands.scene, this.hands.camera);
@@ -266,7 +266,7 @@ export class GoldRushGame {
     renderer.autoClear = false;
     renderer.render(this.hands.scene, this.hands.camera);
     renderer.autoClear = true;
-    this.hands.scene.remove(pr.handPan, pr.handBucket);
+    this.hands.scene.remove(pr.handPan, pr.handBowl, pr.handBucket);
     pr.warmMachines(false);
     pr.warmup(false);
     [pr.restPan.visible, pr.cls.visible, pr.worldBucket.visible] = shown;
@@ -497,7 +497,9 @@ export class GoldRushGame {
       this.hud.collected(r.cents, FIND.FINE);
       this.hud.message("Gold gewaschen", `${formatMass(r.ug)} · ≈ ${formatEuro(r.cents)}${r.pieces ? ` · ${r.pieces} ${r.pieces === 1 ? "Stück" : "Stücke"}` : ""}`);
       this.audio.play(r.pieces ? "tiny" : "flake", { dist: 0.3 });
-    } else this.hud.tip("pan-empty", "Diesmal blieb kein Gold in der Pfanne.", 3);
+    } else this.hud.tip("pan-empty", `Diesmal blieb kein Gold in der ${r.tool === "bowl" ? "Schale" : "Pfanne"}.`, 3);
+    // the first wash with the wooden bowl: what a gold pan would do better (once)
+    if (r.tool === "bowl" && !this._bowlTip) { this._bowlTip = true; this.hud.tip("bowl-first", "Mit einer Goldpfanne (Ausrüstung) bleibt deutlich mehr Feingold liegen – und es geht schneller.", 6); }
     this.dirty = true;
     this.save("pan");
   }
@@ -860,8 +862,11 @@ export class GoldRushGame {
     if (pr.work === "pan" && pr.panDone && click && !this._workClick) { this._workClick = click; this._collectPan(); return; }
     this._workClick = click;
     const touch = this.touch;
-    if (pr.work === "pan") this.hud.work(pr.panDone ? (touch ? "Gold liegt in der Pfanne – EINSAMMELN tippen" : "Gold liegt in der Pfanne – Klick oder [E]: einsammeln")
-      : touch ? "Mit dem Finger kreisen: Pfanne schwenken" : "Maus kreisen lassen: Pfanne schwenken · [E] aufhören");
+    if (pr.work === "pan") {
+      const n = pr.washName(true);
+      this.hud.work(pr.panDone ? (touch ? `Gold liegt in der ${n} – EINSAMMELN tippen` : `Gold liegt in der ${n} – Klick oder [E]: einsammeln`)
+        : touch ? `Mit dem Finger kreisen: ${n} schwenken` : `Maus kreisen lassen: ${n} schwenken · [E] aufhören`);
+    }
     else if (pr.work === "clean") this.hud.work(touch ? "Mit dem Finger hin und her: Riffelmatte ausbürsten" : "Maus hin und her: Riffelmatte ausbürsten · [E] aufhören");
     else this.hud.work(touch ? "Mit dem Finger hin und her: Sieb rütteln" : "Maus hin und her: Sieb rütteln · [E] aufhören");
   }
@@ -1058,6 +1063,16 @@ export class GoldRushGame {
 
   _n = new THREE.Vector3();
 
+  // the first time a streak comes to light: what it is, what it means (no gold shown - you find out)
+  _streakSeen(hit) {
+    const id = this.terrain.field.streakIdAt(hit.x, hit.y - 0.01, hit.z);
+    if (!this.economy.foundStreak(id)) return;
+    this.hud.message("Mineralisierte Zone", "Rostiger, verfestigter Kies mit Quarzadern und dunklem Schwersand – solche Lagen halten oft mehr Gold.");
+    this.audio.play("crack", { dist: 0.4, strength: 0.5 });
+    this.feedback = (this.feedback || 0) + 1;
+    this.dirty = true;
+  }
+
   _hintNoTarget() {
     if (this.farTarget) this.hud.tip("far", "Zu weit entfernt – geh näher heran.", 5);
   }
@@ -1095,12 +1110,14 @@ export class GoldRushGame {
       return;
     }
     if (r.blocked) {
-      this.tools.react("blocked", MAT.STONE);
-      this.hands.contact("blocked", MAT.STONE);
-      this.effects.impact(hit, MAT.STONE, def.id, dir, 0.5);
-      this.audio.play(DIG_SOUND[def.id] ? DIG_SOUND[def.id][MAT.STONE] : "stone", { pan, dist, strength: def.id === "hand" ? 1 : 0.7 });
-      this._haptic(haptics[MAT.STONE]);
-      if (STONE_TIP[def.id]) this.hud.tip(`stone-${def.id}`, STONE_TIP[def.id], 10);
+      const cem = r.cemented && hit.boulder == null, bm = cem ? r.material : MAT.STONE;   // cemented gravel / clay: a dull thud, no sparks
+      this.tools.react("blocked", bm);
+      this.hands.contact("blocked", bm);
+      this.effects.impact(hit, bm, def.id, dir, cem ? 0.35 : 0.5);
+      this.audio.play(DIG_SOUND[def.id] ? DIG_SOUND[def.id][bm] : "stone", { pan, dist, strength: def.id === "hand" ? 1 : 0.7 });
+      this._haptic(haptics[bm]);
+      if (cem) { this._streakSeen(hit); this.hud.tip("cemented-hand", "Verfestigter, rostiger Kies – mit bloßen Händen keine Chance. Die Spitzhacke bricht ihn auf.", 10); }
+      else if (STONE_TIP[def.id]) this.hud.tip(`stone-${def.id}`, STONE_TIP[def.id], 10);
       this.ui.crosshairPulse && this.ui.crosshairPulse("hard");
       if (!this.reducedMotion) this.player.kick = Math.min(0.03, this.player.kick + kicks[MAT.STONE] * 0.5);
       this.lastStroke = { tool: def.id, kind: "blocked", material: hit.boulder != null ? MAT.STONE : r.material, massKg: 0, blocked: true, finds: 0, cents: 0 };
@@ -1118,8 +1135,11 @@ export class GoldRushGame {
     if (!this.reducedMotion) this.player.kick = Math.min(0.03, this.player.kick + (kicks[r.material] || kicks[0]));
     this._trickleAfter(hit, r.material);
     this.ui.onDig && this.ui.onDig();
-    // into the bucket next to you (with all its gold), or spoil: its finds
-    // come out of the ground now (pending), shown now (loot), money on pickup
+    // a mineralised streak: told once per streak; the shovel's limit in it now and then
+    if (r.streak > 0.3) this._streakSeen(hit);
+    if (r.cemented && def.id !== "pickaxe") this.hud.tip("cemented", "Verfestigter Kies – die Schaufel rutscht ab. Erst mit der Spitzhacke lockern, dann schaufeln.", 12);
+    // into the bucket next to you (the material and its fine gold), or spoil:
+    // either way its finds come out of the ground now (pending), shown now (loot), money on pickup
     const routed = this.processing.collect(r, this.player, def.id);
     this._intoBucket(routed);
     if (def.id === "shovel" && r.removedMassKg > 0.05) this._release = { t: 0.3, mat: r.material, into: routed.intoMl > 0 ? routed.into : null, kg: r.removedMassKg };
@@ -1183,7 +1203,9 @@ export class GoldRushGame {
     if (hit.distance > def.reach) return null;
     const r = this.mining.action(hit, def, this.player, this.camera.position);
     this.economy.recordAction(r, def.id);
-    const base = { ok: r.ok, kind: r.kind, blocked: r.blocked, material: r.material, rock: r.rock, cents: 0, finds: 0, massKg: 0 };
+    const base = { ok: r.ok, kind: r.kind, blocked: r.blocked, material: r.material, rock: r.rock, cents: 0, finds: 0, massKg: 0, cemented: !!r.cemented, streak: r.streak || 0 };
+    // a mineralised streak touched for the first time (the bench / trace counts it as a moment)
+    if (r.ok && r.streak > 0.3) base.streakFound = this.economy.foundStreak(this.terrain.field.streakIdAt(hit.x, hit.y - 0.01, hit.z));
     if (!r.ok || r.blocked || r.kind === "rock") { this.dirty = true; this.lastStroke = { tool: id, kind: r.kind, massKg: 0 }; return base; }
     const routed = this.processing.collect(r, this.player, id);
     const disc = this.economy.discover(routed.finds, routed.count);
@@ -1391,7 +1413,8 @@ export class GoldRushGame {
     const def = this.tools.def;
     return {
       material: MATERIALS[mat].id, hardness: MATERIALS[mat].hardness, handEfficiency: MATERIALS[mat].handEfficiency,
-      tool: def.id, toolEfficiency: +toolEfficiency(def, mat, t.loose[k] > 0).toFixed(3), loose: t.loose[k],
+      tool: def.id, toolEfficiency: +toolEfficiency(def, mat, t.loose[k] > 0, hit.boulder == null && !t.loose[k] && f.cementedAt(hit.x, hit.y - 0.01, hit.z)).toFixed(3), loose: t.loose[k],
+      cemented: hit.boulder == null && !t.loose[k] && f.cementedAt(hit.x, hit.y - 0.01, hit.z), streak: hit.boulder == null ? +f.streakAt(hit.x, hit.y - 0.01, hit.z).toFixed(3) : 0,
       rock: hit.boulder != null ? this.rocks.stage(hit.boulder) : null,
       gold: +f.goldDensityAt(hit.x, y, hit.z, mat, t.base[k] - y).toFixed(3), depth: +(t.base[k] - hit.y).toFixed(2),
       cell: `${i}:${j}:${iy}`, workedSlice: this.mining.cidx[k], worked: iy >= this.mining.cidx[k],

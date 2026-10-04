@@ -419,7 +419,7 @@ export class FirstPersonHands {
     const h = this.right.held;
     h.geometry = look.geometry;
     h.material = look.material;
-    h.scale.setScalar(Math.max(0.014, look.size * 0.8));
+    h.scale.setScalar(0.0075 + look.size * 0.5);           // between the fingers: a small nugget stays small (FIND_LOOK)
     h.visible = true;
     this.inspecting = { dur, done, t: 0 };
     this._from = clonePose(this.right.pose);

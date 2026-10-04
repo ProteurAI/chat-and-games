@@ -117,6 +117,8 @@ export class Economy {
       firstSaleSeen: !!fl.firstSaleSeen,
       firstPurchaseSeen: !!fl.firstPurchaseSeen,
       hardSeen: !!fl.hardSeen,                // has come up against stone / a boulder
+      // phase 7A: the mineralised streaks already come across (their indices - told once each)
+      streaksFound: Array.isArray(fl.streaksFound) ? fl.streaksFound.filter((i) => Number.isInteger(i) && i >= 0 && i < 64).slice(0, 64) : [],
     };
     this.nextId = int(s.nextId) || 1;
     // finds on their way (saved); restored ones go to the pouch right after loading
@@ -129,6 +131,13 @@ export class Economy {
       }
     }
     this.sessionCents = 0;                    // cash received this visit (not saved)
+  }
+
+  // a mineralised streak came to light: true the first time (a moment worth telling)
+  foundStreak(i) {
+    if (!Number.isInteger(i) || i < 0 || this.flags.streaksFound.includes(i)) return false;
+    this.flags.streaksFound.push(i);
+    return true;
   }
 
   // ---- compatibility: "money" is cash
@@ -322,7 +331,7 @@ export class Economy {
       shop: { purchases: this.shop.purchases.map((q) => ({ ...q })), spentCents: this.shop.spentCents, toolPurchases: this.shop.toolPurchases, upgradePurchases: this.shop.upgradePurchases },
       milestones: { ...this.milestones },
       stats: { ...st, massG: { ...st.massG }, byTool: { hand: { ...st.byTool.hand }, shovel: { ...st.byTool.shovel }, pickaxe: { ...st.byTool.pickaxe } } },
-      flags: { ...this.flags },
+      flags: { ...this.flags, streaksFound: [...this.flags.streaksFound] },
       nextId: this.nextId,
       pending: [...this.pending.values()].map((q) => ({ id: q.id, cls: q.cls, massUg: q.massUg, key: q.key })),
     };

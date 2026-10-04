@@ -8,7 +8,8 @@
 //   0 hand  ~25 kg/min loose dirt          2 shovel ~5x the hand (~120 kg/min)
 //   1 simple hand tool (later)             3+ processing, mechanics, machines ...
 // The pickaxe is no step on that ladder: it is the tool for what the others
-// cannot do (stone, boulders) and prepares hard ground (loosening).
+// cannot do (stone, boulders, the cemented mineralised streaks - phase 7A) and
+// prepares hard ground (loosening) for the shovel.
 // Tools never carry luck stats: more gold only ever comes from moving more
 // material (the finds are in the ground).
 
@@ -24,6 +25,7 @@ export const TOOL_DEFS = {
     reach: 2.2,
     materialEfficiency: [1.0, 0.45, 0.2, 0],
     loosenedBonus: [1, 2.0, 1.6, 1],
+    cementEfficiency: 0,                  // a cemented streak (not loosened): share of the normal efficiency
     hardnessLimit: 3.5,
     // a small, flat scrape: ~0.135 l = ~0.18 kg of loose dirt
     kernel: { type: "scrape", a: 0.14, b: 0.11, vol: 0.000135, tMax: 0.012, edge: 0.55, tilt: 0, settleMargin: 0.7 },
@@ -38,6 +40,7 @@ export const TOOL_DEFS = {
     reach: 2.4,
     materialEfficiency: [1.0, 0.55, 0.5, 0],
     loosenedBonus: [1, 1.7, 1.6, 1],
+    cementEfficiency: 0.08,               // the blade skids off cemented gravel: barely a scrape until it is loosened
     hardnessLimit: 3.5,
     // a scoop: wider, deeper, deepest at the leading edge: ~1.63 l = ~2.2 kg of loose dirt
     kernel: { type: "scoop", a: 0.23, b: 0.15, vol: 0.00163, tMax: 0.06, edge: 0.45, tilt: 0.35, settleMargin: 1.0 },
@@ -59,6 +62,7 @@ export const TOOL_DEFS = {
     // them for hand / shovel) and is the only one that cuts stone
     materialEfficiency: [0.25, 0.35, 0.3, 0.12],
     loosenedBonus: [1, 1, 1, 1],
+    cementEfficiency: 1,                  // what it is for: it breaks the cemented streaks up like any hard ground
     hardnessLimit: 10,
     // a point strike: small crater (~0.4 l at full bite), loosens around it
     kernel: { type: "pick", a: 0.12, b: 0.09, vol: 0.0004, tMax: 0.05, edge: 0.3, tilt: 0, settleMargin: 0.6, cutsStone: true, loosenCm: 14, loosenR: 0.42 },
@@ -115,10 +119,12 @@ export function effectiveDef(id, upgrades) {
   return d;
 }
 
-// efficiency of a tool on a material at a cell (loosened ground helps)
-export function toolEfficiency(def, mat, loosened) {
+// efficiency of a tool on a material at a cell (loosened ground helps; a cemented
+// mineralised streak resists everything but the pickaxe until it is loosened)
+export function toolEfficiency(def, mat, loosened, cemented = false) {
   const e = def.materialEfficiency[mat] || 0;
-  return loosened ? e * def.loosenedBonus[mat] : e;
+  if (loosened) return e * def.loosenedBonus[mat];
+  return cemented ? e * (def.cementEfficiency != null ? def.cementEfficiency : 1) : e;
 }
 
 // one stroke's average cycle time on a material (for reports / benchmarks)

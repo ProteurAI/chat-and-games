@@ -965,7 +965,7 @@ class GoldRushShell {
       // phase 5: processing (bucket / classifier / gold pan) - the real transactions, without walking
       proc: () => {
         const pr = g.processing, b = pr.bucket;
-        return { owned: pr.ownedList(), work: pr.work, panDone: pr.panDone, carrying: pr.carrying, capacityMl: pr.capacityMl, recoveryMul: pr.recoveryMul,
+        return { owned: pr.ownedList(), work: pr.work, panDone: pr.panDone, panTool: pr.pan.tool, washTool: pr.washTool(), carrying: pr.carrying, capacityMl: pr.capacityMl, recoveryMul: pr.recoveryMul,
           bucket: b ? { x: b.x, z: b.z, carried: b.carried, atWash: pr.bucketAtWash(), batch: b.batch.serialize(), massG: b.batch.massG, goldUg: b.batch.goldUg } : null,
           tub: { ...pr.tub.serialize(), massG: pr.tub.massG, goldUg: pr.tub.goldUg }, pan: { ...pr.pan.batch.serialize(), progress: pr.pan.progress, need: pr.pan.need, goldUg: pr.pan.batch.goldUg },
           sieve: { ...pr.sieve.batch.serialize(), progress: pr.sieve.progress }, ledger: { ...pr.ledger }, inContainersUg: pr.goldInContainers(), inContainersG: pr.massInContainers(),
@@ -1100,11 +1100,22 @@ class GoldRushShell {
       // what a later shop will do: the tool becomes really yours (saved as owned)
       grant: (id) => g.grantTool(id),
       starter: () => ({ ...g.terrain.field.starter }),
+      // phase 7A: the mineralised streaks of this mine (geometry only - tests, developer tools)
+      streaks: () => (g.terrain.field.streaks || []).map((s) => ({ i: s.i, x: s.x, y: s.y, z: s.z, len: s.len, w: s.w, th: s.th, strike: s.strike, slope: s.slope })),
+      streakAt: (x, y, z) => g.terrain.field.streakAt(x, y, z),
+      cementedAt: (x, y, z) => g.terrain.field.cementedAt(x, y, z),
       setPaused: (v) => { g.setPaused(!!v); return g.paused; },
       miningStats: () => g.mining.stats(),
       pending: () => [...g.economy.pending.values()].map((p) => ({ ...p })),
-      loot: () => ({ active: g.loot.active, glints: g.loot.activeGlints, floats: g.hud.floatsVisible }),
+      loot: () => ({ active: g.loot.active, glints: g.loot.activeGlints, floats: g.hud.floatsVisible, specks: g.loot.activeSpecks,
+        pieces: g.loot.items.filter((it) => it.state !== "free").map((it) => ({ cls: it.cls, cents: it.cents, size: it.size, scale: it.mesh.scale.x })) }),
       flushLoot: () => { g.flushLoot(); return g.economy.moneyCents; },
+      // phase 7A visual QA: a find of this class shown 1,1 m in front of you (looks only - no id, nothing booked)
+      lootSample: (cls, cents) => {
+        const p = g.player, fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw), x = p.x + fx * 1.1, z = p.z + fz * 1.1;
+        g.loot.spawn([{ id: null, cls, cents, massUg: cents * 100, key: "qa:look" }], { x, y: g.world.groundAt(x, z) + 0.02, z, normal: { x: -fx * 0.3, y: 0.95, z: -fz * 0.3 } });
+        return g.loot.active;
+      },
       materialAt: (x, y, z) => g.terrain.field.materialAt(x, y, z),
       goldAt: (x, y, z) => { const f = g.terrain.field, m = f.materialAt(x, y, z); return f.goldDensityAt(x, y, z, m, g.terrain.getBaseHeightAt(x, z) - y); },
       voxel: (i, j, iy) => ({ ...g.terrain.field.voxel(i, j, iy, {}) }),

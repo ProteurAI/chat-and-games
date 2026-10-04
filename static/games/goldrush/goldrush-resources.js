@@ -18,6 +18,14 @@
 //   - the starter zone (the faces you walk up to from the claim entrance)
 //     is kept fair: never barren, never a jackpot, no gravel skirt and no
 //     stone in the way - the rest of the pile varies freely per seed
+//   - mineralised streaks (phase 7A): a few tilted, cemented pay streaks of
+//     gravel / clay in the pile, never in the starter zone. Hand and shovel
+//     hardly get into them; the pickaxe breaks them up (loosens them) and the
+//     shovel takes the loosened material. They hold more gold - taken from the
+//     rest of the pile (REDIST), not added - mostly as fine gold and flakes;
+//     the nugget odds stay those of the ground around them. Where one reaches
+//     the surface it shows: rust-stained, quartz flecks, dark heavy-mineral
+//     streaks (goldrush-terrain.js / goldrush-world.js) - never the gold itself.
 //
 // Resource voxels: every terrain column (one vertex, 12.5 x 12.5 cm) is cut
 // into 1 cm slices (~0.16 l, ~0.2 kg). Each slice's content (nothing, gold
@@ -60,6 +68,11 @@ const FINE_PER_SLICE = 6000;
 // (narrow on purpose: early progress should come from steady work, not from
 // whether a seed's first nugget shows up early - see the phase-4 benchmark)
 const STARTER = { radius: 6.5, fade: 2.5, depth: 1.6, gMin: 0.21, gMax: 0.29 };
+// mineralised streaks: how many, how rich (added density at the core), the share of
+// the ordinary gold left outside them (redist: the rest sits in the streaks - the
+// pile's total stays the same within ~0,6 % per seed, measured over the volume),
+// and the core value above which they are cemented
+export const STREAK = { count: 6, g: 0.42, redist: 0.985, cement: 0.3, flake: 1.4, pieceCap: 0.12 };
 
 export class MaterialField {
   constructor(seed, terrain, floorY) {
@@ -101,7 +114,76 @@ export class MaterialField {
       this.boulders.push({ x, z, y: ground - r * 0.15, r, rot: brng() * Math.PI * 2, variant: this.boulders.length % 4, broken: false, tilt: 0, tiltDir: 0 });
     }
     this._buildStone();
+    this._buildStreaks();
   }
+
+  // tilted slabs of cemented pay gravel / clay: centre, strike (in plan), dip,
+  // half length / width / thickness. One of them near the starter zone's rim
+  // (you meet it within the first hour), the rest anywhere in the pile.
+  _buildStreaks() {
+    const t = this.terrain, rng = mulberry32(this.seed ^ 0x7a57ea4), { x: cx, z: cz } = t.moundCenter;
+    this.streaks = [];
+    const ok = (x, z, r) => {
+      const ground = t.getBaseHeightAt(x, z);
+      if (ground < 0.7 || ground > 7.5) return false;
+      if (!t.inDigArea(x - r, z - r) || !t.inDigArea(x + r, z + r)) return false;
+      if (Math.hypot(x - this.starter.x, z - this.starter.z) < STARTER.radius + STARTER.fade * 0.4 + r * 0.5) return false;
+      return !this.streaks.some((s) => Math.hypot(s.x - x, s.z - z) < s.len + r + 0.6);
+    };
+    for (let tries = 0; tries < 400 && this.streaks.length < STREAK.count; tries++) {
+      const first = this.streaks.length === 0 && tries < 200;
+      let x, z;
+      if (first) {
+        // around the starter zone, a little up the pile
+        const a0 = Math.atan2(cz - this.starter.z, cx - this.starter.x), a = a0 + (rng() - 0.5) * 2.4, d = STARTER.radius + 2.2 + rng() * 2.2;
+        x = this.starter.x + Math.cos(a) * d; z = this.starter.z + Math.sin(a) * d;
+      } else {
+        const a = rng() * Math.PI * 2, d = 1.5 + rng() * 9;
+        x = cx + Math.cos(a) * d; z = cz + Math.sin(a) * d;
+      }
+      const len = 1.3 + rng() * 1.6, w = 0.55 + rng() * 0.45, th = 0.16 + rng() * 0.16;
+      if (!ok(x, z, len)) continue;
+      const ground = t.getBaseHeightAt(x, z);
+      // the first one comes up to the surface (it can be seen), the others lie 0-1.4 m deep
+      const y = ground - (first ? 0.12 + rng() * 0.18 : rng() * 1.4) - th * 0.5;
+      this.streaks.push({ i: this.streaks.length, x, y, z, len, w, th, strike: rng() * Math.PI, slope: Math.tan(0.15 + rng() * 0.5) * (rng() < 0.5 ? -1 : 1),
+        gravel: rng() < 0.7, seedOff: Math.floor(rng() * 1000) });
+    }
+  }
+
+  /** 0..1: how deep inside a mineralised streak a point lies (0 = outside) */
+  streakAt(x, y, z) {
+    const S = this.streaks;
+    if (!S || !S.length) return 0;
+    let best = 0;
+    for (let n = 0; n < S.length; n++) {
+      const s = S[n], dx = x - s.x, dz = z - s.z;
+      if (dx * dx + dz * dz > (s.len + 0.3) * (s.len + 0.3)) continue;
+      const c = Math.cos(s.strike), sn = Math.sin(s.strike);
+      const u = dx * c + dz * sn, v = -dx * sn + dz * c;
+      const e = (u / s.len) ** 2 + (v / s.w) ** 2;
+      if (e >= 1) continue;
+      // its mid plane rises across the streak (dip); the slab wavers a little
+      const wav = noise2(u * 1.7 + s.seedOff, v * 1.7, this.seed + 701) * 0.07;
+      const dy = (y - (s.y + v * s.slope + wav)) / (s.th * (0.75 + 0.25 * (1 - e)));
+      if (dy <= -1 || dy >= 1) continue;
+      best = Math.max(best, (1 - e) * (1 - dy * dy));
+    }
+    return best;
+  }
+
+  /** which streak a point lies in (its index), -1 = none */
+  streakIdAt(x, y, z) {
+    let best = 0, id = -1;
+    for (const s of this.streaks || []) {
+      const v = this.streakAt.call({ streaks: [s], seed: this.seed }, x, y, z);
+      if (v > best) { best = v; id = s.i; }
+    }
+    return id;
+  }
+
+  /** a cemented spot: hand and shovel hardly get in until a pickaxe loosened it */
+  cementedAt(x, y, z) { return this.streakAt(x, y, z) > STREAK.cement; }
 
   // the foot of the pile you reach first from the claim entrance
   _findStarter() {
@@ -177,6 +259,11 @@ export class MaterialField {
     if (k >= 0 && y <= this.stoneTop[k] + 1e-4 && y >= this.stoneBot[k]) return MAT.STONE;
     const t = this.terrain, s = this.seed;
     const base = k >= 0 ? t.base[k] : 0, depth = base - y;
+    // a mineralised streak: cemented gravel (or clay) whatever lay there before
+    if (this.streaks && this.streaks.length) {
+      const st = this.streakAt(x, y, z);
+      if (st > STREAK.cement) return noise3(x * 1.3, y * 2.1, z * 1.3, s + 711) > 0.45 ? MAT.COMPACT : MAT.GRAVEL;
+    }
     const sw = this.starterWeight(x, y, z, base);
     // gravel: 3D blobs and bands, much more of it at the bottom of the pile
     // (the starter faces keep most of their skirt as diggable dirt)
@@ -206,7 +293,8 @@ export class MaterialField {
     }
     const deep = 0.8 + 0.4 * smoothstep(0, 3, depth);
     const mf = mat === MAT.GRAVEL ? 1.55 : mat === MAT.COMPACT ? 1.05 : 0.7;
-    let g = Math.min(1, Math.max(0, (0.06 + 0.32 * region + 0.3 * pay + 0.45 * vein) * deep * mf + pocket));
+    // REDIST: a small share of the ordinary gold sits in the mineralised streaks instead
+    let g = Math.min(1, Math.max(0, (0.06 + 0.32 * region + 0.3 * pay + 0.45 * vein) * deep * mf * STREAK.redist + pocket + STREAK.g * this.streakAt(x, y, z)));
     // the starter zone: same geology, but held inside a fair band
     const sw = this.starterWeight(x, y, z, y + depth);
     if (sw > 0) g += (Math.min(STARTER.gMax, Math.max(STARTER.gMin, g)) - g) * sw;
@@ -229,9 +317,14 @@ export class MaterialField {
     out.g = g;
     out.fineUg = Math.round(FINE_PER_SLICE * g);
     const s = this.seed;
+    // in a streak: more pieces (above all flakes), but the nugget / tiny-piece odds
+    // only of the ground around it plus a little (no nugget farm behind a pickaxe)
+    const st = this.streaks && this.streaks.length ? this.streakAt(x, y, z) : 0;
+    out.streak = st;
     if (hash3(i, iy, j, s ^ 0x6a09e667) >= P_FIND * Math.pow(g, 0.85)) return out;
     const u = hash3(i, iy, j, s ^ 0x3c6ef372);
-    const pN = P_NUGGET * (0.6 + 1.2 * g * g), pT = P_TINY * (0.4 + 1.2 * g), pF = P_FLAKE * (0.6 + g);
+    const gp = st > 0 ? Math.min(g, Math.max(0, g - STREAK.g * st) + STREAK.pieceCap) : g;
+    const pN = P_NUGGET * (0.6 + 1.2 * gp * gp), pT = P_TINY * (0.4 + 1.2 * gp), pF = P_FLAKE * (0.6 + g) * (1 + STREAK.flake * st);
     let cls;
     if (u < pN) cls = FIND.NUGGET;
     else if (u < pN + pT) cls = FIND.TINY;
@@ -253,6 +346,7 @@ export class MaterialField {
     out.stone = mat === MAT.STONE ? 1 : 0;
     out.dirt = 1 - out.stone;
     out.goldDensity = this.goldDensityAt(x, y, z, mat, depth);
+    out.streak = this.streakAt(x, y, z);
     out.rarity = hash3(Math.floor(x * 4), Math.floor(y * 4), Math.floor(z * 4), this.seed + 991);
     return out;
   }

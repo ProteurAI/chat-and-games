@@ -19,6 +19,31 @@ const PICKUP_RANGE = 3.5;        // m: pieces lying closer are pulled in after t
 const GIVE_UP = 6;               // s: then they come from anywhere
 const REST = { [FIND.FLAKE]: 0.45, [FIND.TINY]: 0.8, [FIND.NUGGET]: 1.0 };
 const POOL = { [FIND.FLAKE]: 10, [FIND.TINY]: 8, [FIND.NUGGET]: 3 };
+const SPECKS = 32;               // fine-gold flitter in flight at most (one instanced draw)
+
+// How a find looks - true to what it is worth (phase 7A): gold dust and fine gold
+// are a few tiny specks, a flake stays well under a fingertip, a tiny piece is a
+// small lump, only a real nugget (EUR 1-4) is a proper little nugget you hold up.
+// size: mesh radius in m (pieces are drawn a little larger than life so a 5 mm
+// flake still reads from standing height), from the cheapest to the dearest of
+// the class (by value, logarithmic) - a later, deeper layer adds bigger classes
+// here (e.g. a large nugget) without touching the rest.
+export const FIND_LOOK = {
+  [FIND.TRACE]: { kind: "speck", specks: 2, size: [0.0018, 0.0026], cents: [1, 3], glint: [0.016, 0.026], glints: 2 },
+  [FIND.FINE]: { kind: "speck", specks: 4, size: [0.0022, 0.0032], cents: [3, 8], glint: [0.02, 0.034], glints: 3 },
+  [FIND.FLAKE]: { kind: "flake", size: [0.0045, 0.0068], cents: [8, 30] },
+  [FIND.TINY]: { kind: "lump", size: [0.0062, 0.0094], cents: [25, 90] },
+  [FIND.NUGGET]: { kind: "nugget", size: [0.0105, 0.0165], cents: [100, 400] },
+};
+
+/** the drawn radius (m) of a find of class `cls` worth `cents`; u (0..1) adds a little variety */
+export function findSize(cls, cents, u = 0.5) {
+  const L = FIND_LOOK[cls];
+  if (!L) return 0;
+  const [c0, c1] = L.cents, [r0, r1] = L.size;
+  const t = Math.max(0, Math.min(1, Math.log(Math.max(1, cents) / c0) / Math.log(c1 / c0)));
+  return r0 + (r1 - r0) * Math.max(0, Math.min(1, 0.75 * t + 0.25 * u));
+}
 
 // an irregular lump: a sphere pushed in and out by noise, then squashed
 function lumpGeometry(THREE, seed, { w = 20, h = 14, amp = 0.28, freq = 1.7, sx = 1, sy = 0.7, sz = 0.85 } = {}) {
@@ -48,8 +73,9 @@ export class LootSystem {
 
     // gold: a real metal (metalness 1, the environment gives it its colour
     // and the sun its highlight) - not a yellow plastic ball
-    this.goldMat = new THREE.MeshStandardMaterial({ color: 0xeeb043, metalness: 1, roughness: 0.26, envMap: envMap || null, envMapIntensity: 1.5 });
-    this.goldMatRough = new THREE.MeshStandardMaterial({ color: 0xe3a53c, metalness: 1, roughness: 0.38, envMap: envMap || null, envMapIntensity: 1.35 });
+    // (phase 7A: a warmer, deeper gold - highlights from the light, never neon yellow)
+    this.goldMat = new THREE.MeshStandardMaterial({ color: 0xe2a63e, metalness: 1, roughness: 0.3, envMap: envMap || null, envMapIntensity: 1.3 });
+    this.goldMatRough = new THREE.MeshStandardMaterial({ color: 0xd69a38, metalness: 1, roughness: 0.42, envMap: envMap || null, envMapIntensity: 1.15 });
     this.geos = {
       [FIND.FLAKE]: [0, 1, 2].map((i) => lumpGeometry(THREE, 11 + i, { w: 12, h: 8, amp: 0.3, freq: 2.2, sx: 1, sy: 0.14, sz: 0.78 })),
       [FIND.TINY]: [0, 1, 2].map((i) => lumpGeometry(THREE, 21 + i, { w: 14, h: 10, amp: 0.34, freq: 1.9, sx: 1.05, sy: 0.72, sz: 0.85 })),
@@ -67,6 +93,13 @@ export class LootSystem {
       }
     }
     this.dustItems = [];                  // invisible "pieces" of gold dust (short delay, then collected)
+    // fine-gold flitter: a few tiny specks pop up and fall back (looks only; one instanced draw)
+    this.speckMesh = new THREE.InstancedMesh(this.geos[FIND.FLAKE][0], this.goldMat, SPECKS);
+    this.speckMesh.count = 0;
+    this.speckMesh.frustumCulled = false;
+    scene.add(this.speckMesh);
+    this.specks = Array.from({ length: SPECKS }, () => ({ life: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, s: 0, r: 0 }));
+    this._sm = new THREE.Matrix4(); this._sq = new THREE.Quaternion(); this._se = new THREE.Euler(); this._sv = new THREE.Vector3(); this._ss = new THREE.Vector3();
 
     // glints: small additive stars (one Points draw call)
     this.glints = [];
@@ -93,9 +126,9 @@ export class LootSystem {
           vec2 c = gl_PointCoord - 0.5; float r = length(c);
           float core = smoothstep(0.16, 0.0, r);
           float rays = max(smoothstep(0.035, 0.0, abs(c.x)), smoothstep(0.035, 0.0, abs(c.y))) * smoothstep(0.5, 0.05, r);
-          float a = (core + rays * 0.75) * vAlpha;
+          float a = (core + rays * 0.6) * vAlpha * 0.85;
           if (a < 0.004) discard;
-          gl_FragColor = vec4(vec3(1.0, 0.86, 0.55) * a, a);
+          gl_FragColor = vec4(vec3(1.0, 0.84, 0.52) * a, a);
         }`,
     });
     this.glintPoints = new THREE.Points(g, this.glintMat);
@@ -132,10 +165,12 @@ export class LootSystem {
     const r = this._rng, n = hit.normal || { x: 0, y: 1, z: 0 };
     for (const f of items) {
       if (f.cls === FIND.TRACE || f.cls === FIND.FINE) {
-        const count = f.cls === FIND.FINE ? 6 : 3;
-        for (let q = 0; q < count; q++) {
-          this._glint(hit.x + (r() - 0.5) * 0.22 + n.x * 0.04, hit.y + 0.03 + r() * 0.12, hit.z + (r() - 0.5) * 0.22 + n.z * 0.04, 0.035 + r() * 0.04, 0.25 + r() * 0.35);
+        // gold dust / fine gold: a short glitter and a few tiny specks - never a "piece"
+        const L = FIND_LOOK[f.cls];
+        for (let q = 0; q < L.glints; q++) {
+          this._glint(hit.x + (r() - 0.5) * 0.16 + n.x * 0.04, hit.y + 0.03 + r() * 0.09, hit.z + (r() - 0.5) * 0.16 + n.z * 0.04, L.glint[0] + r() * (L.glint[1] - L.glint[0]), 0.22 + r() * 0.3);
         }
+        for (let q = 0; q < L.specks; q++) this._speck(hit, n, findSize(f.cls, f.cents, r()));
         this.dustItems.push({ t: 0.32 + r() * 0.1, cents: f.cents, cls: f.cls, item: f });
         continue;
       }
@@ -148,8 +183,8 @@ export class LootSystem {
       it.rested = 0;
       it.wait = REST[f.cls];
       const big = f.cls === FIND.NUGGET;
-      // a little larger than life: a 3 mm flake would be invisible from standing height
-      it.size = f.cls === FIND.FLAKE ? 0.02 + r() * 0.006 : f.cls === FIND.TINY ? 0.021 + r() * 0.007 : 0.032 + Math.min(1, f.cents / 400) * 0.016;
+      // its size follows its value (FIND_LOOK): a few-cent flake stays a flake
+      it.size = findSize(f.cls, f.cents, r());
       it.x = hit.x + n.x * 0.03; it.y = hit.y + 0.03; it.z = hit.z + n.z * 0.03;
       const up = big ? 2.3 + r() * 0.4 : f.cls === FIND.TINY ? 1.8 + r() * 0.4 : 1.5 + r() * 0.4;
       const out = 0.55 + r() * 0.4;
@@ -162,15 +197,47 @@ export class LootSystem {
       if (big) {
         // the nugget's moment: a warm shine on the piece (soft, big glints that
         // ride along with it) and a few sparks - no flash, no light source
-        this._glint(it.x, it.y + 0.02, it.z, 0.34, 0.7, it);
-        this._glint(it.x, it.y + 0.03, it.z, 0.2, 0.95, it);
-        for (let q = 0; q < 6; q++) this._glint(it.x + (r() - 0.5) * 0.12, it.y + r() * 0.12, it.z + (r() - 0.5) * 0.12, 0.05 + r() * 0.05, 0.35 + r() * 0.3);
+        this._glint(it.x, it.y + 0.02, it.z, 0.22, 0.7, it);
+        this._glint(it.x, it.y + 0.03, it.z, 0.13, 0.95, it);
+        for (let q = 0; q < 5; q++) this._glint(it.x + (r() - 0.5) * 0.1, it.y + r() * 0.1, it.z + (r() - 0.5) * 0.1, 0.035 + r() * 0.035, 0.35 + r() * 0.3);
         this.shine = 0.95;
       } else {
-        this._glint(it.x, it.y + 0.02, it.z, 0.05, 0.3);
+        this._glint(it.x, it.y + 0.02, it.z, f.cls === FIND.TINY ? 0.042 : 0.034, 0.3);
       }
     }
   }
+
+  // one speck of fine gold thrown up from the dig spot
+  _speck(hit, n, s) {
+    const sp = this.specks.find((o) => o.life <= 0);
+    if (!sp) return;
+    const r = this._rng;
+    sp.life = 0.55 + r() * 0.35;
+    sp.x = hit.x + n.x * 0.03 + (r() - 0.5) * 0.06; sp.y = hit.y + 0.02; sp.z = hit.z + n.z * 0.03 + (r() - 0.5) * 0.06;
+    sp.vx = n.x * 0.5 + (r() - 0.5) * 0.6; sp.vy = 0.9 + r() * 0.7; sp.vz = n.z * 0.5 + (r() - 0.5) * 0.6;
+    sp.s = s; sp.r = r() * 6;
+  }
+
+  _specks(dt) {
+    let n = 0;
+    const m = this._sm, q = this._sq, e = this._se, v = this._sv, sc = this._ss;
+    for (const sp of this.specks) {
+      if (sp.life <= 0) continue;
+      sp.life -= dt;
+      sp.vy -= GRAVITY * dt;
+      sp.x += sp.vx * dt; sp.y += sp.vy * dt; sp.z += sp.vz * dt;
+      const g = this.terrain.getHeightAt(sp.x, sp.z) + sp.s * 0.3;
+      if (sp.y < g) { sp.y = g; sp.vx = sp.vz = sp.vy = 0; }
+      sp.r += dt * 11;
+      const k = Math.min(1, sp.life / 0.25);
+      e.set(sp.r, sp.r * 0.7, 0.3); q.setFromEuler(e);
+      m.compose(v.set(sp.x, sp.y, sp.z), q, sc.setScalar(sp.s * k));
+      this.speckMesh.setMatrixAt(n++, m);
+    }
+    if (n || this.speckMesh.count) { this.speckMesh.count = n; this.speckMesh.instanceMatrix.needsUpdate = true; }
+  }
+
+  get activeSpecks() { let n = 0; for (const s of this.specks) if (s.life > 0) n++; return n; }
 
   // camera-relative point in front of the player where pieces are pulled to
   _pocket(camera, out, reach = 0.5) {
@@ -181,6 +248,7 @@ export class LootSystem {
 
   update(dt, camera, player) {
     const r = this._rng;
+    this._specks(dt);
     // gold dust: collected after its short glitter
     for (let i = this.dustItems.length - 1; i >= 0; i--) {
       const d = this.dustItems[i];
@@ -208,7 +276,7 @@ export class LootSystem {
       } else if (it.state === "rest") {
         it.rested += dt;
         it.y = Math.max(it.y, this.terrain.getHeightAt(it.x, it.z) + it.size * 0.45);   // the ground may have been dug away under it
-        if (r() < dt * (it.cls === FIND.NUGGET ? 2.2 : 0.9)) this._glint(it.x + (r() - 0.5) * it.size * 2, it.y + it.size * 0.6, it.z + (r() - 0.5) * it.size * 2, 0.03 + r() * 0.03, 0.25);
+        if (r() < dt * (it.cls === FIND.NUGGET ? 2.2 : 0.9)) this._glint(it.x + (r() - 0.5) * it.size * 2, it.y + it.size * 0.6, it.z + (r() - 0.5) * it.size * 2, it.size * 2.2 + r() * it.size * 2, 0.25);
         const near = !player || Math.hypot(player.x - it.x, player.z - it.z) < PICKUP_RANGE;
         if ((it.t >= it.wait && near) || it.rested > GIVE_UP) {
           it.state = "magnet"; it.t = 0;
@@ -299,6 +367,8 @@ export class LootSystem {
       it.mesh.visible = on;
       it.mesh.position.set(0, -40, 0);
     }
+    if (on) { this.speckMesh.count = Math.max(1, this.speckMesh.count); this.speckMesh.setMatrixAt(0, this._sm.makeTranslation(0, -40, 0)); }
+    else if (!this.activeSpecks) this.speckMesh.count = 0;
   }
 
   // the geometry + material a hand should show for a held nugget
@@ -310,6 +380,8 @@ export class LootSystem {
     this.goldMatRough.dispose();
     this.glintGeo.dispose();
     this.glintMat.dispose();
+    this.scene.remove(this.speckMesh);
+    this.speckMesh.dispose();
     for (const it of this.items) this.scene.remove(it.mesh);
     this.scene.remove(this.glintPoints);
   }

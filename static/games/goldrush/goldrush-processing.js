@@ -10,10 +10,14 @@
 //                clods stay on top and go to the tailings, nuggets are
 //                picked out, the fines (and all the fine gold) fall into the
 //                tub below - the concentrate.
+//   WASH BOWL    (phase 7A) the free wooden bowl on the trough: from the first
+//                bucket on you can wash - a small load, swirled like the pan,
+//                but slower and much of the fine gold goes over its rim
 //   GOLD PAN     fill it from the tub (concentrate) or straight from the
 //                bucket (raw), swirl it in the trough: the light material
 //                goes over the rim, the gold stays. Raw ground pans slower
-//                and keeps less of the fine gold than a concentrate.
+//                and keeps less of the fine gold than a concentrate. Once
+//                owned it replaces the bowl (more per load, faster, more gold).
 //   POUCH        the recovered gold goes into the gold pouch (economy.recover)
 //   WHEELBARROW  (phase 6) the big container: dig into it like into the bucket,
 //                push it (goldrush-wheelbarrow.js), tip it into the sluice
@@ -38,8 +42,8 @@
 // swirls the pan or shakes the screen; progress is capped per second, so a
 // load takes its few seconds of real work - no bar that fills on its own.
 
-import { MaterialBatch, STAGE, batchFromDig, classify, panLoad, panRecovery, panSeconds, sieveSeconds, PAN_CAPACITY_ML, pour } from "./goldrush-material.js";
-import { ProcessModels, bucketFillHeight, panFillHeight, panRadius } from "./goldrush-processmodels.js";
+import { MaterialBatch, STAGE, batchFromDig, classify, panLoad, panSeconds, sieveSeconds, washRecovery, PAN_CAPACITY_ML, BOWL_CAPACITY_ML, BOWL_REST_ML, pour } from "./goldrush-material.js";
+import { ProcessModels, bucketFillHeight, washShape } from "./goldrush-processmodels.js";
 import { MechModels, BARROW } from "./goldrush-mechmodels.js";
 import { Wheelbarrow } from "./goldrush-wheelbarrow.js";
 import { Sluice, SLUICE_AT, SLUICE_SPOTS, CLEAN_S } from "./goldrush-sluice.js";
@@ -47,6 +51,8 @@ import { AutoModels, BULK } from "./goldrush-automodels.js";
 import { BulkHopper, Feeder, BULK_AT, AUTO_SPOTS, inAutomationFoot } from "./goldrush-automation.js";
 import { transfer, roomOf } from "./goldrush-transfer.js";
 import { FIND } from "./goldrush-resources.js";
+import { findSize } from "./goldrush-loot.js";
+import { centsForMass } from "./goldrush-economy.js";
 
 // the wash place, next to the water tank (-19.5, 1.8)
 export const WASH = {
@@ -72,6 +78,7 @@ const FULL_SLOW = 0.15;          // a full 10 l bucket: 15 % slower
 const HELD = {
   bucket: { p: [0.24, -0.52, -0.6], r: [0.42, 0.3, 0.06] },           // hanging from the right hand, rim and load in view
   pan: { p: [0, -0.23, -0.6], r: [0.58, 0, 0] },                        // both hands, over the trough, tilted to you
+  bowl: { p: [0, -0.22, -0.55], r: [0.52, 0, 0] },                      // the wooden bowl: smaller, a little closer
   sieve: { p: [0, -0.25, -0.5], r: [0, 0, 0] },                         // both hands on the frame's handles
 };
 // how the gloves hold them (in the object's frame; like GRIPS in goldrush-hand.js:
@@ -79,6 +86,7 @@ const HELD = {
 export const HELD_GRIPS = {
   bucket: [{ side: 1, pos: [0, 0.428, 0], axis: "x", roll: -0.2, flip: 1 }],
   pan: [{ side: 1, pos: [0.2, 0.05, 0.02], axis: "z", roll: 1.75, flip: 1 }, { side: -1, pos: [0.2, 0.05, 0.02], axis: "z", roll: 1.75, flip: 1 }],
+  bowl: [{ side: 1, pos: [0.165, 0.07, 0.02], axis: "z", roll: 1.75, flip: 1 }, { side: -1, pos: [0.165, 0.07, 0.02], axis: "z", roll: 1.75, flip: 1 }],
   sieve: [{ side: 1, pos: [0.16, 0, 0], axis: "z", roll: 2.4, flip: 1 }, { side: -1, pos: [0.16, 0, 0], axis: "z", roll: 2.4, flip: 1 }],
   // the barrow's grips: placed every frame where the world grips are seen (see _barrowHands)
   barrow: [{ side: 1, pos: [0.2, 0, 0], axis: "x", roll: 0, flip: 1 }, { side: -1, pos: [0.2, 0, 0], axis: "x", roll: 0, flip: 1 }],
@@ -120,7 +128,8 @@ export class ProcessingSystem {
     } : null;
     this.tub = MaterialBatch.from(s.tub) || this._batch(STAGE.CONCENTRATE);
     const sp = s.pan || {};
-    this.pan = { batch: MaterialBatch.from(sp.batch) || this._batch(STAGE.RAW), progress: Math.max(0, Math.min(1, +sp.progress || 0)), need: 8 };
+    // pan.tool: what the load in it is washed with - "pan", or the wooden "bowl" before you own a pan
+    this.pan = { batch: MaterialBatch.from(sp.batch) || this._batch(STAGE.RAW), progress: Math.max(0, Math.min(1, +sp.progress || 0)), need: 8, tool: sp.tool === "bowl" ? "bowl" : "pan" };
     const ss = s.sieve || {};
     this.sieve = { batch: MaterialBatch.from(ss.batch) || this._batch(STAGE.RAW), progress: Math.max(0, Math.min(1, +ss.progress || 0)), need: 4, stones: 0, dumpT: 0 };
     const l = s.ledger || {};
@@ -129,6 +138,7 @@ export class ProcessingSystem {
       recoveredUg: int(l.recoveredUg), recoveredFineUg: int(l.recoveredFineUg), tailUg: int(l.tailUg), tailG: int(l.tailG), tailMl: int(l.tailMl),
       spoilFineUg: int(l.spoilFineUg), panLoads: int(l.panLoads), sieveLoads: int(l.sieveLoads), buckets: int(l.buckets),
     };
+    if (l.bowlLoads) this.ledger.bowlLoads = int(l.bowlLoads);      // phase 7A: loads washed in the wooden bowl
     if (l.devInUg) this.ledger.devInUg = int(l.devInUg);         // developer test material (only in test mines)
     this.work = null;              // null | "pan" | "sieve"
     this.swirlAngle = 0;
@@ -180,6 +190,11 @@ export class ProcessingSystem {
     this.restPan.position.set(WASH.trough.x + 0.12, 0.43, WASH.trough.z - 0.7);
     this.restPan.rotation.set(0, 0, -0.08);
     this.group.add(this.restPan);
+    // phase 7A: the wooden wash bowl - part of the wash place from the start, on the trough's rim
+    this.restBowl = M.bowl();
+    this.restBowl.position.set(WASH.trough.x + 0.13, 0.43, WASH.trough.z + 0.32);
+    this.restBowl.rotation.set(0.05, 0.6, -0.1);
+    this.group.add(this.restBowl);
     // the classifier with its tub
     this.cls = M.classifier();
     this.cls.position.set(WASH.classifier.x, 0, WASH.classifier.z);
@@ -191,6 +206,7 @@ export class ProcessingSystem {
     // in the hands (first-person pass)
     this.handBucket = M.bucket();
     this.handPan = M.pan({ hand: true });
+    this.handBowl = M.bowl({ hand: true });
     this.handSieve = new THREE.Group();                        // nothing drawn: the gloves on the (world) frame's handles
     // phase 6: the wheelbarrow and the sluice share one model kit
     this.mech = new MechModels(THREE, { envMap: this.ctx.envMap, woodTex: this.world.woodTex });
@@ -249,7 +265,8 @@ export class ProcessingSystem {
   // what is visible where (after a purchase / load)
   _sync() {
     const has = (id) => this.owned.has(id);
-    this.restPan.visible = has("pan") && this.work !== "pan";
+    this.restPan.visible = has("pan") && !(this.work === "pan" && this.pan.tool === "pan");
+    this.restBowl.visible = !(this.work === "pan" && this.pan.tool === "bowl");
     this.cls.visible = has("classifier");
     const cIdx = this.world.colliders.indexOf(this.clsCollider);
     if (has("classifier") && cIdx < 0) this.world.colliders.push(this.clsCollider);
@@ -275,9 +292,11 @@ export class ProcessingSystem {
     const w = this._warm || (this._warm = []);
     if (on) {
       const meshes = [this.worldBucket.userData.fill, this.handBucket.userData.fill, this.cls.userData.heap, this.cls.userData.conc,
-        this.restPan.userData.mud, this.restPan.userData.water, this.handPan.userData.mud, this.handPan.userData.water, this.restPan.userData.riffles, this.handPan.userData.riffles];
+        this.restPan.userData.mud, this.restPan.userData.water, this.handPan.userData.mud, this.handPan.userData.water, this.restPan.userData.riffles, this.handPan.userData.riffles,
+        this.restBowl.userData.mud, this.restBowl.userData.water, this.handBowl.userData.mud, this.handBowl.userData.water];
       for (const m of meshes) { w.push([m, m.visible]); m.visible = true; }
-      for (const im of [this.cls.userData.stones, this.handPan.userData.pebbles, this.handPan.userData.flakes, this.restPan.userData.pebbles, this.restPan.userData.flakes]) {
+      for (const im of [this.cls.userData.stones, this.handPan.userData.pebbles, this.handPan.userData.flakes, this.restPan.userData.pebbles, this.restPan.userData.flakes,
+        this.handBowl.userData.pebbles, this.handBowl.userData.flakes]) {
         w.push([im, im.visible, im.count]);
         im.count = Math.max(1, im.count);
       }
@@ -362,6 +381,12 @@ export class ProcessingSystem {
     this.worldBucket.rotation.y = b.ry;
   }
 
+  // what you wash with at the trough: the gold pan once you own one, else the wooden bowl
+  washTool() { return this.owned.has("pan") && !this.devBowl ? "pan" : "bowl"; }      // devBowl: developer test only (not saved)
+  // ... and what the load in it is washed with right now (a load keeps its tool)
+  get washing() { return this.pan.batch.volumeMl > 0 || this.pan.batch.goldUg > 0 ? this.pan.tool : this.washTool(); }
+  washName(short = false) { return this.washing === "bowl" ? (short ? "Schale" : "Waschschale") : (short ? "Pfanne" : "Goldpfanne"); }
+
   get carrying() { return !!(this.bucket && this.bucket.carried); }
   get bucketMl() { return this.bucket ? this.bucket.batch.volumeMl : 0; }
   get bucketKg() { return this.bucket ? this.bucket.batch.massG / 1000 : 0; }
@@ -407,9 +432,12 @@ export class ProcessingSystem {
   /**
    * A dig's material (goldrush-mining.js result): into the bucket when one
    * stands within reach on the ground and has room - otherwise it is spoil
-   * (its visible finds are discovered as always; its fine gold is lost to
-   * the spoil heap - booked). Returns the finds the caller discovers
-   * directly: { finds, count, intoMl, spilledMl }.
+   * (its fine gold is lost to the spoil heap - booked). The visible finds are
+   * always discovered right at the dig, bucket or not (phase 7A: you see the
+   * flake / nugget on the blade and pick it out - nothing visible vanishes
+   * into the bucket); the bucket carries the material and its fine gold,
+   * which only washing gets back. Returns the finds the caller discovers:
+   * { finds, count, intoMl, spilledMl }.
    */
   collect(r, player, source) {
     const out = this._out || (this._out = { finds: [], count: 0, intoMl: 0, spilledMl: 0, intoG: 0, spilledG: 0, intoUg: 0 });
@@ -421,21 +449,19 @@ export class ProcessingSystem {
     if (room <= 0) { this.ledger.spoilFineUg += int(r.fineUg); return out; }
     out.into = tgt.kind;
     const dig = batchFromDig(r, source, this.nextBatch++);
+    dig.finds = [];                                   // picked out at the dig (out.finds), not carried
     const total = dig.volumeMl;
     let part = dig;
     if (dig.volumeMl > room) part = dig.take(room, this.nextBatch++);
     this.ledger.inUg += part.goldUg; this.ledger.inFineUg += part.fineUg; this.ledger.inG += part.massG; this.ledger.inMl += part.volumeMl;
     out.intoMl = part.volumeMl; out.intoG = part.massG; out.intoUg = part.goldUg;
     tgt.batch.absorb(part);
-    // what did not fit spills: its pieces are found like any dig, its fine gold is spoil
+    // what did not fit spills: its fine gold is spoil
     if (part !== dig && dig.volumeMl > 0) {
       out.spilledMl = dig.volumeMl;
       out.spilledG = dig.massG;
       this.ledger.spoilFineUg += dig.fineUg;
-      const keep = new Set(dig.finds.map((f) => f.key));
-      out.finds = []; out.count = 0;
-      for (let i = 0; i < r.findCount; i++) if (keep.has(r.finds[i].key)) { out.finds.push(r.finds[i]); out.count++; }
-    } else { out.finds = []; out.count = 0; }
+    }
     if (total > 0) this._fills();
     this.fullNow = tgt.batch.volumeMl >= tgt.capacityMl - 50;
     this.fullKind = tgt.kind;
@@ -515,14 +541,17 @@ export class ProcessingSystem {
         return { id: "sluice-empty", action: "In den Riffeln liegt noch nichts", short: "", disabled: true };
       }
     }
-    // 4 - the gold pan at the trough (heavy concentrate, the tub, a bucket or a barrow at the wash place)
-    if (this.owned.has("pan") && near(WASH.panSpot, USE_R) && facing(WASH.trough.x, WASH.panSpot.z) > 0.3) {
+    // 4 - washing at the trough: the gold pan, or before it the wooden wash bowl that is always
+    // there (heavy concentrate, the tub, a bucket or a barrow at the wash place)
+    if (near(WASH.panSpot, USE_R) && facing(WASH.trough.x, WASH.panSpot.z) > 0.3) {
+      const T = this.washName();
       if (this.pan.batch.volumeMl > 0 || this.pan.batch.goldUg > 0) return { id: "pan-work", action: "Weiter waschen", short: "WASCHEN" };
-      if (sl && (sl.tray.batch.volumeMl > 0 || sl.tray.batch.goldUg > 0)) return { id: "pan-fill", action: "Goldpfanne mit Schwerkonzentrat füllen", short: "WASCHEN" };
-      if (this.tub.volumeMl > 0) return { id: "pan-fill", action: "Goldpfanne mit Konzentrat füllen", short: "WASCHEN" };
+      if (sl && (sl.tray.batch.volumeMl > 0 || sl.tray.batch.goldUg > 0)) return { id: "pan-fill", action: `${T} mit Schwerkonzentrat füllen`, short: "WASCHEN" };
+      if (this.tub.volumeMl > 0) return { id: "pan-fill", action: `${T} mit Konzentrat füllen`, short: "WASCHEN" };
       const src = this._washSource();
-      if (src) return { id: "pan-fill", action: src.kind === "wheelbarrow" ? "Goldpfanne aus der Schubkarre füllen" : "Goldpfanne aus dem Eimer füllen", short: "WASCHEN" };
-      if (!this.bucket || !(b && b.batch.volumeMl > 0)) return { id: "pan-none", action: "Erst Erde im Eimer herbringen", short: "", disabled: true };
+      if (src) return { id: "pan-fill", action: src.kind === "wheelbarrow" ? `${T} aus der Schubkarre füllen` : `${T} aus dem Eimer füllen`, short: "WASCHEN" };
+      if (!this.bucket) return { id: "pan-none", action: "Waschschale – mit einem Eimer kannst du hier Erde waschen", short: "", disabled: true };
+      if (!(b && b.batch.volumeMl > 0)) return { id: "pan-none", action: "Erst Erde im Eimer herbringen", short: "", disabled: true };
       return { id: "pan-none", action: "Den Eimer hier am Waschplatz abstellen", short: "", disabled: true };
     }
     // 5 - the classifier
@@ -790,19 +819,21 @@ export class ProcessingSystem {
     this._fills();
   }
 
-  // the pan takes up to 2,5 l: concentrate from the tub first, else raw from the bucket
+  // the pan takes up to 2,5 l (the wash bowl 1,4 l): concentrate from the tub first, else raw from the bucket
   fillPan() {
     if (this.pan.batch.volumeMl > 0 || this.pan.batch.goldUg > 0) { this.startWork("pan"); return true; }
+    const tool = this.washTool();
     let src = null, stage = STAGE.RAW;
     const tray = this.sluice ? this.sluice.tray.batch : null;
     if (tray && (tray.volumeMl > 0 || tray.goldUg > 0)) { src = tray; stage = STAGE.HEAVY; }
     else if (this.tub.volumeMl > 0) { src = this.tub; stage = STAGE.CONCENTRATE; }
     else { const w = this._washSource(); if (w) src = w.batch; }
     if (!src) return false;
-    const load = src.take(PAN_CAPACITY_ML, this.nextBatch++);
+    const load = src.take(tool === "bowl" ? BOWL_CAPACITY_ML : PAN_CAPACITY_ML, this.nextBatch++);
     load.stage = stage;
-    // tiny rest volumes (rounding) go along with the last load
-    if (src.volumeMl < 60) load.absorb(src);
+    this.pan.tool = tool;
+    // tiny rest volumes (rounding; for the small bowl up to 0,3 l) go along with the last load
+    if (src.volumeMl < (tool === "bowl" ? BOWL_REST_ML : 60)) load.absorb(src);
     this.pan.batch = load;
     this.pan.progress = 0;
     this._fills();
@@ -826,7 +857,7 @@ export class ProcessingSystem {
 
   startWork(kind) {
     if (kind === "pan") {
-      this.pan.need = panSeconds(this.pan.batch);
+      this.pan.need = panSeconds(this.pan.batch, this.pan.tool);
       this.panDone = this.pan.progress >= 1;
       this.reveal = this.panDone ? this._revealOf(this.pan.batch) : null;
       this._panLook(true);
@@ -847,7 +878,7 @@ export class ProcessingSystem {
 
   // where the camera is while working (the engine eases the player there)
   workPose() {
-    if (this.work === "pan") return { x: WASH.panSpot.x, z: WASH.panSpot.z, yaw: WASH.panSpot.yaw, pitch: -0.82 };
+    if (this.work === "pan") return { x: WASH.panSpot.x, z: WASH.panSpot.z, yaw: WASH.panSpot.yaw, pitch: this.pan.tool === "bowl" ? -0.78 : -0.82 };
     if (this.work === "sieve") return { x: WASH.sieveSpot.x, z: WASH.sieveSpot.z, yaw: WASH.sieveSpot.yaw, pitch: -0.72 };
     if (this.work === "clean") return { x: SLUICE_SPOTS.clean.x, z: SLUICE_SPOTS.clean.z, yaw: SLUICE_SPOTS.clean.yaw, pitch: -0.82 };
     return null;
@@ -896,10 +927,12 @@ export class ProcessingSystem {
     return null;
   }
 
-  // what the end of the pan will show (gold pieces + fine gold as flakes)
+  // what the end of the pan will show: the fine gold it keeps, and its visible pieces at their own
+  // size (FIND_LOOK - a EUR 1,50 wash is a sprinkle of specks, not a crescent of flakes)
   _revealOf(batch) {
-    const rec = panRecovery(batch.stage, this.recoveryMul);
-    return { fineUg: Math.floor(batch.fineUg * rec), finds: batch.finds.length, findsUg: batch.findsUg, nugget: batch.finds.some((f) => f.cls === FIND.NUGGET) };
+    const rec = washRecovery(this.pan.tool, batch.stage, this.recoveryMul);
+    return { fineUg: Math.floor(batch.fineUg * rec), finds: batch.finds.length, findsUg: batch.findsUg, nugget: batch.finds.some((f) => f.cls === FIND.NUGGET),
+      pieces: batch.finds.slice(0, 6).map((f, i) => findSize(f.cls, centsForMass(f.ug), ((i * 0.37) % 1))) };
   }
 
   /**
@@ -909,21 +942,22 @@ export class ProcessingSystem {
    */
   finishPan() {
     if (!this.panDone) return { ok: false };
-    const load = this.pan.batch;
-    const rec = panRecovery(load.stage, this.recoveryMul);
+    const load = this.pan.batch, tool = this.pan.tool;
+    const rec = washRecovery(tool, load.stage, this.recoveryMul);
     const g = panLoad(load, rec, this.nextBatch++);
     const got = this.economy.recover(g.fineUg, g.finds);
     const L = this.ledger;
     L.recoveredUg += got.ug; L.recoveredFineUg += g.fineUg;
     L.tailUg += g.tails.goldUg; L.tailG += g.tails.massG; L.tailMl += g.tails.volumeMl;
     L.panLoads++;
+    if (tool === "bowl") L.bowlLoads = (L.bowlLoads || 0) + 1;
     this.pan.batch = this._batch(STAGE.RAW);
     this.pan.progress = 0;
     this.panDone = false;
     this.reveal = null;
     this.stopWork();
     this._fills();
-    return { ok: true, cents: got.cents, ug: got.ug, fineUg: g.fineUg, pieces: got.pieces, stage: load.stage };
+    return { ok: true, cents: got.cents, ug: got.ug, fineUg: g.fineUg, pieces: got.pieces, stage: load.stage, tool };
   }
 
   // the shaking is done: fines -> tub, stones -> tailings, nuggets -> pouch
@@ -988,73 +1022,79 @@ export class ProcessingSystem {
     st.instanceMatrix.needsUpdate = true;
   }
 
-  // the pan in your hands: mud level, water, pebbles leaving, gold showing
+  // the pan (or the wash bowl) in your hands: mud level, water, pebbles leaving, gold showing
+  _washHand() { return this.pan.tool === "bowl" ? this.handBowl : this.handPan; }
+
   _panLook(reset) {
-    const P = this.handPan.userData, b = this.pan.batch, u = this.pan.progress;
+    const P = this._washHand().userData, b = this.pan.batch, u = this.pan.progress;
+    const S = washShape(this.pan.tool), k = this.pan.tool === "bowl" ? 0.78 : 1;
     if (reset) this._panStart = { ml: Math.max(1, b.volumeMl), stones: Math.min(18, Math.round((b.comp[2] + b.comp[3]) / 120 + b.comp[1] / 400)), stage: b.stage };
     const st = this._panStart || { ml: 1, stones: 0, stage: STAGE.RAW };
     // the material washes down to a thin dark layer of heavy sand
     const left = 1 - 0.9 * smooth(0.08, 0.92, u);
-    const h = Math.max(0.004, panFillHeight(st.ml * left));
+    const h = Math.max(0.004, S.fill(st.ml * left));
     P.mud.visible = st.ml > 1;
-    P.mud.position.y = h;
-    const r = panRadius(h) - 0.003;
+    P.mud.position.y = S.base + h;
+    const r = S.radius(h) - 0.003;
     P.mud.scale.set(r, 1, r);
     P.mud.rotation.y = this.swirlAngle * 0.35;
     const dark = smooth(0.55, 1, u);
     P.mud.material.color.setHex(st.stage === STAGE.CONCENTRATE ? COLORS.conc : COLORS.raw).lerp(this._c2 || (this._c2 = new this.THREE.Color(COLORS.black)), dark);
     // water: muddy brown first, clearer towards the end
     P.water.visible = st.ml > 1 && u < 0.995;
-    const wh = Math.min(0.056, h + 0.018 + 0.012 * smooth(0, 0.12, u));
-    P.water.position.y = wh;
-    const wr = panRadius(wh) - 0.002;
+    const wh = Math.min(S.depth - 0.002, h + 0.018 + 0.012 * smooth(0, 0.12, u));
+    P.water.position.y = S.base + wh;
+    const wr = S.radius(wh) - 0.002;
     P.water.scale.set(wr, 1, wr);
     P.water.rotation.y = this.swirlAngle;
     P.water.material.opacity = 0.42 - 0.2 * smooth(0.5, 1, u);
     P.water.material.color.setRGB(0.3 - 0.06 * u, 0.24 + 0.02 * u, 0.17 + 0.1 * u);
     // pebbles: picked / tossed out as the light stuff goes
     const nPeb = Math.round(st.stones * (1 - smooth(0.15, 0.75, u)));
-    this._pebbles(P.pebbles, nPeb, h);
+    this._pebbles(P.pebbles, nPeb, h, S.base, k);
     // gold: shows at the bottom once the sand is thin
     const nFl = this.reveal || u > 0.7 ? this._flakeCount() : 0;
-    this._flakes(P.flakes, Math.round(nFl * smooth(0.7, 1, u)), h);
+    this._flakes(P.flakes, Math.round(nFl * smooth(0.7, 1, u)), h, S.base, k);
   }
 
+  // fine gold shows as specks: a few for a trace, a few dozen for a good load (the number grows with
+  // the root of the mass - ~28 for 17 mg); the visible pieces come on top (at most 6 + 34 = 40 drawn)
   _flakeCount() {
     const rv = this.reveal || this._revealOf(this.pan.batch);
-    return Math.max(rv.fineUg > 0 || rv.finds ? 4 : 0, Math.min(40, Math.round(4 + rv.fineUg / 180 + rv.finds * 3)));
+    const specks = rv.fineUg > 0 ? Math.max(3, Math.min(34, Math.round(3 + 6 * Math.sqrt(rv.fineUg / 1000)))) : 0;
+    return specks + rv.pieces.length;
   }
 
-  _pebbles(mesh, n, h) {
+  _pebbles(mesh, n, h, base = 0, k = 1) {
     if (mesh.count === n && this._pebH === h) return;
     this._pebH = h;
     mesh.count = n;
     const m = this._m || (this._m = new this.THREE.Matrix4()), q = new this.THREE.Quaternion(), e = new this.THREE.Euler(), v = new this.THREE.Vector3(), s3 = new this.THREE.Vector3();
     for (let i = 0; i < n; i++) {
-      const a = i * 2.39996 + this.swirlAngle * 0.3, rr = 0.03 + 0.1 * Math.sqrt((i + 0.5) / 18);
+      const a = i * 2.39996 + this.swirlAngle * 0.3, rr = (0.03 + 0.1 * Math.sqrt((i + 0.5) / 18)) * k;
       const s = 0.007 + ((i * 7919) % 11) / 11 * 0.009;
       e.set(i, i * 2.1, 0); q.setFromEuler(e);
-      v.set(Math.cos(a) * rr, h + s * 0.5, Math.sin(a) * rr);
+      v.set(Math.cos(a) * rr, base + h + s * 0.5, Math.sin(a) * rr);
       m.compose(v, q, s3.set(s, s * 0.75, s));
       mesh.setMatrixAt(i, m);
     }
     mesh.instanceMatrix.needsUpdate = true;
   }
 
-  _flakes(mesh, n, h) {
+  _flakes(mesh, n, h, base = 0, kr = 1) {
     if (mesh.count === n && this._flH === h) return;
     this._flH = h;
     mesh.count = n;
     const m = this._m || (this._m = new this.THREE.Matrix4()), q = new this.THREE.Quaternion(), e = new this.THREE.Euler(), v = new this.THREE.Vector3(), s3 = new this.THREE.Vector3();
-    const nug = this.reveal && this.reveal.nugget;
+    const rv = this.reveal || this._revealOf(this.pan.batch), pieces = rv.pieces || [];
     for (let i = 0; i < n; i++) {
       // gold collects in the low side / the riffles: a crescent towards the far rim
-      const a = -Math.PI * 0.5 + (((i * 0.618) % 1) - 0.5) * 1.7, rr = 0.05 + 0.08 * (((i * 0.382) % 1));
-      const s = nug && i === 0 ? 0.008 : 0.0024 + ((i * 7919) % 7) / 7 * 0.0026;
+      const a = -Math.PI * 0.5 + (((i * 0.618) % 1) - 0.5) * 1.7, rr = (0.05 + 0.08 * (((i * 0.382) % 1))) * kr;
+      // its true size (m): the pieces first, then the fine gold - specks of 1,3-2,2 mm (drawn, a little over life)
+      const s = i < pieces.length ? pieces[i] : 0.0013 + ((i * 7919) % 7) / 7 * 0.0009;
       e.set(0.1 * i, i * 1.3, 0.05 * i); q.setFromEuler(e);
-      v.set(Math.cos(a) * rr, Math.min(h, 0.006) + 0.0015, Math.sin(a) * rr);
-      const k = mesh.userData.k || 1;
-      m.compose(v, q, s3.set(s * k, s * k, s * k));
+      v.set(Math.cos(a) * rr, base + Math.min(h, 0.006) + s * 0.3, Math.sin(a) * rr);
+      m.compose(v, q, s3.set(s, s, s));
       mesh.setMatrixAt(i, m);
     }
     mesh.instanceMatrix.needsUpdate = true;
@@ -1100,18 +1140,19 @@ export class ProcessingSystem {
     const H = this.hands;
     if (!H) return;
     if (this.work === "pan") {
-      if (H.held !== "pan") H.setHeld("pan", this.handPan, HELD_GRIPS.pan);
+      const tool = this.pan.tool, obj = this._washHand(), hp = HELD[tool];
+      if (H.held !== tool) H.setHeld(tool, obj, HELD_GRIPS[tool]);
       const k = this.swirlK, a = this.swirlAngle;
-      const pose = this.handPan.userData.pose || (this.handPan.userData.pose = { p: [0, 0, 0], r: [0, 0, 0] });
-      pose.p[0] = HELD.pan.p[0] + Math.cos(a * 0.5) * 0.012 * k;
-      pose.p[1] = HELD.pan.p[1] + Math.sin(a * 0.5) * 0.006 * k;
-      pose.p[2] = HELD.pan.p[2];
-      pose.r[0] = HELD.pan.r[0] + Math.sin(a * 0.5) * 0.05 * k;
-      pose.r[1] = HELD.pan.r[1];
-      pose.r[2] = HELD.pan.r[2] + Math.cos(a * 0.5) * 0.06 * k;
+      const pose = obj.userData.pose || (obj.userData.pose = { p: [0, 0, 0], r: [0, 0, 0] });
+      pose.p[0] = hp.p[0] + Math.cos(a * 0.5) * 0.012 * k;
+      pose.p[1] = hp.p[1] + Math.sin(a * 0.5) * 0.006 * k;
+      pose.p[2] = hp.p[2];
+      pose.r[0] = hp.r[0] + Math.sin(a * 0.5) * 0.05 * k;
+      pose.r[1] = hp.r[1];
+      pose.r[2] = hp.r[2] + Math.cos(a * 0.5) * 0.06 * k;
       this._panLook(false);
-      // muddy water over the rim while it is swirled
-      if (k > 0.25 && this.pan.progress < 0.9 && Math.random() < dt * 14 * k) H.splash && H.splash(this.handPan);
+      // muddy water over the rim while it is swirled (the bowl's blunt rim spills more)
+      if (k > 0.25 && this.pan.progress < 0.9 && Math.random() < dt * (tool === "bowl" ? 18 : 14) * k) H.splash && H.splash(obj);
     } else if (this.work === "sieve" || this.work === "clean") {
       if (H.held !== "sieve") H.setHeld("sieve", this.handSieve, HELD_GRIPS.sieve);
       const pose = this.handSieve.userData.pose || (this.handSieve.userData.pose = { p: [0, 0, 0], r: [0, 0, 0] });
@@ -1186,7 +1227,7 @@ export class ProcessingSystem {
       nextBatch: this.nextBatch,
       bucket: b ? { x: b.x, z: b.z, ry: b.ry, carried: !!b.carried, batch: b.batch.serialize() } : null,
       tub: this.tub.serialize(),
-      pan: { batch: this.pan.batch.serialize(), progress: +this.pan.progress.toFixed(3) },
+      pan: { batch: this.pan.batch.serialize(), progress: +this.pan.progress.toFixed(3), tool: this.pan.tool },
       sieve: { batch: this.sieve.batch.serialize(), progress: +this.sieve.progress.toFixed(3) },
       ledger: { ...this.ledger },
       wheelbarrow: this.barrow ? this.barrow.serialize() : null,

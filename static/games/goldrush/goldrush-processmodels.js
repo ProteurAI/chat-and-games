@@ -12,6 +12,8 @@ import { mulberry32, noise2 } from "./goldrush-noise.js";
 
 export const BUCKET = { r0: 0.112, r1: 0.14, h: 0.27, fillMax: 0.214 };       // 10 l at the fill line
 export const PAN = { r0: 0.11, r1: 0.19, h: 0.058 };
+// the wooden wash bowl (phase 7A): its inside - bottom r 0.088 m at y = base, flaring to 0.146 m 5,4 cm higher
+export const BOWL = { r0: 0.088, r1: 0.146, h: 0.054, base: 0.02 };
 
 function canvasTex(THREE, w, h, draw, repeat = true) {
   const c = document.createElement("canvas");
@@ -104,6 +106,22 @@ export function bucketFillHeight(ml, k = 1) {
   return (lo + hi) / 2;
 }
 
+export const bowlRadius = (y) => BOWL.r0 + (BOWL.r1 - BOWL.r0) * Math.min(1, Math.max(0, y) / BOWL.h);
+export function bowlFillHeight(ml) {
+  const r0 = BOWL.r0, slope = (BOWL.r1 - BOWL.r0) / BOWL.h, want = ml / 1e6;
+  const vol = (hh) => { const r = r0 + slope * hh; return (Math.PI * hh * (r0 * r0 + r0 * r + r * r)) / 3; };
+  let lo = 0, hi = BOWL.h * 1.05;
+  if (want >= vol(hi)) return hi;
+  for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (vol(m) < want) lo = m; else hi = m; }
+  return (lo + hi) / 2;
+}
+
+// the inside of a washing tool: fill height (from its bottom) for a volume, radius at a height, where its bottom is
+export function washShape(tool) {
+  return tool === "bowl" ? { fill: bowlFillHeight, radius: bowlRadius, base: BOWL.base, depth: BOWL.h }
+    : { fill: panFillHeight, radius: panRadius, base: 0, depth: PAN.h };
+}
+
 export function panFillHeight(ml) {
   const r0 = PAN.r0, slope = (PAN.r1 - PAN.r0) / PAN.h, want = ml / 1e6;
   const vol = (hh) => { const r = r0 + slope * hh; return (Math.PI * hh * (r0 * r0 + r0 * r + r * r)) / 3; };
@@ -142,6 +160,8 @@ export class ProcessModels {
     this.screenMap = tex(meshTex(THREE));
     this.screenMat = mat(new THREE.MeshStandardMaterial({ map: this.screenMap, alphaTest: 0.45, transparent: false, side: THREE.DoubleSide, roughness: 0.4, metalness: 0.6 }));
     this.pebbleMat = mat(new THREE.MeshStandardMaterial({ color: 0x9b958c, roughness: 0.85, flatShading: true }));
+    // the wash bowl: turned wood, darkened by years of muddy water
+    this.bowlWood = mat(new THREE.MeshStandardMaterial({ map: woodTex || null, color: 0x7a5434, roughness: 0.82, side: THREE.DoubleSide }));
 
     // ---- shared geometries
     // bucket: wall with a rolled rim and an inside, two pressed rings, the bail
@@ -166,6 +186,10 @@ export class ProcessModels {
     // riffles: three pressed ridges across one side of the wall (upgrade)
     this.riffle = geo(new THREE.TorusGeometry(1, 0.0028, 4, 18, Math.PI * 0.62));
     this.riffle.rotateX(Math.PI / 2);
+    // wash bowl: a thick turned rim and base, the inside a shallow cone (BOWL)
+    const w = BOWL;
+    this.bowlBody = geo(lathe(THREE, [[0, 0], [w.r0 - 0.004, 0], [w.r0 + 0.012, 0.01], [w.r1 + 0.012, w.base + w.h - 0.004], [w.r1 + 0.014, w.base + w.h + 0.006],
+      [w.r1 + 0.004, w.base + w.h + 0.01], [w.r1, w.base + w.h], [w.r0, w.base], [0, w.base]], 32));
     this.pebbleGeo = geo(new THREE.IcosahedronGeometry(1, 0));
     this.flakeGeo = geo(new THREE.IcosahedronGeometry(1, 0));
     this.flakeGeo.scale(1, 0.32, 0.8);
@@ -248,11 +272,41 @@ export class ProcessModels {
     pebbles.frustumCulled = false;
     g.add(pebbles);
     const flakes = new THREE.InstancedMesh(this.flakeGeo, this.goldMat, 40);
-    flakes.userData.k = hand ? 1.9 : 1;
     flakes.count = 0;
     flakes.frustumCulled = false;
     g.add(flakes);
     g.userData = { body, riffles, mud, water, pebbles, flakes };
+    return g;
+  }
+
+  // ---- the wash bowl (world or hand): the pan's parts, so the same washing drives it
+  bowl({ hand = false } = {}) {
+    const THREE = this.THREE, g = new THREE.Group();
+    const body = new THREE.Mesh(this.bowlBody, this.bowlWood);
+    body.castShadow = !hand;
+    body.receiveShadow = !hand;
+    g.add(body);
+    const riffles = new THREE.Group();                 // none (the pan's upgrade) - kept for the same parts
+    riffles.visible = false;
+    g.add(riffles);
+    const mud = new THREE.Mesh(this.disc, hand ? this.mud.clone() : this.mud);
+    if (hand) this.mats.push(mud.material);
+    mud.visible = false;
+    g.add(mud);
+    const water = new THREE.Mesh(this.disc, hand ? this.water.clone() : this.water);
+    if (hand) this.mats.push(water.material);
+    water.visible = false;
+    water.renderOrder = 2;
+    g.add(water);
+    const pebbles = new THREE.InstancedMesh(this.pebbleGeo, this.pebbleMat, 18);
+    pebbles.count = 0;
+    pebbles.frustumCulled = false;
+    g.add(pebbles);
+    const flakes = new THREE.InstancedMesh(this.flakeGeo, this.goldMat, 40);
+    flakes.count = 0;
+    flakes.frustumCulled = false;
+    g.add(flakes);
+    g.userData = { body, riffles, mud, water, pebbles, flakes, bowl: true };
     return g;
   }
 
