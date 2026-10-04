@@ -397,8 +397,8 @@ def snapshot_and_commands(browser, base, user, shots):
     work = G(A, f"() => {GR}.procWork(30)")
     got = G(A, f"() => {GR}.procCollect()")
     p30 = proc(A)
-    ok("30 the gold pan takes the dev load: worked at the trough, gold into the pouch (68 % of the fine gold + every piece), ledger exact",
-       w["work"] == "pan" and work["done"] and got["ok"] and got["fineUg"] == int(100000 * 0.68 * 1.12) and eco(A)["pouchSummary"]["totalGoldUg"] > pouch0
+    ok("30 the gold pan takes the dev load: worked at the trough, gold into the pouch (63 % x riffles of the fine gold + every piece), ledger exact",
+       w["work"] == "pan" and work["done"] and got["ok"] and got["fineUg"] == int(100000 * 0.63 * 1.12) and eco(A)["pouchSummary"]["totalGoldUg"] > pouch0
        and p30["ledger"]["inUg"] == p30["inContainersUg"] + p30["ledger"]["recoveredUg"] + p30["ledger"]["tailUg"], f"{got}")
     G(A, f"() => {GR}.pose({{ x: -15.9, z: 4.8, yaw: Math.PI / 2, pitch: -0.6 }})")
     s31 = G(A, f"() => {GR}.procAct('sieve-load')")

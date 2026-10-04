@@ -726,7 +726,9 @@ def economy(browser, base, user):
     bh = med([r["bought"]["bulkhopper"] / 60 for r in every if "bulkhopper" in r["bought"]])
     fd = med([r["bought"]["feeder"] / 60 for r in every if "feeder" in r["bought"]])
     ok("bulk hopper after ~6,5-7,5 h (median over all runs 370-470 min)", bh and 370 <= bh <= 470, f"{bh and round(bh)} min")
-    ok("feeder after ~8-9 h (median 440-560 min)", fd and 440 <= fd <= 560, f"{fd and round(fd)} min")
+    # phase 7A: the classifier era earns less (the per-minute ladder of the processing tools), the
+    # canonical median moved from 482 to 531 min - a few seeds scatter round it (6 seeds: 561)
+    ok("feeder after ~8-9,5 h (median 440-590 min)", fd and 440 <= fd <= 590, f"{fd and round(fd)} min")
     worth = {st: [r["snap"]["39600"]["earned"] + r["snap"]["39600"].get("pouch", 0) for r in rs] for st, rs in runs.items()}
     ratio = {}
     for a in worth:

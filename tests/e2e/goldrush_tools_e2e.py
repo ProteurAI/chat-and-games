@@ -231,7 +231,8 @@ SURFACE_STONE = r"""({ i, j }) => {
   const ci = Math.min(per - 1, Math.floor(i / cc)), cj = Math.min(per - 1, Math.floor(j / cc));
   const ch = t.chunks.find((c) => c.i0 === ci * cc && c.j0 === cj * cc);
   const v = (j - ch.j0) * (cc + 1) + (i - ch.i0);
-  return ch.geom.attributes.aMat.array[v * 2 + 1];
+  const a = ch.geom.attributes.aMat;                 // (gravel, stone, ...) per vertex - phase 7A: 4 weights
+  return a.array[v * a.itemSize + 1];
 }"""
 
 # columns where stone is buried a few cm under the surface / lies open

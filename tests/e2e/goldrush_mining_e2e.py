@@ -568,13 +568,15 @@ def economy_suite(browser, base, user):
         let foot = null;
         for (let d = 15; d > 0; d -= 0.05) if (G.heightAt(dx * d, -6 + dz * d) > 0.35) { foot = d; break; }
         if (foot == null) continue;
-        let g = 0, n = 0;
+        let g = 0, n = 0, cemented = false;
         for (let k = 0.2; k < 1.6; k += 0.2) for (let dy = 0.05; dy < 0.8; dy += 0.15) {
           const x = dx * (foot - k), z = -6 + dz * (foot - k), y = G.heightAt(x, z) - dy;
           if (G.materialAt(x, y, z) === 3) continue;
+          // phase 7A: a mineralised streak is rich but cemented - the hand cannot get into it (pickaxe ground)
+          if (G.cementedAt && G.cementedAt(x, y, z)) cemented = true;
           g += G.goldAt(x, y, z); n++;
         }
-        if (n) out.push({ ang: a, g: g / n });
+        if (n && !cemented) out.push({ ang: a, g: g / n });
       }
       out.sort((p, q) => q.g - p.g);
       return { rich: out[0], barren: out[out.length - 1] };

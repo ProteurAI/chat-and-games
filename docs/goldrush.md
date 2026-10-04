@@ -3,7 +3,7 @@
 Interne Notizen für die Weiterentwicklung (Prompt 6–12). Nicht für Spieler.
 Liegt bewusst außerhalb von `static/`, wird also nicht ausgeliefert.
 
-## Module (Stand Phase 7)
+## Module (Stand Phase 7A)
 
 | Bereich | Datei(en) |
 |---|---|
@@ -22,7 +22,12 @@ Liegt bewusst außerhalb von `static/`, wird also nicht ausgeliefert.
 | Modelle Vorratstrichter / Rampe / Dosierer | `goldrush-automodels.js` (`AutoModels`, nutzt die Materialien von `MechModels`) |
 | Begehbare Aufbauten (Rampe, Plattform) | `goldrush-world.js` (`addDeck` / `deckAt`, in `groundAt` eingerechnet) |
 | Grab-Gefühl: Partikel pro Material und Werkzeug | `goldrush-vfx.js` (`DigEffects`, `DIG_PROFILES`, `DIG_TOOLS`) |
-| Entwickler-/QA-Werkzeuge | `goldrush-dev*.js` (siehe unten; Phase 6 / 7: `goldrush-devcommands6.js`, `goldrush-devcommands7.js`) |
+| Waschschale (Phase 7A) | `goldrush-processing.js` (`pan.tool = "bowl"`), Werte `BOWL_*` in `goldrush-material.js`, Modell in `goldrush-processmodels.js` |
+| Geologie: mineralisierte Pay-Streaks (Phase 7A) | `goldrush-resources.js` (`STREAK`, `streakAt`, `cementedAt`), `toolEfficiency(…, cemented)` in `goldrush-tools.js` |
+| Gold-Größenklassen (Phase 7A) | `goldrush-loot.js` (`FIND_LOOK`, `findSize`) |
+| Camp-Dressing, Wege (Phase 7A) | `goldrush-campdressing.js` (`CampDressing`, `PATHS`) |
+| Statische Teile zusammenbacken (Draw Calls) | `goldrush-merge.js` (`mergeStatic`) |
+| Entwickler-/QA-Werkzeuge | `goldrush-dev*.js` (siehe unten; Phase 6 / 7 / 7A: `goldrush-devcommands6.js`, `goldrush-devcommands7.js`, `goldrush-devcommands7a.js`) |
 
 ## Materialfluss und Maschinen (Phase 6)
 
@@ -131,6 +136,132 @@ Bedienung: Kontrollpfosten westlich des Auslasses – ohne Dosierer „Schieber
 ziehen“ (füllt den Rinnen-Trichter, schließt von selbst), mit Dosierer der
 Hebel AUS → AUTO (läuft, solange das Wasser an ist) → AN → AUS; Kontrolllampe
 grün / bernstein / aus. Status-Chip in der Nähe: Vorrat · Dosierer · Rinne · Riffel.
+
+## Gameplay-Integration und Qualitätspass (Phase 7A)
+
+**Waschschale – der primitive Wasch-Loop ab dem ersten Eimer.** Am Trog liegt
+von Anfang an eine Holzschale (kein Shop-Item). Eimer am Waschplatz abstellen →
+[E] „Waschschale aus dem Eimer füllen“ → schwenken → Gold in den Beutel. Gleiche
+Physik wie die Pfanne (`panLoad`, Ledger: Eimer → Schale → Beutel + Tailings,
+µg-genau), nur schlechter: 1,4 l pro Ladung (Rest < 0,3 l geht mit), 3,2 s/l
+(≈ 4,5 s pro Ladung, Untergrenze 3 s), 48 % Feingold-Recovery (Pfanne 58 %).
+Sobald die Goldpfanne gekauft ist, ersetzt sie die Schale; eine angefangene
+Ladung behält ihr Werkzeug (`pan.tool`, gespeichert).
+
+**Sichtbare Funde verschwinden nicht im Eimer.** Beim Graben in Eimer oder
+Schubkarre werden Flitter, Flocken und Nuggets sofort am Grabort entdeckt
+(Loot, Beutel) – wie beim Graben ohne Eimer. In den Behälter gehen nur das
+Material und sein Feingold, das nur Waschen zurückholt. Gold wird dadurch
+nicht mehr oder weniger, es kommt nur früher sichtbar an. (`collect()` in
+`goldrush-processing.js`; Dev-Material darf weiter Stücke enthalten.)
+
+**Methoden-Leiter: Wert pro aktiver Spielminute.** Gemessen mit
+`tests/e2e/goldrush_bench.py --kit …` (festes Kit, nichts gekauft, normale
+Verkaufswege, alle Lauf-, Trage- und Waschzeiten): 48 Seeds × 40 min an den
+Startflächen, Verhältnis der Erwartungswerte zu „direkt graben“ (Material als
+Abraum, nur sichtbare Funde) mit derselben Schaufel:
+
+| Methode | Basis-Schaufel | + Blatt | + Blatt + Stiel (Referenz) | Ziel |
+|---|---|---|---|---|
+| direkt graben | 1,00 (257 ct/min) | 1,00 (276) | 1,00 (296) | 1,00 |
+| Eimer + Waschschale | 1,34 | 1,24 | **1,16** | 1,15–1,30 |
+| Eimer + Goldpfanne | 1,63 | 1,51 | **1,41** | 1,25–1,45 |
+| Classifier + Pfanne | 1,75 | 1,62 | **1,51** | 1,35–1,55 |
+
+Referenz ist die voll ausgebaute Schaufel: Verarbeiten muss sich auch gegen das
+beste direkte Graben lohnen, und mit ihr wird die Pfanne in den kanonischen
+Strategien meist benutzt. Verarbeitung ist durch die Waschzeit begrenzt –
+Schaufel-Upgrades machen nur das direkte Graben schneller, daher die Spalten.
+Feingold (≈ 82 ct/l an den Startflächen) ist der Großteil des Goldes im
+Material; sichtbare Stücke ≈ 2,7 ct/l. Der Classifier nimmt aus reiner Erde
+nur ein Sechstel heraus (`COARSE`), aus Kies fast zwei Drittel – auf Kies
+lohnt er sich deutlich mehr als in der Tabelle. Konzentrat: 63 % Recovery,
+3,3 s/l (Phase 5: 68 % / 2,7 s – damals 1,98x gegen die Basis-Schaufel).
+
+**Geologie: mineralisierte Pay-Streaks.** Pro Seed 6 geneigte Platten aus
+verfestigtem Kies / Lehm (`STREAK`), deterministisch, nie in der Startzone,
+eine nahe ihrem Rand (≈ 8–12 m vom Start) und an der Oberfläche sichtbar.
+Hand: prallt ab. Schaufel: kratzt nur (8 % Wirkung). Spitzhacke: bricht sie auf
+und lockert sie (`terrain.loose`, gespeichert) – danach nimmt die Schaufel das
+gelockerte Material in vollen Bissen. Mehr Gold steckt darin (+0,42 Dichte im
+Kern, vor allem Feingold und Flocken; Nugget-Chancen nur die des Umgebungsbodens
+plus wenig – keine Nugget-Farm), dafür liegt im übrigen Boden 1,5 % weniger
+(`redist 0.985`): Gesamtgold des Bergs gleich (−0,6 … +0,4 % je Seed gegenüber
+Phase 7, über das Volumen gemessen). Gemessen am ersten Streak gegen den Boden
+direkt daneben (6 Seeds): 1,7x Gold pro Liter (0,8 % des Bergvolumens) – wer
+wäscht, gewinnt dort pro aktiver Minute etwa so viel mehr; nur die sichtbaren
+Stücke beim Graben 1,3x. Sichtbar an der Oberfläche: Rostfärbung, Quarzäderchen, dunkle
+Schwermineral-Streifen (Terrain-Shader) – nie das Gold selbst. Erstkontakt pro
+Streak: Meldung „Mineralisierte Zone“ (`economy.flags.streaksFound`).
+
+**Gold-Optik passt zum Wert** (`FIND_LOOK`): Staub / Feingold = ein paar
+winzige Punkte (2–3 mm gezeichnet, ein instanzierter Draw), Flocke 4,5–7 mm,
+kleines Stück 6–9,5 mm, erst ein Nugget (1–4 €) 10,5–16,5 mm. Größe innerhalb
+der Klasse logarithmisch nach Wert. Größere Klassen (tiefe Schichten) später
+einfach als neue Einträge.
+
+**Kanonischer Benchmark 7A** (100 Seeds je Strategie, gegen Phase 7 bzw. 5):
+Schale ab dem Eimer → die Pfanne kommt 6 % (A7–D7, M) bzw. 13 % (P/K, Eimer
+direkt nach der Schaufel) früher, Wert nach 60 min +4 % bzw. +23 %. Die
+Classifier-Ära verdient weniger als in Phase 5 (gewollte Leiter), dazu bleibt
+der Bot länger in der fair geklemmten Startzone (er wäscht statt seitlich
+weiterzugraben) und gräbt die Streaks kaum an (−1,5 % Gold im übrigen Boden):
+Schubkarre ±2 %, Waschrinne +5 % (A7 +10 %), Vorratstrichter +7…11 %, Dosierer
++10…11 % später, Wert nach 660 min −10…−15 %; die Rate im Spätspiel (Rinne +
+Automation) ist dieselbe. Phase 5 (180 min): P/K liegen gepaart 17–19 % vor T
+(Phase 5: ~10 %), A7 vor B7–D7 5–7 %. Längste Strecke ohne jede Rückmeldung in
+den ersten 45 min: Median 33 s (Fund / Flitter, Beutel wächst); ohne Staub und
+Flitter (erst ab Flocke, Waschergebnis, Streak, Verkauf, Kauf) Median 4,7 min,
+P90 6,9 min – die Handphase vor der Schaufel.
+
+**Optik:** Schaufel-Ladung baut sich beim Schöpfen auf dem Blatt auf und
+verlässt es beim Auskippen (Krümel); Partikel je Material in einem Farbband
+(keine schwarzen Brocken in brauner Erde, keine weißen Funken im Kies);
+Terrain-Shader: Materialgrenzen über Weltrauschen (keine Rechteck-Teppiche),
+zwei Detail-Samples gegen Kachelung, Krümel-Relief auf bearbeitetem Boden
+(stärker an steilen frischen Kanten), unberührter flacher Rand in der Farbe des
+Campbodens; Camp-Dressing (Wege, Schubkarrenspuren, Säcke, Bretter, Schlauch,
+Steinhaufen, Laufroste, Drainage, Sandhaufen – alles gemerged, ohne Kollision);
+Licht etwas wärmer, Fernberge mit eingemalter Atmosphäre (nah wärmer, fern
+kühler und blasser).
+
+**Draw Calls:** statische Teile gebauter Maschinen (Rinne, Vorratstrichter,
+Rampe) werden nach dem Aufbau pro Material zusammengebacken (`mergeStatic`),
+ebenso Trog / Rohr / Schild des Waschplatzes, Wanne / Beine / Rahmen des
+Classifiers und die statischen Welt-Props (Zaun, Schuppen, Fässer, Tank,
+Lampen, Markierungen der Maschinenzonen, Felsen außerhalb des Bergs – je mit
+ihrem eigenen Schattenwurf, `keepShadow`); die nassen Bodenflecken als 4 statt
+8 Meshes. Volle Phase-7-Szene (Automation läuft), Desktop: Maschinen-Ansicht
+218 → 123, Camp-Überblick 303 → 190, Mine 135 → 117; Handy 205 → 114 /
+195 → 141 / 94 → 101 (ein kartenweit gebackenes Mesh wird gezeichnet, sobald
+ein Teil im Bild ist). Was sich bewegt oder umschaltet, bleibt einzeln (Gate,
+Hebel, Füllungen, Wasser, Schubkarre). Neue Maschinenmodelle in
+`warmMachines()` bzw. über `ctx.warm()` registrieren.
+
+**Save:** keine neue Version (v7). Neu und optional: `processing.pan.tool`,
+`ledger.bowlLoads`, `economy.flags.streaksFound`; gelockerte Streak-Flächen über
+das bestehende `terrain.loose`. Ältere Saves bekommen in unberührtem Boden die
+neue Geologie (Gold wird aus dem Seed berechnet, abgebaute Slices bleiben
+abgebaut – keine Duplikation).
+
+**Dev-Pack 7A** (`goldrush-devcommands7a.js`): Preset „Phase 7A Qualitätstest“
+(Schaufel + Spitzhacke + Eimer voll Pay Dirt am Waschplatz, du am Trog),
+Basic-Wash-Test, Waschschale statt Pfanne (Schalter), Eimer goldarm / Pay Dirt /
+mineralisiert, Goldproben Staub / Feingold / Flocke / kleines Stück / Nugget
+(nur Optik), Pay-Streak hin und zeigen, Spitzhacken-Geologie-Test,
+Material-Vorschau, Teleport Camp. Suite: `tests/e2e/goldrush_quality_e2e.py`.
+
+**Entwicklerzugang – Diagnose (Teil A):** Ist der Code nicht konfiguriert,
+liefert der (angemeldete) Status `routeVersion: 2` und eine Diagnose: welcher
+Server antwortet (Render-Name, Service-ID, Instanz, Commit, externe Adresse –
+öffentliche Metadaten) und ob die Variable fehlt, leer ist oder unter einem
+ähnlichen Namen existiert; Render-„Secret Files“ (`/etc/secrets/GOLDRUSH_DEV_CODE`)
+werden auch gelesen. Nie Code, Hash, andere Variablen oder Tokens. Das
+Frontend unterscheidet NOT_CONFIGURED / AUTH_ERROR / NETWORK_ERROR /
+ENDPOINT_NOT_FOUND / SERVER_ERROR und zeigt die Seiten-Origin neben der Adresse
+des antwortenden Servers. Häufigste Live-Ursache: die Seite läuft über eine
+andere Adresse (anderer Render-Dienst) als der, an dem die Variable gesetzt ist –
+Service-ID im Dialog mit dem Dashboard vergleichen.
 
 ## Entwicklertools (QA-Modus, Prompt 5.5)
 

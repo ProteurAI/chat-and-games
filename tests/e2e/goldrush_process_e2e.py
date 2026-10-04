@@ -471,8 +471,8 @@ def material(A, shots):
     res = pan_all(A)
     fine_rec = sum(r["got"]["fineUg"] for r in res)
     loads = [r for r in res if r["got"].get("stage") == "concentrate"]
-    ok("27 classifier + pan: the concentrate pans faster and keeps more fine gold (0,68 vs 0,58 raw) - all of the tub, in a few loads",
-       loads and abs(fine_rec / max(1, tub_fine) - 0.68) < 0.01 and all(r["work"]["t"] <= 2.5 * 2.7 + 0.1 for r in res if r["work"]["t"] > 6.05) and proc(A)["tub"]["volumeMl"] == 0,
+    ok("27 classifier + pan: the concentrate pans faster and keeps more fine gold (0,63 vs 0,58 raw; 3,3 vs 3,7 s/l - phase 7A) - all of the tub, in a few loads",
+       loads and abs(fine_rec / max(1, tub_fine) - 0.63) < 0.01 and all(r["work"]["t"] <= 2.5 * 3.3 + 0.1 for r in res if r["work"]["t"] > 6.05) and proc(A)["tub"]["volumeMl"] == 0,
        f"{len(res)} loads, recovered {fine_rec} of {tub_fine} ug, times {[round(r['work']['t'], 2) for r in res]}")
     p = proc(A)
     L = p["ledger"]
@@ -702,8 +702,10 @@ def economy(browser, base, user):
     ok(f"29 / 31 the processing benchmark ran: {seeds} seeds x 180 min x 4 strategies (real ground, bucket filling, carrying, walking, sieving, panning, selling, shopping)",
        all(s["seeds"] == seeds for s in sums.values()) and all(med(s["procRounds"]) and med(s["procRounds"]) > 20 for s in sums.values()), f"{wall:.0f} s")
     pans = [med(sums[st]["bought_s"]["pan"]) for st in "TPKM"]
-    ok("32 gold pan bought after ~70-100 min (median of the strategies), never before an hour typically, the slowest strategy still within ~2 h",
-       60 * 60 <= sorted(pans)[1] and 70 * 60 <= sum(pans) / 4 <= 100 * 60 and max(pans) <= 125 * 60, f"T/P/K/M {[round(p / 60) for p in pans]} min")
+    # phase 7A: the bucket washes from the first day (the wooden bowl) - P / K, who buy it right after the
+    # shovel, save for the pan ~10 min sooner (canonical 100 seeds: 61 min, phase 5: 70)
+    ok("32 gold pan bought after ~60-100 min (median of the strategies), never before ~50 min typically, the slowest strategy still within ~2 h",
+       50 * 60 <= sorted(pans)[1] and 70 * 60 <= sum(pans) / 4 <= 100 * 60 and max(pans) <= 125 * 60, f"T/P/K/M {[round(p / 60) for p in pans]} min")
     cls = [med(sums[st]["bought_s"]["classifier"]) for st in "TPKM"]
     ok("33 classifier after ~100-140 min (median of the strategies)", 95 * 60 <= sum(cls) / 4 <= 145 * 60 and min(cls) >= 90 * 60, f"T/P/K/M {[round(c / 60) for c in cls]} min")
     e120 = {st: med(sums[st]["earned_cents"]["7200"]) for st in "TPKM"}
