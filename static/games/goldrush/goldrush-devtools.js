@@ -32,19 +32,38 @@ const DEV_ERROR = actions.DEV_ERROR;
 
 // what the developer sees when the server could not be asked / says no - one class each,
 // so a 404 or a dead connection never reads as "not configured"
+// which server answers, compactly - the lines to compare with the Render dashboard (phase 9: shown in
+// the code dialog too, not only when the code is missing - a rejected code names the server that checked it)
+function serverLines(d) {
+  const lines = [`Seite geöffnet über: ${location.origin}`];
+  if (!d) return lines;
+  const srv = [d.service, d.serviceId, d.instance && `Instanz ${d.instance}`, d.commit && `Commit ${d.commit}`].filter(Boolean).join(" · ");
+  lines.push(srv ? `Antwortender Server: ${srv}` : "Antwortender Server: lokal (keine Render-Metadaten)");
+  if (d.externalUrl) {
+    lines.push(`Adresse dieses Servers: ${d.externalUrl}`);
+    let other = false;
+    try { other = new URL(d.externalUrl).origin !== location.origin; } catch (e) { other = false; }
+    if (other) lines.push("Achtung: Die Seite läuft über eine andere Adresse als die dieses Servers.");
+  }
+  return lines;
+}
+
+// the code dialog's own text: the server, where its code comes from, what to fix there
+function accessHint(d) {
+  if (!d) return "";
+  const lines = serverLines(d);
+  if (d.source) lines.push(`Code auf dem Server: ${d.source === "env" ? "Umgebungsvariable GOLDRUSH_DEV_CODE" : "Secret-Datei GOLDRUSH_DEV_CODE"}`);
+  if (d.quoted) lines.push("Hinweis: Der Wert auf dem Server steht in Anführungszeichen – er gilt ohne sie; in Render besser ohne Anführungszeichen eintragen.");
+  if (d.allowlist && !d.accountAllowed) lines.push("Dieses Konto steht nicht in GOLDRUSH_DEV_USER_IDS – mit diesem Konto geht es auch mit richtigem Code nicht.");
+  else if (d.allowlist) lines.push("GOLDRUSH_DEV_USER_IDS ist gesetzt; dieses Konto ist freigegeben.");
+  return lines.join("\n");
+}
+
 function accessText(st) {
   switch (st.error) {
     case ACCESS.NOT_CONFIGURED: {
       const d = st.diagnosis || {}, lines = ["Entwicklerzugang ist auf diesem Server nicht konfiguriert."];
-      lines.push("", `Seite geöffnet über: ${location.origin}`);
-      const srv = [d.service, d.serviceId, d.instance && `Instanz ${d.instance}`, d.commit && `Commit ${d.commit}`].filter(Boolean).join(" · ");
-      if (srv) lines.push(`Antwortender Server: ${srv}`);
-      if (d.externalUrl) {
-        lines.push(`Adresse dieses Servers: ${d.externalUrl}`);
-        let other = false;
-        try { other = new URL(d.externalUrl).origin !== location.origin; } catch (e) { other = false; }
-        if (other) lines.push("Achtung: Die Seite läuft über eine andere Adresse als die dieses Servers.");
-      }
+      lines.push("", ...serverLines(st.diagnosis));
       lines.push(d.variable === "empty" ? "GOLDRUSH_DEV_CODE ist gesetzt, aber leer."
         : d.variable === "nearMiss" ? "Eine ähnlich benannte Variable existiert – Schreibweise / Leerzeichen von GOLDRUSH_DEV_CODE prüfen."
         : "GOLDRUSH_DEV_CODE fehlt in der Umgebung dieses Servers.");
@@ -149,7 +168,7 @@ export class GoldRushDevTools {
     try { st = await this.access.status(); } catch (e) { st = { configured: null, error: ACCESS.NETWORK_ERROR }; }
     if (!this.active) return;
     if (st.error) { await this._message("Entwicklerzugang", accessText(st)); return this._leave(); }
-    if (!st.unlocked && !(await this._accessDialog())) return this._leave();
+    if (!st.unlocked && !(await this._accessDialog(st.diagnosis))) return this._leave();
     if (!this.active || !this.game) return this._leave();
     this.shell.devStateChanged();
     this._openPanel();
@@ -250,8 +269,8 @@ export class GoldRushDevTools {
   }
 
   // ENTWICKLERZUGANG: the code goes to the server once; wrong -> one plain message
-  _accessDialog() {
-    const p = this._modal({ title: "Entwicklerzugang", text: "", form: true, buttons: [{ id: "cancel", label: "Abbrechen", ghost: true }, { id: "unlock", label: "Freischalten" }] });
+  _accessDialog(diagnosis = null) {
+    const p = this._modal({ title: "Entwicklerzugang", text: accessHint(diagnosis), form: true, buttons: [{ id: "cancel", label: "Abbrechen", ghost: true }, { id: "unlock", label: "Freischalten" }] });
     this._unlocking = false;
     return p.then((id) => id === "unlocked");
   }

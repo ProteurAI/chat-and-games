@@ -77,8 +77,10 @@ export class DevAccess {
     this.configured = r.configured;
     this.unlocked = !!r.unlocked;
     if (!this.unlocked) { this._keep(null); this._mem = null; }
-    const out = { configured: this.configured, unlocked: this.unlocked, routeVersion: r.routeVersion || 1 };
-    if (!r.configured) { out.error = DEV_ERROR.NOT_CONFIGURED; out.diagnosis = r.diagnosis || null; }
+    // (route version 3, phase 9: the diagnosis comes always - which server answered, how it is set up)
+    const out = { configured: this.configured, unlocked: this.unlocked, routeVersion: r.routeVersion || 1, diagnosis: r.diagnosis || null };
+    this.diagnosis = out.diagnosis;
+    if (!r.configured) out.error = DEV_ERROR.NOT_CONFIGURED;
     return out;
   }
 
