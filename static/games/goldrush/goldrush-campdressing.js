@@ -22,6 +22,10 @@ export const PATHS = [
   { look: "path", w: 0.95, pts: [[-16.4, 4.6], [-18.4, 4.75], [-21.0, 3.8], [-22.55, 1.2], [-22.5, -2.0]] }, // wash place - control post (west of the tank)
   { look: "barrow", w: 1.05, y: 0.108, pts: [[-15.6, -8.55], [-17.2, -9.1], [-19.4, -9.6], [-20.85, -9.95]] }, // the mine - the loading ramp's foot (barrow ruts, on Zone B's slab)
   { look: "path", w: 1.2, pts: [[-13.0, 10.3], [-9.0, 11.3], [-5.0, 12.4], [-1.6, 14.2]] },               // camp - the gate track
+  // phase 8: the claim as one working place - the barrow track from the foot of the pile to the wash
+  // place, and the walk from the gold buyer down to the mine
+  { look: "barrow", w: 1.05, pts: [[-7.9, 0.3], [-10.4, 2.0], [-12.9, 3.5], [-15.0, 4.4]] },              // the mine - the wash place
+  { look: "path", w: 1.05, pts: [[-12.5, 8.9], [-11.4, 6.4], [-9.9, 3.6], [-8.3, 1.2]] },                // gold buyer - the mine
 ];
 
 // a canvas atlas: left half trodden soil, right half the same with a wheel rut and
@@ -117,11 +121,13 @@ export class CampDressing {
       rubber: mat(new THREE.MeshStandardMaterial({ color: 0x2e3530, roughness: 0.7 })),
       metal: mat(new THREE.MeshStandardMaterial({ color: 0x7c7f80, roughness: 0.6, metalness: 0.4 })),
       rust: mat(new THREE.MeshStandardMaterial({ color: 0x86522f, roughness: 0.8, metalness: 0.25 })),
-      stone: mat(new THREE.MeshStandardMaterial({ color: 0x9b9184, roughness: 0.92, flatShading: true })),
+      stone: mat(new THREE.MeshStandardMaterial({ color: 0x7f7568, roughness: 0.86 })),         // washed cobbles (phase 8: no white facets)
       sand: mat(new THREE.MeshStandardMaterial({ color: 0x9c8a72, roughness: 0.96 })),
     };
     this.M = M;
-    const box = geo(new THREE.BoxGeometry(1, 1, 1)), cyl = geo(new THREE.CylinderGeometry(1, 1, 1, 12)), ico = geo(new THREE.IcosahedronGeometry(1, 0));
+    const box = geo(new THREE.BoxGeometry(1, 1, 1)), cyl = geo(new THREE.CylinderGeometry(1, 1, 1, 12)), ico = geo(new THREE.IcosahedronGeometry(1, 1));
+    // a washed stone: rounded, a little lumpy - never a crisp polyhedron
+    { const p = ico.attributes.position; for (let q = 0; q < p.count; q++) { const x = p.getX(q), y = p.getY(q), z = p.getZ(q), k = 1 + 0.16 * noise2(x * 1.7 + 3, z * 1.7 - y, 21); p.setXYZ(q, x * k, y * k * 0.82, z * k); } ico.computeVertexNormals(); }
     const blob = geo(new THREE.IcosahedronGeometry(1, 2));          // a smooth low heap (squashed)
     { const p = blob.attributes.position; for (let q = 0; q < p.count; q++) { const y = p.getY(q), k = 1 + 0.12 * noise2(p.getX(q) * 2.3, p.getZ(q) * 2.3, 5); p.setXYZ(q, p.getX(q) * k, Math.max(0, y) * k, p.getZ(q) * k); } blob.computeVertexNormals(); }
     const sack = geo(new THREE.LatheGeometry([[0, 0], [0.2, 0.01], [0.24, 0.12], [0.23, 0.3], [0.17, 0.42], [0.09, 0.47], [0.02, 0.5]].map(([x, y]) => new THREE.Vector2(x, y)), 10));

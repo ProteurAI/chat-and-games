@@ -61,13 +61,13 @@ const CHANGED_EPS = 0.004;
 
 // palette (sRGB hex, converted to linear once)
 const PALETTE = {
-  dustA: 0x9a7650, dustB: 0x7e5e3f, dustC: 0xae8b5f, slope: 0x9c6d4b,
+  dustA: 0x957857, dustB: 0x7a5f45, dustC: 0xab9170, slope: 0x947159,
   fresh: 0x8a6642, freshB: 0x7c5a3e, clay: 0x96603a, gravel: 0x857a6b,
-  stone: 0x8e8272, stoneDark: 0x61574c, ground: 0xb59f7d, band: 0x8f5a38,
+  stone: 0x8e8272, stoneDark: 0x61574c, ground: 0xb59f7d, band: 0x8b5d3f,
   moist: 0x5e4129, spill: 0x9a7f5d,
   // per material: weathered surface / fresh cut
   compactS: 0x7c5436, compactF: 0x684129, gravelS: 0x8a7f71, gravelL: 0xab9d88, gravelD: 0x5d544a, gravelF: 0x776b5d,
-  stoneS: 0x8d857a, stoneD: 0x5f5850, fill: 0x93714f, stoneCut: 0xb1a899,
+  stoneS: 0x9b9386, stoneD: 0x6e675d, fill: 0x93714f, stoneCut: 0xb1a899,
   // phase 7A: a mineralised streak at the surface - rust-stained, with dark heavy-mineral grains
   streak: 0x8c5b34, streakD: 0x4c4038,
 };

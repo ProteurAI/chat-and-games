@@ -68,10 +68,10 @@ function soilDetail(ctx, size, seed) {
     }
   }
   ctx.putImageData(img, 0, 0);
-  for (let p = 0; p < 260; p++) {                                   // small pebbles, light and dark
-    const x = rng() * size, y = rng() * size, r = 0.5 + rng() * rng() * 1.8;
-    const l = rng() < 0.55 ? 232 + rng() * 20 : 150 + rng() * 30;
-    ctx.fillStyle = `rgba(${l},${l},${l},${0.55 + rng() * 0.35})`;
+  for (let p = 0; p < 260; p++) {                                   // small pebbles, light and dark (phase 8: quieter - no confetti)
+    const x = rng() * size, y = rng() * size, r = 0.5 + rng() * rng() * 1.5;
+    const l = rng() < 0.5 ? 218 + rng() * 16 : 168 + rng() * 22;
+    ctx.fillStyle = `rgba(${l},${l},${l},${0.3 + rng() * 0.25})`;
     for (const [ox, oy] of [[0, 0], [size, 0], [-size, 0], [0, size], [0, -size]]) {
       ctx.beginPath();
       ctx.ellipse(x + ox, y + oy, r, r * (0.6 + rng() * 0.4), rng() * 3, 0, Math.PI * 2);
@@ -84,18 +84,29 @@ function soilDetail(ctx, size, seed) {
 // packed round pebbles, light and dark, with a little shading each
 function gravelDetail(ctx, size, seed) {
   const rng = mulberry32(seed);
-  ctx.fillStyle = "rgb(150,146,140)";
+  ctx.fillStyle = "rgb(146,140,132)";
   ctx.fillRect(0, 0, size, size);
-  for (let p = 0; p < 900; p++) {
-    const x = rng() * size, y = rng() * size, r = 1.6 + rng() * rng() * 6.5;
-    const l = 150 + rng() * 105, rot = rng() * 3;
+  // phase 8: many small, angular stones in a narrow range of tones (7A: big round light ovals read as
+  // confetti from a distance) - a few larger ones, a shadow line under each
+  const stone = (x, y, r, rot, n) => {
+    ctx.beginPath();
+    for (let k = 0; k < n; k++) {
+      const a = rot + (k / n) * Math.PI * 2, rr = r * (0.7 + 0.45 * ((k * 7919 + Math.floor(x * 13)) % 5) / 5);
+      const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr * 0.78;
+      if (k) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+    }
+    ctx.closePath();
+  };
+  for (let p = 0; p < 1500; p++) {
+    const x = rng() * size, y = rng() * size, r = 1.0 + rng() * rng() * (rng() < 0.06 ? 7 : 3.6);
+    const l = 128 + rng() * 74, warm = rng() * 14, rot = rng() * 3, n = 5 + Math.floor(rng() * 3);
     for (const [ox, oy] of [[0, 0], [size, 0], [-size, 0], [0, size], [0, -size]]) {
-      ctx.fillStyle = "rgba(40,34,28,0.35)";                              // contact shadow
-      ctx.beginPath(); ctx.ellipse(x + ox + 0.8, y + oy + 1, r, r * 0.75, rot, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = `rgb(${l},${l - 4},${l - 12})`;
-      ctx.beginPath(); ctx.ellipse(x + ox, y + oy, r, r * 0.75, rot, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "rgba(255,250,240,0.28)";                          // sun-side highlight
-      ctx.beginPath(); ctx.ellipse(x + ox - r * 0.3, y + oy - r * 0.25, r * 0.45, r * 0.3, rot, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(42,36,30,0.3)";                               // contact shadow
+      stone(x + ox + 0.6, y + oy + 0.8, r, rot, n); ctx.fill();
+      ctx.fillStyle = `rgb(${l + warm},${l - 2},${l - 10 - warm * 0.5})`;
+      stone(x + ox, y + oy, r, rot, n); ctx.fill();
+      ctx.fillStyle = "rgba(255,248,236,0.14)";                          // a soft sun-side light
+      stone(x + ox - r * 0.22, y + oy - r * 0.2, r * 0.5, rot, n); ctx.fill();
     }
   }
 }
@@ -297,6 +308,7 @@ export class GoldRushWorld {
       shader.uniforms.uGravel = { value: gravel };
       shader.uniforms.uRock = { value: rock };
       shader.uniforms.uTime = uni.uTime;
+      shader.uniforms.uMound = { value: new THREE.Vector2(MOUND_CENTER.x, MOUND_CENTER.z) };
       shader.vertexShader = shader.vertexShader
         .replace("#include <common>", "#include <common>\nattribute vec4 aMat;\nattribute float aFresh;\nuniform float uTime;\nvarying vec4 vMat;\nvarying float vFresh;\nvarying float vFreshQ;\nvarying vec3 vWPos;")
         // the fade weight (not the time stamp) is interpolated: a fresh vertex
@@ -305,7 +317,7 @@ export class GoldRushWorld {
         .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;");
       shader.fragmentShader = shader.fragmentShader
         .replace("#include <common>", `#include <common>
-          uniform sampler2D uGravel; uniform sampler2D uRock; uniform float uTime;
+          uniform sampler2D uGravel; uniform sampler2D uRock; uniform float uTime; uniform vec2 uMound;
           varying vec4 vMat; varying float vFresh; varying float vFreshQ; varying vec3 vWPos;
           float grHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
           float grNoise(vec2 p) {
@@ -362,6 +374,27 @@ export class GoldRushWorld {
           float grS = clamp(vMat.w * 2.2, 0.0, 1.0) * (1.0 - grStone);
           grGW = max(grGW, max(grToe * 0.5, grS * 0.45));                   // the foot and a cemented streak: gravelly
           diffuseColor.rgb *= mix(mix(soilT, gravT, grGW), rockT, grRW) * crust;
+          // phase 8, the mountain's own geology at a distance: gullies running down its flanks (darker
+          // channels with gravel in their beds, lighter spurs between), bands of firmer, redder earth on
+          // steep faces, broad patches of dry crust and damper ground - never one smooth clay blob
+          vec2 grRel = vWPos.xz - uMound;
+          float grAng = atan(grRel.y, grRel.x), grOn = smoothstep(0.25, 0.9, vWPos.y) * (1.0 - grRW);
+          float grGully = grNoise(vec2(grAng * 7.5 + grNoise(wuv * 0.21) * 0.9, vWPos.y * 0.32 + length(grRel) * 0.05));
+          float grCh = smoothstep(0.45, 0.95, 1.0 - abs(grGully)) * grOn * (0.45 + 0.55 * grSteep);
+          float grSpur = smoothstep(0.5, 1.0, abs(grGully)) * grOn * 0.8;
+          float grStratum = smoothstep(0.35, 0.85, grNoise(vec2(vWPos.y * 1.9 + grNoise(wuv * 0.37 + 2.0) * 0.7, grAng * 0.6))) * grOn * smoothstep(0.15, 0.55, grSteep);
+          float grPatch = grNoise(wuv * 0.29 + 9.3) * 0.7 + grNoise(wuv * 0.83 + 2.1) * 0.3;
+          diffuseColor.rgb *= mix(vec3(1.0), vec3(0.74, 0.7, 0.68), grCh) * (1.0 + 0.1 * grSpur);
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.05, 0.86, 0.74), grStratum * 0.6 * (1.0 - grGW));
+          // the dry crust bleached and greyer on the high spurs, the damper earth deeper in tone
+          float grLum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(grLum) * vec3(1.08, 1.0, 0.9), 0.22 * max(0.0, grPatch) * grOn + 0.12 * grSpur);
+          diffuseColor.rgb *= 1.0 + 0.09 * grPatch * grOn;
+          diffuseColor.rgb = mix(diffuseColor.rgb, gravT * crust * vec3(0.9, 0.88, 0.86), grCh * 0.42 * (1.0 - grGW));
+          // small stones bedded in the earth, close up (sparse; they fade out with distance, no shimmer)
+          float grClastFade = clamp(1.0 - length(fwidth(wuv)) * 9.0, 0.0, 1.0);
+          float grClast = smoothstep(0.58, 0.74, grNoise(wuv * 2.6 + 5.0)) * smoothstep(0.42, 0.62, dot(gravT, vec3(0.333))) * grClastFade * (1.0 - grRW) * (1.0 - grGW);
+          diffuseColor.rgb = mix(diffuseColor.rgb, gravT * vec3(0.95, 0.93, 0.9), grClast * 0.55);
           // the face's own structure: faint layering, rills running down, a few fracture lines in firm ground
           float grStrata = grNoise(vec2(vWPos.y * 9.0, (wuv.x + wuv.y) * 0.45));
           float grRill = grNoise(vec2((wuv.x * 0.7 - wuv.y * 0.7) * 10.0, vWPos.y * 1.3));
@@ -412,11 +445,22 @@ export class GoldRushWorld {
           float grCrumb = grNoise(wuv * 23.0) * 0.6 + grNoise(wuv * 61.0) * 0.4;
           diffuseColor.rgb *= 1.0 - grFresh * 0.07 * max(0.0, grCrumb) + grFresh * 0.04 * min(0.0, grCrumb);
           // worked ground keeps a little crumb shading after the fresh look is gone
-          diffuseColor.rgb *= 1.0 - clamp(vMat.z, 0.0, 1.0) * (1.0 - grFresh) * 0.05 * max(0.0, grCrumb);`)
+          diffuseColor.rgb *= 1.0 - clamp(vMat.z, 0.0, 1.0) * (1.0 - grFresh) * 0.05 * max(0.0, grCrumb);
+          // phase 8 review: at shovel distance the earth is granular - small clods with darker gaps between,
+          // each a shade lighter or darker, and fine grit; gone with distance (no shimmer), not on solid rock
+          float grNear = clamp(1.0 - length(fwidth(wuv)) * 22.0, 0.0, 1.0) * (1.0 - grRW);
+          if (grNear > 0.01) {
+            float cid;
+            float ce = grVor(wuv * 11.0 + vec2(1.7, -vWPos.y * 0.8), cid);
+            // (only here and there a gap shows: a continuous network read as dried-mud cracks, not loose earth)
+            float gapC = smoothstep(0.09, 0.0, ce) * smoothstep(0.0, 0.5, grNoise(wuv * 3.1 + 2.0));
+            diffuseColor.rgb *= mix(1.0, (0.92 + 0.15 * cid) * (1.0 - 0.18 * gapC), grNear * (0.6 + 0.4 * grGW));
+            diffuseColor.rgb *= 1.0 + grNear * 0.08 * (grNoise(wuv * 47.0) * 0.6 + grNoise(wuv * 113.0) * 0.4);
+          }`)
         .replace("#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
           roughnessFactor *= (0.93 + 0.1 * grN2) * (0.96 + 0.07 * grSteep) * (1.0 - 0.14 * grFresh - 0.16 * vFreshQ * (1.0 - clamp(grGW + grRW, 0.0, 1.0)));`);
     };
-    this.terrainMaterial.customProgramCacheKey = () => "goldrush-terrain-v7";
+    this.terrainMaterial.customProgramCacheKey = () => "goldrush-terrain-v10";
     this.terrain = new DiggableTerrain(THREE, {
       seed: this.seed, center: { x: 0, z: -6 }, size: 30, cell: 0.125, chunkCells: 30,
       moundCenter: MOUND_CENTER, material: this.terrainMaterial, spawn: SPAWN,
@@ -460,7 +504,9 @@ export class GoldRushWorld {
   _lights() {
     const THREE = this.THREE;
     // (phase 7A: a little less flat fill, a warmer sun, a warm bounce - shapes read, shadows stay cool-ish)
-    const hemi = new THREE.HemisphereLight(0xaec6e6, 0x7f6146, 0.74);
+    // (phase 8: the sky probe lights the shade now - scene.environment, buildEnvironment - so the flat
+    // hemisphere fill is lower: dark wood and steel keep their detail in shadow, the sun keeps its contrast)
+    const hemi = (this.hemi = new THREE.HemisphereLight(0xaec6e6, 0x7f6146, 0.56));
     this.scene.add(hemi);
     const sun = (this.sun = new THREE.DirectionalLight(0xffe6c4, 3.7));
     const target = new THREE.Vector3(0, 0, -5);
@@ -629,19 +675,10 @@ export class GoldRushWorld {
     const tankTex = this.assets.procedural("tex:tank", () => canvasTexture(THREE, 256, (ctx, s) => tankPlates(ctx, s, this.seed + 23)));
     const tankMat = this.track(new THREE.MeshStandardMaterial({ map: tankTex, color: 0xb2b0a8, roughness: 0.66, metalness: 0.22 }));
     this._metalMats = [metal, rust, tankMat];          // they get the sky's reflection (buildEnvironment)
-    const roofMat = this.track(new THREE.MeshStandardMaterial({ color: 0x7d8286, roughness: 0.6, metalness: 0.3 }));
 
-    // tool shed (north-west of the gate)
+    // the supply shack (north-west of the gate) is built with the stations (goldrush-buildings.js, phase 8:
+    // an open front instead of a closed box); here only what stands round it
     const sx = -18.2, sz = 13.2;
-    this._box(4.2, 2.6, 3.2, wood, sx, 1.3, sz);
-    const roof = new THREE.Mesh(this.track(new THREE.BoxGeometry(4.8, 0.1, 3.9)), roofMat);
-    roof.position.set(sx, 2.75, sz);
-    roof.rotation.x = -0.12;
-    roof.castShadow = true;
-    this.scene.add(roof);
-    this._box(1.05, 1.95, 0.08, darkWood, sx + 0.9, 0.98, sz - 1.62, 0, false);                 // door
-    const winMat = this.track(new THREE.MeshStandardMaterial({ color: 0x2b3440, roughness: 0.25, metalness: 0.1 }));
-    this._box(0.8, 0.6, 0.06, winMat, sx - 1.1, 1.6, sz - 1.62, 0, false);                      // window
 
     // crates and planks by the shed
     const crate = this.track(new THREE.MeshStandardMaterial({ map: this.woodTex, color: 0xb89468, roughness: 0.9 }));
@@ -802,25 +839,48 @@ export class GoldRushWorld {
     for (let v = 0; v < gp.count; v++) gp.setXYZ(v, gp.getX(v) * (0.85 + (v % 3) * 0.12), gp.getY(v) * 0.6, gp.getZ(v) * (0.9 + (v % 2) * 0.15));
     geo.computeVertexNormals();
     const mat = this.track(new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true }));
-    const max = 1100;
+    const max = 1300;
     const im = new THREE.InstancedMesh(geo, mat, max);
     im.name = "pile-pebbles";
     im.receiveShadow = true;
     im.castShadow = false;
     this.pebbles = [];
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), pos = new THREE.Vector3(), col = new THREE.Color();
-    let tries = 0;
-    while (this.pebbles.length < max && tries++ < max * 6) {
-      const x = t.x0 + 2 + rng() * (t.size - 4), z = t.z0 + 2 + rng() * (t.size - 4);
-      const i = Math.round((x - t.x0) / t.cell), j = Math.round((z - t.z0) / t.cell), k = j * t.vps + i;
-      if (t.base[k] < 0.05 || t.base[k] > 7 || rng() > 0.35 + t.rock[k]) continue;
-      const s = 0.012 + rng() * rng() * 0.03;
+    // phase 8: no even scatter (it read as confetti round the base) - talus fans where the gullies run
+    // out at the foot of the pile, stony patches on the rocky flanks, a few strays
+    const mc = MOUND_CENTER, fans = [];
+    for (let f = 0; f < 16; f++) {
+      const a = (f / 16) * Math.PI * 2 + (rng() - 0.5) * 0.35;
+      // the foot along this direction: the first ground lower than 0.5 m going outward
+      let r = 2;
+      for (; r < 13; r += 0.2) { const k = this._colAt(mc.x + Math.cos(a) * r, mc.z + Math.sin(a) * r); if (k < 0 || t.base[k] < 0.5) break; }
+      fans.push({ x: mc.x + Math.cos(a) * (r - 0.4), z: mc.z + Math.sin(a) * (r - 0.4), a, len: 1.3 + rng() * 1.6, wid: 0.5 + rng() * 0.6, n: 34 + Math.floor(rng() * 40) });
+    }
+    const place = (x, z, s) => {
+      const k = this._colAt(x, z);
+      if (k < 0 || t.base[k] < 0.02 || t.base[k] > 7 || this.pebbles.length >= max) return;
       const n = this.pebbles.length;
       this.pebbles.push({ k, x, z, s, ry: rng() * 6.28, tilt: (rng() - 0.5) * 0.6 });
-      // (7B: earthy greys and browns - not white confetti in the sun)
-      const gray = 0.36 + rng() * 0.2, warm = 0.04 + rng() * 0.1;
-      col.setRGB(gray + warm, gray + warm * 0.55, gray * 0.84);
+      // earthy greys and browns (7B), darker than before (phase 8 review: in full sun they read as white specks)
+      const gray = 0.1 + rng() * 0.09, warm = 0.03 + rng() * 0.06;
+      col.setRGB(gray + warm, gray + warm * 0.55, gray * 0.8);
       im.setColorAt(n, col);
+    };
+    for (const F of fans) {
+      const ca = Math.cos(F.a), sa = Math.sin(F.a);
+      for (let i = 0; i < F.n; i++) {
+        // spread outward and downhill from the gully's mouth, coarser stones run furthest
+        const u = Math.sqrt(rng()), v = (rng() - 0.5) * 2 * (0.3 + 0.7 * u);
+        const x = F.x + ca * u * F.len - sa * v * F.wid, z = F.z + sa * u * F.len + ca * v * F.wid;
+        place(x, z, 0.01 + rng() * rng() * 0.035 * (0.6 + 0.8 * u));
+      }
+    }
+    let tries = 0;
+    while (this.pebbles.length < max && tries++ < max * 4) {
+      const x = t.x0 + 2 + rng() * (t.size - 4), z = t.z0 + 2 + rng() * (t.size - 4), k = this._colAt(x, z);
+      if (k < 0 || t.base[k] < 0.3 || t.base[k] > 7 || rng() > t.rock[k] * 1.4) continue;      // the rocky flanks only
+      // a stony patch: a few together
+      for (let c = 0, nc = 3 + Math.floor(rng() * 6); c < nc; c++) place(x + (rng() - 0.5) * 0.5, z + (rng() - 0.5) * 0.5, 0.012 + rng() * rng() * 0.03);
     }
     im.count = this.pebbles.length;
     this.pebbleMax = this.pebbles.length;
@@ -832,6 +892,64 @@ export class GoldRushWorld {
     im.computeBoundingSphere();
     this.scene.add(im);
     this._pebbleRev = t.revision;
+    this._outcrops(rng);
+  }
+
+  _colAt(x, z) {
+    const t = this.terrain, i = Math.round((x - t.x0) / t.cell), j = Math.round((z - t.z0) / t.cell);
+    return i < 0 || j < 0 || i >= t.vps || j >= t.vps ? -1 : j * t.vps + i;
+  }
+
+  /**
+   * Phase 8: bedded rock breaking the surface on the flanks - flat, angular slabs in small groups,
+   * sunk into the ground and tilted with the slope (looks only: no collision, nothing to mine; like
+   * the pebbles they are gone once their ground is dug or slid). One instanced draw, shadows on.
+   */
+  _outcrops(rng) {
+    const THREE = this.THREE, t = this.terrain, mc = MOUND_CENTER;
+    const geo = this.track(new THREE.IcosahedronGeometry(1, 1));
+    const gp = geo.attributes.position;
+    for (let v = 0; v < gp.count; v++) {
+      const x = gp.getX(v), y = gp.getY(v), z = gp.getZ(v), n = 0.82 + 0.3 * hash3(Math.round(x * 50), Math.round(y * 50), Math.round(z * 50), 71);
+      gp.setXYZ(v, x * n * 1.25, y * n * 0.42, z * n);
+    }
+    geo.computeVertexNormals();
+    const mat = this.track(new THREE.MeshStandardMaterial({ map: this.rockTex, color: 0x9a8f80, roughness: 0.86, flatShading: true }));
+    const max = 44, im = new THREE.InstancedMesh(geo, mat, max);
+    im.name = "pile-outcrops";
+    im.castShadow = true;
+    im.receiveShadow = true;
+    this.outcrops = [];
+    const col = new THREE.Color(), q = new THREE.Quaternion(), e = new THREE.Euler(), m = new THREE.Matrix4(), sc = new THREE.Vector3(), p = new THREE.Vector3();
+    let tries = 0;
+    while (this.outcrops.length < max && tries++ < 400) {
+      const a = rng() * Math.PI * 2, r = 3 + rng() * 6.5;
+      const x = mc.x + Math.cos(a) * r, z = mc.z + Math.sin(a) * r, k = this._colAt(x, z);
+      if (k < 0 || t.base[k] < 0.9 || t.base[k] > 5.5) continue;
+      if (this.terrain.field && this.terrain.field.starter && Math.hypot(x - this.terrain.field.starter.x, z - this.terrain.field.starter.z) < 4.5) continue;   // the starting face stays clear
+      // the slope here: the slabs lie with it (along the strata)
+      const d = 0.25, gx = (t.getBaseHeightAt(x + d, z) - t.getBaseHeightAt(x - d, z)) / (2 * d), gz = (t.getBaseHeightAt(x, z + d) - t.getBaseHeightAt(x, z - d)) / (2 * d);
+      const nc = 2 + Math.floor(rng() * 3);
+      for (let c = 0; c < nc && this.outcrops.length < max; c++) {
+        const ox = x + (rng() - 0.5) * 0.7, oz = z + (rng() - 0.5) * 0.7, kk = this._colAt(ox, oz);
+        if (kk < 0) continue;
+        const s = 0.16 + rng() * 0.26;
+        const n = this.outcrops.length;
+        e.set(Math.atan(gz) + (rng() - 0.5) * 0.3, rng() * 6.28, -Math.atan(gx) + (rng() - 0.5) * 0.3, "YXZ");
+        m.compose(p.set(ox, t.getHeightAt(ox, oz) - s * 0.18, oz), q.setFromEuler(e), sc.set(s, s, s * (0.7 + rng() * 0.5)));
+        im.setMatrixAt(n, m);
+        const g = 0.78 + rng() * 0.22;
+        col.setRGB(g * 1.0, g * 0.95, g * 0.88);
+        im.setColorAt(n, col);
+        this.outcrops.push({ k: kk, gone: false });
+      }
+    }
+    im.count = this.outcrops.length;
+    im.instanceMatrix.needsUpdate = true;
+    if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    im.computeBoundingSphere();
+    this.outcropMesh = im;
+    this.scene.add(im);
   }
 
   _placePebble(p, n) {
@@ -854,6 +972,11 @@ export class GoldRushWorld {
       if (!p.gone && t.qh[p.k] !== 0) { p.gone = true; this._placePebble(p, n); changed = true; }
     });
     if (changed) this.pebbleMesh.instanceMatrix.needsUpdate = true;
+    // the outcrops too: dug into, they are gone (looks only)
+    let oc = false;
+    const zero = this._pm.m;
+    if (this.outcrops) this.outcrops.forEach((o, n) => { if (!o.gone && t.qh[o.k] !== 0) { o.gone = true; this.outcropMesh.setMatrixAt(n, zero.makeScale(0, 0, 0)); oc = true; } });
+    if (oc) this.outcropMesh.instanceMatrix.needsUpdate = true;
   }
 
   // dry grass tufts (a few thin blades each, vertex-coloured - no alpha
@@ -976,6 +1099,11 @@ export class GoldRushWorld {
     this.envMap = this.envRT.texture;
     // phase 7B: the camp's metal reflects the sky (without it the tank and bands read black)
     for (const m of this._metalMats || []) { m.envMap = this.envMap; m.envMapIntensity = 0.4; m.needsUpdate = true; }
+    // phase 8: every standard material gets a little image-based light from the sky probe (ambient that
+    // depends on the surface: metal reflects, rough wood and soil stay matte) - materials with an own
+    // envMap keep it
+    this.scene.environment = this.envMap;
+    this.scene.environmentIntensity = 0.42;
     geo.dispose();
     mat.dispose();
     pm.dispose();
