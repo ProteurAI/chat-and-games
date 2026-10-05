@@ -19,6 +19,7 @@ from . import party as party_module
 from . import drawing_game as drawing_game_module
 from . import kopf_kicker as kopf_kicker_module
 from . import goldrush_dev as goldrush_dev_module
+from . import log_redact
 from .multiscreen import session as multiscreen_module
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -47,6 +48,9 @@ IMAGE_EXTENSIONS = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gi
 
 app = FastAPI(title="Chat & Games")
 log = logging.getLogger("chat_and_games")
+# the session token travels in the WebSocket's query string (/ws?token=...): uvicorn's
+# request lines show it as token=*** (backend/log_redact.py)
+log_redact.install()
 
 db.init_db(CONFIG.get("default_channels", []))
 
