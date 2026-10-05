@@ -5,7 +5,7 @@
             a page that is not the status are told apart from "not configured"
   wash      the free wooden wash bowl: bucket -> bowl -> pouch from the first bucket on, exact recovery,
             tailings, the ledger, determinism, save mid-cycle, the gold pan replaces it and is clearly better;
-            visible finds never vanish into the bucket (found at the dig, the bucket carries the fine gold)
+            visible finds go into the bucket with their dig (phase 7B: carried, washing brings them out once)
   geology   mineralised streaks: same seed same streaks, never in the starter zone, hand / shovel stopped,
             the pickaxe loosens, then the shovel; no luck multiplier; the ledger; save / reload; more gold
             in a streak, taken from the rest of the pile
@@ -347,28 +347,44 @@ def wash(A, shots):
         G(A, f"() => {GR}.procWork(30)")
         G(A, f"() => {GR}.procCollect()")
     ok("WASH a full 10 l bucket is seven bowl loads (the last takes the 1,6 l rest), nothing left behind", vols == [1400] * 6 + [1600] and proc(A)["bucket"]["batch"]["volumeMl"] == 0, str(vols))
-    # visible finds never vanish into the bucket: found at the dig, the bucket carries material + fine gold
+    # phase 7B: a dig that fits into the bucket takes its visible pieces along - nothing is shown at
+    # the dig (no '+ EUR' while filling), the bucket carries material + fine gold + the pieces
     fresh(A)
     kit(A, ["shovel", "bucket"])
-    got, into = 0, 0
-    for k in range(80):
+    shown, carried, into = 0, 0, 0
+    for k in range(120):
         sp = G(A, M6.SPOT, {"want": "dirt", "reach": 2.0, "start": 0.2 + (k % 6) * 0.15, "fresh": True})
         if not sp:
             continue
         G(A, f"() => {{ const s = {GR}.state(); const yaw = s.yaw; {GR}.procPlaceBucket(s.x + Math.cos(yaw) * 0.55, s.z - Math.sin(yaw) * 0.55); }}")
         r = G(A, f"() => {GR}.act({{ visuals: true, tool: 'shovel' }})") or {}
-        if (r.get("intoMl") or 0) > 0:
+        if (r.get("intoMl") or 0) > 0 and not r.get("spilledMl"):
             into += 1
-            got += r.get("finds") or 0
-        if got >= 4 or proc(A)["bucket"]["batch"]["volumeMl"] >= proc(A)["capacityMl"] - 100:
+            shown += r.get("finds") or 0
+            carried += r.get("intoFinds") or 0
+        if carried >= 3 or proc(A)["bucket"]["batch"]["volumeMl"] >= proc(A)["capacityMl"] - 1500:
             break
     pb = proc(A)["bucket"]
     b = pb["batch"]
-    ok("WASH visible finds don't vanish into the bucket: digging into it still shows every flake / nugget at the dig (picked out); the bucket holds no pieces, only material + fine gold",
-       into > 0 and got > 0 and not b["finds"] and b["fineUg"] > 0, f"{into} digs into the bucket, {got} finds shown, bucket pieces {len(b['finds'])}, fine {b['fineUg']} ug")
+    ok("WASH (7B) visible finds go into the bucket with their dig: none shown at the dig, the bucket holds them with the material + fine gold",
+       into > 0 and carried > 0 and shown == 0 and len(b["finds"]) == carried and b["fineUg"] > 0, f"{into} digs into the bucket, {shown} finds shown, bucket pieces {len(b['finds'])}, fine {b['fineUg']} ug")
     G(A, f"() => {GR}.flushLoot()")
     lok, L, p = ledger_ok(A)
-    ok("WASH the ledger stays exact with finds picked out at the dig (bucket = its fine gold)", lok and L["inUg"] == pb["goldUg"] == L["inFineUg"], str({k: L[k] for k in ("inUg", "inFineUg")}))
+    ok("WASH the ledger stays exact with the pieces carried (bucket = its fine gold + its pieces)",
+       lok and L["inUg"] == pb["goldUg"] == L["inFineUg"] + sum(f["ug"] for f in b["finds"]) and L["inFinds"] == len(b["finds"]), str({k: L[k] for k in ("inUg", "inFineUg", "inFinds")}))
+    # ... and the bowl brings each of them out once
+    at_trough(A)
+    pieces, pouch0 = 0, eco(A)["pouchSummary"]["totalGoldUg"]
+    for _ in range(12):
+        if not G(A, f"() => {GR}.procAct('pan-fill').ok"):
+            G(A, f"() => {GR}.procBucketToWash()")
+            if not G(A, f"() => {GR}.procAct('pan-fill').ok"):
+                break
+        G(A, f"() => {GR}.procWork(30)")
+        pieces += G(A, f"() => {GR}.procCollect()").get("pieces", 0)
+    lok, L, p = ledger_ok(A)
+    ok("WASH (7B) washing the bucket brings every carried piece out exactly once (the ledger exact)",
+       lok and pieces == len(b["finds"]) and p["bucket"]["batch"]["volumeMl"] == 0, f"{pieces} of {len(b['finds'])} pieces, pouch +{eco(A)['pouchSummary']['totalGoldUg'] - pouch0} ug")
 
 
 # ======================================================================

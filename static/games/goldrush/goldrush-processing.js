@@ -135,7 +135,7 @@ export class ProcessingSystem {
     this.sieve = { batch: MaterialBatch.from(ss.batch) || this._batch(STAGE.RAW), progress: Math.max(0, Math.min(1, +ss.progress || 0)), need: 4, stones: 0, dumpT: 0 };
     const l = s.ledger || {};
     this.ledger = {
-      inUg: int(l.inUg), inFineUg: int(l.inFineUg), inG: int(l.inG), inMl: int(l.inMl),
+      inUg: int(l.inUg), inFineUg: int(l.inFineUg), inG: int(l.inG), inMl: int(l.inMl), inFinds: int(l.inFinds),     // inFinds: pieces carried in (7B)
       recoveredUg: int(l.recoveredUg), recoveredFineUg: int(l.recoveredFineUg), tailUg: int(l.tailUg), tailG: int(l.tailG), tailMl: int(l.tailMl),
       spoilFineUg: int(l.spoilFineUg), panLoads: int(l.panLoads), sieveLoads: int(l.sieveLoads), buckets: int(l.buckets),
     };
@@ -462,18 +462,24 @@ export class ProcessingSystem {
   // ------------------------------------------------------------ digging into the bucket
 
   /**
-   * A dig's material (goldrush-mining.js result): into the bucket when one
-   * stands within reach on the ground and has room - otherwise it is spoil
-   * (its fine gold is lost to the spoil heap - booked). The visible finds are
-   * always discovered right at the dig, bucket or not (phase 7A: you see the
-   * flake / nugget on the blade and pick it out - nothing visible vanishes
-   * into the bucket); the bucket carries the material and its fine gold,
-   * which only washing gets back. Returns the finds the caller discovers:
-   * { finds, count, intoMl, spilledMl }.
+   * A dig's material (goldrush-mining.js result): into the bucket / barrow
+   * when one stands within reach and has room - otherwise it is spoil.
+   *   direct (no container): its visible finds are discovered now (pouch on
+   *     pickup), its fine gold is lost to the spoil heap (booked)
+   *   into a container: the part that fits takes its material, its fine gold
+   *     AND its visible finds - they are not found now; washing / the sluice
+   *     brings them out later (phase 7B: no "+ EUR" while you fill a bucket)
+   *   overflow (the last dig of a full container): the part that did not fit
+   *     is direct mining - its finds are discovered, its fine gold is spoil.
+   * The split follows MaterialBatch.take: volume, materials and fine gold in
+   * proportion, the pieces by count in the order they came (floored - one
+   * piece of a dig that only half fits stays with the overflow). Exact to the
+   * microgram, nothing booked twice. Returns the finds the caller discovers
+   * now: { finds, count, into, intoMl, spilledMl, intoUg, intoFinds }.
    */
   collect(r, player, source) {
-    const out = this._out || (this._out = { finds: [], count: 0, intoMl: 0, spilledMl: 0, intoG: 0, spilledG: 0, intoUg: 0 });
-    out.finds = r.finds; out.count = r.findCount; out.intoMl = 0; out.spilledMl = 0; out.intoG = 0; out.spilledG = 0; out.intoUg = 0;
+    const out = this._out || (this._out = { finds: [], count: 0, intoMl: 0, spilledMl: 0, intoG: 0, spilledG: 0, intoUg: 0, intoFinds: 0 });
+    out.finds = r.finds; out.count = r.findCount; out.intoMl = 0; out.spilledMl = 0; out.intoG = 0; out.spilledG = 0; out.intoUg = 0; out.intoFinds = 0;
     out.into = null;
     if (!r.ok || r.kind !== "dig" || !(r.removedVolume > 0)) return out;
     const tgt = this._digTarget(player);
@@ -481,18 +487,21 @@ export class ProcessingSystem {
     if (room <= 0) { this.ledger.spoilFineUg += int(r.fineUg); return out; }
     out.into = tgt.kind;
     const dig = batchFromDig(r, source, this.nextBatch++);
-    dig.finds = [];                                   // picked out at the dig (out.finds), not carried
     const total = dig.volumeMl;
     let part = dig;
     if (dig.volumeMl > room) part = dig.take(room, this.nextBatch++);
     this.ledger.inUg += part.goldUg; this.ledger.inFineUg += part.fineUg; this.ledger.inG += part.massG; this.ledger.inMl += part.volumeMl;
-    out.intoMl = part.volumeMl; out.intoG = part.massG; out.intoUg = part.goldUg;
+    this.ledger.inFinds += part.finds.length;
+    out.intoMl = part.volumeMl; out.intoG = part.massG; out.intoUg = part.goldUg; out.intoFinds = part.finds.length;
     tgt.batch.absorb(part);
-    // what did not fit spills: its fine gold is spoil
+    out.finds = []; out.count = 0;
+    // what did not fit spills: direct mining - its pieces are found now, its fine gold is spoil
     if (part !== dig && dig.volumeMl > 0) {
       out.spilledMl = dig.volumeMl;
       out.spilledG = dig.massG;
       this.ledger.spoilFineUg += dig.fineUg;
+      const keep = new Set(dig.finds.map((f) => f.key));
+      for (let i = 0; i < r.findCount; i++) if (keep.has(r.finds[i].key)) { out.finds.push(r.finds[i]); out.count++; }
     }
     if (total > 0) this._fills();
     this.fullNow = tgt.batch.volumeMl >= tgt.capacityMl - 50;
@@ -696,7 +705,7 @@ export class ProcessingSystem {
   // stays exact (in == containers + recovered + tailings) in a test mine too.
   _devIn(batch) {
     const L = this.ledger;
-    L.inUg += batch.goldUg; L.inFineUg += batch.fineUg; L.inG += batch.massG; L.inMl += batch.volumeMl;
+    L.inUg += batch.goldUg; L.inFineUg += batch.fineUg; L.inG += batch.massG; L.inMl += batch.volumeMl; L.inFinds += batch.finds.length;
     L.devInUg = (L.devInUg || 0) + batch.goldUg;
   }
 

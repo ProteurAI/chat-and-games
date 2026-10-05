@@ -1138,8 +1138,8 @@ export class GoldRushGame {
     // a mineralised streak: told once per streak; the shovel's limit in it now and then
     if (r.streak > 0.3) this._streakSeen(hit);
     if (r.cemented && def.id !== "pickaxe") this.hud.tip("cemented", "Verfestigter Kies – die Schaufel rutscht ab. Erst mit der Spitzhacke lockern, dann schaufeln.", 12);
-    // into the bucket next to you (the material and its fine gold), or spoil:
-    // either way its finds come out of the ground now (pending), shown now (loot), money on pickup
+    // into the bucket / barrow next to you (with its fine gold and its pieces - washing gets them
+    // out), or spoil: then its finds come out of the ground now (pending), shown (loot), money on pickup
     const routed = this.processing.collect(r, this.player, def.id);
     this._intoBucket(routed);
     if (def.id === "shovel" && r.removedMassKg > 0.05) this._release = { t: 0.3, mat: r.material, into: routed.intoMl > 0 ? routed.into : null, kg: r.removedMassKg };
@@ -1225,6 +1225,8 @@ export class GoldRushGame {
     return {
       ...base, cents: disc.cents, finds: disc.items.length, best: disc.best, massKg: r.removedMassKg, massByMat: [...r.massByMat], slices: r.slices, cells: r.cells,
       fineUg: r.fineUg, intoMl: routed.intoMl, spilledMl: routed.spilledMl, intoG: routed.intoG, spilledG: routed.spilledG, intoUg: routed.intoUg,
+      // every piece the dig took out of the ground (found now or carried in the container - 7B ledger audit)
+      digFinds: Array.from({ length: r.findCount }, (_, i) => ({ key: r.finds[i].key, cls: r.finds[i].cls, ug: r.finds[i].massUg })), intoFinds: routed.intoFinds,
       volumeMl: Math.round(r.removedVolume * 1e6), massG: [0, 1, 2, 3].reduce((a, m) => a + Math.round(r.massByMat[m] * 1000), 0),
       requested: r.requestedVolume, removed: r.removedVolume, relocated: r.relocatedVolume, processed: r.processedVolume,
       keys: disc.items.map((i) => i.key), ids: disc.items.map((i) => i.id),
