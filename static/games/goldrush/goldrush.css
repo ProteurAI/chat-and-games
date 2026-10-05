@@ -29,6 +29,9 @@ html.goldrush-active, html.goldrush-active body { overflow: hidden; overscroll-b
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
 }
 .gr-brand span:last-child { font-family: var(--font-display); letter-spacing: 0.01em; }
+/* (phase 8: the brand stays at the top however tall the wallet column gets - the material row would
+   push it down onto the touch tool chip) */
+.gr-hud-top > .gr-brand { align-self: flex-start; }
 .gr-money { font-variant-numeric: tabular-nums; color: var(--accent-text); min-width: 88px; justify-content: center; }
 .gr-hud-btn {
   pointer-events: auto; width: 38px; height: 38px; border-radius: var(--radius-full); border: none; display: inline-flex; align-items: center; justify-content: center;
@@ -120,7 +123,24 @@ button.gr-tool { border: none; font-family: inherit; cursor: default; }
   max-width: 260px; text-align: right; padding: 3px 9px; border-radius: 8px; font-size: 11.5px; line-height: 1.35; font-weight: var(--font-medium);
   background: rgba(20, 16, 12, 0.45); color: #f6ecd6; font-variant-numeric: tabular-nums;
 }
-/* the bucket you work with, the work hint while panning / sieving */
+/* where the material is (phase 8): bucket, barrow, concentrate - one quiet row of small chips under
+   the pouch; the one in your hands lights up, a full one turns gold */
+.gr-mats { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 320px; }
+.gr-mats[hidden], .gr-mat[hidden] { display: none; }
+.gr-mat {
+  display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px 0 6px; border-radius: var(--radius-full);
+  font-size: 11.5px; font-weight: var(--font-semibold); white-space: nowrap; font-variant-numeric: tabular-nums;
+  background: rgba(28, 22, 16, 0.55); color: #e3d5b8; box-shadow: inset 0 0 0 1px rgba(233, 214, 176, 0.08);
+}
+.gr-mat-ico { width: 14px; height: 14px; display: grid; place-items: center; color: #c9b089; }
+.gr-mat-ico svg { width: 14px; height: 14px; display: block; }
+.gr-mat-label { color: #cdbd9c; font-weight: var(--font-medium); }
+.gr-mat.is-active { background: rgba(64, 46, 24, 0.82); color: #fff1cf; box-shadow: inset 0 0 0 1px rgba(240, 196, 99, 0.55); }
+.gr-mat.is-active .gr-mat-ico { color: #f0c463; }
+.gr-mat.is-full .gr-mat-value { color: #f0c463; }
+/* narrow phones: icons and numbers only */
+@media (max-width: 440px) { .gr-mat-label { display: none; } .gr-mats { max-width: 230px; } }
+/* the machines near you, the work hint while panning / sieving */
 .gr-load {
   height: 26px; padding: 0 10px; font-size: 12px; font-weight: var(--font-semibold); white-space: nowrap;
   background: rgba(28, 22, 16, 0.6); color: #e9dcc0; box-shadow: none; font-variant-numeric: tabular-nums;

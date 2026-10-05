@@ -6,6 +6,9 @@
 // toast for a nugget, short hints ("Zu weit entfernt", rate-limited), a
 // quiet objective line for the very start (until the first tool is
 // bought) and the interaction prompt of a station ("[E] Gold verkaufen").
+// Phase 8: under the pouch a compact material row - where your dirt is right
+// now: bucket, wheelbarrow and the concentrate waiting to be panned, each
+// only once you own what holds it; the one in your hands is highlighted.
 
 import { formatEuro } from "./goldrush-economy.js";
 import { FIND } from "./goldrush-resources.js";
@@ -13,6 +16,13 @@ import { FIND } from "./goldrush-resources.js";
 const FLOATS = 4;
 const MERGE_MS = 450;
 const NUGGET_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 14.5c-.9-2.6.6-5.6 3.3-6.7 1.4-.6 2.3-1.9 4-2.2 2.6-.4 5.4 1.2 6.1 3.8.6 2.1-.2 3.4.4 5.1.8 2.4-1 4.9-3.6 5.2-1.8.2-2.9-.6-4.6-.3-2.3.4-4.8-1.3-5.6-4.9z" fill="currentColor"/><path d="M9.3 9.6c.9-.6 1.9-.7 2.7-.4M15.8 8.2c.6.4 1 1 1.1 1.7" stroke="#fff6d8" stroke-width="1.2" stroke-linecap="round" fill="none" opacity=".75"/></svg>`;
+// the material row (phase 8): bucket, wheelbarrow, concentrate (a pan with dark sand)
+const MAT_ICONS = {
+  bucket: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8.5h14l-1.6 10.6c-.2 1-1 1.6-2 1.6H8.6c-1 0-1.8-.7-2-1.6L5 8.5z" fill="currentColor"/><path d="M5.5 8.5C6 4.8 8.7 3.3 12 3.3s6 1.5 6.5 5.2" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>`,
+  barrow: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 9h12.8l-1.8 5.2c-.3.8-1 1.3-1.9 1.3H6.4c-.8 0-1.5-.5-1.8-1.3L3.5 9z" fill="currentColor"/><circle cx="17.6" cy="17.4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M14.8 15.2l2.1 1.4M16.3 9l3.9-3.2M8 15.6l-1.1 4M11.5 15.6l.6 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+  conc: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.8 10.5h18.4c-.6 4.2-4.4 7.3-9.2 7.3s-8.6-3.1-9.2-7.3z" fill="currentColor"/><path d="M8.2 13.3c1.4.9 4.6 1 6.7.1" stroke="#2b2622" stroke-width="2.2" stroke-linecap="round" fill="none"/><circle cx="10.4" cy="13.2" r=".9" fill="#f3cf6a"/><circle cx="13.3" cy="13.6" r=".7" fill="#f3cf6a"/></svg>`,
+};
+const MAT_LABELS = { bucket: "Eimer", barrow: "Karre", conc: "Konzentrat" };
 const POUCH_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4.5h6l-1.4 2.6c3.4 1.3 5.9 4.6 5.9 8.2 0 3.3-2.8 4.7-7.5 4.7S4.5 18.6 4.5 15.3c0-3.6 2.5-6.9 5.9-8.2L9 4.5z" fill="currentColor"/><path d="M9.6 7.3h4.8" stroke="#fff3d0" stroke-width="1.3" stroke-linecap="round"/></svg>`;
 
 // a value that counts towards its target (no timers of its own)
@@ -78,7 +88,23 @@ export class GoldRushHud {
     stack.className = "gr-wallet";
     moneyEl.parentElement.insertBefore(stack, moneyEl);
     stack.append(moneyEl, pouch);
-    // the bucket you work with (phase 5): "Eimer 6,2 / 10 l" while it is near / in your hand
+    // where the material is (phase 8): one chip per holder, built once - only their texts and
+    // visibility change (the page keeps its nodes however often they update)
+    const mats = (this.matsEl = document.createElement("div"));
+    mats.className = "gr-mats";
+    mats.hidden = true;
+    this.matChips = {};
+    for (const id of ["bucket", "barrow", "conc"]) {
+      const c = document.createElement("div");
+      c.className = "gr-mat";
+      c.dataset.mat = id;
+      c.hidden = true;
+      c.innerHTML = `<span class="gr-mat-ico">${MAT_ICONS[id]}</span><span class="gr-mat-label">${MAT_LABELS[id]}</span><span class="gr-mat-value"></span>`;
+      mats.appendChild(c);
+      this.matChips[id] = { el: c, value: c.querySelector(".gr-mat-value"), sig: "" };
+    }
+    stack.appendChild(mats);
+    // the machines near you (phase 6/7): hopper, riffles, the store and the feeder
     const load = (this.loadEl = document.createElement("div"));
     load.className = "gr-chip gr-load";
     load.hidden = true;
@@ -148,6 +174,28 @@ export class GoldRushHud {
     this._load = t;
     this.loadEl.textContent = t;
     this.loadEl.hidden = !t;
+  }
+
+  /**
+   * The material row: m = { bucket, barrow, conc } each null (not shown) or { text, active, full, aria };
+   * only what changed is written.
+   */
+  materials(m) {
+    let any = false;
+    for (const id of ["bucket", "barrow", "conc"]) {
+      const c = this.matChips[id], v = m && m[id];
+      const sig = v ? `${v.text}|${v.active ? 1 : 0}|${v.full ? 1 : 0}` : "";
+      if (v) any = true;
+      if (sig === c.sig) continue;
+      c.sig = sig;
+      c.el.hidden = !v;
+      if (!v) continue;
+      c.value.textContent = v.text;
+      c.el.classList.toggle("is-active", !!v.active);
+      c.el.classList.toggle("is-full", !!v.full);
+      c.el.setAttribute("aria-label", v.aria || `${MAT_LABELS[id]} ${v.text}`);
+    }
+    if (this.matsEl.hidden === any) this.matsEl.hidden = !any;
   }
 
   work(text) {

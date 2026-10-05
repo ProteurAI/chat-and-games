@@ -974,19 +974,12 @@ export class GoldRushGame {
       this.hud.prompt(s && s.action ? s.action : null, this.touch || (s && s.disabled) ? "" : "E");
       this.ui.onStation && this.ui.onStation(s);
     }
-    // the load chip: the bucket you carry / the barrow you push, else what stands near you
+    // where the material is (phase 8): bucket, barrow and the concentrate ready to pan - always in view
+    // once you own them, the one in your hands highlighted; the chip below: the machines near you
     const b = pr.bucket, w = pr.barrow, sl = pr.sluice, P = this.player;
-    const dB = b && !b.carried ? Math.hypot(b.x - P.x, b.z - P.z) : Infinity;
-    const wc = w && !w.pushing ? w.trayCenter(this._wc || (this._wc = {})) : null, dW = wc ? Math.hypot(wc.x - P.x, wc.z - P.z) : Infinity;
     const dS = sl ? Math.hypot(sl.root.position.x + 1.2 - P.x, sl.root.position.z - P.z) : Infinity;
-    if (b && (b.carried || (dB < 3.2 && dB <= dW))) {
-      const l = (pr.bucketMl / 1000).toFixed(1).replace(".", ","), cap = Math.round(pr.capacityMl / 1000);
-      this.hud.load(`Eimer ${l} / ${cap} l${b.carried ? ` · ${pr.bucketKg.toFixed(1).replace(".", ",")} kg` : ""}`);
-      this.hud.loadEl.classList.toggle("is-full", pr.bucketMl >= pr.capacityMl - 50);
-    } else if (w && (w.pushing || dW < 3.6)) {
-      this.hud.load(`Schubkarre ${Math.round(w.volumeMl / 1000)} / ${Math.round(w.capacityMl / 1000)} l${w.pushing ? ` · ${Math.round(w.massKg)} kg` : ""}`);
-      this.hud.loadEl.classList.toggle("is-full", w.full);
-    } else if (pr.bulk && pr.bulk.installed && Math.hypot(BULK_AT.x - P.x, BULK_AT.z - P.z) < 4.6) {
+    this.hud.materials(this._materialRow(pr));
+    if (pr.bulk && pr.bulk.installed && Math.hypot(BULK_AT.x - P.x, BULK_AT.z - P.z) < 4.6) {
       // the automation at a glance: store, feeder, the sluice's hopper, the riffles
       const bk = pr.bulk, fd = pr.feeder && pr.feeder.installed ? pr.feeder : null;
       const parts = [`Vorrat ${Math.round(bk.volumeMl / 1000)} / ${Math.round(bk.capacityMl / 1000)} l`];
