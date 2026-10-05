@@ -193,8 +193,9 @@ export class ProcessingSystem {
     this.group.add(this.restPan);
     // phase 7A: the wooden wash bowl - part of the wash place from the start, on the trough's rim
     this.restBowl = M.bowl();
-    this.restBowl.position.set(WASH.trough.x + 0.13, 0.43, WASH.trough.z + 0.32);
-    this.restBowl.rotation.set(0.05, 0.6, -0.1);
+    // (7B: set down on the near rim, tipped towards where you stand - its inside in view)
+    this.restBowl.position.set(WASH.trough.x + 0.24, 0.47, WASH.trough.z + 0.22);
+    this.restBowl.rotation.set(0.04, 0, -0.36);
     this.group.add(this.restBowl);
     // the classifier with its tub
     this.cls = M.classifier();
@@ -443,6 +444,16 @@ export class ProcessingSystem {
     return null;
   }
 
+  // phase 7B: what to do with a barrow load rather than panning it straight (or null): the
+  // sluice's hopper, the bulk hopper, the classifier - whichever is there and has room
+  barrowBetter() {
+    const sl = this.sluice, bk = this.bulk;
+    if (bk && bk.installed && bk.buffer.room > 200) return "in den Vorratstrichter kippen";
+    if (sl && sl.installed && sl.hopper.batch.volumeMl < sl.capacityMl - 200) return "in den Trichter der Waschrinne kippen";
+    if (this.owned.has("classifier") && this.sieve.batch.volumeMl <= 0 && this.tub.volumeMl < TUB_ML - 500) return "erst sieben";
+    return null;
+  }
+
   barrowAtWash() {
     const w = this.barrow;
     if (!w || w.pushing) return false;
@@ -589,10 +600,16 @@ export class ProcessingSystem {
     if (near(WASH.panSpot, USE_R) && facing(WASH.trough.x, WASH.panSpot.z) > 0.3) {
       const T = this.washName();
       if (this.pan.batch.volumeMl > 0 || this.pan.batch.goldUg > 0) return { id: "pan-work", action: "Weiter waschen", short: "WASCHEN" };
-      if (sl && (sl.tray.batch.volumeMl > 0 || sl.tray.batch.goldUg > 0)) return { id: "pan-fill", action: `${T} mit Schwerkonzentrat füllen`, short: "WASCHEN" };
-      if (this.tub.volumeMl > 0) return { id: "pan-fill", action: `${T} mit Konzentrat füllen`, short: "WASCHEN" };
+      if (sl && (sl.tray.batch.volumeMl > 0 || sl.tray.batch.goldUg > 0)) return { id: "pan-fill", action: `Mit ${T} waschen – Schwerkonzentrat aus der Rinne`, short: "WASCHEN" };
+      if (this.tub.volumeMl > 0) return { id: "pan-fill", action: `Mit ${T} waschen – Konzentrat aus der Wanne`, short: "WASCHEN" };
       const src = this._washSource();
-      if (src) return { id: "pan-fill", action: src.kind === "wheelbarrow" ? `${T} aus der Schubkarre füllen` : `${T} aus dem Eimer füllen`, short: "WASCHEN" };
+      // phase 7B: a barrow load is best sieved / sluiced first - straight into the pan stays possible
+      // (a secondary choice, never locked), the prompt names the better way
+      if (src && src.kind === "wheelbarrow") {
+        const better = this.barrowBetter();
+        return { id: "pan-fill", action: better ? `Mit ${T} direkt aus der Schubkarre waschen (besser: ${better})` : `Mit ${T} waschen – aus der Schubkarre`, short: "WASCHEN", secondary: !!better };
+      }
+      if (src) return { id: "pan-fill", action: `Mit ${T} waschen`, short: "WASCHEN" };
       if (!this.bucket) return { id: "pan-none", action: "Waschschale – mit einem Eimer kannst du hier Erde waschen", short: "", disabled: true };
       if (!(b && b.batch.volumeMl > 0)) return { id: "pan-none", action: "Erst Erde im Eimer herbringen", short: "", disabled: true };
       return { id: "pan-none", action: "Den Eimer hier am Waschplatz abstellen", short: "", disabled: true };

@@ -420,7 +420,15 @@ export class GoldRushGame {
     const r = this.processing.act(s.id, this.player);
     if (!r.ok) return false;
     if (r.kind === "pick") this.audio.play("swap", { dist: 0.3 });
-    else if (r.kind === "drop") this.audio.play(s.id === "barrow-park" ? "shopOpen" : "bucket", { dist: 0.5, strength: 0.8 });
+    else if (r.kind === "drop") {
+      this.audio.play(s.id === "barrow-park" ? "shopOpen" : "bucket", { dist: 0.5, strength: 0.8 });
+      // phase 7B: the first full bucket at the wash place, before any wash - where to wash it (once)
+      const pr = this.processing;
+      if (s.id === "bucket-wash" && pr.bucketMl > 0 && !pr.owned.has("pan") && !(pr.ledger.bowlLoads > 0) && !this._washTip) {
+        this._washTip = true;
+        this.hud.tip("wash-first", this.touch ? "Am Trog liegt die Waschschale – WASCHEN tippen." : "Am Trog liegt die Waschschale – dort [E]: Mit Waschschale waschen.", 6);
+      }
+    }
     else if (r.kind === "barrow") { this.audio.play("swap", { dist: 0.3 }); this.player.pitch = Math.min(this.player.pitch, -0.28); this.hud.tip("barrow", this.touch ? "Mit dem Stick schieben · ABSTELLEN tippen zum Abstellen" : "W schieben · [E] abstellen · am Trichter: [E] auskippen", 30); }
     else if (r.kind === "dump") this.audio.play("wheelbarrow_dump", { dist: 1.2 });
     else if (r.kind === "feed") { this.audio.play("sluice_feed", { dist: 0.8 }); this._fedEffect(s.id); }

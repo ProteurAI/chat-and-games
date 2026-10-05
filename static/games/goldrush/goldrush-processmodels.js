@@ -174,7 +174,7 @@ export class ProcessModels {
     this.screenMat = mat(new THREE.MeshStandardMaterial({ map: this.screenMap, alphaTest: 0.45, transparent: false, side: THREE.DoubleSide, roughness: 0.4, metalness: 0.6 }));
     this.pebbleMat = mat(new THREE.MeshStandardMaterial({ color: 0x9b958c, roughness: 0.85, flatShading: true }));
     // the wash bowl: turned wood, darkened by years of muddy water
-    this.bowlWood = mat(new THREE.MeshStandardMaterial({ map: woodTex || null, color: 0x7a5434, roughness: 0.82, side: THREE.DoubleSide }));
+    this.bowlWood = mat(new THREE.MeshStandardMaterial({ map: woodTex || null, color: 0x9c7048, roughness: 0.8, side: THREE.DoubleSide }));
 
     // ---- shared geometries
     // bucket: wall with a rolled rim and an inside, two pressed rings, the bail

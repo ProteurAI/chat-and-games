@@ -1055,7 +1055,7 @@ class GoldRushShell {
         return true;
       },
       // what [E] would do right here, now (without waiting for a frame: tests pose the player and act at once)
-      stationNow: () => { g._stationTick(0); return g.station ? { id: g.station.id, kind: g.station.kind, action: g.station.action, short: g.station.short || "" } : null; },
+      stationNow: () => { g._stationTick(0); return g.station ? { id: g.station.id, kind: g.station.kind, action: g.station.action, short: g.station.short || "", secondary: !!g.station.secondary } : null; },
       workAction: () => { g._workAction(); return g.processing.work; },
       // phase-3 polish probes: this stroke's hand variation, the tool's roll, the boulders' crack seeds
       handVar: () => ({ side: g.hands._activeSide, v: g.hands._var ? { ...g.hands._var } : null, cycle: g.tools.cycles }),
