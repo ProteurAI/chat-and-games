@@ -15,7 +15,7 @@ const DEV_ERROR = "Entwickleraktion konnte nicht ausgeführt werden.";
 const needBucket = (ctx) => (ctx.game.processing.bucket ? true : "Erst einen Eimer besitzen.");
 
 // a surface point of streak i where it shows best, and a spot 1,4 m in front of it facing it
-function streakSpot(g, i) {
+export function streakSpot(g, i) {
   const f = g.terrain.field, T = g.terrain, s = (f.streaks || [])[i];
   if (!s) return null;
   let best = null;
@@ -34,7 +34,7 @@ function streakSpot(g, i) {
   return { ...best, px, pz, yaw: Math.atan2(-(best.x - px), -(best.z - pz)), pitch: Math.atan2(best.h - eye, 1.4), depth: Math.max(0, s.y + s.th - best.h) };
 }
 
-function toStreak(g, i) {
+export function toStreak(g, i) {
   const sp = streakSpot(g, i);
   if (!sp) return fail("Diese Mine hat keine mineralisierte Zone.");
   const r = g.teleport({ x: sp.px, z: sp.pz, yaw: sp.yaw, pitch: sp.pitch });
@@ -45,7 +45,7 @@ function toStreak(g, i) {
 }
 
 // the nearest face of this material (scanning the pile around you)
-function materialSpot(g, mat) {
+export function materialSpot(g, mat) {
   const f = g.terrain.field, T = g.terrain, p = g.player;
   let best = null;
   for (let r = 1.5; r <= 14 && !best; r += 0.5) {

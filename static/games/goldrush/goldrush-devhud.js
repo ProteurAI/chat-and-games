@@ -68,6 +68,7 @@ export class DevHud {
       } else out.push("TERRAIN  Fadenkreuz auf keinem Boden");
     }
     if (this.on.material) out.push(...this._material(g));
+    if (this.on.ledger) out.push(...this._ledger(g));
     if (this.on.interaction) {
       const p = g.player, pi = g.processing.interaction(p), st = g.station;
       out.push(`INTERACTION  [E] ${st ? `${st.id} – ${st.action || ""}` : pi ? `${pi.id} – ${pi.action}` : "–"} · Ziel ${g.aimState}${g.target ? ` ${g.target.distance.toFixed(2)} m` : ""}`,
@@ -87,6 +88,24 @@ export class DevHud {
     const L = pr.ledger;
     return [`MATERIAL${rows.length ? "" : "  (kein Behälter in der Nähe)"}`, ...rows,
       `  Bilanz: rein ${n0(L.inUg)} µg = Behälter ${n0(pr.goldInContainers())} + gewonnen ${n0(L.recoveredUg)} + Abraum ${n0(L.tailUg)}${L.devInUg ? ` (davon Testmaterial ${n0(L.devInUg)} µg)` : ""}`];
+  }
+
+  // phase 7B: where the gold went - what a dig put into containers (pieces, fine gold), what is
+  // in them now, what digging brought straight into the pouch, what processing won, the tailings;
+  // and the containers' balance to the microgram
+  _ledger(g) {
+    const pr = g.processing, L = pr.ledger, st = g.economy.stats;
+    const batches = [pr.bucket && pr.bucket.batch, pr.barrow && pr.barrow.batch, pr.sieve.batch, pr.tub, pr.pan.batch].filter(Boolean);
+    const pieces = batches.reduce((n, b) => n + b.finds.length, 0);
+    const held = pr.goldInContainers(), diff = L.inUg - held - L.recoveredUg - L.tailUg;
+    let pendUg = 0;
+    for (const it of g.economy.pending.values()) pendUg += it.massUg;
+    return [`GOLD-LEDGER  Bilanz Behälter ${diff === 0 ? "OK" : `ABWEICHUNG ${n0(diff)} µg`}`,
+      `  in Behälter gegraben  ${n0(L.inFinds)} Stück(e) · Feingold ${n0(L.inFineUg)} µg · Gold gesamt ${n0(L.inUg)} µg · ${l1(L.inMl)} l${L.devInUg ? ` (Testmaterial ${n0(L.devInUg)} µg)` : ""}`,
+      `  jetzt in Behältern    ${n0(held)} µg · ${pieces} Stück(e)`,
+      `  direkt geborgen       ${n0(st.goldFoundUg - L.recoveredUg)} µg im Beutel${pendUg ? ` + ${n0(pendUg)} µg liegen noch` : ""} · Feingold dabei verloren ${n0(L.spoilFineUg)} µg`,
+      `  Processing gewonnen   ${n0(L.recoveredUg)} µg (Feingold ${n0(L.recoveredFineUg)} µg · ${n0(st.washedPieces)} Stück(e))`,
+      `  Abraum / Tailings     ${n0(L.tailUg)} µg · ${l1(L.tailMl)} l`];
   }
 
   dispose() {
