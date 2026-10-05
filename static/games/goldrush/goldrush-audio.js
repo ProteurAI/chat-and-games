@@ -38,6 +38,8 @@ const LEVEL = {
   material_slide: 18, bucket_fill: 15, wheelbarrow_dump: 9, sluice_water: 13, sluice_feed: 15, sluice_cleanout: 14,
   // phase 7: the feeder's vibrating tray, the bulk hopper's slide gate
   feeder_run: 10, gate_open: 12,
+  // phase 8: the barrow in your hands, hard rock that answers the pick
+  barrow_take: 14, barrow_roll: 12, barrow_bump: 13, stone_scrape: 12, rock_chip: 11, rock_fracture: 12,
 };
 
 export class GoldRushAudio {
@@ -130,6 +132,7 @@ export class GoldRushAudio {
   // kind: hand_dirt | hand_gravel | shovel_dirt | shovel_gravel | pickaxe_compact | pickaxe_stone | rock_break
   //       | material_slide | bucket_fill | wheelbarrow_dump | sluice_water | sluice_feed | sluice_cleanout
   //       | feeder_run | gate_open
+  //       | barrow_take | barrow_roll | barrow_bump | stone_scrape | rock_chip | rock_fracture
   //       | dirt | compact | gravel | stone | air | dust | flake | tiny | nugget | pickup
   //       | shovel | dump | pick | pickStone | crack | break | swing | swap
   //       | scale | sell | shopOpen | purchase | insufficient
@@ -324,6 +327,39 @@ export class GoldRushAudio {
         this._tone(out, t + 0.02, rv(310, 360), 0.16, 0.06 * s, { to: 250 });
         this._noise(out, t + 0.2, rv(0.6, 0.8), { type: "lowpass", f: rv(700, 900), q: 0.7, gain: 0.14 * s, attack: 0.08 });
         this._grains(out, t + 0.25, 12, 0.6, 900, 2600, 2, 0.03 * s, 0.07 * s);
+        break;
+      // ---- phase 8: the barrow, hard rock
+      case "barrow_take":                              // grips taken, the legs leave the ground: wood in the hands, a steel knock
+        this._noise(out, t, 0.05, { type: "lowpass", f: rv(600, 800), q: 0.8, gain: 0.12 * s, attack: 0.004 });
+        this._tone(out, t + 0.12, rv(150, 175), 0.07, 0.1 * s, { to: 115 });
+        this._ting(out, t + 0.13, rv(520, 600), 0.03 * s, 0.14, [1, 2.4, 4.1]);
+        break;
+      case "barrow_roll":                              // the tyre on the ground, the frame creaking now and then
+        this._noise(out, t, rv(0.5, 0.7), { type: "lowpass", f: rv(240, 340), q: 0.6, gain: 0.12 * s, attack: 0.12 });
+        this._grains(out, t + 0.05, 4 + Math.floor(Math.random() * 4), 0.5, 900, 2000, 2, 0.015 * s, 0.035 * s);
+        if (Math.random() < 0.45) this._tone(out, t + rv(0.05, 0.3), rv(540, 700), rv(0.08, 0.14), 0.022 * s, { to: rv(480, 560), attack: 0.03 });
+        break;
+      case "barrow_bump":                              // the wheel against something: a dull knock, the load shifting
+        this._tone(out, t, rv(80, 100), 0.1, 0.2 * s, { to: 55 });
+        this._noise(out, t, 0.08, { type: "lowpass", f: rv(450, 650), q: 0.8, gain: 0.16 * s, attack: 0.002 });
+        this._grains(out, t + 0.05, 5, 0.12, 900, 2000, 2, 0.02 * s, 0.05 * s);
+        break;
+      case "stone_scrape":                             // a shovel blade skidding on solid rock: steel grinding, no bite
+        this._noise(out, t, rv(0.12, 0.16), { f: rv(2400, 3200), q: 2.2, gain: 0.09 * s, attack: 0.004 });
+        this._noise(out, t, 0.05, { type: "lowpass", f: rv(500, 700), q: 0.9, gain: 0.14 * s, attack: 0.001 });
+        this._ting(out, t, rv(900, 1100), 0.04 * s, 0.12, [1, 2.6, 4.3]);
+        break;
+      case "rock_chip":                                // the pick bites into rock: a clank, a crack running, chips
+        this._noise(out, t, 0.025, { type: "highpass", f: rv(1900, 2500), q: 0.7, gain: 0.18 * s, attack: 0.0008 });
+        this._tone(out, t, rv(150, 180), 0.07, 0.17 * s, { to: 110 });
+        this._noise(out, t + 0.02, 0.07, { type: "lowpass", f: rv(700, 950), q: 1, gain: 0.14 * s, attack: 0.002 });
+        this._grains(out, t + 0.02, 6, 0.1, 2600, 5600, 4, 0.03 * s, 0.07 * s);
+        break;
+      case "rock_fracture":                            // a rock patch gives way: a crack, knocks, rubble settling
+        this._noise(out, t, 0.03, { type: "highpass", f: rv(2200, 2800), q: 0.8, gain: 0.16 * s, attack: 0.0008 });
+        for (let i = 0; i < 3; i++) this._tone(out, t + 0.03 + i * rv(0.04, 0.07), rv(85, 135), 0.1, 0.14 * s, { to: 58 });
+        this._noise(out, t + 0.02, 0.28, { type: "lowpass", f: rv(550, 800), q: 0.7, gain: 0.18 * s, attack: 0.004 });
+        this._grains(out, t + 0.06, 12, 0.3, 1500, 4000, 3, 0.03 * s, 0.08 * s);
         break;
       default: break;
     }

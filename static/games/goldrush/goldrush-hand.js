@@ -13,6 +13,12 @@
 //   - shovel / pickaxe: the tool follows keyframes per phase, the gloves
 //     sit ON its grips (fingers closed round the handle) and the forearms
 //     follow them
+// The arms (phase 8): an upper arm and a forearm of fixed length each, bent
+// at the elbow by a two-bone IK from the shoulder - never stretched to reach
+// something; out of reach, the hand keeps its grip and the arm points back
+// towards the shoulder (the rest of it is out of view).
+// Pushing the wheelbarrow, the gloves sit on its WORLD grips (seen through the
+// world camera), the shoulders on the body that faces the barrow.
 // A found nugget is held up in the right hand for a moment (inspect); the
 // controller is blocked meanwhile. Switching tools lowers the old one out
 // of view and raises the new one.
@@ -79,6 +85,17 @@ export const GRIPS = {
   ],
 };
 const HANDLE_IN_GLOVE = [0, -0.03, -0.072];      // where a held handle runs through the closed glove
+
+// the arm (m): shoulder -> elbow, elbow -> wrist - fixed, whatever the hand holds
+export const ARM = { upper: 0.31, fore: 0.28 };
+// where the shoulders are while the hands work in view space (tools, bucket, pan): just below
+// and behind the camera, out to the sides (the right one; mirrored for the left)
+const SHOULDER = [0.25, -0.42, 0.14];
+// pushing the barrow: the shoulders on the body (world, from the eyes), the body facing the barrow
+const BODY_SHOULDER = { side: 0.19, down: 0.19, back: 0.06 };
+// a glove on a barrow grip, as if it were the right hand (the handle runs fore-aft through the
+// fist at an angle: thumb along it, the wrist coming from behind)
+export const BARROW_GRIP = { side: 1, axis: "x", roll: -0.35, flip: 1, yaw: 0.62 };
 
 const ease = (t) => t * t * (3 - 2 * t);
 // a stable pseudo-random number per stroke (variation that never touches timing or aim)
@@ -174,14 +191,23 @@ class Glove {
     this.held.visible = false;
     this.held.position.set(0, -0.036, -0.055);
     root.add(this.held);
-    // the forearm: stretched from the wrist to an elbow below the screen
-    // edge every frame, so the arm always comes into view from below
-    this.arm = new THREE.Mesh(res.armGeo, res.armMat);
+    // the arm: forearm, elbow, upper arm - fixed lengths, posed by IK every frame (_arm)
+    this.arm = new THREE.Group();
+    this.fore = new THREE.Mesh(res.foreGeo, res.armMat);
+    this.elbow = new THREE.Mesh(res.elbowGeo, res.armMat);
+    this.upper = new THREE.Mesh(res.upperGeo, res.upperMat);
+    this.arm.add(this.fore, this.elbow, this.upper);
     this.pose = clonePose(POSE.rest);
     this._a = new THREE.Vector3();
     this._b = new THREE.Vector3();
+    this._e = new THREE.Vector3();
+    this._u = new THREE.Vector3();
+    this._d = new THREE.Vector3();
+    this._p = new THREE.Vector3();
+    this._pole = new THREE.Vector3();
     this._up = new THREE.Vector3(0, 1, 0);
     this._m = new THREE.Matrix4();
+    this.info = { fore: ARM.fore, upper: ARM.upper, reach: true };
   }
 
   _curl(c, thumb = 0.6) {
@@ -216,21 +242,48 @@ class Glove {
     this._arm(aspectK);
   }
 
-  // forearm from just inside the cuff to the elbow anchor
-  _arm(aspectK) {
-    const s = this.side;
-    const a = this._a.set(0, -0.004, 0.04).applyMatrix4(this.root.matrix);
-    const b = this._b.set(ELBOW[0] * s * aspectK, ELBOW[1], ELBOW[2]);
-    const arm = this.arm;
-    arm.position.copy(a).add(b).multiplyScalar(0.5);
-    const len = a.distanceTo(b);
-    arm.quaternion.setFromUnitVectors(this._up, b.sub(a).normalize());
-    arm.scale.set(1, len, 1);
+  /**
+   * The arm from the wrist (just inside the cuff) to the shoulder: two-bone IK
+   * with fixed lengths. shoulder / pole: view space (default: the view-space
+   * shoulder of this side, the elbow out and down). Out of reach the wrist
+   * keeps its place and the arm points back towards the shoulder - nothing is
+   * ever stretched.
+   */
+  _arm(aspectK, shoulder = null, pole = null) {
+    const s = this.side, a = ARM.upper, b = ARM.fore;
+    const W = this._a.set(0, -0.004, 0.035).applyMatrix4(this.root.matrix);
+    const S = shoulder ? this._b.copy(shoulder) : this._b.set(SHOULDER[0] * s * aspectK, SHOULDER[1], SHOULDER[2]);
+    const dir = this._d.subVectors(S, W);
+    const d = Math.max(1e-6, dir.length());
+    dir.multiplyScalar(1 / d);
+    const E = this._e, U = this._u;
+    let reach = true;
+    if (d >= a + b - 1e-6) {
+      reach = d <= a + b + 1e-3;
+      E.copy(W).addScaledVector(dir, b);
+      U.copy(E).addScaledVector(dir, a);
+    } else {
+      // the elbow: the law of cosines at the wrist, bent towards the pole (out and down)
+      const dd = Math.max(d, Math.abs(a - b) + 1e-4);
+      const cw = Math.max(-1, Math.min(1, (b * b + dd * dd - a * a) / (2 * b * dd))), sw = Math.sqrt(1 - cw * cw);
+      const P = pole ? this._pole.copy(pole) : this._pole.set(s * 0.85, -0.6, 0.25);
+      P.addScaledVector(dir, -P.dot(dir));
+      if (P.lengthSq() < 1e-8) P.set(s, 0, 0).addScaledVector(dir, -dir.x * s);
+      P.normalize();
+      E.copy(W).addScaledVector(dir, cw * b).addScaledVector(P, sw * b);
+      U.subVectors(S, E).normalize().multiplyScalar(a).add(E);
+    }
+    // forearm W -> E, upper arm E -> U (the geometries are built at their real lengths)
+    this.fore.position.addVectors(W, E).multiplyScalar(0.5);
+    this.fore.quaternion.setFromUnitVectors(this._up, this._p.subVectors(E, W).normalize());
+    this.upper.position.addVectors(E, U).multiplyScalar(0.5);
+    this.upper.quaternion.setFromUnitVectors(this._up, this._p.subVectors(U, E).normalize());
+    this.elbow.position.copy(E);
+    this.info.fore = W.distanceTo(E);
+    this.info.upper = E.distanceTo(U);
+    this.info.reach = reach;
   }
 }
-
-// where the forearms come from (view space, below the bottom edge of the screen)
-const ELBOW = [0.27, -0.56, 0.06];
 
 export class FirstPersonHands {
   constructor(THREE, { envMap } = {}) {
@@ -261,8 +314,14 @@ export class FirstPersonHands {
     this.bodyGeo = mergeParts(THREE, [
       { g: palm, color: leather }, { g: knuckles, color: dark }, { g: back, color: 0xcf9860 }, { g: cuff, color: canvas }, { g: rim, color: 0x6e4a2c },
     ]);
-    this.armGeo = new THREE.CylinderGeometry(0.034, 0.045, 1, 16, 1, true);
-    this.armMat = new THREE.MeshStandardMaterial({ color: 0x7a6a55, roughness: 0.95, metalness: 0 });
+    // the arms at their real lengths (never scaled): a canvas work sleeve, a little darker above the elbow
+    this.foreGeo = new THREE.CylinderGeometry(0.04, 0.033, ARM.fore, 16, 3, true);
+    this.upperGeo = new THREE.CylinderGeometry(0.047, 0.042, ARM.upper, 16, 3, true);
+    this.elbowGeo = new THREE.SphereGeometry(0.043, 14, 10);
+    // (the sky light from the side the sun does not reach: a sleeve in shade keeps its colour, never black)
+    // (phase 8 review: a darker, warmer work-jacket canvas - the lighter one read as big pale tubes)
+    this.armMat = new THREE.MeshStandardMaterial({ color: 0x6a5642, roughness: 0.95, metalness: 0, envMap: envMap || null, envMapIntensity: 0.55 });
+    this.upperMat = new THREE.MeshStandardMaterial({ color: 0x5e4c3b, roughness: 0.95, metalness: 0, envMap: envMap || null, envMapIntensity: 0.55 });
     this.capsule = new THREE.CapsuleGeometry(0.01, 0.03, 4, 10);
     this.capsule.rotateX(Math.PI / 2);
     this.bodyMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86, metalness: 0 });
@@ -270,7 +329,8 @@ export class FirstPersonHands {
     this.baseGlove = this.gloveMat.color.clone();
     this.dirtColor = new THREE.Color(0x6e4c30);
     this.nuggetPlaceholder = new THREE.SphereGeometry(1, 8, 6);
-    const res = { bodyGeo: this.bodyGeo, bodyMat: this.bodyMat, gloveMat: this.gloveMat, capsule: this.capsule, nuggetPlaceholder: this.nuggetPlaceholder, armGeo: this.armGeo, armMat: this.armMat };
+    const res = { bodyGeo: this.bodyGeo, bodyMat: this.bodyMat, gloveMat: this.gloveMat, capsule: this.capsule, nuggetPlaceholder: this.nuggetPlaceholder,
+      foreGeo: this.foreGeo, upperGeo: this.upperGeo, elbowGeo: this.elbowGeo, armMat: this.armMat, upperMat: this.upperMat };
     this.right = new Glove(THREE, 1, res);
     this.left = new Glove(THREE, -1, res);
     this.scene.add(this.right.root, this.left.root, this.right.arm, this.left.arm);
@@ -322,6 +382,13 @@ export class FirstPersonHands {
     this.held = null;                               // "bucket" | "pan" | null
     this.heldGroup = null;
     this.heldGrips = null;
+    this.barrow = null;                             // the wheelbarrow you hold (phase 8: world grips)
+    this._matchCam = null;                          // ... drawn through the world camera's projection then
+    this._V = new THREE.Matrix4();
+    this._F = new THREE.Matrix4();
+    this._s3 = new THREE.Vector3();
+    this._pl = new THREE.Vector3();
+    this._gp = new THREE.Vector3();
     // muddy water thrown over the pan's rim (a small pool, view space)
     this.drops = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ color: 0x6b5640, roughness: 0.4, transparent: true, opacity: 0.85 }), 24);
     this.drops.count = 0;
@@ -340,6 +407,9 @@ export class FirstPersonHands {
     if (this.heldGroup && this.heldGroup.parent !== this.scene) this.scene.add(this.heldGroup);
     if (!kind) { this.drops.count = 0; for (const d of this.dropState) d.life = 0; }
   }
+
+  // the wheelbarrow in your hands (null: let go) - see _updateBarrow
+  holdBarrow(bw) { this.barrow = bw || null; if (!bw) this._matchCam = null; }
 
   // a drop of muddy water leaves the pan over its rim
   splash(group) {
@@ -471,7 +541,9 @@ export class FirstPersonHands {
     const bobX = rm ? 0 : Math.sin(bob) * 0.008 * walk, bobY = rm ? 0 : -Math.abs(Math.cos(bob)) * 0.01 * walk;
     const extra = { x: this.sway.x + bobX, y: this.sway.y + bobY + breathe - sw * 0.42, rx: -sw * 0.5 };
     if (!this.held) this.toolRoot.visible = this.tool !== "hand";
-    if (this.held && this.heldGroup) this._updateHeld(dt, extra);
+    this._matchCam = null;
+    if (this.barrow && this.barrow.handsOn > 0) this._updateBarrow(dt, extra, camera);
+    else if (this.held && this.heldGroup) this._updateHeld(dt, extra);
     else if (this.tool === "hand") this._updateHands(dt, view, extra);
     else this._updateTool(dt, view, extra);
     this._drops(dt);
@@ -660,13 +732,46 @@ export class FirstPersonHands {
     }
   }
 
+  // ---- the wheelbarrow (phase 8): the gloves on its world grips as the world camera sees them,
+  // the arms from the shoulders of the body that faces it; taking hold / letting go blends the
+  // gloves between their rest pose and the grips (bw.handsOn)
+  _updateBarrow(dt, extra, camera) {
+    const bw = this.barrow, k = Math.max(0, Math.min(1, bw.handsOn));
+    this.toolRoot.visible = false;
+    if (this.heldGroup) this.heldGroup.visible = false;
+    camera.updateMatrixWorld();
+    const V = this._V.copy(camera.matrixWorldInverse), F = this._F.multiplyMatrices(V, bw.group.matrixWorld);
+    const yaw = bw.yaw, rx = Math.cos(yaw), rz = -Math.sin(yaw), fx = -Math.sin(yaw), fz = -Math.cos(yaw), cp = camera.position, B = BODY_SHOULDER;
+    const gl = bw.gripLocal();
+    for (const g of [this.right, this.left]) {
+      const side = g.side;
+      // the free pose first (the hand before it takes hold), then the grip, blended
+      if (k < 0.999) { g.apply(POSE.rest, this.aspectK, { x: extra.x, y: extra.y - 0.08, rx: extra.rx }); this._pa.copy(g.root.position); this._qa.copy(g.root.quaternion); }
+      const grip = { ...BARROW_GRIP, side, pos: gl, yaw: BARROW_GRIP.yaw };
+      g.applyMatrix(this._gripMatrix(grip, this._g, F), this.aspectK, 0.95 * k + POSE.rest.c * (1 - k));
+      if (k < 0.999) {
+        g.root.position.lerpVectors(this._pa, g.root.position, k);
+        g.root.quaternion.slerpQuaternions(this._qa, g.root.quaternion.clone(), k);
+        g.root.updateMatrix();
+      }
+      // the shoulder of this side (world -> view) and an elbow that points out and down
+      const S = this._s3.set(cp.x + rx * side * B.side - fx * B.back, cp.y - B.down, cp.z + rz * side * B.side - fz * B.back).applyMatrix4(V);
+      const P = this._pl.set(rx * side * 0.8, -0.7, rz * side * 0.8).transformDirection(V);
+      g._arm(this.aspectK, S, P);
+      g.pose = clonePose(POSE.rest);
+    }
+    this._matchCam = camera;
+  }
+
   // the glove matrix for a grip (view space), incl. the mirror for the left hand;
-  // frame = the matrix of what is held (default: the tool)
+  // frame = the matrix of what is held (default: the tool); grip.yaw turns the fist round the
+  // back of the hand (a handle that runs through it at an angle)
   _gripMatrix(grip, out, frame = null) {
     const bx = this._bx, by = this._by, bz = this._bz, f = grip.flip || 1, ph = grip.roll || 0;
     if (grip.axis === "x") { bx.set(f, 0, 0); by.set(0, Math.cos(ph), -Math.sin(ph)); }
     else { bx.set(0, 0, f); by.set(-Math.sin(ph), Math.cos(ph), 0); }
     bz.crossVectors(bx, by);
+    if (grip.yaw) { bx.applyAxisAngle(by, grip.yaw); bz.applyAxisAngle(by, grip.yaw); }
     const m = out.makeBasis(bx, by, bz);
     // the handle centre in the glove lands on the grip point
     const h = this._v.set(HANDLE_IN_GLOVE[0], HANDLE_IN_GLOVE[1], HANDLE_IN_GLOVE[2]).applyMatrix4(m);
@@ -693,10 +798,37 @@ export class FirstPersonHands {
     return worst;
   }
 
+  // tests: the arms as drawn - each segment's length and whether the shoulder is reached; while
+  // holding the barrow also how far each fist is from its world grip (m)
+  armReport() {
+    const out = { segments: [], reach: [], gripErr: 0 };
+    for (const g of [this.right, this.left]) {
+      out.segments.push(+g.info.fore.toFixed(5), +g.info.upper.toFixed(5));
+      out.reach.push(g.info.reach);
+    }
+    if (this.barrow && this.barrow.handsOn >= 0.999 && this._matchCam) {
+      const gl = this.barrow.gripLocal();
+      for (const g of [this.right, this.left]) {
+        g.root.updateMatrix();
+        const fist = this._gp.set(HANDLE_IN_GLOVE[0], HANDLE_IN_GLOVE[1], HANDLE_IN_GLOVE[2]).applyMatrix4(g.root.matrix);
+        const want = this._s3.set(gl[0] * g.side, gl[1], gl[2]).applyMatrix4(this._F);
+        out.gripErr = Math.max(out.gripErr, fist.distanceTo(want));
+      }
+    }
+    return out;
+  }
+
   render(renderer) {
     if (!this.visible) return;
     renderer.clearDepth();
+    const mc = this._matchCam;
+    if (mc) {
+      // holding the barrow: the gloves sit on world grips - drawn through the world camera's projection
+      this.camera.projectionMatrix.copy(mc.projectionMatrix);
+      this.camera.projectionMatrixInverse.copy(mc.projectionMatrixInverse);
+    }
     renderer.render(this.scene, this.camera);
+    if (mc) this.camera.updateProjectionMatrix();
   }
 
   dispose() {
@@ -704,8 +836,11 @@ export class FirstPersonHands {
     this.drops.geometry.dispose();
     this.drops.material.dispose();
     this.bodyGeo.dispose();
-    this.armGeo.dispose();
+    this.foreGeo.dispose();
+    this.upperGeo.dispose();
+    this.elbowGeo.dispose();
     this.armMat.dispose();
+    this.upperMat.dispose();
     this.capsule.dispose();
     this.nuggetPlaceholder.dispose();
     this.bodyMat.dispose();

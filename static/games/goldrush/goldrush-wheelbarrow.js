@@ -5,11 +5,13 @@
 //   PARKED   stands on its wheel and two legs, fitted to the ground under
 //            them; it blocks the way like any prop. Dig next to it and the
 //            material goes in (goldrush-processing.js routes it).
-//   PUSHED   you hold the grips: it rolls ahead of you on its wheel, the
-//            handles at your hands' height - pitch from the ground under the
-//            wheel. Slower the heavier it is and the steeper uphill; a wheel
-//            that would have to climb a wall, hit a prop or a boulder, or
-//            leave the claim simply does not go there.
+//   PUSHED   you hold the grips (phase 8: goldrush-wheelbarrow-controller.js):
+//            it is a world object with its own speed and turn rate - your
+//            input asks, it answers (a full one is slow to start, to stop and
+//            to turn; downhill it pulls); you stand behind its grips, within
+//            arm's reach. The wheel rides the ground as it is; a wheel that
+//            would climb a wall, hit a prop or a boulder, leave the claim or
+//            take you somewhere you cannot stand simply does not go there.
 //   DUMPED   at the sluice hopper it is tipped over the wheel: the tray
 //            tilts, the load slides out (a visible moment), the batch goes
 //            over with transfer() (goldrush-transfer.js: a sluice hopper or a
@@ -20,13 +22,15 @@
 import { MaterialBatch, STAGE } from "./goldrush-material.js";
 import { transfer } from "./goldrush-transfer.js";
 import { BARROW } from "./goldrush-mechmodels.js";
+import { PushController, PUSH } from "./goldrush-wheelbarrow-controller.js";
 
 export const BARROW_ML = 85000;                 // 85 l (tuned with the phase-6 benchmark)
 const EMPTY_KG = 18;                            // the barrow itself
 const FULL_KG = (BARROW_ML * 1.8) / 1000;       // full of gravel: ~153 kg
-const GRIP_AHEAD = 0.85;                        // the grips this far in front of you while pushing
-const HANDS_Y = 0.8;                            // ... this high above the ground you stand on
-const MAX_GRADE = 0.62;                         // the wheel does not climb steeper than this (~32 deg)
+const PLAYER_R = 0.33;                          // where you stand behind it (the engine's player radius)
+const MAX_GRADE = 0.62;                         // the wheel does not climb steeper than this (~32 deg) ...
+const LIP = 0.06;                               // ... except a lip this high (it rolls over a clod) ...
+const OVER_FEET = 0.08;                         // ... or ground no higher than this above your feet (out of a pit)
 const MAX_DH = 0.95;                            // nor more than this above / below the ground you stand on (the grips stay in reach)
 const TRAY_R = 0.46;                            // what a parked barrow blocks
 const DUMP_S = 1.1;                             // tipping it over (s)
@@ -53,9 +57,15 @@ export class Wheelbarrow {
     this.collider = { type: "circle", x: 0, z: 0, r: TRAY_R };
     this.dump = null;                           // { t, target, onPeak, moved }
     this.theta = 0;
+    this.roll = 0;
     this._fwd = { x: 0, z: 0 };
     this._fillSig = "";
+    this.ctl = new PushController();
+    this.fullKg = FULL_KG;
+    this.walkSpeed = 3.4;                       // the engine's walking speed (top speed = this x speedFactor)
+    this._standY = null;                        // the ground you stand on while holding it
     this.park();
+    this.ctl.mode = "parked";
   }
 
   get massKg() { return this.batch.massG / 1000; }
@@ -87,33 +97,61 @@ export class Wheelbarrow {
     return Math.max(0.42, Math.min(0.98, f));
   }
 
-  // where the wheel is when the player stands at (px, pz) facing yaw
-  wheelFor(px, pz, yaw, out = {}) {
-    const f = this.fwd(yaw), d = GRIP_AHEAD + BARROW.grip;
-    out.x = px + f.x * d; out.z = pz + f.z * d;
+  // the tilt that puts the grips `rise` m above the wheel's ground (handles lifted)
+  static pushTheta(rise) {
+    const B = BARROW, R = Math.hypot(B.gripY, B.grip), phi = Math.atan2(B.gripY, B.grip);
+    return Math.asin(Math.max(-0.95, Math.min(0.95, rise / R))) - phi;
+  }
+
+  /**
+   * Where you stand while pushing it, the wheel at (x, z) heading yaw: behind
+   * the grips (as far as the handles reach back at the push tilt), so the
+   * grips are PUSH.gripAhead in front of your eyes - within arm's reach.
+   */
+  standFor(x, z, yaw, out = {}) {
+    const B = BARROW, f = this.fwd(yaw);
+    const gy = this.world.groundAt(x, z);
+    const sy = this._standY != null ? this._standY : gy;
+    const th = Wheelbarrow.pushTheta(sy + PUSH.handsY - gy);
+    const back = B.grip * Math.cos(th) - B.gripY * Math.sin(th) - 0.07 + PUSH.gripAhead;
+    out.x = x - f.x * back; out.z = z - f.z * back;
     return out;
   }
 
   /**
-   * Can it roll there (the player at px/pz facing yaw)? The wheel must not
-   * climb a wall, the barrow must not run into a prop / boulder / the fence.
+   * Could it be here (the wheel at x/z, heading yaw), you behind it? The
+   * wheel must not climb a wall, the barrow must not run into a prop /
+   * boulder / the fence, and where you would stand must be ground you can
+   * stand on (not in a wall, not off the claim).
    */
-  canGo(px, pz, yaw) {
-    const w = this.wheelFor(px, pz, yaw, this._w || (this._w = {}));
-    const b = this.world.bounds;
-    if (w.x < b.minX || w.x > b.maxX || w.z < b.minZ || w.z > b.maxZ) return false;
-    const g0 = this.world.groundAt(this.x, this.z), g1 = this.world.groundAt(w.x, w.z), d = Math.hypot(w.x - this.x, w.z - this.z);
-    if (d > 1e-4 && (g1 - g0) / d > MAX_GRADE && g1 > g0 + 0.03) return false;
-    // wheel and grips a whole frame apart in height (up a long slope, down into a pit): no further -
+  canPlace(x, z, yaw) {
+    const b = this.world.bounds, W = this.world;
+    if (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) return false;
+    const g0 = W.groundAt(this.x, this.z), g1 = W.groundAt(x, z), d = Math.hypot(x - this.x, z - this.z);
+    if (d > 1e-4) {
+      // the slope it rolls onto, over a wheel's length ahead (a frame's step rises a few mm at most -
+      // judged per step, nothing would ever be too steep): the pile's flank stops it, a lip does not,
+      // and climbing back out of a pit to the ground you stand on is always possible
+      const ux = (x - this.x) / d, uz = (z - this.z) / d, gA = Math.max(g1, W.groundAt(x + ux * 0.2, z + uz * 0.2));
+      const feet = this._standY != null ? this._standY : g0;
+      if ((gA - g0) / (d + 0.2) > MAX_GRADE && gA > g0 + LIP && gA > feet + OVER_FEET) return false;
+    }
+    const s = this.standFor(x, z, yaw, this._sp || (this._sp = {}));
+    if (s.x < b.minX || s.x > b.maxX || s.z < b.minZ || s.z > b.maxZ) return false;
+    // wheel and feet a whole frame apart in height (up a long slope, down into a pit): no further -
     // a move that brings them closer again is always allowed (so it never gets stuck)
-    const f0 = this.fwd(), dp = GRIP_AHEAD + BARROW.grip;
-    const dhNow = Math.abs(g0 - this.world.groundAt(this.x - f0.x * dp, this.z - f0.z * dp)), dhNew = Math.abs(g1 - this.world.groundAt(px, pz));
+    const cur = this.standFor(this.x, this.z, this.yaw, this._sc || (this._sc = {}));
+    const ys = W.groundAt(s.x, s.z), yc = W.groundAt(cur.x, cur.z);
+    const dhNow = Math.abs(g0 - yc), dhNew = Math.abs(g1 - ys);
     if (dhNew > MAX_DH && dhNew > dhNow + 1e-4) return false;
+    // your feet: no wall to climb (the engine's walking limit) between where you stand and where you go
+    const ds = Math.hypot(s.x - cur.x, s.z - cur.z);
+    if (ds > 1e-4 && (ys - yc) / ds > 2.4 && ys > yc + 0.05) return false;
     const f = this.fwd(yaw), mid = BARROW.trayZ0 + (BARROW.trayZ1 - BARROW.trayZ0) / 2;
-    const pts = [[w.x, w.z, 0.22], [w.x - f.x * mid, w.z - f.z * mid, 0.36]];
-    for (const c of this.world.colliders) {
+    const pts = [[x, z, 0.22], [x - f.x * mid, z - f.z * mid, 0.36], [s.x, s.z, PLAYER_R * 0.85]];
+    for (const c of W.colliders) {
       if (c === this.collider) continue;
-      for (const [x, z, r] of pts) if (overlaps(c, x, z, r)) return false;
+      for (const [px, pz, r] of pts) if (overlaps(c, px, pz, r)) return false;
     }
     return true;
   }
@@ -124,49 +162,77 @@ export class Wheelbarrow {
     return (g1 - g0) / 0.35;
   }
 
+  // how rough the ground under the wheel is (0 smooth .. 1 very rough): bumps, not the slope
+  roughness() {
+    const W = this.world, x = this.x, z = this.z, h = 0.12;
+    const c = W.groundAt(x, z);
+    const cx = Math.abs(W.groundAt(x + h, z) + W.groundAt(x - h, z) - 2 * c), cz = Math.abs(W.groundAt(x, z + h) + W.groundAt(x, z - h) - 2 * c);
+    return Math.min(1, Math.max(0, (cx + cz - 0.006) / 0.05));
+  }
+
   // ---- states
 
+  // take hold: the hands reach, the grips are taken, the legs leave the ground (controller)
   take() {
     this.pushing = true;
+    this.ctl.take();
     const i = this.world.colliders.indexOf(this.collider);
     if (i >= 0) this.world.colliders.splice(i, 1);
   }
 
+  // set it down: it stops, the handles go down onto the legs, the hands let go (controller);
+  // for the game it stands from now on
   park() {
     this.pushing = false;
+    this.ctl.park();
     const t = this.trayCenter(this._tc || (this._tc = {}));
     this.collider.x = t.x; this.collider.z = t.z;
     if (!this.world.colliders.includes(this.collider)) this.world.colliders.push(this.collider);
-    this.fit(null);
+    this.fit();
   }
 
-  // the player pushes: it follows (call after the player moved)
-  follow(player) {
-    const w = this.wheelFor(player.x, player.z, player.yaw, this._w2 || (this._w2 = {}));
-    this.x = w.x; this.z = w.z; this.yaw = player.yaw;
-    this.fit(player);
+  /**
+   * Pushing, one frame: input { fwd, turn } (the move keys / the stick), the
+   * player p (its yaw = where you look). The barrow moves by itself (the
+   * controller); you are put behind its grips. -> the controller's result
+   */
+  drive(dt, input, p) {
+    const taking = this.ctl.mode === "taking";
+    const r = this.ctl.step(dt, this, taking ? {} : input, p.yaw);
+    const s = this.standFor(this.x, this.z, this.yaw, this._sd || (this._sd = {}));
+    // taking hold: you step in behind the grips while the hands reach (no jump)
+    const k = taking ? 1 - Math.exp(-dt * 14) : 1;
+    const nx = p.x + (s.x - p.x) * k, nz = p.z + (s.z - p.z) * k;
+    p.vx = (nx - p.x) / Math.max(1e-4, dt); p.vz = (nz - p.z) / Math.max(1e-4, dt);
+    p.x = nx; p.z = nz;
+    this._standY = this.world.groundAt(p.x, p.z);
+    this.fit();
+    return r;
   }
 
-  /** place the model on the ground: pushed (handles at the hands) or parked (wheel + legs) */
-  fit(player) {
-    const G = this.group, B = BARROW, f = this.fwd();
+  /** the model on the ground: held (handles at your hands, by the lift) and / or parked (wheel + legs) */
+  fit() {
+    const G = this.group, B = BARROW, f = this.fwd(), c = this.ctl;
     const yw = this.world.groundAt(this.x, this.z);
-    let theta, roll = 0;
-    if (player && this.pushing) {
-      const target = this.world.groundAt(player.x, player.z) + HANDS_Y - yw;
-      const R = Math.hypot(B.gripY, B.grip), phi = Math.atan2(B.gripY, B.grip);
-      theta = Math.asin(Math.max(-0.95, Math.min(0.95, target / R))) - phi;
-    } else {
-      const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
-      const lx = this.x - f.x * B.legZ, lz = this.z - f.z * B.legZ;
-      const yl = this.world.groundAt(lx - rx * 0.23, lz - rz * 0.23), yr = this.world.groundAt(lx + rx * 0.23, lz + rz * 0.23);
-      theta = Math.atan2((yl + yr) / 2 - yw, B.legZ);
-      roll = Math.max(-0.25, Math.min(0.25, Math.atan2(yr - yl, 0.46)));
+    // parked: on the wheel and the two legs
+    const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
+    const lx = this.x - f.x * B.legZ, lz = this.z - f.z * B.legZ;
+    const yl = this.world.groundAt(lx - rx * 0.23, lz - rz * 0.23), yr = this.world.groundAt(lx + rx * 0.23, lz + rz * 0.23);
+    let theta = Math.atan2((yl + yr) / 2 - yw, B.legZ);
+    let roll = Math.max(-0.25, Math.min(0.25, Math.atan2(yr - yl, 0.46)));
+    if (c.lift > 0) {
+      // held: the grips at your hands (the ground you stand on + PUSH.handsY), level - a little bump on rough ground
+      const sy = this._standY != null ? this._standY : yw;
+      const held = Wheelbarrow.pushTheta(sy + PUSH.handsY - yw) + c.bump * 0.035 * Math.sin(c.travel * 31);
+      theta += (held - theta) * c.lift;
+      roll += (c.bump * 0.04 * Math.sin(c.travel * 17) - roll) * c.lift;
     }
     if (this.dump) theta += Math.sin(Math.min(1, this.dump.t / DUMP_S) * Math.PI) * 0.75;
     this.theta = theta;
+    this.roll = roll;
     G.position.set(this.x, yw, this.z);
     G.rotation.set(-theta, this.yaw, roll, "YXZ");
+    if (G.userData.wheel) G.userData.wheel.rotation.x = -c.spin;
     G.updateMatrixWorld(true);
   }
 
@@ -183,8 +249,8 @@ export class Wheelbarrow {
     return true;
   }
 
-  // per frame: the dump animation; the material goes over at the top of the tilt
-  update(dt, player) {
+  // per frame: the dump animation (the material goes over at the top of the tilt); setting it down
+  update(dt) {
     if (this.dump) {
       const d = this.dump;
       d.t += dt;
@@ -194,10 +260,16 @@ export class Wheelbarrow {
       }
       if (d.t >= DUMP_S) this.dump = null;
     }
-    if (this.pushing && player) this.follow(player);
-    else if (this.dump) this.fit(null);
+    if (!this.pushing && this.ctl.mode === "parking") this.ctl.animate(dt);
+    if (this.dump || this.ctl.mode === "parking" || !this.pushing) this.fit();
     this._fills();
   }
+
+  // the grips you hold (for the hands): both hands on them, how much (0..1)
+  get handsOn() { return this.ctl.grip; }
+
+  // the right grip's handle point in the barrow's own frame (the left one is mirrored)
+  gripLocal() { return this._gl || (this._gl = [BARROW.gripX, BARROW.gripY + 0.02, BARROW.grip - 0.07]); }
 
   _fills() {
     const b = this.batch, frac = Math.min(1, b.volumeMl / this.capacityMl);
@@ -209,6 +281,13 @@ export class Wheelbarrow {
 
   serialize() {
     return { x: this.x, z: this.z, yaw: this.yaw, batch: this.batch.serialize() };
+  }
+
+  // tests / devtools: the push state
+  state() {
+    const c = this.ctl;
+    return { mode: c.mode, v: c.v, w: c.w, spin: c.spin, travel: c.travel, grip: c.grip, lift: c.lift, rough: c.rough, theta: this.theta, roll: this.roll,
+      x: this.x, z: this.z, yaw: this.yaw, wheelY: this.world.groundAt(this.x, this.z), loadKg: this.massKg };
   }
 
   dispose(scene) {

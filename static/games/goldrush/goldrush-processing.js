@@ -89,8 +89,6 @@ export const HELD_GRIPS = {
   pan: [{ side: 1, pos: [0.2, 0.05, 0.02], axis: "z", roll: 1.75, flip: 1 }, { side: -1, pos: [0.2, 0.05, 0.02], axis: "z", roll: 1.75, flip: 1 }],
   bowl: [{ side: 1, pos: [0.165, 0.07, 0.02], axis: "z", roll: 1.75, flip: 1 }, { side: -1, pos: [0.165, 0.07, 0.02], axis: "z", roll: 1.75, flip: 1 }],
   sieve: [{ side: 1, pos: [0.16, 0, 0], axis: "z", roll: 2.4, flip: 1 }, { side: -1, pos: [0.16, 0, 0], axis: "z", roll: 2.4, flip: 1 }],
-  // the barrow's grips: placed every frame where the world grips are seen (see _barrowHands)
-  barrow: [{ side: 1, pos: [0.2, 0, 0], axis: "x", roll: 0, flip: 1 }, { side: -1, pos: [0.2, 0, 0], axis: "x", roll: 0, flip: 1 }],
 };
 const COLORS = { raw: 0x8a6a4c, conc: 0x6a5846, black: 0x3a332c };
 // the feeder lever: what [E] sets next
@@ -222,8 +220,6 @@ export class ProcessingSystem {
     // phase 6: the wheelbarrow and the sluice share one model kit
     this.mech = new MechModels(THREE, { envMap: this.ctx.envMap, woodTex: this.world.woodTex });
     this.auto = new AutoModels(this.mech);                     // phase 7: the bulk hopper, the feeder (same materials)
-    this.handBarrow = new THREE.Group();                       // nothing drawn: the gloves on the barrow's (world) grips
-    this._barrowGrips = HELD_GRIPS.barrow.map((g) => ({ ...g, pos: [...g.pos] }));
     this._ga = new THREE.Vector3();
     this._gb = new THREE.Vector3();
     this._sync();
@@ -1210,6 +1206,8 @@ export class ProcessingSystem {
     // what the hands hold
     const H = this.hands;
     if (!H) return;
+    const w = this.barrow;
+    if (H.holdBarrow) H.holdBarrow(!this.work && w && (w.pushing || w.handsOn > 0) ? w : null);
     if (this.work === "pan") {
       const tool = this.pan.tool, obj = this._washHand(), hp = HELD[tool];
       if (H.held !== tool) H.setHeld(tool, obj, HELD_GRIPS[tool]);
@@ -1234,9 +1232,9 @@ export class ProcessingSystem {
       const pose = this.handSieve.userData.pose || (this.handSieve.userData.pose = { p: [0, 0, 0], r: [0, 0, 0] });
       pose.p[0] = HELD.sieve.p[0] - this.shakeX * 1.6; pose.p[1] = HELD.sieve.p[1]; pose.p[2] = HELD.sieve.p[2];
       pose.r[0] = HELD.sieve.r[0]; pose.r[1] = HELD.sieve.r[1]; pose.r[2] = HELD.sieve.r[2];
-    } else if (this.pushing) {
-      if (H.held !== "barrow") H.setHeld("barrow", this.handBarrow, this._barrowGrips);
-      this._barrowHands(H);
+    } else if (w && (w.pushing || w.handsOn > 0)) {
+      // the barrow (phase 8): the gloves on its world grips, the arms by IK (goldrush-hand.js)
+      if (H.held) H.setHeld(null);
     } else if (this.carrying) {
       if (H.held !== "bucket") H.setHeld("bucket", this.handBucket, HELD_GRIPS.bucket);
       const pose = this.handBucket.userData.pose || (this.handBucket.userData.pose = { p: [0, 0, 0], r: [0, 0, 0] });
@@ -1244,22 +1242,6 @@ export class ProcessingSystem {
       pose.p[0] = HELD.bucket.p[0]; pose.p[1] = HELD.bucket.p[1]; pose.p[2] = HELD.bucket.p[2];
       pose.r[0] = HELD.bucket.r[0] + sw; pose.r[1] = HELD.bucket.r[1]; pose.r[2] = HELD.bucket.r[2] + sw * 0.6;
     } else if (H.held) H.setHeld(null);
-  }
-
-  // the gloves where the barrow's grips are seen: each grip's world point is
-  // projected with the world camera and put at the same screen spot in the
-  // hands' own view (they have their own camera / field of view)
-  _barrowHands(H) {
-    const cam = this.camera, hc = H.camera, w = this.barrow;
-    if (!cam || !hc) return;
-    const a = w.gripWorld(1, this._ga).project(cam), b = w.gripWorld(-1, this._gb).project(cam);
-    const d = 0.62, t = Math.tan((hc.fov * Math.PI) / 360);
-    const ax = a.x * d * t * hc.aspect, ay = a.y * d * t, bx = b.x * d * t * hc.aspect, by = b.y * d * t;
-    const pose = this.handBarrow.userData.pose || (this.handBarrow.userData.pose = { p: [0, 0, 0], r: [0, 0, 0] });
-    pose.p[0] = (ax + bx) / 2 / (H.aspectK || 1); pose.p[1] = (ay + by) / 2 - 0.02; pose.p[2] = -d;
-    pose.r[0] = 0; pose.r[1] = 0; pose.r[2] = Math.atan2(ay - by, ax - bx);
-    const hw = Math.max(0.08, Math.min(0.32, Math.hypot(ax - bx, ay - by) / 2));
-    for (const g of this._barrowGrips) g.pos[0] = hw;
   }
 
   // tests / benchmark: material from one container to another - the same pour() the actions use

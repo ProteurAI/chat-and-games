@@ -986,6 +986,17 @@ class GoldRushShell {
       // phase 6: the sluice runs for `s` seconds of game time (no frames drawn)
       procTick: (sec) => g.processing.tickSim(sec),
       procObj: () => g.processing,
+      // phase 8: the barrow's push state, the arms as drawn, a column's stone state, authored models
+      barrowState: () => (g.processing.barrow ? g.processing.barrow.state() : null),
+      armReport: () => g.hands.armReport(),
+      stoneAt: (x, z) => { const t = g.terrain, i = Math.round((x - t.x0) / t.cell), j = Math.round((z - t.z0) / t.cell); return t.stoneState(j * t.vps + i); },
+      assetModel: async (url, fallback = false) => {
+        if (fallback) { const T = g.assets.THREE, o = await g.assets.modelOr(url, () => { const m = new T.Mesh(new T.BoxGeometry(0.1, 0.1, 0.1)); m.name = "procedural"; return m; }); let n = 0; o.traverse((x) => { if (x.isMesh) n++; }); return { name: o.name, meshes: n }; }
+        const m = await g.assets.model(url);
+        if (!m) return null;
+        let n = 0; m.scene.traverse((x) => { if (x.isMesh) n++; });
+        return { meshes: n, cached: !!g.assets.get(`glb:${url}`), instance: !!g.assets.instance(url) };
+      },
       // phase 6: dig feel - impacts straight into the effects (no mining), their stats; a real contact
       fxClear: () => { g.effects.clear(); return g.effects.stats(); },
       // phase 7A: the luminance band of the fragments in the air / lying (no black lumps, no white sparks)

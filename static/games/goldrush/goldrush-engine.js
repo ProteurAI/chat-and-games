@@ -28,6 +28,7 @@ import { BULK } from "./goldrush-automodels.js";
 import { SLICE_ORIGIN_Y } from "./goldrush-terrain.js";
 import { TOOL_DEFS, TOOL_ORDER, ToolController, cycleSeconds, effectiveDef, toolEfficiency } from "./goldrush-tools.js";
 import { DigEffects } from "./goldrush-vfx.js";
+import { clampLook } from "./goldrush-wheelbarrow-controller.js";
 import { GoldRushWorld, SPAWN, SUN_DIR } from "./goldrush-world.js";
 
 export const THREE_REVISION = THREE.REVISION;
@@ -258,6 +259,9 @@ export class GoldRushGame {
     pr.warmPending = false;
     this.hands.scene.add(pr.handPan, pr.handBowl, pr.handBucket);
     world.scene.traverse((o) => { if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; } });
+    // (phase 8: the hands' scene too - the upper arms only come into view on the barrow's grips)
+    const culledH = [];
+    this.hands.scene.traverse((o) => { if (o.frustumCulled) { culledH.push(o); o.frustumCulled = false; } });
     renderer.compile(world.scene, camera);
     renderer.compile(this.hands.scene, this.hands.camera);
     if (this.rocks.tex) renderer.initTexture(this.rocks.tex);   // no upload hitch when the first boulder comes into view
@@ -267,6 +271,7 @@ export class GoldRushGame {
     renderer.autoClear = false;
     renderer.render(this.hands.scene, this.hands.camera);
     renderer.autoClear = true;
+    for (const o of culledH) o.frustumCulled = true;
     this.hands.scene.remove(pr.handPan, pr.handBowl, pr.handBucket);
     pr.warmMachines(false);
     pr.warmup(false);
@@ -429,7 +434,7 @@ export class GoldRushGame {
         this.hud.tip("wash-first", this.touch ? "Am Trog liegt die Waschschale – WASCHEN tippen." : "Am Trog liegt die Waschschale – dort [E]: Mit Waschschale waschen.", 6);
       }
     }
-    else if (r.kind === "barrow") { this.audio.play("swap", { dist: 0.3 }); this.player.pitch = Math.min(this.player.pitch, -0.28); this.hud.tip("barrow", this.touch ? "Mit dem Stick schieben · ABSTELLEN tippen zum Abstellen" : "W schieben · [E] abstellen · am Trichter: [E] auskippen", 30); }
+    else if (r.kind === "barrow") { this.audio.play("barrow_take", { dist: 0.3 }); this.player.pitch = Math.min(this.player.pitch, -0.62); this.hud.tip("barrow", this.touch ? "Mit dem Stick schieben und lenken · ABSTELLEN tippen zum Abstellen" : "W schieben · S bremsen · A / D lenken · [E] abstellen · am Trichter: [E] auskippen", 30); }
     else if (r.kind === "dump") this.audio.play("wheelbarrow_dump", { dist: 1.2 });
     else if (r.kind === "feed") { this.audio.play("sluice_feed", { dist: 0.8 }); this._fedEffect(s.id); }
     else if (r.kind === "build") { this.audio.play("purchase", { dist: 1 }); this.hud.message(r.what === "bulk" ? "Vorratstrichter" : r.what === "feeder" ? "Dosierer" : "Waschrinne", r.what === "feeder" ? "wird montiert …" : "wird aufgebaut …"); }
@@ -725,6 +730,46 @@ export class GoldRushGame {
     if (this.devHook) this.devHook(now);
   };
 
+  // the HUD's material row: { bucket, barrow, conc } - each null until you own what holds it (the
+  // concentrate: once something can make it - classifier or sluice - and only while there is some)
+  _materialRow(pr) {
+    const row = this._matRow || (this._matRow = { bucket: null, barrow: null, conc: null });
+    const fmt = (l) => (l < 10 ? l.toFixed(1).replace(".", ",") : String(Math.round(l)));
+    const b = pr.bucket;
+    if (b) {
+      const l = pr.bucketMl / 1000, cap = Math.round(pr.capacityMl / 1000), full = pr.bucketMl >= pr.capacityMl - 50;
+      const v = row.bucket || (row.bucket = {});
+      v.text = `${fmt(l)}/${cap} l${b.carried ? ` · ${pr.bucketKg.toFixed(1).replace(".", ",")} kg` : ""}`;
+      v.active = !!b.carried; v.full = full; v.aria = `Eimer ${fmt(l)} von ${cap} Litern${b.carried ? ", in der Hand" : ""}`;
+    } else row.bucket = null;
+    const w = pr.barrow;
+    if (w) {
+      const l = w.volumeMl / 1000, cap = Math.round(w.capacityMl / 1000);
+      const v = row.barrow || (row.barrow = {});
+      v.text = `${fmt(l)}/${cap} l${w.pushing ? ` · ${Math.round(w.massKg)} kg` : ""}`;
+      v.active = !!w.pushing; v.full = !!w.full; v.aria = `Schubkarre ${fmt(l)} von ${cap} Litern${w.pushing ? ", geschoben" : ""}`;
+    } else row.barrow = null;
+    // the concentrate: the classifier's tub and the sluice's clean-out tray - both wait for the pan
+    const canMake = pr.owned && (pr.owned.has("classifier") || pr.owned.has("sluice"));
+    const tray = pr.sluice && pr.sluice.tray ? pr.sluice.tray.batch.volumeMl : 0, cml = (pr.tub ? pr.tub.volumeMl : 0) + tray;
+    if (canMake && cml > 50) {
+      const v = row.conc || (row.conc = {});
+      v.text = `${fmt(cml / 1000)} l`; v.active = pr.work === "pan"; v.full = false;
+      v.aria = `Konzentrat ${fmt(cml / 1000)} Liter bereit zum Waschen`;
+    } else row.conc = null;
+    return row;
+  }
+
+  // the barrow's wheel on the ground: a soft roll with a creak now and then, more when it is loaded
+  _barrowSound(dt, bw) {
+    const v = Math.abs(bw.ctl.v);
+    this._creakT = (this._creakT || 0) - dt * v;
+    if (v > 0.25 && this._creakT <= 0) {
+      this._creakT = 0.9 + Math.random() * 0.8;
+      this.audio.play("barrow_roll", { dist: 0.5, strength: Math.min(1, 0.35 + v * 0.4 + Math.min(1, bw.massKg / 150) * 0.3 + bw.ctl.rough * 0.3) });
+    }
+  }
+
   render() {
     if (this.glLost || this.disposed) return;
     const r = this.renderer, pr = this.processing;
@@ -760,24 +805,30 @@ export class GoldRushGame {
     const look = input.takeLook();
     if (this.processing.work) { this._workUpdate(dt, look); return; }
     const pr = this.processing, bw = pr.pushing ? pr.barrow : null;
-    const oy = p.yaw;
     p.yaw -= look.x;
-    if (bw && (bw.dump || !bw.canGo(p.x, p.z, p.yaw))) p.yaw = oy;          // it would swing into something: hold
-    // pushing: the eyes stay on the barrow (the grips stay in view)
-    p.pitch = bw ? Math.max(-0.8, Math.min(0.1, p.pitch - look.y)) : Math.max(-1.45, Math.min(1.45, p.pitch - look.y));
+    // pushing (phase 8): you look round freely a little; further off its line the barrow turns after
+    // you (its controller) - the eyes never leave it (the grips stay in reach of the view)
+    if (bw) { p.yaw = clampLook(p.yaw, bw.yaw, false); const c = clampLook(p.yaw, bw.yaw); p.yaw += (c - p.yaw) * Math.min(1, dt * 12); }
+    p.pitch = bw ? Math.max(-1.05, Math.min(0.15, p.pitch - look.y)) : Math.max(-1.45, Math.min(1.45, p.pitch - look.y));
     this.hands.look(look.x, look.y);
 
     // walk: accelerate towards the stick/keys direction
     let mx = input.move.x, my = input.move.y;
     const len = Math.hypot(mx, my);
     if (len > 1) { mx /= len; my /= len; }
+    if (bw) {
+      // the barrow moves by itself (goldrush-wheelbarrow-controller.js) - W / S push and brake / back up,
+      // A / D steer; you stand behind its grips
+      bw.walkSpeed = WALK;
+      const r = bw.drive(dt, { fwd: my, turn: mx }, p);
+      if (r.blocked && this.audio) this.audio.play("barrow_bump", { dist: 0.6, strength: Math.min(1, 0.4 + Math.abs(bw.ctl.v)) });
+      this._barrowSound(dt, bw);
+    }
     const speed = (input.sprint && !bw ? SPRINT : WALK) * this.processing.speedFactor();
     const sin = Math.sin(p.yaw), cos = Math.cos(p.yaw);
     const tx = (-sin * my + cos * mx) * speed, tz = (-cos * my - sin * mx) * speed;
     const a = Math.min(1, dt * 10);
-    p.vx += (tx - p.vx) * a;
-    p.vz += (tz - p.vz) * a;
-    const ox = p.x, oz = p.z;
+    if (!bw) { p.vx += (tx - p.vx) * a; p.vz += (tz - p.vz) * a; }
     const g0 = world.groundAt(p.x, p.z);
     // steep ground: walking up to 38°, scrambling (slower) up to 68° - so you
     // always get out of your own pit - never up a stone wall
@@ -792,16 +843,13 @@ export class GoldRushGame {
       p.z += sz * k;
       return true;
     };
-    if (!tryAxis(p.vx * dt, p.vz * dt)) {
-      if (!tryAxis(p.vx * dt, 0)) p.vx = 0;
-      if (!tryAxis(0, p.vz * dt)) p.vz = 0;
-    }
-    world.collide(p, RADIUS);
-    this._keepOffWalls();
-    if (bw) {
-      // the wheel would climb a wall / the barrow would hit something: you stop
-      if (bw.dump || !bw.canGo(p.x, p.z, p.yaw)) { p.x = ox; p.z = oz; p.vx = p.vz = 0; }
-      bw.follow(p);
+    if (!bw) {
+      if (!tryAxis(p.vx * dt, p.vz * dt)) {
+        if (!tryAxis(p.vx * dt, 0)) p.vx = 0;
+        if (!tryAxis(0, p.vz * dt)) p.vz = 0;
+      }
+      world.collide(p, RADIUS);
+      this._keepOffWalls();
     }
     const ground = world.groundAt(p.x, p.z) + EYE;
     p.y += (ground - p.y) * Math.min(1, dt * (ground < p.y - 0.4 ? 20 : 12));
