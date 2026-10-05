@@ -357,7 +357,9 @@ def wheelbarrow(A, shots):
     w0 = G(A, f"() => {GR}.state()")
     w = G(A, f"() => {GR}.walk(3.0, 0, 1)")
     d_empty = math.hypot(w["x"] - w0["x"], w["z"] - w0["z"])
-    ok("W7 the load matters: empty it pushes almost like walking, full (~%d kg) clearly slower - no stamina bar" % full_kg, d_full < d_empty * 0.8 and d_empty > 8, f"empty {d_empty:.2f} m vs full {d_full:.2f} m")
+    # (phase 8: the barrow gets going from standstill - taking hold, then accelerating - so 3 s cover a little
+    # less than 3 s of walking; a full one also starts and stops more slowly)
+    ok("W7 the load matters: empty it pushes almost like walking, full (~%d kg) clearly slower - no stamina bar" % full_kg, d_full < d_empty * 0.8 and d_empty > 7, f"empty {d_empty:.2f} m vs full {d_full:.2f} m")
     G(A, f"() => {GR}.procAct('barrow-park')")
     # W8: over dug-up ground into the mound - the wheel stays on the (changed) ground, the frame
     # never tips absurdly, and where wheel and grips would be a whole frame apart in height it stops
@@ -406,7 +408,7 @@ def wheelbarrow(A, shots):
     G(A, f"(h) => {GR}.procBarrowPlace(h[0], h[1] - 1.75, Math.PI)", list(HOPPER))
     barrow_batch(A, "paydirt", 40000)
     take_barrow(A)
-    G(A, f"() => {GR}.walk(1.2, 0, 1)")
+    G(A, f"() => {GR}.walk(2.6, 0, 1)")                   # (phase 8: it takes hold and gets going - pushed until it stands at the hopper)
     inter = proc(A)["interaction"]
     gold0 = proc(A)["barrow"]["goldUg"]
     G(A, f"() => {GR}.setPaused(false)")
@@ -477,7 +479,7 @@ def sluice(A, shots):
     G(A, f"(h) => {GR}.procBarrowPlace(h[0], h[1] - 1.75, Math.PI)", list(HOPPER))
     barrow_batch(A, "paydirt", 85000)
     take_barrow(A)
-    G(A, f"() => {GR}.walk(1.2, 0, 1)")
+    G(A, f"() => {GR}.walk(2.6, 0, 1)")                   # (phase 8: it takes hold and gets going - pushed until it stands at the hopper)
     hv0 = proc(A)["sluice"]["hopper"]["volumeMl"]
     use(A)
     G(A, f"() => {GR}.walk(1.6, 0, 0)")                   # the tip plays out (frames, standing still)

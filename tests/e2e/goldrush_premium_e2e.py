@@ -786,12 +786,24 @@ def main():
     try:
         user = login(base, "Premium8")
         with sync_playwright() as p:
-            browser = getattr(p, engine).launch(args=GPU_ARGS if engine == "chromium" else [])
+            launch = lambda: getattr(p, engine).launch(args=GPU_ARGS if engine == "chromium" else [])
+            browser = launch()
             ctx, A = client(browser, base, user, dict(viewport={"width": 1366, "height": 768}), extra_init=[seeded()])
+            first = True
             for part, fn in (("barrow", barrow), ("barrowterrain", barrow_terrain), ("stone", stone), ("matrix", matrix), ("loads", loads),
                              ("glb", glb), ("hands", hands), ("pangold", pangold), ("hud", hud), ("sound", sound), ("stable", stability)):
-                if want(part):
-                    fn(A)
+                if not want(part):
+                    continue
+                if engine == "webkit" and not first:
+                    # WebKit (Playwright, Windows) keeps GPU memory of every closed session and then stalls
+                    # (clicks hang) - a fresh browser per part, as the camp suite does per strategy
+                    Q.close(A)
+                    ctx.close()
+                    browser.close()
+                    browser = launch()
+                    ctx, A = client(browser, base, user, dict(viewport={"width": 1366, "height": 768}), extra_init=[seeded()])
+                first = False
+                fn(A)
             if want("shots") and shots:
                 visual(A, shots)
             Q.close(A)

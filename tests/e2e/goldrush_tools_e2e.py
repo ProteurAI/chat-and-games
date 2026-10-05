@@ -561,14 +561,17 @@ def foundation_and_tools(browser, base, user, shots):
        small["maxHp"] < large["maxHp"] and small["maxHp"] >= 4, f"small {small['maxHp']} / large {large['maxHp']} hits")
     ok("T32 a broken boulder leaves a few pieces of rubble (no cascade), its collider is gone, it paid nothing",
        info["broken"] and info["collider"] == 0 and 1 <= rs["rubble"] <= 4 * rs["broken"], f"{info} {rs}")
-    # T33: ground stone: hand / shovel bounce, the pickaxe chips it slowly
+    # T33 (phase 8): solid stone - hand / shovel bounce off; the pickaxe cracks it (the first hits only chip),
+    # a few hits break the patch into rubble that then comes away (crack stages, save, exact mass:
+    # goldrush_premium_e2e.py --only stone,matrix)
     gs = G(A, SPOT, {"want": "stone", "reach": 2.2, "start": 0.45, "fresh": False, "core": True})
     hand_on = G(A, ACT_N, {"n": 2, "tool": "hand", "spot": gs, "jitter": 0}) if gs else None
     shovel_on = G(A, ACT_N, {"n": 2, "tool": "shovel", "spot": gs, "jitter": 0}) if gs else None
-    pick_on = G(A, ACT_N, {"n": 6, "tool": "pickaxe", "spot": gs, "jitter": 0}) if gs else None
-    ok("T33 solid stone: hand and shovel bounce off, only the pickaxe chips it away - slowly (< 0.4 kg per hit)",
-       gs and hand_on["blocked"] == 2 and shovel_on["blocked"] == 2 and pick_on["kgByMat"][STONE] > 0 and pick_on["maxKg"] < 0.4,
-       f"hand={hand_on and hand_on['blocked']} shovel={shovel_on and shovel_on['blocked']} pick={pick_on and round(pick_on['kgByMat'][STONE], 3)} kg")
+    pick_chip = G(A, ACT_N, {"n": 3, "tool": "pickaxe", "spot": gs, "jitter": 0}) if gs else None
+    pick_break = G(A, ACT_N, {"n": 3, "tool": "pickaxe", "spot": gs, "jitter": 0}) if gs else None
+    ok("T33 solid stone: hand and shovel bounce off; the pickaxe's first hits only chip it (< 0.4 kg each), then the cracked patch breaks and comes away",
+       gs and hand_on["blocked"] == 2 and shovel_on["blocked"] == 2 and pick_chip["kgByMat"][STONE] > 0 and pick_chip["maxKg"] < 0.4 and pick_break["maxKg"] > 0.5,
+       f"hand={hand_on and hand_on['blocked']} shovel={shovel_on and shovel_on['blocked']} chips max {pick_chip and round(pick_chip['maxKg'], 3)} kg, then max {pick_break and round(pick_break['maxKg'], 3)} kg")
 
     # ---------------- T4: boulders sink with the ground, never float
     select(A, "shovel")

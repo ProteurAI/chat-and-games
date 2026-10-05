@@ -970,7 +970,7 @@ class GoldRushShell {
           tub: { ...pr.tub.serialize(), massG: pr.tub.massG, goldUg: pr.tub.goldUg }, pan: { ...pr.pan.batch.serialize(), progress: pr.pan.progress, need: pr.pan.need, goldUg: pr.pan.batch.goldUg },
           sieve: { ...pr.sieve.batch.serialize(), progress: pr.sieve.progress }, ledger: { ...pr.ledger }, inContainersUg: pr.goldInContainers(), inContainersG: pr.massInContainers(),
           speed: pr.speedFactor(), interaction: pr.interaction(g.player), station: g.station ? { id: g.station.id, kind: g.station.kind, action: g.station.action } : null,
-          held: g.hands.held, mining: g.mining.stats(),
+          held: g.hands.held || (g.hands.barrow && g.hands.barrow.handsOn > 0 ? "barrow" : null), mining: g.mining.stats(),
           barrow: pr.barrow ? { x: pr.barrow.x, z: pr.barrow.z, yaw: pr.barrow.yaw, pushing: pr.barrow.pushing, dumping: !!pr.barrow.dump, batch: pr.barrow.batch.serialize(),
             massG: pr.barrow.batch.massG, goldUg: pr.barrow.batch.goldUg, capacityMl: pr.barrow.capacityMl, theta: pr.barrow.theta, atWash: pr.barrowAtWash(),
             y: pr.barrow.group.position.y, ground: g.world.groundAt(pr.barrow.x, pr.barrow.z), fill: pr.barrow.group.userData.fill.visible } : null,

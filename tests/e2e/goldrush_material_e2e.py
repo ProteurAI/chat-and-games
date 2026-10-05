@@ -302,7 +302,14 @@ def stable(A):
         for (const [ld, sl] of [[0.25, 0], [0.6, 0], [1, 0], [1, 0.35], [0.7, 0.7], [0.2, 1], [0, 0]]) {{
           M.setLoad(ld, sl, ((c % 7) - 3) * 0.002, ((c % 5) - 2) * 0.003, c % 4);
           maxN = Math.max(maxN, lumps.count);
-          if (ld === 1 && sl === 0 && c < 4) {{ shapes.add(L._sig); flat = Math.max(flat, L.p.h / Math.min(L.p.rx, L.p.rz)); }}
+          if (ld === 1 && sl === 0 && c < 4) {{
+            // (phase 8: GridLoad - height / width of the visible layer, measured on its vertices)
+            shapes.add(L._sig);
+            const a = L.geo.attributes.position.array, col = L.geo.attributes.color.array;
+            let x0 = 9, x1 = -9, y0 = 9, y1 = -9;
+            for (let v = 0; v < a.length / 3; v++) {{ if (col[v * 4 + 3] < 0.5) continue; x0 = Math.min(x0, a[v * 3]); x1 = Math.max(x1, a[v * 3]); y0 = Math.min(y0, a[v * 3 + 1]); y1 = Math.max(y1, a[v * 3 + 1]); }}
+            flat = Math.max(flat, (y1 - y0) / Math.max(1e-6, x1 - x0));
+          }}
         }}
       }}
       return {{ ms: performance.now() - t0, same: L.geo === geo && geo.attributes.position.array === arr && L.lumps === lumps, maxN, max: L.max, off: !L.visible, shapes: shapes.size, flat }};
@@ -325,7 +332,7 @@ def stable(A):
         if (c === 0 && k % 25 === 0 && k) {{
           let top = -1; const a = bl.geo.attributes.position.array; for (let i = 1; i < a.length; i += 3) top = Math.max(top, a[i]);
           tops.push(top);
-          barrow.push({{ rx: wl.p.rx, h: wl.p.h, y0: wl.p.y0, lobes: wl.p.lobes, lumps: wl.lumps.count }});
+          barrow.push({{ cover: wl.stats.visibleVerts, top: wl.stats.maxY, lumps: wl.lumps.count }});
         }}
       }}
       M.setBucketFill(B, 0, null); MM.setBarrowFill(w.group, 0, null);
@@ -337,8 +344,9 @@ def stable(A):
     ok("STABLE bucket / barrow filled and emptied 20 times: no extra meshes or geometry, the same two draws each",
        r["same"] and r["off"] and (s2["geo"], s2["tex"], s2["nodes"]) == (s0["geo"], s0["tex"], s0["nodes"]), f"{s0} -> {s2}")
     ok("STABLE the bucket's fill rises with the litres (25 / 50 / 75 / 100 %)", all(b > a for a, b in zip(tops, tops[1:])), str([round(t, 3) for t in tops]))
-    ok("STABLE the barrow's heap grows: wider, higher, more mounds and lumps (25 -> 100 %), its base lifts once it fills the tray",
-       all(b["rx"] > a["rx"] and b["h"] + b["y0"] > a["h"] + a["y0"] and b["lumps"] >= a["lumps"] for a, b in zip(bw, bw[1:])) and bw[-1]["lobes"] > bw[0]["lobes"] and bw[-1]["y0"] > bw[0]["y0"],
+    # (phase 8: the tray load is a GridLoad shaped by the tray - it covers more of the floor, rises, gets more lumps)
+    ok("STABLE the barrow's load grows: it covers more of the tray, rises and gets more lumps (25 -> 100 %)",
+       all(b["cover"] >= a["cover"] and b["top"] > a["top"] and b["lumps"] >= a["lumps"] for a, b in zip(bw, bw[1:])) and bw[-1]["cover"] > bw[0]["cover"],
        json.dumps([{k: round(v, 3) for k, v in x.items()} for x in bw]))
     # the classifier: a heap that sinks while shaken, the coarse part left at the end; 8 loads in a row
     looks, heap0 = [], G(A, f"() => {GR}.procObj().cls.userData.heapLoad.geo.uuid")
@@ -349,16 +357,16 @@ def stable(A):
         for t in (0, 1.2, 30):
             if t:
                 G(A, f"(t) => {GR}.procWork(t)", t)
-            row.append(G(A, f"""() => {{ const pr = {GR}.procObj(), H = pr.cls.userData.heapLoad, c = H.p ? H.p.comp : [0, 0, 0, 0], m = c[0] + c[1] + c[2] + c[3] || 1;
-              return {{ vis: H.visible, h: H.p ? H.p.h : 0, coarse: (c[2] + c[3]) / m, prog: pr.sieve.progress }}; }}"""))
+            row.append(G(A, f"""() => {{ const pr = {GR}.procObj(), H = pr.cls.userData.heapLoad;
+              return {{ vis: H.visible, h: H.stats.maxY, cover: H.stats.visibleVerts, lumps: H.stats.lumps, prog: pr.sieve.progress }}; }}"""))
         looks.append(row)
         G(A, f"() => {{ const pr = {GR}.procObj(); pr._devTail(pr.tub); pr.tub = pr._batch('concentrate'); pr._fills(); }}")
         G(A, f"() => {GR}.walk(2.2, 0, 0)")
     s3 = G(A, STATS)
     st0, mid, end = looks[0]
     lok, L, p = Q.ledger_ok(A)
-    ok("STABLE classifier: the heap sinks as the fines go through (lower at half time), at the end only the coarse part lies there",
-       st0["vis"] and mid["vis"] and mid["h"] < st0["h"] and end["vis"] and end["coarse"] > st0["coarse"] + 0.15, json.dumps(looks[0]))
+    ok("STABLE classifier: the layer sinks as the fines go through (lower at half time), at the end only the coarse pieces lie there",
+       st0["vis"] and mid["vis"] and mid["h"] < st0["h"] and end["vis"] and end["cover"] < st0["cover"] * 0.5 and end["lumps"] >= 5, json.dumps(looks[0]))
     ok(f"STABLE classifier long run ({len(looks)} loads): the same heap buffers, no growth in geometry / textures / objects / heap, the ledger exact",
        G(A, f"() => {GR}.procObj().cls.userData.heapLoad.geo.uuid") == heap0 and (s3["geo"], s3["tex"], s3["obj"]) == (s0["geo"], s0["tex"], s0["obj"])
        and (s0["heap"] is None or s3["heap"] - s0["heap"] < 15) and lok, f"{s0} -> {s3}")
