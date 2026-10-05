@@ -149,6 +149,42 @@ function woodPlanks(ctx, size, seed) {
   }
 }
 
+// phase 7B: the water tank's weathered galvanised plates - riveted seams round it, rust
+// running down from them, a darker grime band at the foot (top of the canvas = top of the tank)
+function tankPlates(ctx, size, seed) {
+  const rng = mulberry32(seed);
+  ctx.fillStyle = "rgb(168,170,164)";
+  ctx.fillRect(0, 0, size, size);
+  for (let k = 0; k < 900; k++) {                                     // mottled zinc
+    const v = 140 + rng() * 60;
+    ctx.fillStyle = `rgba(${v},${v + 2},${v - 4},0.22)`;
+    ctx.fillRect(rng() * size, rng() * size, 2 + rng() * 9, 1 + rng() * 5);
+  }
+  const seams = 5;
+  for (let s = 1; s < seams; s++) {
+    const y = (s / seams) * size;
+    for (let k = 0; k < 14; k++) {                                    // rust running down from the seam
+      const x = rng() * size, len = 8 + rng() * 34, g = ctx.createLinearGradient(0, y, 0, y + len);
+      g.addColorStop(0, `rgba(122,66,32,${0.25 + rng() * 0.3})`);
+      g.addColorStop(1, "rgba(122,66,32,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(x, y, 1.5 + rng() * 3, len);
+    }
+    ctx.fillStyle = "rgba(60,62,60,0.55)";                           // the lap and its rivets
+    ctx.fillRect(0, y - 1.5, size, 3);
+    ctx.fillStyle = "rgba(210,212,206,0.35)";
+    ctx.fillRect(0, y + 1.5, size, 1);
+    ctx.fillStyle = "rgba(70,70,66,0.7)";
+    for (let x = 4; x < size; x += 11) ctx.fillRect(x, y - 4, 2, 2);
+  }
+  for (let x = 0; x < size; x += size / 4) { ctx.fillStyle = "rgba(70,72,70,0.4)"; ctx.fillRect(x, 0, 2, size); }   // the vertical joints
+  const foot = ctx.createLinearGradient(0, size * 0.78, 0, size);
+  foot.addColorStop(0, "rgba(96,74,52,0)");
+  foot.addColorStop(1, "rgba(96,74,52,0.55)");
+  ctx.fillStyle = foot;
+  ctx.fillRect(0, size * 0.78, size, size * 0.22);
+}
+
 function signTexture(THREE, lines, { w = 512, h = 192, bg = "#5a3a22", fg = "#f4d58a" } = {}) {
   const c = document.createElement("canvas");
   c.width = w;
@@ -286,7 +322,8 @@ export class GoldRushWorld {
           vec2 grMicroD() {
             vec3 wn = normalize(cross(dFdx(vWPos), dFdy(vWPos)));
             float steep = 1.0 - abs(wn.y);
-            float a = (0.0026 * clamp(vMat.z, 0.0, 1.0) + 0.0018 * vFresh) * (1.0 + 0.9 * steep) * (1.0 - 0.6 * clamp(vMat.y, 0.0, 1.0));
+            // phase 7B: all of the pile has a little grain relief (stronger on steep faces), worked ground more
+            float a = (0.0011 + 0.0026 * clamp(vMat.z, 0.0, 1.0) + 0.0018 * vFresh) * (1.0 + 1.2 * steep) * (1.0 - 0.6 * clamp(vMat.y, 0.0, 1.0));
             float m = a * grMicroH();
             return vec2(dFdx(m), dFdy(m));
           }`)
@@ -302,28 +339,41 @@ export class GoldRushWorld {
           // material borders: the vertex weights pushed by world noise - ragged, organic edges
           float grB = grNoise(wuv * 2.3 + 1.3) * 0.6 + grNoise(wuv * 7.9 + 3.3) * 0.4;
           float grGW = smoothstep(0.16, 0.84, vMat.x + grB * 0.34), grRW = smoothstep(0.2, 0.8, vMat.y + grB * 0.26);
-          diffuseColor.rgb *= mix(mix(soilT, gravT, grGW), rockT, grRW) * crust;
-          // a mineralised streak: thin quartz veinlets (light), dark heavy-mineral streaks - subtle
+          // phase 7B close-up: how steep it is here, gravel gathering at the foot of the pile
+          vec3 grWN = normalize(cross(dFdx(vWPos), dFdy(vWPos)));
+          float grSteep = 1.0 - abs(grWN.y);
+          float grToe = smoothstep(0.42, 0.04, vWPos.y) * (1.0 - grSteep) * smoothstep(-0.1, 0.5, grB);
           float grS = clamp(vMat.w * 2.2, 0.0, 1.0);
+          grGW = max(grGW, max(grToe * 0.5, grS * 0.45));                   // the foot and a cemented streak: gravelly
+          diffuseColor.rgb *= mix(mix(soilT, gravT, grGW), rockT, grRW) * crust;
+          // the face's own structure: faint layering, rills running down, a few fracture lines in firm ground
+          float grStrata = grNoise(vec2(vWPos.y * 9.0, (wuv.x + wuv.y) * 0.45));
+          float grRill = grNoise(vec2((wuv.x * 0.7 - wuv.y * 0.7) * 10.0, vWPos.y * 1.3));
+          float grCrack = smoothstep(0.05, 0.0, abs(grNoise(wuv * 4.1 + vWPos.y * 1.9))) * grSteep * (0.25 + 0.75 * max(grRW, clamp(vMat.z, 0.0, 1.0) * 0.6));
+          diffuseColor.rgb *= (1.0 + 0.05 * grStrata * grSteep) * (1.0 - 0.06 * max(0.0, grRill) * grSteep) * (1.0 - 0.16 * grCrack);
+          // a mineralised streak (subtle, learnable - never a marker): a coherent rust wash, dark
+          // heavy-mineral bands along the strike, a few thin quartz veinlets (warm off-white, not white)
           vec2 sq = mat2(0.94, 0.34, -0.34, 0.94) * wuv;
-          float grQ = smoothstep(0.07, 0.0, abs(grNoise(sq * vec2(2.4, 9.5) + vWPos.y * 3.0)));
-          float grH = smoothstep(0.22, 0.0, abs(grNoise(sq * vec2(1.6, 6.1) + 11.0) - 0.3));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.84, 0.82, 0.77), grQ * grS * 0.5);
-          diffuseColor.rgb *= 1.0 - grH * grS * 0.3;
+          float grRust = smoothstep(-0.4, 0.5, grNoise(sq * 0.9 + 3.1)) * grS;
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.12, 0.84, 0.62), grRust * 0.45);
+          float grBand = smoothstep(0.72, 1.0, sin(sq.y * 24.0 + grNoise(sq * 2.7) * 2.2)) * grS;
+          diffuseColor.rgb *= 1.0 - grBand * 0.3;
+          float grQ = smoothstep(0.045, 0.0, abs(grNoise(sq * vec2(1.3, 7.5) + vWPos.y * 2.0))) * smoothstep(0.1, 0.6, grNoise(sq * 0.7 + 9.0));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.72, 0.66, 0.57), grQ * grS * 0.42);
           float grFresh = vFresh;
-          vec3 freshTint = mix(vec3(0.8, 0.75, 0.71), vec3(1.07, 1.05, 1.02), clamp(grGW + grRW, 0.0, 1.0));
+          // just cut (7B: limited - exposed earth, not a burnt black patch): a little darker and moist
+          vec3 freshTint = mix(vec3(0.86, 0.82, 0.78), vec3(1.07, 1.05, 1.02), clamp(grGW + grRW, 0.0, 1.0));
           diffuseColor.rgb *= mix(vec3(1.0), freshTint, grFresh * 0.9);
-          // just cut: moist and darker for some seconds (soil only), crumbly and uneven while fresh
           float grSoil = 1.0 - clamp(grGW + grRW, 0.0, 1.0);
-          diffuseColor.rgb *= 1.0 - vFreshQ * 0.16 * grSoil;
+          diffuseColor.rgb *= 1.0 - vFreshQ * 0.09 * grSoil;
           float grCrumb = grNoise(wuv * 23.0) * 0.6 + grNoise(wuv * 61.0) * 0.4;
-          diffuseColor.rgb *= 1.0 - grFresh * 0.11 * max(0.0, grCrumb) + grFresh * 0.04 * min(0.0, grCrumb);
+          diffuseColor.rgb *= 1.0 - grFresh * 0.07 * max(0.0, grCrumb) + grFresh * 0.04 * min(0.0, grCrumb);
           // worked ground keeps a little crumb shading after the fresh look is gone
           diffuseColor.rgb *= 1.0 - clamp(vMat.z, 0.0, 1.0) * (1.0 - grFresh) * 0.05 * max(0.0, grCrumb);`)
         .replace("#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
-          roughnessFactor *= (0.93 + 0.1 * grN2) * (1.0 - 0.14 * grFresh - 0.16 * vFreshQ * (1.0 - clamp(grGW + grRW, 0.0, 1.0)));`);
+          roughnessFactor *= (0.93 + 0.1 * grN2) * (0.96 + 0.07 * grSteep) * (1.0 - 0.14 * grFresh - 0.16 * vFreshQ * (1.0 - clamp(grGW + grRW, 0.0, 1.0)));`);
     };
-    this.terrainMaterial.customProgramCacheKey = () => "goldrush-terrain-v6";
+    this.terrainMaterial.customProgramCacheKey = () => "goldrush-terrain-v7";
     this.terrain = new DiggableTerrain(THREE, {
       seed: this.seed, center: { x: 0, z: -6 }, size: 30, cell: 0.125, chunkCells: 30,
       moundCenter: MOUND_CENTER, material: this.terrainMaterial, spawn: SPAWN,
@@ -531,7 +581,11 @@ export class GoldRushWorld {
     const wood = this.woodMat;
     const darkWood = this.track(new THREE.MeshStandardMaterial({ map: this.woodTex, color: 0x8a6a4c, roughness: 0.92 }));
     const metal = this.track(new THREE.MeshStandardMaterial({ color: 0x8b8f93, roughness: 0.55, metalness: 0.35 }));
-    const rust = this.track(new THREE.MeshStandardMaterial({ color: 0x8a4e2c, roughness: 0.75, metalness: 0.2 }));
+    const rust = this.track(new THREE.MeshStandardMaterial({ color: 0x74462c, roughness: 0.8, metalness: 0.2 }));
+    // phase 7B: weathered galvanised plates for the tank (it read as a black block before)
+    const tankTex = this.assets.procedural("tex:tank", () => canvasTexture(THREE, 256, (ctx, s) => tankPlates(ctx, s, this.seed + 23)));
+    const tankMat = this.track(new THREE.MeshStandardMaterial({ map: tankTex, color: 0xb2b0a8, roughness: 0.66, metalness: 0.22 }));
+    this._metalMats = [metal, rust, tankMat];          // they get the sky's reflection (buildEnvironment)
     const roofMat = this.track(new THREE.MeshStandardMaterial({ color: 0x7d8286, roughness: 0.6, metalness: 0.3 }));
 
     // tool shed (north-west of the gate)
@@ -575,12 +629,38 @@ export class GoldRushWorld {
     barrel(sx + 3.35, sz + 2.05, darkWood);
     barrel(-19.2, 4.4, rust);
 
-    // water tank (for the wash plant that will come)
-    const tank = new THREE.Mesh(this.track(new THREE.CylinderGeometry(1.25, 1.25, 2.3, 24)), metal);
+    // water tank (feeds the trough): riveted plates, a shallow cone roof with a hatch, two bands,
+    // the outlet with its valve where the trough's pipe comes in
+    const tankGeo = this.track(new THREE.CylinderGeometry(1.25, 1.25, 2.3, 24, 1, true));
+    const tank = new THREE.Mesh(tankGeo, tankMat);
     tank.position.set(-19.5, 1.9, 1.8);
     tank.castShadow = true;
     tank.receiveShadow = true;
     this.scene.add(tank);
+    const roofT = new THREE.Mesh(this.track(new THREE.CylinderGeometry(0.16, 1.3, 0.3, 24)), tankMat);
+    roofT.position.set(-19.5, 3.2, 1.8);
+    roofT.castShadow = true;
+    const hatch = new THREE.Mesh(this.track(new THREE.CylinderGeometry(0.2, 0.2, 0.08, 12)), metal);
+    hatch.position.set(-19.5, 3.38, 1.8);
+    const bottom = new THREE.Mesh(this.track(new THREE.CylinderGeometry(1.25, 1.25, 0.04, 24)), metal);
+    bottom.position.set(-19.5, 0.77, 1.8);
+    this.scene.add(roofT, hatch, bottom);
+    const tankBand = this.track(new THREE.TorusGeometry(1.262, 0.022, 5, 32));
+    for (const y of [1.15, 2.6]) {
+      const b = new THREE.Mesh(tankBand, rust);
+      b.rotation.x = Math.PI / 2;
+      b.position.set(-19.5, y, 1.8);
+      this.scene.add(b);
+    }
+    const valve = new THREE.Mesh(this.track(new THREE.CylinderGeometry(0.055, 0.055, 0.14, 10)), rust);
+    valve.rotation.z = Math.PI / 2;
+    valve.position.set(-18.2, 0.79, 1.8);
+    const wheel = new THREE.Mesh(this.track(new THREE.TorusGeometry(0.07, 0.012, 5, 12)), rust);
+    wheel.position.set(-18.2, 0.92, 1.8);
+    wheel.rotation.x = Math.PI / 2;
+    const stem = new THREE.Mesh(this.track(new THREE.CylinderGeometry(0.012, 0.012, 0.12, 6)), metal);
+    stem.position.set(-18.2, 0.86, 1.8);
+    this.scene.add(valve, wheel, stem);
     const legGeo = this.track(new THREE.BoxGeometry(0.12, 0.8, 0.12));
     for (const [dx, dz] of [[-0.8, -0.8], [0.8, -0.8], [-0.8, 0.8], [0.8, 0.8]]) {
       const leg = new THREE.Mesh(legGeo, darkWood);
@@ -694,8 +774,9 @@ export class GoldRushWorld {
       const s = 0.012 + rng() * rng() * 0.03;
       const n = this.pebbles.length;
       this.pebbles.push({ k, x, z, s, ry: rng() * 6.28, tilt: (rng() - 0.5) * 0.6 });
-      const gray = 0.55 + rng() * 0.25, warm = rng() * 0.12;
-      col.setRGB(gray + warm, gray + warm * 0.6, gray * 0.92);
+      // (7B: earthy greys and browns - not white confetti in the sun)
+      const gray = 0.36 + rng() * 0.2, warm = 0.04 + rng() * 0.1;
+      col.setRGB(gray + warm, gray + warm * 0.55, gray * 0.84);
       im.setColorAt(n, col);
     }
     im.count = this.pebbles.length;
@@ -850,6 +931,8 @@ export class GoldRushWorld {
     env.add(new THREE.Mesh(geo, mat));
     this.envRT = pm.fromScene(env, 0, 0.1, 1000);
     this.envMap = this.envRT.texture;
+    // phase 7B: the camp's metal reflects the sky (without it the tank and bands read black)
+    for (const m of this._metalMats || []) { m.envMap = this.envMap; m.envMapIntensity = 0.4; m.needsUpdate = true; }
     geo.dispose();
     mat.dispose();
     pm.dispose();

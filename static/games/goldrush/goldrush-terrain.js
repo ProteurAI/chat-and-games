@@ -58,7 +58,7 @@ const CHANGED_EPS = 0.004;
 // palette (sRGB hex, converted to linear once)
 const PALETTE = {
   dustA: 0x9a7650, dustB: 0x7e5e3f, dustC: 0xae8b5f, slope: 0x9c6d4b,
-  fresh: 0x7a5334, freshB: 0x694630, clay: 0x96603a, gravel: 0x857a6b,
+  fresh: 0x8a6642, freshB: 0x7c5a3e, clay: 0x96603a, gravel: 0x857a6b,
   stone: 0x8e8272, stoneDark: 0x61574c, ground: 0xb59f7d, band: 0x8f5a38,
   moist: 0x5e4129, spill: 0x9a7f5d,
   // per material: weathered surface / fresh cut
@@ -458,7 +458,7 @@ export class DiggableTerrain {
     const C = this.consumed;
     if (C && h - C[k] > 0.01) blend(P.fill, smoothstep(0.01, 0.06, h - C[k]) * 0.55);
     // cavities darker, crests lighter; fine grain (pits stay readable)
-    const shade = Math.min(1.1, Math.max(0.84, 1 - curv * 0.035)) * (1 + n2 * 0.05);
+    const shade = Math.min(1.1, Math.max(0.88, 1 - curv * 0.035)) * (1 + n2 * 0.05);
     out[0] *= shade; out[1] *= shade; out[2] *= shade;
   }
 
