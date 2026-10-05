@@ -3,7 +3,7 @@
 Interne Notizen für die Weiterentwicklung (Prompt 6–12). Nicht für Spieler.
 Liegt bewusst außerhalb von `static/`, wird also nicht ausgeliefert.
 
-## Module (Stand Phase 7B)
+## Module (Stand Phase 8)
 
 | Bereich | Datei(en) |
 |---|---|
@@ -27,8 +27,11 @@ Liegt bewusst außerhalb von `static/`, wird also nicht ausgeliefert.
 | Gold-Größenklassen (Phase 7A) | `goldrush-loot.js` (`FIND_LOOK`, `findSize`) |
 | Camp-Dressing, Wege (Phase 7A) | `goldrush-campdressing.js` (`CampDressing`, `PATHS`) |
 | Statische Teile zusammenbacken (Draw Calls) | `goldrush-merge.js` (`mergeStatic`) |
-| Loses Material in Schaufel / Eimer / Schubkarre / Sieb (Phase 7B) | `goldrush-heap.js` (`LooseLoad`, `LOOSE_MAT`) |
-| Entwickler-/QA-Werkzeuge | `goldrush-dev*.js` (siehe unten; Phase 6 / 7 / 7A / 7B: `goldrush-devcommands6.js`, `goldrush-devcommands7.js`, `goldrush-devcommands7a.js`, `goldrush-devcommands7b.js`) |
+| Loses Material in Schaufel / Eimer / Schubkarre / Sieb (Phase 8: behälterbezogen) | `goldrush-heap.js` (`GridLoad`, `bladeShape` / `bucketShape` / `trayShape` / `screenShape`, `LOOSE_MAT`) |
+| Schubkarre schieben (Phase 8) | `goldrush-wheelbarrow-controller.js` (`PushController`, `PUSH`, `clampLook`) |
+| Goldankauf-Bude, Ausrüstungs-Schuppen (Phase 8) | `goldrush-buildings.js` (`buildAssayBooth`, `buildSupplyShack`, `boardTexture`); Waage / Verkauf in `goldrush-stations.js` |
+| Autorierte Modelle .glb / .gltf (Phase 8, optional) | `goldrush-assets.js` (`model`, `modelOr`, `instance`), `models/manifest.json`, GLTFLoader in `static/vendor/three/addons/` |
+| Entwickler-/QA-Werkzeuge | `goldrush-dev*.js` (siehe unten; Phase 6 / 7 / 7A / 7B / 8: `goldrush-devcommands6.js`, `goldrush-devcommands7.js`, `goldrush-devcommands7a.js`, `goldrush-devcommands7b.js`, `goldrush-devcommands8.js`) |
 
 ## Materialfluss und Maschinen (Phase 6)
 
@@ -358,6 +361,149 @@ Schubkarre 10 / 40 / 85 l, Classifier Start / Mitte / Ende, Pfanne wenig / viel
 Feingold, Pay-Streak / Quarz. Diagnose → „Gold-Ledger (7B)“ (nur Devtools):
 Behälter-Input (Stücke, Feingold), jetzt in Behältern, direkt geborgen,
 Processing gewonnen, Tailings und ob die Behälter-Bilanz auf das µg aufgeht.
+
+## Premium Vertical Slice (Phase 8)
+
+Prompt 8 war ein Qualitätspass, keine neue Progression (Förderband / Trommel
+→ Prompt 9). Keine neuen Shop-Items, keine Preisänderung, Save bleibt v7.
+
+**Schubkarre – die Ursachen.** `Wheelbarrow.follow(player)` setzte die Karre
+jeden Frame vor den Spieler und drehte sie mit dem Blick (`yaw = player.yaw`);
+`processing._barrowHands()` projizierte die Welt-Griffe in die Hand-Kamera und
+`Glove._arm()` skalierte den Unterarm auf jede Länge (`arm.scale.y = len`).
+Beides ist weg:
+
+- `goldrush-wheelbarrow-controller.js` (`PushController`): Eingabe = Wunsch
+  (W/S schieben, bremsen, rückwärts; A/D lenken; Blick), die Karre antwortet
+  mit eigener Geschwindigkeit `v`, Drehrate `w`, Radwinkel `spin`, Neigung.
+  Beschleunigung `2,9 − 1,9·Last`, Bremsen `5,2 − 3,5·Last` m/s², maximale
+  Drehrate `(1,55 − 0,8·Last)` rad/s (im Stand halb), Drehträgheit
+  `6 − 3,8·Last`; bergauf weniger Kraft, bergab zieht sie (mehr mit Last),
+  raues Gelände kostet Tempo und rüttelt. Die Steigung wird geglättet
+  (~0,1 s) – das Mikrorelief lässt das Tempo nicht zucken. Endtempo bleibt
+  `WALK · speedFactor()` (unverändert, der Benchmark nutzt ihn).
+- Blick: bis 0,4 rad neben der Karre frei, darüber dreht sie sich mit
+  (ratenbegrenzt); weich zurück auf 0,72 rad, hart nie über 0,84 rad.
+- Gelände: das Rad fährt auf dem verformten Boden (Gruben inklusive). Steiler
+  als ~32° (`MAX_GRADE`, gemessen über 20 cm voraus – pro Frame-Schritt war
+  nie etwas zu steil, der alte Check griff praktisch nie) stoppt sie; eine
+  6-cm-Kante und der Weg aus einer Grube zurück auf Fußhöhe gehen immer.
+  Laderampe (Steigung 0,40) leer ~2,7 statt 3,2 m/s, voll ~1,4 statt 2,3.
+- Arme: Unterarm 0,28 m, Oberarm 0,31 m, Zwei-Gelenk-IK von der Schulter
+  (`ARM`, `Glove._arm`) – nie gestreckt; außer Reichweite behält die Hand den
+  Griff und der Arm zeigt zur Schulter. An der Karre sitzen die Hände auf
+  den Welt-Griffen (Hand-Pass mit der Projektion der Welt-Kamera), die
+  Schultern am Körper, der zur Karre schaut. Greifen: Hände → Griffe → Beine
+  heben ab; Abstellen: Griffe runter → Beine stehen → loslassen (< 0,4 s).
+
+**Linke Hand war eine rechte.** `_gripMatrix` spiegelte die linke Hand mit
+`Mx · M · Mx` (Determinante +1): an der linken Position saß ein rechter
+Handschuh, Daumen auf der falschen Seite – bei Schaufel, Spitzhacke, Eimer,
+Karre und Pfanne. Jetzt `Mx · M` (echte Spiegelung, `scale.x = −1`).
+
+**Goldpfanne / Waschschale halten** (`_rimMatrix`, `HELD_GRIPS.pan/bowl` mit
+`rim`): Handfläche außen an der Wand unter dem Rand, Finger die Wand hinab,
+Daumen über den Rand (`PAN_THUMB`). Gekrümmte Finger stachen durch den Boden –
+sie bleiben gestreckt. Test: keine Finger- / Daumenspitze im Gefäß (9 mm Haut).
+
+**Gold in der Pfanne:** keine Goldener-Schnitt-Sichel mehr. Schwarzsand ist
+eine unregelmäßige Ablagerung (eigene Geometrie `sandDisc`) in der tiefen Ecke
+(Boden an der fernen Wand); das Gold liegt darauf in 2–3 Ansammlungen, pro
+Ladung anders (Seed aus der Batch-ID), große Stücke am tiefsten Punkt, einzelne
+Streuer. Anzahl weiter wertabhängig (`_flakeCount`). Rein visuell.
+
+**Behälterbezogenes loses Material** (`GridLoad`): festes Gitter über der
+Öffnung, Form-Funktion pro Behälter (Höhe, Material da?, Dicke), Vertex-Alpha
+(ausgefranste Ränder), ein instanziertes Klumpen-Mesh nur auf sichtbarem
+Material. Schaufel: flache Schicht im gewölbten Blatt. Eimer: an der Wand
+begrenzt, fast eben auf echter Füllhöhe. Schubkarre: Innenform der konischen
+Mulde – kleiner Haufen, dann über den Boden verteilt, voll breit an den Wänden,
+nie über den Rand. Classifier: dünne Schicht über das Sieb, beim Rütteln
+Löcher, am Ende nur Grobes. (Bug-Fix: `sn` rechnete `noise2·2−1`, obwohl
+`noise2` schon −1..1 liefert – Relief und Lochmaske waren nach unten verzerrt.)
+
+**Fester Fels:** Bruchzustand pro Säule (`terrain.crack` 0..16, `rubble` cm).
+Spitzhacke: `strikeStone()` – +4 Risspunkte im Zentrum (weniger nach außen,
+Radius 0,26 m), bei 16 bricht die Säule (12 cm Geröll), angerissene Nachbarn
+(≥ 40 %) brechen mit → ein Fleck von ~0,4 m. Also: Hieb 1–3 Risse 25 / 50 /
+75 % plus kleine Splitter (0,12 kg), Hieb 4 bricht (~0,95 kg). Geröll ist
+Stein, den jedes Werkzeug abbaut (`rubbleEfficiency`), darunter ist der Fels
+wieder ganz. Gebucht als Stein (Masse exakt, Volumen exakt, kein Gold). Save:
+optionale Felder `crack` / `rubble` (RLE) im Terrain, v7.
+
+| Material | Hand | Schaufel | Spitzhacke |
+|---|---|---|---|
+| Erde | 100 % | 100 % | 25 % |
+| feste Erde | 45 % (gelockert 90 %) | 55 % (gelockert 94 %) | 35 %, lockert 14 cm |
+| Kies | 20 % (gelockert 32 %) | 50 % (gelockert 80 %) | 30 %, lockert |
+| fester Fels | blockiert, Hinweis „Spitzhacke“ | rutscht ab (Kratzen), Hinweis | Risse sichtbar, 4. Hieb bricht |
+| Fels-Geröll | 18 % | 55 % | 90 % |
+| Pay-Streak (zementiert) | blockiert, Hinweis | 8 % (rutscht) | 100 %, lockert → dann normal |
+| Felsbrocken | prallt ab | prallt ab | Stufen intakt → beschädigt → stark → gebrochen |
+
+Kein normales Bergmaterial weist alle Werkzeuge ab. Echter Grundfels (später
+Maschinen) müsste anders aussehen und beim ersten Kontakt erklärt werden.
+
+**Werkzeuge / Hände:** drei dezente Hieb-Varianten pro Werkzeug, kurzer
+Hit-Stop auf hartem Grund, materialabhängiger Rückstoß der Hacke, der
+Abwurf-Sound so schwer wie die Ladung, Ärmel als dunklere Arbeitsjacke.
+
+**Stationen** (`goldrush-buildings.js`): Goldankauf als Assay-Bude (Pultdach,
+Bretterwände, warme Innenseite, massive Theke, Messingwaage als Fokus, Regale
+mit Probengläsern / Tiegeln, Kassette, Kassenbuch, Laterne; GOLDANKAUF in
+Goldschrift auf dem Dachbrett und auf der Thekenfront). Verkauf: Beutel und
+Gold auf die linke Schale, Balken neigt sich, Messinggewichte, pendelt aus,
+Guthaben zählt danach hoch. Ausrüstung als offener Schuppen (Theke im
+offenen Teil, Werkzeug am Gestell, Regale, Eimer, Stiele, Kisten, Säcke,
+tiefe Blechtraufe; der alte Kasten in `goldrush-world.js` ist weg). Shop-Sheet
+als Bergbau-Ladentheke (Bretter, Schild, Katalogzeilen, Preisschilder) – Logik
+unverändert.
+
+**Berg / Camp / Licht:** Rinnen mit Kiesbett, hellere Rippen, rötere Bänder an
+steilen Flächen, trockene / feuchte Flecken; Schuttfächer am Fuß statt eines
+Konfetti-Rings, Felsausbisse; aus der Nähe körnige Erde mit Klumpen und Grus
+(blendet mit der Entfernung aus). Karrenspur Berg → Waschplatz; gewaschene
+Steine als gerundete Kiesel. Licht: Himmels-Probe als Umgebungslicht für alle
+Standardmaterialien, flaches Hemisphären-Licht tiefer.
+
+**HUD – wo ist mein Material:** Zeile unter dem Goldbeutel: Eimer, Karre,
+Konzentrat (Classifier-Wanne + Rinnen-Schale) – nur was man besitzt, das
+gerade getragene / geschobene hervorgehoben (mit kg), voll in Gold; einmal
+gebaut, nur Texte ändern sich. Der Chip darunter zeigt nur noch Maschinen in
+der Nähe (Vorratstrichter / Rinne). Handy: nur Icons und Zahlen.
+
+**Autorierte Modelle (optional):** `AssetManager.model(url)` lädt .glb / .gltf
+mit dem GLTFLoader von three r176 (gleicher npm-Tarball, SHA-1 geprüft),
+gecacht, mit Fortschritt und Dispose. Nur in `models/manifest.json` gelistete
+Dateien werden geholt (kein 404 für fehlende); sonst `null` → `modelOr()` baut
+das prozedurale Modell. Workflow: `static/games/goldrush/ASSETS.md`.
+
+**Messwerte** (`goldrush_premium_e2e.py --only perf`, AMD-iGPU, 1366×768 bzw.
+emuliertes Handy): Goldankauf-Bude 97 Draw Calls (Handy 70), Ausrüstung 95
+(78), Camp 100 (71), Mine 113 (97), volle Schubkarre schieben 113 (88) –
+überall 59–60 fps. 20× Karre 0 → 85 l, 14 Greif-/Schiebe-/Abstell-Zyklen,
+10 000 Schaufelladungen: keine neue Geometrie / Textur / kein Objekt, kein
+Heap-Wachstum. Die Arm-Meshes werden beim Laden einmal ohne Culling gezeichnet
+(sonst +2 Geometrien beim ersten Schieben).
+
+**Dev-Pack 8** (`goldrush-devcommands8.js`): Preset „Phase 8 Premium-QA“
+(Ausrüstung, die Karre vor dir), unter Welt: Schubkarre leer / halb / voll,
+Hang + raue Strecke, Erde / feste Erde / Kies / eingebetteter Fels, Felsbrocken,
+Pay-Streak, Classifier beladen, Goldankauf, Ausrüstung, Camp-Überblick.
+
+**Tests:** `tests/e2e/goldrush_premium_e2e.py` (`--only barrow,barrowterrain,
+stone,matrix,loads,glb,hands,pangold,hud,sound,stable,perf,dev`; die 17 festen
+Review-Ansichten mit `--shots DIR --tag NAME`). Die Karrentests laufen
+pausiert: nur `walk()` treibt die Zeit (die echte Schleife bremste die Karre
+zwischen zwei Aufrufen und machte die Messung lastabhängig); unter WebKit
+startet die Suite den Browser pro Teil neu. Ältere Suiten angepasst, wo sich
+das Verhalten bewusst geändert hat: T33 (`goldrush_tools_e2e.py`) prüft
+Splittern → Bruch statt „langsam abtragen“, die 7B-Stabilität misst
+`GridLoad`-Kennzahlen statt `LooseLoad`-Parameter, die Phase-6-Schiebetests
+rechnen mit dem Anfahren (W7: leer > 7 m in 3 s; bis zum Trichter 2,6 s
+schieben); der Test-Hook `proc().held` meldet „barrow“, solange die Hände an
+der Karre sind.
+
 
 ## Entwicklertools (QA-Modus, Prompt 5.5)
 
