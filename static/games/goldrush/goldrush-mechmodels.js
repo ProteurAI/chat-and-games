@@ -11,7 +11,7 @@
 //                y = 0 is the ground
 
 import { mulberry32, noise2 } from "./goldrush-noise.js";
-import { LooseLoad } from "./goldrush-heap.js";
+import { GridLoad, trayShape, TRAY } from "./goldrush-heap.js";
 
 export const BARROW = { wheelR: 0.19, grip: 1.3, gripY: 0.46, gripX: 0.27, trayZ0: 0.2, trayZ1: 1.02, trayW: 0.66, trayD: 0.3, floorY: 0.33, legZ: 0.92 };
 export const SLUICE = { len: 2.7, width: 0.38, side: 0.15, headY: 0.92, tailY: 0.62, hopper: { w: 0.78, d: 0.72, h: 0.32 } };
@@ -206,8 +206,8 @@ export class MechModels {
     tg.clearGroups();
     tg.computeVertexNormals();
     const trayLen = B.trayZ1 - B.trayZ0, zc = (B.trayZ0 + B.trayZ1) / 2;
-    const tray = this._mesh(tg, this.galv, B.trayW, B.trayD, trayLen, 0, B.floorY + B.trayD / 2, zc, g);
-    tray.material = this.galv;
+    // (phase 8: its own worn galvanised sheet - spangle, scratches, dents, dirt towards the floor)
+    const tray = this._mesh(tg, this.trayGalv || (this.trayGalv = this._trayMaterial()), B.trayW, B.trayD, trayLen, 0, B.floorY + B.trayD / 2, zc, g);
     g.userData.tray = tray;
     // rim
     for (const s of [-1, 1]) this._mesh(this.cyl, this.galvDark, 0.012, trayLen + 0.08, 0.012, s * B.trayW / 2, B.floorY + B.trayD, zc - 0.03, g).rotation.x = Math.PI / 2;
@@ -222,9 +222,9 @@ export class MechModels {
       // leg under the back of the tray
       this._mesh(this.box, this.galvDark, 0.025, B.floorY + 0.02, 0.025, s * 0.23, (B.floorY + 0.02) / 2, B.legZ, g);
     }
-    // the load (phase 7B): loose ground in the tray - a small uneven heap that grows in width and
-    // height, full a few mounds heaped over the rim; clods / pebbles / stones on it (two draws)
-    const load = new LooseLoad(THREE, g, { map: this.heapMap, rings: 8, segs: 26, lumps: 56, uv: 5, seed: 31, shadow: true });
+    // the load (phase 8): loose ground shaped by the inside of the tray (goldrush-heap.js trayShape) -
+    // a pile, then spread along the floor, at last a broad load held by the walls (two draws)
+    const load = new GridLoad(THREE, g, { nx: 17, nz: 23, x0: -TRAY.w1, x1: TRAY.w1, z0: TRAY.zf1, z1: TRAY.zb1, map: this.heapMap, lumps: 64, uv: 5, seed: 31, shadow: true });
     this.loads.push(load);
     g.userData.fill = load.surface;
     g.userData.load = load;
@@ -232,18 +232,46 @@ export class MechModels {
     return g;
   }
 
-  // load in the tray: frac 0..1 of its capacity, comp its masses per material. A little is a small
-  // uneven heap in the middle; it grows in width and height, its base rises once it reaches the
-  // walls; full, it is heaped a hand's breadth over the rim in a few mounds (85 l look like 85 l)
+  // a worn galvanised steel sheet (canvas): zinc spangle, scratches, a few dents, earth in the corners
+  _trayMaterial() {
+    const THREE = this.THREE;
+    const tex = canvasTex(THREE, 256, 256, (g, w, h) => {
+      const rng = mulberry32(57);
+      g.fillStyle = "rgb(176,178,174)"; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 700; i++) {                                   // spangle
+        const v = 150 + rng() * 70, s = 3 + rng() * 14;
+        g.fillStyle = `rgba(${v},${v + 2},${v + 2},0.32)`;
+        g.fillRect(rng() * w, rng() * h, s, s * (0.5 + rng()));
+      }
+      for (let i = 0; i < 60; i++) {                                    // scratches
+        g.strokeStyle = `rgba(232,234,230,${0.2 + rng() * 0.3})`; g.lineWidth = 0.6 + rng();
+        const x = rng() * w, y = rng() * h; g.beginPath(); g.moveTo(x, y); g.lineTo(x + (rng() - 0.5) * 60, y + (rng() - 0.5) * 20); g.stroke();
+      }
+      for (let i = 0; i < 9; i++) {                                     // dents
+        const x = rng() * w, y = rng() * h, r = 8 + rng() * 18, gr = g.createRadialGradient(x, y, 1, x, y, r);
+        gr.addColorStop(0, "rgba(70,72,72,0.35)"); gr.addColorStop(1, "rgba(70,72,72,0)");
+        g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
+      }
+      const dirt = g.createLinearGradient(0, h * 0.45, 0, h);             // earth caked low down
+      dirt.addColorStop(0, "rgba(96,72,48,0)"); dirt.addColorStop(1, "rgba(96,72,48,0.55)");
+      g.fillStyle = dirt; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(120,64,32,${0.15 + rng() * 0.25})`; g.fillRect(rng() * w, h * 0.5 + rng() * h * 0.5, 1 + rng() * 4, 1 + rng() * 4); }
+    });
+    this.texs.push(tex);
+    const m = new THREE.MeshStandardMaterial({ map: tex, color: 0xd2d4d0, roughness: 0.55, metalness: 0.5, envMap: this.galv.envMap || null, envMapIntensity: 0.6, side: THREE.DoubleSide });
+    this.mats.push(m);
+    return m;
+  }
+
+  // load in the tray: frac 0..1 of its capacity, comp its masses per material (goldrush-heap.js
+  // trayShape: a pile near the front, spreading along the floor, at last a broad load held by the
+  // walls, heaped a hand's breadth over the rim - 85 l look like 85 l of loose ground)
   setBarrowFill(g, frac, comp) {
-    const B = BARROW, L = g.userData.load, on = frac > 0.004;
+    const L = g.userData.load, on = frac > 0.004;
     L.setVisible(on);
     if (!on) return;
-    const len = B.trayZ1 - B.trayZ0, zc = (B.trayZ0 + B.trayZ1) / 2, f = Math.min(1, frac), g6 = f ** 0.6;
-    const sm = Math.max(0, Math.min(1, (f - 0.35) / 0.65)), base = B.floorY + 0.006 + B.trayD * 0.62 * sm * sm * (3 - 2 * sm);
-    const top = B.floorY + B.trayD * (0.22 + 0.95 * g6) + 0.06 * f * f;
-    L.set({ rx: (B.trayW / 2) * (0.42 + 0.5 * g6), rz: (len / 2) * (0.45 + 0.47 * g6), h: Math.max(0.02, top - base), y0: base, x0: 0, z0: zc - len * 0.04 * f,
-      lobes: 1 + Math.round(3 * f), comp: comp || [1, 0, 0, 0], amount: 0.55 + 0.45 * f, seed: 31 });
+    const f = Math.min(1, frac), c = comp || [1, 0, 0, 0];
+    L.set(`${Math.round(f * 240)}:${c.map((v) => Math.round(v / 200)).join(",")}`, trayShape(f, c), c, { amount: 0.55 + 0.45 * f, tMax: 0.32 });
   }
 
   // ---- SLUICE: legs, the sloped box with its riffle bed, the hopper at the head,

@@ -9,7 +9,7 @@
 // pan's inside: flat bottom r = 0.11 m, walls flaring to 0.19 m at 6 cm.
 
 import { mulberry32, noise2 } from "./goldrush-noise.js";
-import { LooseLoad } from "./goldrush-heap.js";
+import { GridLoad, bucketShape, SCREEN } from "./goldrush-heap.js";
 
 export const BUCKET = { r0: 0.112, r1: 0.14, h: 0.27, fillMax: 0.214 };       // 10 l at the fill line
 export const PAN = { r0: 0.11, r1: 0.19, h: 0.058 };
@@ -232,7 +232,7 @@ export class ProcessModels {
     g.add(bail);
     g.add(new THREE.Mesh(this.bucketGrip, this.gripWood));
     // the load (phase 7B): loose ground up to its level - uneven, crumbs / clods / pebbles on it
-    const load = new LooseLoad(THREE, g, { map: this.soilMap, rings: 6, segs: 24, lumps: 26, uv: 9, seed: 11 });
+    const load = new GridLoad(THREE, g, { nx: 15, nz: 15, x0: -0.142, x1: 0.142, z0: -0.142, z1: 0.142, map: this.soilMap, lumps: 26, uv: 9, seed: 11 });
     this.loads.push(load);
     g.scale.setScalar(scale);
     g.userData.fill = load.surface;
@@ -246,8 +246,9 @@ export class ProcessModels {
     const L = group.userData.load, on = ml > 50;
     L.setVisible(on);
     if (!on) return;
-    const h = bucketFillHeight(ml), r = bucketRadius(h) - 0.005, k = Math.min(1, ml / 10000);
-    L.set({ rx: r, rz: r, h: 0.008 + 0.02 * k, y0: Math.max(0.014, h) - 0.006, edge: 1, lobes: 3, comp: comp || [1, 0, 0, 0], amount: 0.45 + 0.45 * k, seed: 11 });
+    const h = bucketFillHeight(ml), k = Math.min(1, ml / 10000), c = comp || [1, 0, 0, 0];
+    // phase 8: wall-constrained and nearly level, a few clumps - never a cone however full
+    L.set(`${Math.round(ml / 25)}:${c.map((v) => Math.round(v / 50)).join(",")}`, bucketShape(h, bucketRadius, k, c), c, { amount: 0.45 + 0.45 * k, tMax: 0.22 });
   }
 
   // ---- the gold pan (world or hand): body, riffles, mud, water, pebbles, flakes
@@ -420,7 +421,8 @@ export class ProcessModels {
     }
     // what lies on the screen (phase 7B): a loose heap of the raw load - the fines sink through as
     // you shake, the pebbles / clods / stones stay; afterwards the coarse remainder alone
-    const heapLoad = new LooseLoad(THREE, frame, { map: this.soilMap, rings: 6, segs: 22, lumps: 36, uv: 8, seed: 21, shadow: true });
+    // what lies on the screen (phase 8): a shallow layer spread across it (goldrush-heap.js screenShape)
+    const heapLoad = new GridLoad(THREE, frame, { nx: 21, nz: 17, x0: -SCREEN.hx, x1: SCREEN.hx, z0: -SCREEN.hz, z1: SCREEN.hz, map: this.soilMap, lumps: 48, uv: 8, seed: 21, shadow: true });
     this.loads.push(heapLoad);
     const heap = heapLoad.surface, stones = heapLoad.lumps;
     g.add(frame);

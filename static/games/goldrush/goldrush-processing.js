@@ -54,6 +54,7 @@ import { FIND } from "./goldrush-resources.js";
 import { findSize } from "./goldrush-loot.js";
 import { centsForMass } from "./goldrush-economy.js";
 import { mergeStatic } from "./goldrush-merge.js";
+import { screenShape } from "./goldrush-heap.js";
 
 // the wash place, next to the water tank (-19.5, 1.8)
 export const WASH = {
@@ -1064,20 +1065,20 @@ export class ProcessingSystem {
   // sinks through (the heap gets lower, the pebbles / clods / stones show more and more), at the
   // end only the coarse part lies there - what the screen really keeps (COARSE) - until it slides off
   _sieveLook() {
+    // phase 8: spread shallow across the screen (goldrush-heap.js screenShape); while you shake, the fines
+    // go - the layer thins, holes open, the coarse pieces stay; at the end only they lie there
     const H = this.cls.userData.heapLoad, b = this.sieve.batch;
     if (b.volumeMl > 100) {
-      const p = Math.round(this.sieve.progress * 20) / 20, m = b.massG || 1;
+      const p = Math.round(this.sieve.progress * 20) / 20;
       const comp = [0, 0, 0, 0];
-      let coarse = 0;
-      for (let k = 0; k < 4; k++) { const c = b.comp[k] * COARSE[k]; coarse += c; comp[k] = c + (b.comp[k] - c) * (1 - p); }
-      const share = coarse / m, vis = b.volumeMl * (share + (1 - share) * (1 - p));
-      const r = Math.min(0.36, 0.1 + Math.cbrt(vis / 1e6) * 0.66);
+      for (let k = 0; k < 4; k++) { const c = b.comp[k] * COARSE[k]; comp[k] = c + (b.comp[k] - c) * (1 - p); }
+      const vol = Math.min(1, b.volumeMl / 14000), seed = b.id % 97;
       H.setVisible(true);
-      H.set({ rx: r, rz: r * 0.82, h: r * (0.16 + 0.2 * (1 - p)), y0: 0.016, lobes: 4, comp, amount: 0.55 + 0.45 * p, seed: b.id % 97, wobble: 0.13 });
+      H.set(`l:${p}:${b.id}:${Math.round(b.volumeMl / 100)}`, screenShape(p, vol, comp, seed), comp, { amount: 0.5 + 0.5 * p, tMax: 0.05 });
     } else if (this.sieve.stones > 0 && this.sieve.coarse) {
-      const c = this.sieve.coarse, r = Math.min(0.34, 0.09 + Math.cbrt(c.ml / 1e6) * 0.62);
+      const c = this.sieve.coarse;
       H.setVisible(true);
-      H.set({ rx: r, rz: r * 0.82, h: 0.01 + r * 0.12, y0: 0.016, lobes: 2, comp: c.comp, amount: 1, seed: c.seed });
+      H.set(`c:${c.seed}:${c.ml}`, screenShape(1, Math.min(1, c.ml / 6000), c.comp, c.seed), c.comp, { amount: 1, tMax: 0.05 });
     } else H.setVisible(false);
   }
 

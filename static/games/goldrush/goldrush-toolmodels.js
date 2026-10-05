@@ -7,7 +7,7 @@
 // grips[] are the points (and handle direction) the gloves hold.
 
 import { mulberry32, noise2 } from "./goldrush-noise.js";
-import { LooseLoad } from "./goldrush-heap.js";
+import { GridLoad, bladeShape } from "./goldrush-heap.js";
 
 // long wood grain along v, a few darker worn patches
 function woodGrain(ctx, w, h, seed) {
@@ -201,14 +201,13 @@ export class ToolModels {
     }
     rim.visible = false;
     head.add(rim);
-    // the load (shown while scooping / carrying - phase 7B): loose ground on the blade, a flat
-    // uneven layer with crumbs / clods / pebbles on it - never one round lump
-    this.bladeLoad = new LooseLoad(THREE, head, { rings: 5, segs: 18, lumps: 26, uv: 30, seed: 5, roughness: 1, lumpK: 1.3, shade: 0.42 });
+    // the load (shown while scooping / carrying - phase 8): a shallow layer that follows the
+    // dished blade (goldrush-heap.js bladeShape), crumbs / clods / stones on it - never a lump
+    this.bladeLoad = new GridLoad(THREE, head, { nx: 13, nz: 17, x0: -0.125, x1: 0.125, z0: -0.33, z1: -0.02, lumps: 26, uv: 30, seed: 5, roughness: 1, lumpK: 1.15 });
     this.soil = this.bladeLoad.surface;          // (the engine's warm pass, the shop's rack and the tests know it by these)
     this.crumbs = this.bladeLoad.lumps;
     this.crumbs.userData.max = 26;
     this.loadRgb = null;                         // the colour of the ground just dug (set by the engine)
-    this._bladeZ = -0.76 - HEAD_Z;
     shovel.userData.grips = [
       { z: 0.42, dir: 1, side: 1 },               // right hand on the D-grip
       { z: -0.18, dir: 1, side: -1 },             // left hand down the shaft
@@ -296,11 +295,11 @@ export class ToolModels {
     const L = this.bladeLoad, on = load > 0.02;
     L.setVisible(on);
     if (!on) return;
-    const k = Math.min(1, load), comp = [0, 0, 0, 0];
-    comp[mat] = 1;
-    // (a heaped, ragged layer: thick in the middle, crumbling thin at the edges - clods sit up out of it)
-    L.set({ rx: 0.05 + 0.045 * k, rz: 0.06 + 0.055 * k * (1 - 0.35 * slide), h: 0.02 + 0.05 * k, y0: 0.019 - slide * 0.01,
-      x0: lagX, z0: this._bladeZ - slide * 0.075 + lagZ, lobes: mat === 2 ? 4 : 3, comp, amount: 0.75 + 0.25 * k, seed: 3 + mat, rgb: this.loadRgb, wobble: 0.23 });
+    const k = Math.min(1, load), comp = this._comp || (this._comp = [0, 0, 0, 0]);
+    comp.fill(0); comp[mat] = 1;
+    // a layer on the blade: thicker in the middle, thin at the edges, sliding towards the tip on release
+    const rgb = this.loadRgb, sig = `${k.toFixed(2)}:${slide.toFixed(2)}:${lagX.toFixed(3)}:${lagZ.toFixed(3)}:${mat}:${rgb ? rgb.map((c) => c.toFixed(2)).join("/") : ""}`;
+    L.set(sig, bladeShape(k, slide, lagX, lagZ, comp, 3 + mat), comp, { amount: 0.7 + 0.3 * k, rgb, tMax: 0.04 });
   }
 
   // a little dirt sticks to the working ends while you use them
