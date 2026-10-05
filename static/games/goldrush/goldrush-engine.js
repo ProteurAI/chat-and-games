@@ -946,7 +946,8 @@ export class GoldRushGame {
       setTimeout(() => {
         if (this.disposed) return;
         this.effects.spill(x, y, z, MATERIALS[this.lastStroke ? this.lastStroke.material : 0] || MATERIALS[0], Math.min(1, 0.4 + (this.lastStroke ? this.lastStroke.massKg : 1) / 3));
-        this.audio.play("dump", { pan: 0.4, dist: 0.6 });
+        // (phase 8: as heavy as the load was)
+        this.audio.play("dump", { pan: 0.4, dist: 0.6, strength: Math.min(1, 0.45 + (this.lastStroke ? this.lastStroke.massKg : 1) / 3.5) });
       }, 120);
     } else if ((v.tool === "pickaxe" && v.phase === "swing") || (v.tool === "shovel" && v.phase === "thrust")) {
       this.audio.play("swing", { dist: 0.3, strength: v.tool === "pickaxe" ? 1 : 0.6 });

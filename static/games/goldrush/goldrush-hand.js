@@ -64,6 +64,23 @@ export const TOOL_KEYS = {
   },
 };
 
+// phase 8: three strike variants per tool (by the stroke's cycle) - small offsets of position /
+// rotation laid over the keyframes, faded in and out across the stroke (never a pop at rest)
+const TOOL_VARIANTS = {
+  shovel: [
+    { p: [0, 0, 0], r: [0, 0, 0] },
+    { p: [0.018, -0.012, 0.008], r: [0.05, -0.04, -0.06] },          // a little lower and further right, the blade turned in
+    { p: [-0.014, 0.008, -0.01], r: [-0.04, 0.05, 0.07] },           // higher, from the left
+  ],
+  pickaxe: [
+    { p: [0, 0, 0], r: [0, 0, 0] },
+    { p: [0.03, 0.01, 0], r: [0.04, -0.03, 0.06] },                  // a swing from a little further right
+    { p: [-0.025, -0.006, 0.012], r: [-0.05, 0.04, -0.07] },         // shorter, from the left
+  ],
+};
+// how hard the ground answers (by MAT): the pick is thrown back further off harder ground
+const RECOIL = [0.03, 0.06, 0.08, 0.17];
+
 // which key a phase moves towards (and its easing)
 const PHASE_KEY = {
   shovel: { windup: ["windup", "out"], thrust: ["thrust", "in"], scoop: ["scoop", "inout"], dump: ["dump", "inout"], recover: ["rest", "inout"], recoil: ["recoil", "out"] },
@@ -232,12 +249,14 @@ class Glove {
     this._arm(aspectK);
   }
 
-  // on a tool grip: m = the glove's full matrix (incl. the mirror)
-  applyMatrix(m, aspectK, curl = 0.95) {
+  // on a tool grip: m = the glove's full matrix (incl. the mirror); thumb: its own pose (a hand on a
+  // rim: hooked over it) instead of closed round a handle
+  applyMatrix(m, aspectK, curl = 0.95, thumb = null) {
     const root = this.root;
     m.decompose(root.position, root.quaternion, root.scale);
-    this.thumb.rotation.set(-0.55, 0.55, -0.9);               // thumb closed over the handle
-    this._curl(curl, 0.9);
+    if (thumb) this.thumb.rotation.set(thumb[0], thumb[1], thumb[2]);
+    else this.thumb.rotation.set(-0.55, 0.55, -0.9);          // thumb closed over the handle
+    this._curl(curl, thumb ? (thumb[3] != null ? thumb[3] : 0.9) : 0.9);
     root.updateMatrix();
     this._arm(aspectK);
   }
@@ -508,6 +527,9 @@ export class FirstPersonHands {
 
   pickupPulse() { this.grab = 1; }
 
+  // the blow is held for a moment where the tool meets hard ground (phase 8: the pick on rock)
+  hitStop(s) { if (!this.reducedMotion) this._stop = Math.max(this._stop || 0, s); }
+
   // camera turn this frame (radians) -> the hands lag a little behind
   look(dx, dy) {
     if (this.reducedMotion) return;
@@ -645,7 +667,9 @@ export class FirstPersonHands {
     const inspecting = !!this.inspecting;
     const sig = `${view.state}:${view.phase}:${view.cycle}`;
     if (sig !== this._phaseSig) { this._phaseSig = sig; this._toolFrom = clonePose(pose); }
-    if (this.debugToolPose) {
+    if (this._stop > 0) {
+      this._stop -= dt;                                  // hit-stop: the tool stays where it struck
+    } else if (this.debugToolPose) {
       pose.p = [...this.debugToolPose.p];
       pose.r = [...this.debugToolPose.r];
     } else if (view.state === "action" && PHASE_KEY[id][view.phase]) {
@@ -673,10 +697,20 @@ export class FirstPersonHands {
       const lagX = ph === "scoop" || ph === "recover" ? 0.006 * Math.sin(u * Math.PI * 2) : ph === "dump" ? -0.004 * slide : 0;
       this.models.setLoad(this.load, slide, lagX, lagZ, this.loadMat || 0);
     }
+    // this stroke's variant (drawn only - the keyframe pose stays clean), strongest mid-stroke; the pick
+    // thrown back off hard ground (material-specific recoil)
+    const vp = this._vp || (this._vp = [0, 0, 0, 0, 0, 0]);
+    vp.fill(0);
+    if (view.state === "action" && !rm && !this.debugToolPose) {
+      const V = (TOOL_VARIANTS[id] || [])[(view.cycle || 0) % 3], ph = view.phase, u = view.u || 0;
+      const k = ph === "recover" ? 1 - ease(u) : ph === "windup" || ph === "raise" ? ease(u) : 1;
+      if (V) for (let i = 0; i < 3; i++) { vp[i] = V.p[i] * k; vp[3 + i] = V.r[i] * k; }
+      if (id === "pickaxe" && ph === "recoil") vp[3] += (RECOIL[this.hitMat] || 0.05) * Math.sin(u * Math.PI) * (this.hit === "blocked" ? 1.3 : 1);
+    }
     const shake = this.shake > 0 ? Math.sin(this.time * 70) * 0.012 * (this.shake / 0.22) : 0;
     const T = this.toolRoot;
-    T.position.set(pose.p[0] * this.aspectK + extra.x + shake, pose.p[1] + extra.y, pose.p[2]);
-    T.rotation.set(pose.r[0] + extra.rx + (rm ? 0 : shake * 2), pose.r[1], pose.r[2]);
+    T.position.set((pose.p[0] + vp[0]) * this.aspectK + extra.x + shake, pose.p[1] + vp[1] + extra.y, pose.p[2] + vp[2]);
+    T.rotation.set(pose.r[0] + vp[3] + extra.rx + (rm ? 0 : shake * 2), pose.r[1] + vp[4], pose.r[2] + vp[5]);
     T.updateMatrix();
     T.updateMatrixWorld(true);
     // gloves on the grips (the right one may be away, showing a nugget)
@@ -720,7 +754,7 @@ export class FirstPersonHands {
     for (const g of [this.right, this.left]) {
       const grip = this.heldGrips && this.heldGrips.find((q) => q.side === g.side);
       if (grip) {
-        g.applyMatrix(this._gripMatrix(grip, this._g, G.matrix), this.aspectK, 0.95);
+        g.applyMatrix(this._gripMatrix(grip, this._g, G.matrix), this.aspectK, grip.curl != null ? grip.curl : 0.95, grip.thumb || null);
         g.pose = clonePose(POSE.rest);
       } else {
         // the free hand hangs at your side, out of the way
@@ -767,6 +801,7 @@ export class FirstPersonHands {
   // frame = the matrix of what is held (default: the tool); grip.yaw turns the fist round the
   // back of the hand (a handle that runs through it at an angle)
   _gripMatrix(grip, out, frame = null) {
+    if (grip.rim) return this._rimMatrix(grip, out, frame);
     const bx = this._bx, by = this._by, bz = this._bz, f = grip.flip || 1, ph = grip.roll || 0;
     if (grip.axis === "x") { bx.set(f, 0, 0); by.set(0, Math.cos(ph), -Math.sin(ph)); }
     else { bx.set(0, 0, f); by.set(-Math.sin(ph), Math.cos(ph), 0); }
@@ -776,7 +811,30 @@ export class FirstPersonHands {
     // the handle centre in the glove lands on the grip point
     const h = this._v.set(HANDLE_IN_GLOVE[0], HANDLE_IN_GLOVE[1], HANDLE_IN_GLOVE[2]).applyMatrix4(m);
     m.setPosition(grip.pos[0] - h.x, grip.pos[1] - h.y, grip.pos[2] - h.z);
-    if (grip.side === -1) m.premultiply(this._mx).multiply(this._mx);
+    // the left hand: the right hand's grip mirrored in the held object's x - and the glove with it (a
+    // real mirror, determinant -1: applyMatrix decomposes it into the left glove's scale.x = -1). Phase 8:
+    // it used to be Mx * M * Mx - a right-handed glove at the left hand's place, the thumb on the wrong side
+    if (grip.side === -1) m.premultiply(this._mx);
+    return m.premultiply(frame || this.toolRoot.matrix);
+  }
+
+  // a hand holding a round rim from outside (the gold pan, the wash bowl - phase 8), as if it were the
+  // right hand on the +x side: the palm against the outer wall just under the rim, the fingers down the
+  // wall and on under the bottom, the knuckle line along the rim, the thumb over it - never inside.
+  // grip.rim = { at: where on the rim (rad from +x towards +z, i.e. towards you), r / y: the rim's
+  // radius / height, wall: the outer wall's angle from the horizontal, up: the wrist this far above the
+  // rim (along the wall), out: the palm's surface this far off it, twist / tilt: small corrections }
+  _rimMatrix(grip, out, frame = null) {
+    const R = grip.rim, a = R.at || 0, nx = Math.cos(a), nz = Math.sin(a), sw = Math.sin(R.wall), cw = Math.cos(R.wall);
+    const by = this._by.set(nx * sw, -cw, nz * sw);                 // the back of the hand: out and down
+    const bz = this._bz.set(nx * cw, sw, nz * cw);                  // towards the wrist: up the wall
+    const bx = this._bx.crossVectors(by, bz);                       // the knuckle line: along the rim
+    if (R.twist) { by.applyAxisAngle(bz, R.twist); bx.applyAxisAngle(bz, R.twist); }
+    if (R.tilt) { by.applyAxisAngle(bx, R.tilt); bz.applyAxisAngle(bx, R.tilt); }
+    const m = out.makeBasis(bx, by, bz);
+    const up = R.up || 0, o = R.out || 0;
+    m.setPosition(R.r * nx + bz.x * up + by.x * o, R.y + bz.y * up + by.y * o, R.r * nz + bz.z * up + by.z * o);
+    if (grip.side === -1) m.premultiply(this._mx);                  // the left hand: mirrored (see _gripMatrix)
     return m.premultiply(frame || this.toolRoot.matrix);
   }
 

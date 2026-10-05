@@ -83,12 +83,19 @@ const HELD = {
   bowl: { p: [0, -0.22, -0.55], r: [0.52, 0, 0] },                      // the wooden bowl: smaller, a little closer
   sieve: { p: [0, -0.25, -0.5], r: [0, 0, 0] },                         // both hands on the frame's handles
 };
+// the rims the hands hold (goldrush-processmodels.js PAN / BOWL profiles: the outer wall's top, its angle)
+// (fingers straight along the wall: curled, their tips came through the bottom - phase 8 QA)
+const PAN_RIM = { at: 0.1, r: 0.19, y: 0.058, wall: 0.64, up: 0.07, out: 0.03, twist: 0, tilt: 0 };
+const BOWL_RIM = { at: 0.1, r: 0.158, y: 0.07, wall: 0.8, up: 0.07, out: 0.03, twist: 0, tilt: 0 };
+const PAN_THUMB = [-1.21, 0.524, 1.2, 0.8];          // the thumb's rotation (x, y, z) and the bend of its tip: over the rim, forward and in
 // how the gloves hold them (in the object's frame; like GRIPS in goldrush-hand.js:
 // a left-hand grip is written as for the right hand - it is mirrored)
 export const HELD_GRIPS = {
   bucket: [{ side: 1, pos: [0, 0.428, 0], axis: "x", roll: -0.2, flip: 1 }],
-  pan: [{ side: 1, pos: [0.2, 0.05, 0.02], axis: "z", roll: 1.75, flip: 1 }, { side: -1, pos: [0.2, 0.05, 0.02], axis: "z", roll: 1.75, flip: 1 }],
-  bowl: [{ side: 1, pos: [0.165, 0.07, 0.02], axis: "z", roll: 1.75, flip: 1 }, { side: -1, pos: [0.165, 0.07, 0.02], axis: "z", roll: 1.75, flip: 1 }],
+  // pan / bowl (phase 8): held from outside at the sides - the palms against the outer wall under the
+  // rim, the fingers under the bottom, the thumbs over the rim (goldrush-hand.js _rimMatrix)
+  pan: [{ side: 1, rim: PAN_RIM, curl: 0, thumb: PAN_THUMB }, { side: -1, rim: PAN_RIM, curl: 0, thumb: PAN_THUMB }],
+  bowl: [{ side: 1, rim: BOWL_RIM, curl: 0, thumb: PAN_THUMB }, { side: -1, rim: BOWL_RIM, curl: 0, thumb: PAN_THUMB }],
   sieve: [{ side: 1, pos: [0.16, 0, 0], axis: "z", roll: 2.4, flip: 1 }, { side: -1, pos: [0.16, 0, 0], axis: "z", roll: 2.4, flip: 1 }],
 };
 const COLORS = { raw: 0x8a6a4c, conc: 0x6a5846, black: 0x3a332c };
@@ -98,6 +105,8 @@ const MODE_SHORT = { auto: "AUTO", on: "START", stop: "STOP" };
 const BULK_KIT = { x: BULK_AT.x + 1.45, z: BULK_AT.z - 1.2 };
 const SLUICE_LEN = 2.7;               // SLUICE.len (goldrush-mechmodels.js): where the wet ground lies
 
+// a stable pseudo-random number 0..1 for n (visual variation only - never gameplay)
+const hash01 = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
 const int = (v) => (Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0);
 const ease = (t) => t * t * (3 - 2 * t);
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -324,7 +333,8 @@ export class ProcessingSystem {
       for (const L of this.models.loads) L.warm(true);       // bucket fills, the classifier's heap (7B)
       const meshes = [this.cls.userData.conc,
         this.restPan.userData.mud, this.restPan.userData.water, this.handPan.userData.mud, this.handPan.userData.water, this.restPan.userData.riffles, this.handPan.userData.riffles,
-        this.restBowl.userData.mud, this.restBowl.userData.water, this.handBowl.userData.mud, this.handBowl.userData.water];
+        this.restBowl.userData.mud, this.restBowl.userData.water, this.handBowl.userData.mud, this.handBowl.userData.water,
+        this.handPan.userData.sand, this.handBowl.userData.sand];                       // (phase 8: the black sand patch)
       for (const m of meshes) { w.push([m, m.visible]); m.visible = true; }
       for (const im of [this.handPan.userData.pebbles, this.handPan.userData.flakes, this.restPan.userData.pebbles, this.restPan.userData.flakes,
         this.handBowl.userData.pebbles, this.handBowl.userData.flakes]) {
@@ -1088,8 +1098,8 @@ export class ProcessingSystem {
   _panLook(reset) {
     const P = this._washHand().userData, b = this.pan.batch, u = this.pan.progress;
     const S = washShape(this.pan.tool), k = this.pan.tool === "bowl" ? 0.78 : 1;
-    if (reset) this._panStart = { ml: Math.max(1, b.volumeMl), stones: Math.min(18, Math.round((b.comp[2] + b.comp[3]) / 120 + b.comp[1] / 400)), stage: b.stage };
-    const st = this._panStart || { ml: 1, stones: 0, stage: STAGE.RAW };
+    if (reset) this._panStart = { ml: Math.max(1, b.volumeMl), stones: Math.min(18, Math.round((b.comp[2] + b.comp[3]) / 120 + b.comp[1] / 400)), stage: b.stage, seed: (b.id * 7919) % 9973 };
+    const st = this._panStart || { ml: 1, stones: 0, stage: STAGE.RAW, seed: 0 };
     // phase 7B: what you see while you swirl - (1) muddy water, (2) the light earth washes out and the
     // load gets thinner, (3) the stones get fewer, (4) dark heavy sand gathers on the low side,
     // (5) the gold shows at the end. Water and material follow the pan's tilt a moment late (slosh).
@@ -1099,8 +1109,21 @@ export class ProcessingSystem {
     P.mud.visible = st.ml > 1;
     const conc = smooth(0.45, 1, u);                                      // the heavy sand draws to the far, low side
     P.mud.position.set(sl.x * 0.006, S.base + h, sl.z * 0.006 - conc * 0.025 * k);
-    const r = (S.radius(h) - 0.003) * (1 - 0.32 * conc);
-    P.mud.scale.set(r, 1, r);
+    // (phase 8: the light load washes away towards the far side and is gone at the end - what stays is the
+    // black sand patch below, not a dark disc)
+    const r = (S.radius(h) - 0.003) * (1 - 0.55 * conc);
+    P.mud.scale.set(r, 1, r * (1 - 0.25 * conc));
+    if (u > 0.97) P.mud.visible = false;
+    // the black sand (phase 8): an uneven drift in the low corner where the bottom meets the far wall,
+    // a little different for every load; it shows as the light material thins
+    if (P.sand) {
+      const sk = smooth(0.3, 0.9, u), rb = S.radius(0), sd = st.seed || 0;
+      P.sand.visible = st.ml > 1 && sk > 0.02;
+      P.sand.position.set(sl.x * 0.004 + (hash01(sd + 1) - 0.5) * rb * 0.25, S.base + 0.0012, -rb * (0.5 + 0.08 * hash01(sd + 2)) + sl.z * 0.004);
+      // (the patch's crown: 0.06 units high in the geometry -> 1-3 mm here: a thin drift, not a heap)
+      P.sand.scale.set(rb * (0.42 + 0.3 * sk) * (0.9 + 0.2 * hash01(sd + 3)), 0.02 + 0.03 * sk, rb * (0.2 + 0.2 * sk));
+      P.sand.rotation.y = (hash01(sd + 4) - 0.5) * 0.6;
+    }
     P.mud.rotation.y = this.swirlAngle * 0.35;
     const c = P.mud.material.color.setHex(st.stage === STAGE.CONCENTRATE ? COLORS.conc : COLORS.raw);
     c.multiplyScalar(1.08 - 0.12 * smooth(0, 0.35, u));                // the light top washes off first
@@ -1150,18 +1173,37 @@ export class ProcessingSystem {
   }
 
   _flakes(mesh, n, h, base = 0, kr = 1) {
-    if (mesh.count === n && this._flH === h) return;
-    this._flH = h;
+    const sd = (this._panStart && this._panStart.seed) || 0;
+    if (mesh.count === n && this._flH === h && this._flS === sd) return;
+    this._flH = h; this._flS = sd;
     mesh.count = n;
     const m = this._m || (this._m = new this.THREE.Matrix4()), q = new this.THREE.Quaternion(), e = new this.THREE.Euler(), v = new this.THREE.Vector3(), s3 = new this.THREE.Vector3();
     const rv = this.reveal || this._revealOf(this.pan.batch), pieces = rv.pieces || [];
+    // gold settles where the black sand lies - the low corner of the bottom at the far wall (phase 8): in
+    // two or three small drifts that differ load by load, the bigger pieces deepest, a few stray specks;
+    // never a ring, an arc or a sunflower (the amount still follows the gold's value)
+    const rb = 0.11 * kr, nc = 2 + Math.floor(hash01(sd + 11) * 2), cx = [], cz = [];
+    for (let c = 0; c < nc; c++) {
+      const a = (hash01(sd + 13 + c) - 0.5) * 1.1, rr = rb * (0.62 + 0.25 * hash01(sd + 17 + c));
+      cx.push(Math.sin(a) * rr); cz.push(-Math.cos(a) * rr);
+    }
     for (let i = 0; i < n; i++) {
-      // gold collects in the low side / the riffles: a crescent towards the far rim
-      const a = -Math.PI * 0.5 + (((i * 0.618) % 1) - 0.5) * 1.7, rr = (0.05 + 0.08 * (((i * 0.382) % 1))) * kr;
       // its true size (m): the pieces first, then the fine gold - specks of 1,3-2,2 mm (drawn, a little over life)
-      const s = i < pieces.length ? pieces[i] : 0.0013 + ((i * 7919) % 7) / 7 * 0.0009;
-      e.set(0.1 * i, i * 1.3, 0.05 * i); q.setFromEuler(e);
-      v.set(Math.cos(a) * rr, base + Math.min(h, 0.006) + s * 0.3, Math.sin(a) * rr);
+      const s = i < pieces.length ? pieces[i] : 0.0013 + hash01(sd + i * 3.7) * 0.0009;
+      let x, z;
+      if (i < pieces.length) {                                   // the heavy pieces: in the deepest drift, close together
+        x = cx[0] + (hash01(sd + i * 5.1) - 0.5) * 0.014; z = cz[0] + (hash01(sd + i * 6.3) - 0.5) * 0.01;
+      } else if (hash01(sd + i * 2.9) < 0.12) {                  // a stray speck somewhere on the sand
+        const a = (hash01(sd + i * 4.3) - 0.5) * 1.6, rr = rb * (0.35 + 0.55 * hash01(sd + i * 8.1));
+        x = Math.sin(a) * rr; z = -Math.cos(a) * rr;
+      } else {                                                   // one of the drifts: dense in its middle, thinning out
+        const c = Math.floor(hash01(sd + i * 1.9) * nc), g1 = hash01(sd + i * 7.7) + hash01(sd + i * 9.3) - 1, g2 = hash01(sd + i * 3.1) + hash01(sd + i * 5.9) - 1;
+        x = cx[c] + g1 * 0.022; z = cz[c] + g2 * 0.012;
+      }
+      const rr = Math.hypot(x, z), lim = rb * 0.95;
+      if (rr > lim) { x *= lim / rr; z *= lim / rr; }
+      e.set(hash01(sd + i) * 3, hash01(sd + i * 1.3) * 6, hash01(sd + i * 2.3) * 0.6); q.setFromEuler(e);
+      v.set(x, base + Math.min(h, 0.006) + s * 0.3, z);
       m.compose(v, q, s3.set(s, s, s));
       mesh.setMatrixAt(i, m);
     }

@@ -165,6 +165,8 @@ export class ProcessModels {
     this.soilMap = tex(soilTex(THREE, 41));
     this.soil = mat(new THREE.MeshStandardMaterial({ map: this.soilMap, color: 0x8a6a4c, roughness: 0.95 }));
     this.mud = mat(new THREE.MeshStandardMaterial({ map: this.soilMap, color: 0x7a5b40, roughness: 0.7 }));
+    // black sand: magnetite / hematite grains, dark with a faint metallic sheen when wet
+    this.sand = mat(new THREE.MeshStandardMaterial({ map: this.soilMap, color: 0x2b2622, roughness: 0.55, metalness: 0.25 }));
     this.conc = mat(new THREE.MeshStandardMaterial({ map: this.soilMap, color: 0x5a4a3a, roughness: 0.8 }));
     this.rippleMap = tex(rippleTex(THREE, 5));
     this.water = mat(new THREE.MeshStandardMaterial({ color: 0x4d3e2c, roughness: 0.45, metalness: 0.0, transparent: true, opacity: 0.42, bumpMap: this.rippleMap, bumpScale: 0.4, depthWrite: false }));
@@ -192,6 +194,18 @@ export class ProcessModels {
     this.lug.rotateZ(Math.PI / 2);
     this.disc = geo(new THREE.CircleGeometry(1, 40));
     this.disc.rotateX(-Math.PI / 2);
+    // the black sand in the pan's low corner (phase 8): a flat patch with a ragged, uneven outline - the
+    // heavy part gathers in drifts, never a circle; a shallow rise towards its middle
+    this.sandDisc = geo(new THREE.CircleGeometry(1, 48, 0, Math.PI * 2));
+    const sp = this.sandDisc.attributes.position;
+    for (let v = 0; v < sp.count; v++) {
+      const x = sp.getX(v), y = sp.getY(v), r = Math.hypot(x, y);
+      if (r < 1e-6) { sp.setZ(v, 0.06); continue; }
+      const a = Math.atan2(y, x), k = 1 + 0.16 * Math.sin(3 * a + 1.3) + 0.09 * Math.sin(7 * a + 0.4) + 0.05 * Math.sin(13 * a + 2.1);
+      sp.setXYZ(v, x * k, y * k, 0.06 * (1 - r));
+    }
+    this.sandDisc.rotateX(-Math.PI / 2);
+    this.sandDisc.computeVertexNormals();
 
     // pan: flat bottom, flaring wall, a rolled rim (both sides visible)
     const p = PAN;
@@ -278,6 +292,9 @@ export class ProcessModels {
     water.visible = false;
     water.renderOrder = 2;
     g.add(water);
+    const sand = new THREE.Mesh(this.sandDisc, this.sand);
+    sand.visible = false;
+    g.add(sand);
     const pebbles = new THREE.InstancedMesh(this.pebbleGeo, this.pebbleMat, 18);
     pebbles.count = 0;
     pebbles.frustumCulled = false;
@@ -287,7 +304,7 @@ export class ProcessModels {
     flakes.count = 0;
     flakes.frustumCulled = false;
     g.add(flakes);
-    g.userData = { body, riffles, mud, water, pebbles, flakes };
+    g.userData = { body, riffles, mud, water, sand, pebbles, flakes };
     return g;
   }
 
@@ -310,6 +327,9 @@ export class ProcessModels {
     water.visible = false;
     water.renderOrder = 2;
     g.add(water);
+    const sand = new THREE.Mesh(this.sandDisc, this.sand);
+    sand.visible = false;
+    g.add(sand);
     const pebbles = new THREE.InstancedMesh(this.pebbleGeo, this.pebbleMat, 18);
     pebbles.count = 0;
     pebbles.frustumCulled = false;
@@ -319,7 +339,7 @@ export class ProcessModels {
     flakes.count = 0;
     flakes.frustumCulled = false;
     g.add(flakes);
-    g.userData = { body, riffles, mud, water, pebbles, flakes, bowl: true };
+    g.userData = { body, riffles, mud, water, sand, pebbles, flakes, bowl: true };
     return g;
   }
 
