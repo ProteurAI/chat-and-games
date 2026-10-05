@@ -9,6 +9,7 @@
 // pan's inside: flat bottom r = 0.11 m, walls flaring to 0.19 m at 6 cm.
 
 import { mulberry32, noise2 } from "./goldrush-noise.js";
+import { LooseLoad } from "./goldrush-heap.js";
 
 export const BUCKET = { r0: 0.112, r1: 0.14, h: 0.27, fillMax: 0.214 };       // 10 l at the fill line
 export const PAN = { r0: 0.11, r1: 0.19, h: 0.058 };
@@ -96,6 +97,17 @@ const lathe = (THREE, pts, seg) => new THREE.LatheGeometry(pts.map(([x, y]) => n
 export const bucketRadius = (y, k = 1) => (BUCKET.r0 + (BUCKET.r1 - BUCKET.r0) * Math.min(1, y / (BUCKET.h * k)) ) * k;
 export const panRadius = (y) => PAN.r0 + (PAN.r1 - PAN.r0) * Math.min(1, Math.max(0, y) / PAN.h);
 
+// the stones in a pan / bowl: earth-brown to grey, lighter and darker (not one grey) - 7B
+function tintPebbles(THREE, mesh, n) {
+  const c = new THREE.Color();
+  for (let i = 0; i < n; i++) {
+    const v = 0.72 + ((i * 5113) % 13) / 13 * 0.38, warm = ((i * 2971) % 7) / 7;
+    c.setRGB(v * (0.92 + 0.12 * warm), v * (0.88 + 0.06 * warm), v * (0.82 - 0.06 * warm));
+    mesh.setColorAt(i, c);
+  }
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+}
+
 // fill height for a volume (frustum, solved by halving) - bucket scaled by k
 export function bucketFillHeight(ml, k = 1) {
   const r0 = BUCKET.r0 * k, slope = ((BUCKET.r1 - BUCKET.r0) * k) / (BUCKET.h * k), want = ml / 1e6;
@@ -137,6 +149,7 @@ export class ProcessModels {
     this.geos = [];
     this.mats = [];
     this.texs = [];
+    this.loads = [];                 // loose material (goldrush-heap.js): bucket fills, the classifier's heap
     const geo = (g) => { this.geos.push(g); return g; };
     const mat = (m) => { this.mats.push(m); return m; };
     const tex = (t) => { this.texs.push(t); return t; };
@@ -218,26 +231,23 @@ export class ProcessModels {
     bail.castShadow = true;
     g.add(bail);
     g.add(new THREE.Mesh(this.bucketGrip, this.gripWood));
-    const fill = new THREE.Mesh(this.disc, this.soil);
-    fill.visible = false;
-    fill.receiveShadow = true;
-    g.add(fill);
+    // the load (phase 7B): loose ground up to its level - uneven, crumbs / clods / pebbles on it
+    const load = new LooseLoad(THREE, g, { map: this.soilMap, rings: 6, segs: 24, lumps: 26, uv: 9, seed: 11 });
+    this.loads.push(load);
     g.scale.setScalar(scale);
-    g.userData.fill = fill;
+    g.userData.fill = load.surface;
+    g.userData.load = load;
     g.userData.bail = bail;
     return g;
   }
 
-  // set the fill of a bucket group (ml of material, its look)
-  setBucketFill(group, ml, color) {
-    const fill = group.userData.fill;
-    fill.visible = ml > 50;
-    if (!fill.visible) return;
-    const h = bucketFillHeight(ml);
-    const r = bucketRadius(h) - 0.004;
-    fill.position.y = Math.max(0.014, h);
-    fill.scale.set(r, 1, r);
-    if (color) fill.material = color;
+  // set the fill of a bucket group: ml of material (in the unscaled bucket), comp its masses per material
+  setBucketFill(group, ml, comp) {
+    const L = group.userData.load, on = ml > 50;
+    L.setVisible(on);
+    if (!on) return;
+    const h = bucketFillHeight(ml), r = bucketRadius(h) - 0.005, k = Math.min(1, ml / 10000);
+    L.set({ rx: r, rz: r, h: 0.008 + 0.02 * k, y0: Math.max(0.014, h) - 0.006, edge: 1, lobes: 3, comp: comp || [1, 0, 0, 0], amount: 0.45 + 0.45 * k, seed: 11 });
   }
 
   // ---- the gold pan (world or hand): body, riffles, mud, water, pebbles, flakes
@@ -270,6 +280,7 @@ export class ProcessModels {
     const pebbles = new THREE.InstancedMesh(this.pebbleGeo, this.pebbleMat, 18);
     pebbles.count = 0;
     pebbles.frustumCulled = false;
+    tintPebbles(THREE, pebbles, 18);
     g.add(pebbles);
     const flakes = new THREE.InstancedMesh(this.flakeGeo, this.goldMat, 40);
     flakes.count = 0;
@@ -301,6 +312,7 @@ export class ProcessModels {
     const pebbles = new THREE.InstancedMesh(this.pebbleGeo, this.pebbleMat, 18);
     pebbles.count = 0;
     pebbles.frustumCulled = false;
+    tintPebbles(THREE, pebbles, 18);
     g.add(pebbles);
     const flakes = new THREE.InstancedMesh(this.flakeGeo, this.goldMat, 40);
     flakes.count = 0;
@@ -406,17 +418,13 @@ export class ProcessModels {
       h.rotation.z = Math.PI / 2;
       frame.add(h);
     }
-    // what lies on the screen: a heap (raw material) and the stones it keeps
-    const heap = new THREE.Mesh(G(new THREE.SphereGeometry(1, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2)), this.soil);
-    heap.visible = false;
-    heap.position.y = 0.016;
-    frame.add(heap);
-    const stones = new THREE.InstancedMesh(this.pebbleGeo, this.pebbleMat, 36);
-    stones.count = 0;
-    stones.frustumCulled = false;
-    frame.add(stones);
+    // what lies on the screen (phase 7B): a loose heap of the raw load - the fines sink through as
+    // you shake, the pebbles / clods / stones stay; afterwards the coarse remainder alone
+    const heapLoad = new LooseLoad(THREE, frame, { map: this.soilMap, rings: 6, segs: 22, lumps: 36, uv: 8, seed: 21, shadow: true });
+    this.loads.push(heapLoad);
+    const heap = heapLoad.surface, stones = heapLoad.lumps;
     g.add(frame);
-    g.userData = { frame, heap, stones, conc, tub, TW, TD, TH };
+    g.userData = { frame, heap, stones, heapLoad, conc, tub, TW, TD, TH };
     return g;
   }
 
@@ -424,5 +432,6 @@ export class ProcessModels {
     for (const g of this.geos) g.dispose();
     for (const m of this.mats) m.dispose();
     for (const t of this.texs) t.dispose();
+    for (const l of this.loads) l.dispose();
   }
 }

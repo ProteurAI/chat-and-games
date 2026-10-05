@@ -42,7 +42,7 @@
 // swirls the pan or shakes the screen; progress is capped per second, so a
 // load takes its few seconds of real work - no bar that fills on its own.
 
-import { MaterialBatch, STAGE, batchFromDig, classify, panLoad, panSeconds, sieveSeconds, washRecovery, PAN_CAPACITY_ML, BOWL_CAPACITY_ML, BOWL_REST_ML, pour } from "./goldrush-material.js";
+import { MaterialBatch, STAGE, COARSE, batchFromDig, classify, panLoad, panSeconds, sieveSeconds, washRecovery, PAN_CAPACITY_ML, BOWL_CAPACITY_ML, BOWL_REST_ML, pour } from "./goldrush-material.js";
 import { ProcessModels, bucketFillHeight, washShape } from "./goldrush-processmodels.js";
 import { MechModels, BARROW } from "./goldrush-mechmodels.js";
 import { Wheelbarrow } from "./goldrush-wheelbarrow.js";
@@ -323,11 +323,12 @@ export class ProcessingSystem {
   warmup(on) {
     const w = this._warm || (this._warm = []);
     if (on) {
-      const meshes = [this.worldBucket.userData.fill, this.handBucket.userData.fill, this.cls.userData.heap, this.cls.userData.conc,
+      for (const L of this.models.loads) L.warm(true);       // bucket fills, the classifier's heap (7B)
+      const meshes = [this.cls.userData.conc,
         this.restPan.userData.mud, this.restPan.userData.water, this.handPan.userData.mud, this.handPan.userData.water, this.restPan.userData.riffles, this.handPan.userData.riffles,
         this.restBowl.userData.mud, this.restBowl.userData.water, this.handBowl.userData.mud, this.handBowl.userData.water];
       for (const m of meshes) { w.push([m, m.visible]); m.visible = true; }
-      for (const im of [this.cls.userData.stones, this.handPan.userData.pebbles, this.handPan.userData.flakes, this.restPan.userData.pebbles, this.restPan.userData.flakes,
+      for (const im of [this.handPan.userData.pebbles, this.handPan.userData.flakes, this.restPan.userData.pebbles, this.restPan.userData.flakes,
         this.handBowl.userData.pebbles, this.handBowl.userData.flakes]) {
         w.push([im, im.visible, im.count]);
         im.count = Math.max(1, im.count);
@@ -335,6 +336,7 @@ export class ProcessingSystem {
     } else {
       for (const [m, v, c] of w) { m.visible = v; if (c != null) m.count = c; }
       w.length = 0;
+      for (const L of this.models.loads) L.warm(false);
     }
   }
 
@@ -753,7 +755,6 @@ export class ProcessingSystem {
     L.inUg = Math.max(0, L.inUg - L.tailUg); L.inG = Math.max(0, L.inG - L.tailG); L.inMl = Math.max(0, L.inMl - L.tailMl);
     L.tailUg = 0; L.tailG = 0; L.tailMl = 0;
     this.sieve.stones = 0; this.sieve.dumpT = 0;
-    this._stoneDirty = true;
     this._fills();
   }
 
@@ -963,6 +964,7 @@ export class ProcessingSystem {
     const need = this.sieve.need;
     const dp = Math.min(dt / need, side / (need * 1.0));
     this.sieve.progress = Math.min(1, this.sieve.progress + dp);
+    this._sieveLook();
     if (dp > 0 && this.effects && Math.random() < 0.5) this._fallThrough();
     if (this.sieve.progress >= 1) return this.finishSieve();
     return null;
@@ -1017,6 +1019,7 @@ export class ProcessingSystem {
     this.sieve.progress = 0;
     // the stones stay a moment, then slide off
     this.sieve.stones = Math.min(36, Math.round(over.massG / 220));
+    this.sieve.coarse = { comp: over.comp.slice(), ml: over.volumeMl, seed: load.id % 97 };
     this.sieve.dumpT = 1.6;
     this.stopWork();
     this._fills();
@@ -1035,32 +1038,34 @@ export class ProcessingSystem {
   _fills() {
     const M = this.models;
     // world bucket + the one in your hand
-    for (const g of [this.worldBucket, this.handBucket]) M.setBucketFill(g, this.bucket ? this.bucket.batch.volumeMl / (this.bucketScale ** 3) : 0);
+    const bc = this.bucket ? this.bucket.batch.comp : null;
+    for (const g of [this.worldBucket, this.handBucket]) M.setBucketFill(g, this.bucket ? this.bucket.batch.volumeMl / (this.bucketScale ** 3) : 0, bc);
     // classifier heap and the tub's concentrate
     const u = this.cls.userData;
-    const sv = this.sieve.batch.volumeMl * (1 - this.sieve.progress * 0.6);
-    u.heap.visible = sv > 100;
-    if (u.heap.visible) { const r = 0.12 + Math.cbrt(sv / 1e6) * 0.7; u.heap.scale.set(r, Math.max(0.02, r * 0.45), r * 0.85); }
+    this._sieveLook();
     u.conc.visible = this.tub.volumeMl > 80;
     if (u.conc.visible) u.conc.position.y = 0.035 + Math.min(1, this.tub.volumeMl / TUB_ML) * (u.TH - 0.06);
-    this._stonesOnScreen();
   }
 
-  _stonesOnScreen() {
-    const st = this.cls.userData.stones, n = this.sieve.batch.volumeMl > 0 ? Math.min(36, Math.round(this.sieve.batch.volumeMl / 600)) : this.sieve.stones;
-    if (st.count === n && !this._stoneDirty) return;
-    this._stoneDirty = false;
-    st.count = n;
-    const m = this._m || (this._m = new this.THREE.Matrix4()), q = new this.THREE.Quaternion(), e = new this.THREE.Euler();
-    for (let i = 0; i < n; i++) {
-      const a = i * 2.39996, r = 0.05 + 0.28 * Math.sqrt((i + 0.5) / 36);
-      const s = 0.016 + ((i * 7919) % 13) / 13 * 0.02;
-      e.set(i, i * 1.7, i * 0.3);
-      q.setFromEuler(e);
-      m.compose(new this.THREE.Vector3(Math.cos(a) * r * 1.1, 0.02 + s * 0.6, Math.sin(a) * r * 0.85), q, new this.THREE.Vector3(s, s * 0.8, s));
-      st.setMatrixAt(i, m);
-    }
-    st.instanceMatrix.needsUpdate = true;
+  // the load on the classifier's screen (phase 7B): a loose heap; while you shake, the fine part
+  // sinks through (the heap gets lower, the pebbles / clods / stones show more and more), at the
+  // end only the coarse part lies there - what the screen really keeps (COARSE) - until it slides off
+  _sieveLook() {
+    const H = this.cls.userData.heapLoad, b = this.sieve.batch;
+    if (b.volumeMl > 100) {
+      const p = Math.round(this.sieve.progress * 20) / 20, m = b.massG || 1;
+      const comp = [0, 0, 0, 0];
+      let coarse = 0;
+      for (let k = 0; k < 4; k++) { const c = b.comp[k] * COARSE[k]; coarse += c; comp[k] = c + (b.comp[k] - c) * (1 - p); }
+      const share = coarse / m, vis = b.volumeMl * (share + (1 - share) * (1 - p));
+      const r = Math.min(0.36, 0.1 + Math.cbrt(vis / 1e6) * 0.66);
+      H.setVisible(true);
+      H.set({ rx: r, rz: r * 0.82, h: r * (0.16 + 0.2 * (1 - p)), y0: 0.016, lobes: 4, comp, amount: 0.55 + 0.45 * p, seed: b.id % 97, wobble: 0.13 });
+    } else if (this.sieve.stones > 0 && this.sieve.coarse) {
+      const c = this.sieve.coarse, r = Math.min(0.34, 0.09 + Math.cbrt(c.ml / 1e6) * 0.62);
+      H.setVisible(true);
+      H.set({ rx: r, rz: r * 0.82, h: 0.01 + r * 0.12, y0: 0.016, lobes: 2, comp: c.comp, amount: 1, seed: c.seed });
+    } else H.setVisible(false);
   }
 
   // the pan (or the wash bowl) in your hands: mud level, water, pebbles leaving, gold showing
@@ -1071,28 +1076,33 @@ export class ProcessingSystem {
     const S = washShape(this.pan.tool), k = this.pan.tool === "bowl" ? 0.78 : 1;
     if (reset) this._panStart = { ml: Math.max(1, b.volumeMl), stones: Math.min(18, Math.round((b.comp[2] + b.comp[3]) / 120 + b.comp[1] / 400)), stage: b.stage };
     const st = this._panStart || { ml: 1, stones: 0, stage: STAGE.RAW };
-    // the material washes down to a thin dark layer of heavy sand
+    // phase 7B: what you see while you swirl - (1) muddy water, (2) the light earth washes out and the
+    // load gets thinner, (3) the stones get fewer, (4) dark heavy sand gathers on the low side,
+    // (5) the gold shows at the end. Water and material follow the pan's tilt a moment late (slosh).
+    const sl = this._slosh || (this._slosh = { x: 0, z: 0, vx: 0, vz: 0 });
     const left = 1 - 0.9 * smooth(0.08, 0.92, u);
     const h = Math.max(0.004, S.fill(st.ml * left));
     P.mud.visible = st.ml > 1;
-    P.mud.position.y = S.base + h;
-    const r = S.radius(h) - 0.003;
+    const conc = smooth(0.45, 1, u);                                      // the heavy sand draws to the far, low side
+    P.mud.position.set(sl.x * 0.006, S.base + h, sl.z * 0.006 - conc * 0.025 * k);
+    const r = (S.radius(h) - 0.003) * (1 - 0.32 * conc);
     P.mud.scale.set(r, 1, r);
     P.mud.rotation.y = this.swirlAngle * 0.35;
-    const dark = smooth(0.55, 1, u);
-    P.mud.material.color.setHex(st.stage === STAGE.CONCENTRATE ? COLORS.conc : COLORS.raw).lerp(this._c2 || (this._c2 = new this.THREE.Color(COLORS.black)), dark);
-    // water: muddy brown first, clearer towards the end
+    const c = P.mud.material.color.setHex(st.stage === STAGE.CONCENTRATE ? COLORS.conc : COLORS.raw);
+    c.multiplyScalar(1.08 - 0.12 * smooth(0, 0.35, u));                // the light top washes off first
+    c.lerp(this._c2 || (this._c2 = new this.THREE.Color(COLORS.black)), smooth(0.35, 0.82, u));
+    // water: thick and muddy at first, clearing; it lags behind the pan's tilt and leans against it
     P.water.visible = st.ml > 1 && u < 0.995;
     const wh = Math.min(S.depth - 0.002, h + 0.018 + 0.012 * smooth(0, 0.12, u));
-    P.water.position.y = S.base + wh;
+    P.water.position.set(sl.x * 0.011, S.base + wh, sl.z * 0.011);
     const wr = S.radius(wh) - 0.002;
-    P.water.scale.set(wr, 1, wr);
-    P.water.rotation.y = this.swirlAngle;
-    P.water.material.opacity = 0.42 - 0.2 * smooth(0.5, 1, u);
-    P.water.material.color.setRGB(0.3 - 0.06 * u, 0.24 + 0.02 * u, 0.17 + 0.1 * u);
-    // pebbles: picked / tossed out as the light stuff goes
+    P.water.scale.set(wr * (1 + Math.abs(sl.x) * 0.04), 1, wr * (1 + Math.abs(sl.z) * 0.04));
+    P.water.rotation.set(-sl.z * 0.11, this.swirlAngle, sl.x * 0.11);
+    P.water.material.opacity = 0.62 - 0.36 * smooth(0.3, 1, u);
+    P.water.material.color.setRGB(0.32 - 0.08 * u, 0.25 + 0.01 * u, 0.17 + 0.1 * u);
+    // pebbles: tossed out as the light stuff goes; the ones left slosh with the water
     const nPeb = Math.round(st.stones * (1 - smooth(0.15, 0.75, u)));
-    this._pebbles(P.pebbles, nPeb, h, S.base, k);
+    this._pebbles(P.pebbles, nPeb, h, S.base, k, sl);
     // gold: shows at the bottom once the sand is thin
     const nFl = this.reveal || u > 0.7 ? this._flakeCount() : 0;
     this._flakes(P.flakes, Math.round(nFl * smooth(0.7, 1, u)), h, S.base, k);
@@ -1106,17 +1116,20 @@ export class ProcessingSystem {
     return specks + rv.pieces.length;
   }
 
-  _pebbles(mesh, n, h, base = 0, k = 1) {
-    if (mesh.count === n && this._pebH === h) return;
-    this._pebH = h;
+  // the stones in the pan: mostly small (3-12 mm, few big ones), they go round with the swirl
+  // and slosh with the water (sl: the slosh offset)
+  _pebbles(mesh, n, h, base = 0, k = 1, sl = null) {
+    const sx = sl ? sl.x : 0, sz = sl ? sl.z : 0;
+    if (mesh.count === n && this._pebH === h && this._pebA === this.swirlAngle) return;
+    this._pebH = h; this._pebA = this.swirlAngle;
     mesh.count = n;
     const m = this._m || (this._m = new this.THREE.Matrix4()), q = new this.THREE.Quaternion(), e = new this.THREE.Euler(), v = new this.THREE.Vector3(), s3 = new this.THREE.Vector3();
     for (let i = 0; i < n; i++) {
-      const a = i * 2.39996 + this.swirlAngle * 0.3, rr = (0.03 + 0.1 * Math.sqrt((i + 0.5) / 18)) * k;
-      const s = 0.007 + ((i * 7919) % 11) / 11 * 0.009;
-      e.set(i, i * 2.1, 0); q.setFromEuler(e);
-      v.set(Math.cos(a) * rr, base + h + s * 0.5, Math.sin(a) * rr);
-      m.compose(v, q, s3.set(s, s * 0.75, s));
+      const f = ((i * 7919) % 17) / 17, a = i * 2.39996 + this.swirlAngle * (0.22 + 0.12 * f), rr = (0.03 + 0.1 * Math.sqrt((i + 0.5) / 18)) * k;
+      const s = 0.003 + f * f * 0.0085;
+      e.set(i, i * 2.1 + this.swirlAngle * 0.2, 0); q.setFromEuler(e);
+      v.set(Math.cos(a) * rr + sx * 0.014, base + h + s * 0.45, Math.sin(a) * rr + sz * 0.014);
+      m.compose(v, q, s3.set(s, s * 0.72, s * (0.8 + 0.3 * f)));
       mesh.setMatrixAt(i, m);
     }
     mesh.instanceMatrix.needsUpdate = true;
@@ -1185,12 +1198,17 @@ export class ProcessingSystem {
       if (H.held !== tool) H.setHeld(tool, obj, HELD_GRIPS[tool]);
       const k = this.swirlK, a = this.swirlAngle;
       const pose = obj.userData.pose || (obj.userData.pose = { p: [0, 0, 0], r: [0, 0, 0] });
-      pose.p[0] = hp.p[0] + Math.cos(a * 0.5) * 0.012 * k;
-      pose.p[1] = hp.p[1] + Math.sin(a * 0.5) * 0.006 * k;
+      // your circles tilt and turn the pan (7B: a little more than before), the water follows late
+      pose.p[0] = hp.p[0] + Math.cos(a * 0.5) * 0.016 * k;
+      pose.p[1] = hp.p[1] + Math.sin(a * 0.5) * 0.008 * k;
       pose.p[2] = hp.p[2];
-      pose.r[0] = hp.r[0] + Math.sin(a * 0.5) * 0.05 * k;
-      pose.r[1] = hp.r[1];
-      pose.r[2] = hp.r[2] + Math.cos(a * 0.5) * 0.06 * k;
+      pose.r[0] = hp.r[0] + Math.sin(a * 0.5) * 0.085 * k;
+      pose.r[1] = hp.r[1] + Math.sin(a * 0.25) * 0.03 * k;
+      pose.r[2] = hp.r[2] + Math.cos(a * 0.5) * 0.1 * k;
+      const sl = this._slosh || (this._slosh = { x: 0, z: 0, vx: 0, vz: 0 }), tx = Math.cos(a * 0.5) * k, tz = Math.sin(a * 0.5) * k;
+      const sd = Math.min(dt, 0.05);
+      sl.vx += ((tx - sl.x) * 34 - sl.vx * 6.5) * sd; sl.vz += ((tz - sl.z) * 34 - sl.vz * 6.5) * sd;
+      sl.x += sl.vx * sd; sl.z += sl.vz * sd;
       this._panLook(false);
       // muddy water over the rim while it is swirled (the bowl's blunt rim spills more)
       if (k > 0.25 && this.pan.progress < 0.9 && Math.random() < dt * (tool === "bowl" ? 18 : 14) * k) H.splash && H.splash(obj);

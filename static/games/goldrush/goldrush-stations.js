@@ -248,7 +248,7 @@ export class Stations {
         src.position.set(-18.35 + dx, y, cz - 0.12);
         src.updateMatrixWorld(true);
         const parts = [];
-        src.traverse((o) => { if (o.isMesh && o.visible && o.geometry !== models.soil.geometry) parts.push(o); });
+        src.traverse((o) => { if (o.isMesh && o.visible && !o.isInstancedMesh && !o.userData.noMerge && o.geometry !== models.soil.geometry) parts.push(o); });
         const merged = new THREE.Group();
         for (const m of mergeByMaterial(THREE, parts)) { merged.add(m); this.geos.push(m.geometry); }
         this.group.add(merged);

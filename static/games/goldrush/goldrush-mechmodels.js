@@ -11,6 +11,7 @@
 //                y = 0 is the ground
 
 import { mulberry32, noise2 } from "./goldrush-noise.js";
+import { LooseLoad } from "./goldrush-heap.js";
 
 export const BARROW = { wheelR: 0.19, grip: 1.3, gripY: 0.46, gripX: 0.27, trayZ0: 0.2, trayZ1: 1.02, trayW: 0.66, trayD: 0.3, floorY: 0.33, legZ: 0.92 };
 export const SLUICE = { len: 2.7, width: 0.38, side: 0.15, headY: 0.92, tailY: 0.62, hopper: { w: 0.78, d: 0.72, h: 0.32 } };
@@ -125,7 +126,7 @@ function heapFan(THREE) {
 export class MechModels {
   constructor(THREE, { envMap, woodTex } = {}) {
     this.THREE = THREE;
-    this.geos = []; this.mats = []; this.texs = [];
+    this.geos = []; this.mats = []; this.texs = []; this.loads = [];
     const geo = (g) => { this.geos.push(g); return g; };
     const mat = (m) => { this.mats.push(m); return m; };
     const tex = (t) => { this.texs.push(t); return t; };
@@ -191,7 +192,8 @@ export class MechModels {
     }
     g.add(wheel);
     g.userData.wheel = wheel;
-    // the tray: a box tapering towards the bottom, the front wall sloped
+    // the tray: a box tapering towards the bottom, the front wall sloped - open at the top (phase 7B:
+    // it had a lid, the load only ever poked through it as a flat round patch)
     const tg = this._geo(new THREE.BoxGeometry(1, 1, 1, 1, 1, 1));
     const p = tg.attributes.position;
     for (let v = 0; v < p.count; v++) {
@@ -199,6 +201,9 @@ export class MechModels {
       p.setX(v, p.getX(v) * (top ? 1 : 0.66));
       p.setZ(v, p.getZ(v) * (top ? 1 : 0.7) + (front && top ? -0.08 : 0));
     }
+    const ti = Array.from(tg.index.array);
+    tg.setIndex([...ti.slice(0, 12), ...ti.slice(18)]);   // BoxGeometry faces +x, -x, +y (the lid), -y, +z, -z
+    tg.clearGroups();
     tg.computeVertexNormals();
     const trayLen = B.trayZ1 - B.trayZ0, zc = (B.trayZ0 + B.trayZ1) / 2;
     const tray = this._mesh(tg, this.galv, B.trayW, B.trayD, trayLen, 0, B.floorY + B.trayD / 2, zc, g);
@@ -217,29 +222,28 @@ export class MechModels {
       // leg under the back of the tray
       this._mesh(this.box, this.galvDark, 0.025, B.floorY + 0.02, 0.025, s * 0.23, (B.floorY + 0.02) / 2, B.legZ, g);
     }
-    // the load: a mound surface in the tray (height, tint and shape follow the batch)
-    const fill = this._mesh(this._geo(new THREE.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2)), this.load.clone(), 1, 1, 1, 0, 0, zc, g, false);
-    this.mats.push(fill.material);
-    fill.visible = false;
-    g.userData.fill = fill;
+    // the load (phase 7B): loose ground in the tray - a small uneven heap that grows in width and
+    // height, full a few mounds heaped over the rim; clods / pebbles / stones on it (two draws)
+    const load = new LooseLoad(THREE, g, { map: this.heapMap, rings: 8, segs: 26, lumps: 56, uv: 5, seed: 31, shadow: true });
+    this.loads.push(load);
+    g.userData.fill = load.surface;
+    g.userData.load = load;
     g.userData.trayCenterZ = zc;
     return g;
   }
 
-  // load in the tray: 0..1 of its capacity, tinted by what it is. The level
-  // rises with the load; the heap's base fits the (tapered, front-sloped)
-  // tray at that height, so it never pokes through a wall; full, it is heaped
-  // a hand's breadth over the rim
-  setBarrowFill(g, frac, rgb) {
-    const B = BARROW, f = g.userData.fill;
-    f.visible = frac > 0.004;
-    if (!f.visible) return;
-    const len = B.trayZ1 - B.trayZ0, zc = (B.trayZ0 + B.trayZ1) / 2;
-    const t = 0.12 + 0.78 * Math.min(1, frac);                    // the level, as a share of the tray's depth
-    const hw = (B.trayW / 2) * (0.66 + 0.34 * t), hl = len * (0.35 + 0.19 * t);
-    f.position.set(0, B.floorY + B.trayD * t, zc - len * 0.04 * t);
-    f.scale.set(hw * 0.96, B.trayD * (0.08 + 0.36 * Math.min(1, frac)), hl * 0.96);
-    if (rgb) f.material.color.setRGB(rgb[0], rgb[1], rgb[2]);
+  // load in the tray: frac 0..1 of its capacity, comp its masses per material. A little is a small
+  // uneven heap in the middle; it grows in width and height, its base rises once it reaches the
+  // walls; full, it is heaped a hand's breadth over the rim in a few mounds (85 l look like 85 l)
+  setBarrowFill(g, frac, comp) {
+    const B = BARROW, L = g.userData.load, on = frac > 0.004;
+    L.setVisible(on);
+    if (!on) return;
+    const len = B.trayZ1 - B.trayZ0, zc = (B.trayZ0 + B.trayZ1) / 2, f = Math.min(1, frac), g6 = f ** 0.6;
+    const sm = Math.max(0, Math.min(1, (f - 0.35) / 0.65)), base = B.floorY + 0.006 + B.trayD * 0.62 * sm * sm * (3 - 2 * sm);
+    const top = B.floorY + B.trayD * (0.22 + 0.95 * g6) + 0.06 * f * f;
+    L.set({ rx: (B.trayW / 2) * (0.42 + 0.5 * g6), rz: (len / 2) * (0.45 + 0.47 * g6), h: Math.max(0.02, top - base), y0: base, x0: 0, z0: zc - len * 0.04 * f,
+      lobes: 1 + Math.round(3 * f), comp: comp || [1, 0, 0, 0], amount: 0.55 + 0.45 * f, seed: 31 });
   }
 
   // ---- SLUICE: legs, the sloped box with its riffle bed, the hopper at the head,
@@ -352,5 +356,6 @@ export class MechModels {
     for (const g of this.geos) g.dispose();
     for (const m of this.mats) m.dispose();
     for (const t of this.texs) t.dispose();
+    for (const l of this.loads) l.dispose();
   }
 }

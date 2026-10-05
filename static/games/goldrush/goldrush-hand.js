@@ -594,17 +594,12 @@ export class FirstPersonHands {
       else if (view.state === "action" && view.phase === "dump") { const k = Math.max(0, Math.min(1, (view.u - 0.12) / 0.5)); this.load = L * (1 - k * k * (3 - 2 * k)); slide = k; }
       else if (view.state !== "action") this.load = Math.max(0, this.load - dt * 4);
       if (view.state === "action" && view.phase === "recover") this.load = 0;
-      const soil = this.models.soil, crumbs = this.models.crumbs;
-      soil.visible = this.load > 0.02;
-      if (soil.visible) {
-        soil.scale.set(0.45 + this.load * 0.6, 0.3 + this.load * 0.8, 0.45 + this.load * 0.6);
-        soil.position.z = soil.userData.z0 - slide * 0.07;            // towards the tip as it slides off
-        soil.position.y = soil.userData.y0 - slide * 0.012;
-      }
-      if (crumbs) {
-        const n = soil.visible ? Math.round(crumbs.userData.max * Math.min(1, this.load * 1.15)) : 0;
-        if (crumbs.count !== n || slide > 0) this.models.setCrumbs(n, this.load, slide, this.loadMat);
-      }
+      // the load lags a little behind the blade: pushed back while it digs in, it sways as the
+      // shovel comes up, then slides to the tip and off (phase 7B)
+      const ph = view.state === "action" ? view.phase : null, u = view.u || 0;
+      const lagZ = ph === "thrust" || ph === "scoop" ? 0.012 * Math.sin(Math.min(1, u) * Math.PI) : 0;
+      const lagX = ph === "scoop" || ph === "recover" ? 0.006 * Math.sin(u * Math.PI * 2) : ph === "dump" ? -0.004 * slide : 0;
+      this.models.setLoad(this.load, slide, lagX, lagZ, this.loadMat || 0);
     }
     const shake = this.shake > 0 ? Math.sin(this.time * 70) * 0.012 * (this.shake / 0.22) : 0;
     const T = this.toolRoot;

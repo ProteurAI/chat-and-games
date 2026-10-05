@@ -30,7 +30,6 @@ const MAX_GRADE = 0.62;                         // the wheel does not climb stee
 const MAX_DH = 0.95;                            // nor more than this above / below the ground you stand on (the grips stay in reach)
 const TRAY_R = 0.46;                            // what a parked barrow blocks
 const DUMP_S = 1.1;                             // tipping it over (s)
-const MAT_RGB = [[0.55, 0.4, 0.27], [0.47, 0.33, 0.22], [0.55, 0.5, 0.43], [0.5, 0.48, 0.45]];
 const finite = (v) => typeof v === "number" && Number.isFinite(v);
 
 export class Wheelbarrow {
@@ -205,9 +204,7 @@ export class Wheelbarrow {
     const sig = `${b.volumeMl}:${b.massG}`;
     if (sig === this._fillSig) return;
     this._fillSig = sig;
-    const m = b.massG || 1, rgb = [0, 0, 0];
-    for (let k = 0; k < 4; k++) for (let c = 0; c < 3; c++) rgb[c] += (MAT_RGB[k][c] * b.comp[k]) / m;
-    this.models.setBarrowFill(this.group, frac, b.massG > 0 ? rgb : null);
+    this.models.setBarrowFill(this.group, frac, b.massG > 0 ? b.comp : null);
   }
 
   serialize() {

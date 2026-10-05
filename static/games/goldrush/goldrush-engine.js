@@ -242,7 +242,8 @@ export class GoldRushGame {
     // every tool model once through the GPU (no hitch at the first switch)
     const tr = this.hands.toolRoot, vis = [this.hands.models.shovel.visible, this.hands.models.pickaxe.visible, tr.visible];
     this.hands.models.shovel.visible = this.hands.models.pickaxe.visible = tr.visible = true;
-    this.hands.models.soil.visible = true;
+    this.hands.models.setLoad(1, 0, 0, 0, 2);            // the blade's load, every part of it once
+    this.hands.models.bladeLoad.warm(true);
     const held = this.hands.right.held;
     held.geometry = this.loot.geos[5][0];
     held.material = this.loot.goldMat;
@@ -272,7 +273,8 @@ export class GoldRushGame {
     [pr.restPan.visible, pr.cls.visible, pr.worldBucket.visible] = shown;
     held.visible = false;
     [this.hands.models.shovel.visible, this.hands.models.pickaxe.visible, tr.visible] = vis;
-    this.hands.models.soil.visible = false;
+    this.hands.models.bladeLoad.warm(false);
+    this.hands.models.setLoad(0);
     this.loot.warmup(false);
     progress(0.97, "Erster Blick in die Mine …");
     await step();
@@ -1126,7 +1128,7 @@ export class GoldRushGame {
     }
     const mdef = MATERIALS[r.material];
     this.tools.react("ok", r.material);
-    if (def.id === "shovel") { const c = mdef.fragmentColor; this.hands.models.soilMat.color.setRGB(c[0] * 1.25, c[1] * 1.25, c[2] * 1.25); }
+    if (def.id === "shovel") { const c = mdef.fragmentColor; this.hands.models.loadRgb = [c[0] * 1.2, c[1] * 1.2, c[2] * 1.2]; }
     this.hands.contact("ok", r.material, r.removedMassKg);
     this.effects.impact(hit, r.material, def.id, dir, Math.min(1.5, 0.6 + r.removedMassKg / 2.5));
     const kind = (DIG_SOUND[def.id] || DIG_SOUND.hand)[r.material] || "hand_dirt";

@@ -7,6 +7,7 @@
 // grips[] are the points (and handle direction) the gloves hold.
 
 import { mulberry32, noise2 } from "./goldrush-noise.js";
+import { LooseLoad } from "./goldrush-heap.js";
 
 // long wood grain along v, a few darker worn patches
 function woodGrain(ctx, w, h, seed) {
@@ -104,7 +105,6 @@ export class ToolModels {
     this.wood = new THREE.MeshStandardMaterial({ map: this.woodTex, color: 0xd8c0a0, roughness: 0.72, metalness: 0 });
     this.steel = new THREE.MeshStandardMaterial({ map: this.steelTex, color: 0x8a8c8f, roughness: 0.45, metalness: 0.85, envMap: envMap || null, envMapIntensity: 0.9 });
     this.edge = new THREE.MeshStandardMaterial({ map: this.steelTex, color: 0xc9c7c2, roughness: 0.3, metalness: 0.95, envMap: envMap || null, envMapIntensity: 1.1 });
-    this.soilMat = new THREE.MeshStandardMaterial({ color: 0x6e4a2e, roughness: 1, metalness: 0, flatShading: true });
     // leather grip wrap: a strap wound round the handle (diagonal turns)
     this.wrapTex = canvasTex(THREE, 64, 64, (c, w, h) => {
       c.fillStyle = "rgb(112,74,46)"; c.fillRect(0, 0, w, h);
@@ -120,7 +120,7 @@ export class ToolModels {
     // the parts an upgrade changes get their own material (ash shaft, hardened point)
     this.shovelWood = this.wood.clone();
     this.pointMat = this.steel.clone();
-    this.mats = [this.wood, this.steel, this.edge, this.soilMat, this.leather, this.shovelWood, this.pointMat];
+    this.mats = [this.wood, this.steel, this.edge, this.leather, this.shovelWood, this.pointMat];
 
     // ---------------- shovel
     const shovel = (this.shovel = new THREE.Group());
@@ -201,30 +201,14 @@ export class ToolModels {
     }
     rim.visible = false;
     head.add(rim);
-    // the load of soil (shown while scooping / carrying)
-    const soilG = track(new THREE.IcosahedronGeometry(1, 2));
-    const sp = soilG.attributes.position;
-    for (let v = 0; v < sp.count; v++) {
-      const x = sp.getX(v), y = sp.getY(v), z = sp.getZ(v);
-      const k = 1 + 0.22 * noise2(x * 3 + z, y * 3, 17);
-      sp.setXYZ(v, x * k * 0.095, Math.max(-0.2, y) * k * 0.045, z * k * 0.12);
-    }
-    soilG.computeVertexNormals();
-    this.soil = new THREE.Mesh(soilG, this.soilMat);
-    this.soil.position.set(0, 0.03, -0.76 - HEAD_Z);
-    this.soil.userData = { y0: 0.03, z0: -0.76 - HEAD_Z };
-    this.soil.visible = false;
-    head.add(this.soil);
-    // crumbs / pebbles lying on the load (phase 7A): the scoop reads as loose material, not one lump
-    const cg = track(new THREE.IcosahedronGeometry(1, 0));
-    this.crumbs = new THREE.InstancedMesh(cg, this.soilMat, 14);
-    this.crumbs.count = 0;
-    this.crumbs.frustumCulled = false;
-    this.crumbs.userData = { max: 14 };
-    const white = new THREE.Color(1, 1, 1);
-    for (let i = 0; i < 14; i++) this.crumbs.setColorAt(i, white);
-    head.add(this.crumbs);
-    this._cm = new THREE.Matrix4(); this._cq = new THREE.Quaternion(); this._ce = new THREE.Euler(); this._cv = new THREE.Vector3(); this._cs = new THREE.Vector3(); this._cc = new THREE.Color();
+    // the load (shown while scooping / carrying - phase 7B): loose ground on the blade, a flat
+    // uneven layer with crumbs / clods / pebbles on it - never one round lump
+    this.bladeLoad = new LooseLoad(THREE, head, { rings: 5, segs: 18, lumps: 26, uv: 30, seed: 5, roughness: 1, lumpK: 1.3, shade: 0.42 });
+    this.soil = this.bladeLoad.surface;          // (the engine's warm pass, the shop's rack and the tests know it by these)
+    this.crumbs = this.bladeLoad.lumps;
+    this.crumbs.userData.max = 26;
+    this.loadRgb = null;                         // the colour of the ground just dug (set by the engine)
+    this._bladeZ = -0.76 - HEAD_Z;
     shovel.userData.grips = [
       { z: 0.42, dir: 1, side: 1 },               // right hand on the D-grip
       { z: -0.18, dir: 1, side: -1 },             // left hand down the shaft
@@ -305,33 +289,21 @@ export class ToolModels {
     this.pickHead.position.set(0, 0, -0.52 * (1 - k));
   }
 
-  // a little dirt sticks to the working ends while you use them
-  // the crumbs on the shovel's load: n of them on its top, following the load as it
-  // slides off (slide 0..1); gravel shows pebbles (a little lighter / greyer)
-  setCrumbs(n, load, slide = 0, mat = 0) {
-    const C = this.crumbs, S = this.soil;
-    if (!C) return;
-    C.count = n;
-    const sx = 0.45 + load * 0.6, sy = 0.3 + load * 0.8, sz = 0.45 + load * 0.6;
-    const gravel = mat === 2;
-    for (let i = 0; i < n; i++) {
-      const a = i * 2.39996, rr = 0.25 + 0.65 * Math.sqrt((i + 0.5) / C.userData.max);
-      const x = Math.cos(a) * rr * 0.085 * sx, z = Math.sin(a) * rr * 0.105 * sz;
-      const top = 0.045 * sy * Math.max(0, 1 - rr * rr) + 0.004;
-      const s = (gravel ? 0.0065 : 0.005) + ((i * 7919) % 7) / 7 * (gravel ? 0.005 : 0.004);
-      const fall = slide * (0.6 + ((i * 31) % 5) * 0.15);
-      this._ce.set(i * 1.3, i * 0.7, i * 2.1); this._cq.setFromEuler(this._ce);
-      this._cv.set(S.position.x + x, S.position.y + top - fall * 0.03, S.position.z + z - fall * 0.03);
-      this._cm.compose(this._cv, this._cq, this._cs.set(s, s * (gravel ? 0.75 : 0.85), s));
-      C.setMatrixAt(i, this._cm);
-      const v = 0.82 + ((i * 5113) % 9) / 9 * 0.36;
-      if (gravel && i % 2 === 0) this._cc.setRGB(v * 1.12, v * 1.1, v * 1.06); else this._cc.setRGB(v, v, v);
-      C.setColorAt(i, this._cc);
-    }
-    C.instanceMatrix.needsUpdate = true;
-    if (C.instanceColor) C.instanceColor.needsUpdate = true;
+  // the shovel's load: load 0..1 of a full scoop, slide 0..1 (it slides to the tip and off),
+  // lagX / lagZ (m) how far it lags behind the blade's swing, mat what was dug (lumps: crumbs,
+  // clods, pebbles). Its size follows the real scoop; the gameplay mass is the MaterialBatch's.
+  setLoad(load, slide = 0, lagX = 0, lagZ = 0, mat = 0) {
+    const L = this.bladeLoad, on = load > 0.02;
+    L.setVisible(on);
+    if (!on) return;
+    const k = Math.min(1, load), comp = [0, 0, 0, 0];
+    comp[mat] = 1;
+    // (a heaped, ragged layer: thick in the middle, crumbling thin at the edges - clods sit up out of it)
+    L.set({ rx: 0.05 + 0.045 * k, rz: 0.06 + 0.055 * k * (1 - 0.35 * slide), h: 0.02 + 0.05 * k, y0: 0.019 - slide * 0.01,
+      x0: lagX, z0: this._bladeZ - slide * 0.075 + lagZ, lobes: mat === 2 ? 4 : 3, comp, amount: 0.75 + 0.25 * k, seed: 3 + mat, rgb: this.loadRgb, wobble: 0.23 });
   }
 
+  // a little dirt sticks to the working ends while you use them
   setDirt(amount) {
     const d = Math.max(0, Math.min(1, amount));
     this.steel.color.setRGB(0.54 - d * 0.12, 0.55 - d * 0.15, 0.56 - d * 0.19);
@@ -340,6 +312,7 @@ export class ToolModels {
   dispose() {
     for (const g of this.geos) g.dispose();
     for (const m of this.mats) m.dispose();
+    this.bladeLoad.dispose();
     this.woodTex.dispose();
     this.steelTex.dispose();
     this.wrapTex.dispose();
