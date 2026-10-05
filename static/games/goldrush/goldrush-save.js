@@ -63,11 +63,24 @@
 // primitive mechanisation (a wheelbarrow and a sluice box with their loads,
 // the sluice's riffles, concentrate tray and tailings); 7 = first automation
 // (a bulk hopper - its layers, gate - and a motorised feeder - its lever, the
-// material on its tray, the links' step accumulators).
-// Older documents are upgraded on load step by step (1 -> 2 -> ... -> 7)
-// and written back as 7. A new mine owns only the hand and has € 0,00.
+// material on its tray, the links' step accumulators); 8 = the mechanised
+// claim (phase 9): an explicit geology version (geology 2: paleochannels,
+// the camp's fill - goldrush-resources.js), prospecting (sample bags, the
+// notebook, survey flags), the mountain contract, the mine intake hopper,
+// conveyor, trommel with its oversize pile, the spoil heap and the compact
+// excavator (all optional fields - absent = not there yet).
+// Older documents are upgraded on load step by step (1 -> 2 -> ... -> 8)
+// and written back as 8. A new mine owns only the hand and has € 0,00.
+//
+// GEOLOGY: the ground's content is a pure function of the seed (never saved);
+// doc.geology.version says which geology the mine is on. A document from
+// before phase 9 was dug in geology 1: on its upgrade it moves to geology 2
+// for the ground nobody has touched yet - every slice already used up stays
+// used up (resources.slices), and every batch in a container, every piece
+// riding in slid material keeps exactly the gold it holds ({ version: 2,
+// from: 1 } - shown once, then `noted`).
 
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 const PREFIX = "goldrush.save";
 const LEGACY_KEY = "goldrush.save";
 const LEGACY_BACKUP_KEY = "goldrush.save.backup";
@@ -149,6 +162,13 @@ export function validate(doc) {
     if (pr.bulkHopper != null && (typeof pr.bulkHopper !== "object" || (pr.bulkHopper.buffer != null && !Array.isArray(pr.bulkHopper.buffer.layers)))) return "Vorratstrichterdaten ungültig";
     if (pr.feeder != null && (typeof pr.feeder !== "object" || (pr.feeder.mode != null && !["stop", "auto", "on"].includes(pr.feeder.mode)))) return "Dosiererdaten ungültig";
   }
+  if (doc.saveVersion >= 8) {
+    if (doc.geology != null && (typeof doc.geology !== "object" || !Number.isInteger(doc.geology.version) || doc.geology.version < 1)) return "Geologiedaten ungültig";
+    if (doc.prospect != null && (typeof doc.prospect !== "object" || (doc.prospect.notes != null && !Array.isArray(doc.prospect.notes)) || (doc.prospect.flags != null && !Array.isArray(doc.prospect.flags)))) return "Prospektionsdaten ungültig";
+    const pr = doc.processing;
+    if (pr && pr.excavator != null && (typeof pr.excavator !== "object" || !finite(pr.excavator.x) || !finite(pr.excavator.z))) return "Baggerdaten ungültig";
+    if (pr && pr.conveyor != null && typeof pr.conveyor !== "object") return "Förderbanddaten ungültig";
+  }
   return null;
 }
 
@@ -226,6 +246,11 @@ export function migrate(doc) {
   if (doc.saveVersion === 6) {
     // phase 7: no bulk hopper, no feeder yet - the sluice, the barrow and everything else exactly as it was
     doc = { ...doc, saveVersion: 7, migratedFrom: doc.migratedFrom || 6 };
+  }
+  if (doc.saveVersion === 7) {
+    // phase 9: dug in geology 1 - the untouched ground follows geology 2 from now on (used-up
+    // slices stay used up, every batch keeps its gold); no machines of phase 9 yet
+    doc = { ...doc, saveVersion: 8, geology: { version: 2, from: 1 }, migratedFrom: doc.migratedFrom || 7 };
   }
   return doc;
 }

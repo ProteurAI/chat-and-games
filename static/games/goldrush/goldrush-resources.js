@@ -12,12 +12,29 @@
 //     pickaxe cuts it), plus loose boulders lying in the pile - separate
 //     objects (goldrush-rocks.js), not part of the ground
 //   - gold: next to nothing in most of the pile; a little more in richer
-//     zones, in thin streaks and in the gravel "pay layer" at and below the
-//     old ground (you have to dig down for it), a lot in a handful of seeded
-//     pockets
+//     zones, in thin streaks and (phase 9) in buried paleochannels, a lot in
+//     a handful of seeded pockets (until phase 9 a gravel "pay layer" at and
+//     below the old ground held much of it - see below)
 //   - the starter zone (the faces you walk up to from the claim entrance)
 //     is kept fair: never barren, never a jackpot, no gravel skirt and no
 //     stone in the way - the rest of the pile varies freely per seed
+//   - phase 9 (GEOLOGY 2.0, GEOLOGY_VERSION 2): no "pay layer" at the old
+//     ground level any more (it made ground level itself the rich ground and
+//     the camp's apron a gold farm). Instead:
+//       ordinary ground   one neutral grade with broad regional variation; the
+//                         upper mountain a little poorer (older overburden,
+//                         GEO.mountain), gravel a little richer than dirt
+//       paleochannels     2-4 buried ancient stream beds per seed (CHANNEL):
+//                         curving across the claim, some under the mountain,
+//                         varying width / bed height / thickness, gravel
+//                         lenses, rich and poor stretches, gaps - rich ground
+//                         is local and has to be found (samples), it is not a
+//                         height
+//       camp fill         the camp's apron is imported, compacted fill
+//                         (CAMP_FILL): next to no native gold; natural ground
+//                         lies below it
+//     Everything stays a pure function of seed + position (+ the original
+//     surface); nothing is tied to y = 0.
 //   - mineralised streaks (phase 7A): a few tilted, cemented pay streaks of
 //     gravel / clay in the pile, never in the starter zone. Hand and shovel
 //     hardly get into them; the pickaxe breaks them up (loosens them) and the
@@ -73,6 +90,17 @@ const STARTER = { radius: 6.5, fade: 2.5, depth: 1.6, gMin: 0.21, gMax: 0.29 };
 // pile's total stays the same within ~0,6 % per seed, measured over the volume),
 // and the core value above which they are cemented
 export const STREAK = { count: 6, g: 0.42, redist: 0.985, cement: 0.3, flake: 1.4, pieceCap: 0.12 };
+// phase 9: the generation version of the ground's gold (saved; an older save keeps every slice it already
+// took - those never pay again - and its unmined ground follows this one)
+export const GEOLOGY_VERSION = 2;
+// ordinary ground: neutral grade +- regional variation, by material, the upper mountain's share of it
+// (smoothly from 0.3 m to 2.2 m of original height), how much deeper ground inside a body adds
+export const GEO = { base: 0.2, region: 0.12, mf: [0.88, 1.0, 1.15, 0], mountain: 0.94, mountainFrom: 0.3, mountainTo: 2.2, deep: 0.2, vein: 0.25 };
+// paleochannels: how many, their width / bed / thickness ranges, the grade they add (poor .. rich stretch)
+export const CHANNEL = { min: 2, max: 4, width: [1.4, 3.4], bed: [-1.25, -0.3], thick: [0.35, 0.8], poor: 0.12, rich: 0.78, richPow: 1.3, gravel: 0.35 };
+// the camp's apron: imported, compacted fill on top of the natural ground (west of the pile, in front of
+// the camp) - its edge (x), its extent along z, a soft noisy border, how deep it goes, its trace of gold
+export const CAMP_FILL = { x: -9.3, soft: 1.1, z0: -9.5, z1: 9.8, depth: 0.55, depthVar: 0.15, g: 0.008 };
 
 export class MaterialField {
   constructor(seed, terrain, floorY) {
@@ -115,6 +143,122 @@ export class MaterialField {
     }
     this._buildStone();
     this._buildStreaks();
+    this._buildChannels();
+  }
+
+  // ---- phase 9: paleochannels - buried stream beds across the claim. Each a curve from one side to the
+  // other (some across the middle, under the mountain, some past its foot), stamped once into the column
+  // grid (nearest channel, where along it, how far off its centre line) so a lookup per slice is O(1).
+  _buildChannels() {
+    const t = this.terrain, rng = mulberry32(this.seed ^ 0x9a1e0c4), vps = t.vps, c = t.cell, n = vps * vps;
+    const cx = t.x0 + t.size / 2, cz = t.z0 + t.size / 2, R = t.size * 0.62;
+    const count = CHANNEL.min + Math.floor(rng() * (CHANNEL.max - CHANNEL.min + 1));
+    this.channels = [];
+    this.chIdx = new Int8Array(n).fill(-1);
+    this.chT = new Float32Array(n);
+    this.chD = new Float32Array(n).fill(1e9);
+    const lerp = (a, b, k) => a + (b - a) * k;
+    for (let q = 0; q < count; q++) {
+      // across the claim: an entry angle, an exit roughly opposite, shifted sideways (past the middle or not)
+      const a0 = (q / count) * Math.PI + rng() * 0.9, a1 = a0 + Math.PI + (rng() - 0.5) * 1.1;
+      const off = (rng() - 0.5) * t.size * 0.55;
+      const nx = -Math.sin(a0), nz = Math.cos(a0);
+      const p0 = { x: cx + Math.cos(a0) * R + nx * off, z: cz + Math.sin(a0) * R + nz * off };
+      const p1 = { x: cx + Math.cos(a1) * R + nx * off, z: cz + Math.sin(a1) * R + nz * off };
+      const ch = {
+        i: q, p0, p1, len: Math.hypot(p1.x - p0.x, p1.z - p0.z),
+        amp: 0.8 + rng() * 2.6, waves: 1.2 + rng() * 2.2, phase: rng() * 6.283,
+        w0: lerp(CHANNEL.width[0], CHANNEL.width[1], rng()), bed: lerp(CHANNEL.bed[0], CHANNEL.bed[1], rng()), tilt: (rng() - 0.5) * 0.7,
+        th0: lerp(CHANNEL.thick[0], CHANNEL.thick[1], rng()), seedOff: Math.floor(rng() * 9000), richK: 0.85 + rng() * 0.3,
+      };
+      this.channels.push(ch);
+      // stamp it into the grid: walk the curve in short steps, mark the columns round each point
+      const steps = Math.ceil(ch.len / 0.1);
+      const pt = {};
+      for (let s = 0; s <= steps; s++) {
+        const u = s / steps;
+        this._channelPoint(ch, u, pt);
+        const hw = this._channelWidth(ch, u) / 2;
+        if (hw <= 0.05) continue;
+        const r = hw + 0.15, i0 = Math.max(0, Math.floor((pt.x - r - t.x0) / c)), i1 = Math.min(vps - 1, Math.ceil((pt.x + r - t.x0) / c));
+        const j0 = Math.max(0, Math.floor((pt.z - r - t.z0) / c)), j1 = Math.min(vps - 1, Math.ceil((pt.z + r - t.z0) / c));
+        for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+          const k = j * vps + i, d = Math.hypot(t.x0 + i * c - pt.x, t.z0 + j * c - pt.z);
+          // the nearest centre line wins; its weight is judged against its own width at that point
+          if (d / hw < this.chD[k]) { this.chD[k] = d / hw; this.chIdx[k] = q; this.chT[k] = u; }
+        }
+      }
+    }
+  }
+
+  // the channel's centre line at u (0..1 along it): the straight line plus a meander
+  _channelPoint(ch, u, out) {
+    const dx = ch.p1.x - ch.p0.x, dz = ch.p1.z - ch.p0.z, l = ch.len || 1, px = -dz / l, pz = dx / l;
+    const m = ch.amp * Math.sin(u * ch.waves * 6.283 + ch.phase) + 0.6 * noise2(u * 5.3, ch.seedOff * 0.01, this.seed + 811);
+    out.x = ch.p0.x + dx * u + px * m;
+    out.z = ch.p0.z + dz * u + pz * m;
+    return out;
+  }
+
+  // its width at u: varying, and now and then it fades out (a gap - it split, or the stream left it)
+  _channelWidth(ch, u) {
+    const w = ch.w0 * (0.65 + 0.5 * (0.5 + 0.5 * noise2(u * 6.1 + ch.seedOff * 0.013, 0.37, this.seed + 813)));
+    const gap = smoothstep(-0.72, -0.45, noise2(u * 3.7 + ch.seedOff * 0.017, 1.9, this.seed + 815));
+    return w * gap;
+  }
+
+  /**
+   * Inside a paleochannel? -> null or { w: 0..1 how deep inside its gravel body, rich: 0..1 the grade of
+   * this stretch (with its gravel lenses), i: which channel }. The bed rises and falls a little along it.
+   */
+  channelAt(x, y, z, k = this._column(x, z)) {
+    if (k < 0 || !this.chIdx || this.chIdx[k] < 0) return null;
+    const lat = this.chD[k];
+    if (lat >= 1) return null;
+    const ch = this.channels[this.chIdx[k]], u = this.chT[k], s = this.seed;
+    const bed = ch.bed + ch.tilt * (u - 0.5) + 0.18 * noise2(u * 4.3 + ch.seedOff * 0.011, 2.7, s + 817);
+    const th = ch.th0 * (0.75 + 0.5 * (0.5 + 0.5 * noise2(u * 7.7 + ch.seedOff * 0.019, 3.3, s + 819)));
+    const dv = (y - bed) / (th / 2);
+    if (dv <= -1 || dv >= 1) return null;
+    const w = Math.pow(1 - lat * lat, 0.7) * (1 - dv * dv);
+    // the grade along it: rich and poor stretches (two scales), lenses of richer gravel inside
+    const along = 0.5 + 0.55 * noise2(u * 5.2 + ch.seedOff * 0.023, 4.1, s + 821) + 0.25 * noise2(u * 15.7, ch.seedOff * 0.029, s + 823);
+    const lens = 0.5 + 0.5 * noise3(x * 0.85, y * 2.4, z * 0.85, s + 825);
+    const rich = Math.max(0, Math.min(1, (along * (0.7 + 0.6 * lens)) * ch.richK));
+    return { w, rich, i: ch.i };
+  }
+
+  // phase 9: the camp's apron is fill - 0..1 (1: fill on top) and how deep it goes there (m)
+  campFillAt(x, z) {
+    const F = CAMP_FILL, e = noise2(x * 0.45, z * 0.45, this.seed + 831) * 0.6;
+    const inX = smoothstep(F.x + F.soft, F.x - F.soft, x + e), inZ = smoothstep(F.z0 - 0.8, F.z0 + 0.4, z + e) * smoothstep(F.z1 + 0.8, F.z1 - 0.4, z + e);
+    return inX * inZ;
+  }
+
+  fillDepthAt(x, z) { return CAMP_FILL.depth + CAMP_FILL.depthVar * noise2(x * 0.7, z * 0.7, this.seed + 833); }
+
+  // inside the camp fill at (x, y, z)? (below its depth the natural ground starts)
+  inFill(x, y, z, base) {
+    const f = this.campFillAt(x, z);
+    return f > 0.5 && base - y < this.fillDepthAt(x, z) * Math.min(1, f * 1.4);
+  }
+
+  // what the surface shows of the gold-bearing ground (looks only, subtle): a streak's rust and bands,
+  // and - fainter - a paleochannel's pay gravel where it comes up (0..1)
+  surfaceHint(x, y, z) {
+    const st = this.streakAt(x, y, z), ch = this.channelAt(x, y, z);
+    return Math.max(st, ch ? 0.32 * ch.w * (0.3 + 0.7 * ch.rich) : 0);
+  }
+
+  // a gold pocket's share at a point (0..1 of its peak) - the benchmark's zone
+  pocketAt(x, y, z) {
+    let pocket = 0;
+    for (const p of this.pockets) {
+      const dx = (x - p.x) / p.rx, dy = (y - p.y) / p.ry, dz = (z - p.z) / p.rz;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < 1) pocket = Math.max(pocket, (1 - d2) * (1 - d2));
+    }
+    return pocket;
   }
 
   // tilted slabs of cemented pay gravel / clay: centre, strike (in plan), dip,
@@ -259,6 +403,11 @@ export class MaterialField {
     if (k >= 0 && y <= this.stoneTop[k] + 1e-4 && y >= this.stoneBot[k]) return MAT.STONE;
     const t = this.terrain, s = this.seed;
     const base = k >= 0 ? t.base[k] : 0, depth = base - y;
+    // phase 9: the camp's apron - imported, compacted fill (a disturbed mix of gravel and packed earth)
+    if (this.inFill(x, y, z, base)) return noise3(x * 1.9, y * 3.1, z * 1.9, s + 835) > 0.1 ? MAT.GRAVEL : MAT.COMPACT;
+    // a paleochannel's body: rounded stream gravel
+    const ch = this.channels ? this.channelAt(x, y, z, k) : null;
+    if (ch && ch.w > CHANNEL.gravel) return MAT.GRAVEL;
     // a mineralised streak: cemented gravel (or clay) whatever lay there before
     if (this.streaks && this.streaks.length) {
       const st = this.streakAt(x, y, z);
@@ -279,10 +428,10 @@ export class MaterialField {
   // gold per unit of material, 0..1 (only relative; the finds turn it into mass)
   goldDensityAt(x, y, z, mat, depth) {
     if (mat === MAT.STONE) return 0;
-    const s = this.seed;
+    const s = this.seed, k = this._column(x, z), base = k >= 0 ? this.terrain.base[k] : y + depth;
+    // phase 9: the camp's fill holds a trace at most (it was brought in and packed)
+    if (this.inFill(x, y, z, base)) return CAMP_FILL.g;
     const region = smoothstep(0.15, 0.75, fbm2(x * 0.085 + 11.3, z * 0.085 - 7.1, s + 401, 3));
-    const payY = -0.3 + 0.3 * noise2(x * 0.12, z * 0.12, s + 403);   // the old ground under the pile: dig down
-    const pay = Math.exp(-(((y - payY) / 0.55) ** 2));
     const vn = noise3(x * 0.5, y * 0.9, z * 0.5, s + 405);
     const vein = Math.max(0, 1 - Math.abs(vn) * 7) ** 2 * smoothstep(-0.2, 0.5, noise2(x * 0.2, z * 0.2, s + 407));
     let pocket = 0;
@@ -291,10 +440,16 @@ export class MaterialField {
       const d2 = dx * dx + dy * dy + dz * dz;
       if (d2 < 1) pocket = Math.max(pocket, p.peak * (1 - d2) * (1 - d2));
     }
-    const deep = 0.8 + 0.4 * smoothstep(0, 3, depth);
-    const mf = mat === MAT.GRAVEL ? 1.55 : mat === MAT.COMPACT ? 1.05 : 0.7;
+    // ordinary ground (no "pay layer" at any height any more): neutral grade with regional variation,
+    // by material; the upper mountain somewhat poorer (overburden), deeper inside a body a little richer
+    const ordinary = GEO.base + GEO.region * (region - 0.5);
+    const mount = 1 - (1 - GEO.mountain) * smoothstep(GEO.mountainFrom, GEO.mountainTo, base);
+    const deep = 1 - GEO.deep / 2 + GEO.deep * smoothstep(0, 3, depth);
+    // a paleochannel: its stretch's grade on top (poor stretches a little, rich ones several times)
+    const ch = this.channels ? this.channelAt(x, y, z, k) : null;
+    const chG = ch ? ch.w * (CHANNEL.poor + CHANNEL.rich * Math.pow(ch.rich, CHANNEL.richPow)) : 0;
     // REDIST: a small share of the ordinary gold sits in the mineralised streaks instead
-    let g = Math.min(1, Math.max(0, (0.06 + 0.32 * region + 0.3 * pay + 0.45 * vein) * deep * mf * STREAK.redist + pocket + STREAK.g * this.streakAt(x, y, z)));
+    let g = Math.min(1, Math.max(0, (ordinary * GEO.mf[mat] * mount * deep + GEO.vein * vein) * STREAK.redist + chG + pocket + STREAK.g * this.streakAt(x, y, z)));
     // the starter zone: same geology, but held inside a fair band
     const sw = this.starterWeight(x, y, z, y + depth);
     if (sw > 0) g += (Math.min(STARTER.gMax, Math.max(STARTER.gMin, g)) - g) * sw;

@@ -17,7 +17,7 @@ import { LootSystem } from "./goldrush-loot.js";
 import { MAT, MATERIALS } from "./goldrush-materials.js";
 import { MiningSystem } from "./goldrush-mining.js";
 import { QUALITY, QUALITY_LEVELS, applyRendererQuality, createRenderer, guessQuality, isMobileDevice } from "./goldrush-renderer.js";
-import { FIND, FIND_IDS, VOXEL_H } from "./goldrush-resources.js";
+import { FIND, FIND_IDS, GEOLOGY_VERSION, VOXEL_H } from "./goldrush-resources.js";
 import { RockSystem } from "./goldrush-rocks.js";
 import { DEFAULT_SETTINGS, SAVE_VERSION } from "./goldrush-save.js";
 import { SHOP_ITEMS, itemStatus, shopItem } from "./goldrush-shop.js";
@@ -178,6 +178,12 @@ export class GoldRushGame {
     if (this.doc.terrain) {
       try { terrainOk = this.terrain.deserialize(this.doc.terrain); } catch (e) { terrainOk = false; }
       if (!terrainOk) this.loadNotice = "Die Grabspuren im Spielstand passten nicht mehr – der Berg wurde neu aufgeschüttet.";
+    }
+    // phase 9: a mine dug in geology 1 now lies on geology 2 (goldrush-save.js) - said once
+    const geo = this.doc.geology || (this.doc.geology = { version: GEOLOGY_VERSION });
+    if (geo.from && !geo.noted && !this.loadNotice) {
+      this.loadNotice = "Der Claim wurde neu vermessen: alte Flussrinnen im Untergrund, der Lagerplatz am Camp ist aufgeschüttet. Was du schon abgebaut hast und alles in Behältern bleibt genau so.";
+      geo.noted = true;
     }
     this.rocks = new RockSystem(THREE, world.scene, this.terrain, world, { seed: this.doc.worldSeed, rockTex: world.rockTex });
     this.mining = new MiningSystem(this.terrain, this.rocks);
@@ -1440,6 +1446,7 @@ export class GoldRushGame {
       resources: this.mining.serialize(),
       rocks: this.rocks.serialize(),
       processing: this.processing.serialize(),
+      geology: { ...(this.doc.geology || { version: GEOLOGY_VERSION }) },
       ...(this.devModified ? { devModified: true, devModifiedAt: this.devModifiedAt } : {}),
     };
   }
@@ -1603,5 +1610,6 @@ export function newWorldDoc(seed) {
     resources: null,
     rocks: null,
     processing: null,
+    geology: { version: GEOLOGY_VERSION },
   };
 }

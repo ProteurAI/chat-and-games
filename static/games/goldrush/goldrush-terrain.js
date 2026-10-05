@@ -70,6 +70,8 @@ const PALETTE = {
   stoneS: 0x9b9386, stoneD: 0x6e675d, fill: 0x93714f, stoneCut: 0xb1a899,
   // phase 7A: a mineralised streak at the surface - rust-stained, with dark heavy-mineral grains
   streak: 0x8c5b34, streakD: 0x4c4038,
+  // phase 9: the camp's apron - imported fill, packed by feet and wheels (greyer, gravelly), its ruts
+  campFill: 0x8d8475, campRut: 0x6f6658,
 };
 const REC_MAX = 256;                                  // cells one stroke can touch (radius <= 0.9 m)
 
@@ -389,8 +391,9 @@ export class DiggableTerrain {
         // what shows at the surface: stone only where it really is exposed
         // (a lens a few cm under the soil stays hidden until dug free)
         const mat = this.field.materialAt(x, h - 0.006, z, k);
-        // a mineralised streak right under the surface (it shows - goldrush-resources.js)
-        this._st = mat === MAT.STONE || !this.field.streakAt ? 0 : this.field.streakAt(x, h - 0.02, z);
+        // a mineralised streak right under the surface (it shows - goldrush-resources.js); phase 9: a
+        // paleochannel's pay gravel where it comes up, fainter (surfaceHint)
+        this._st = mat === MAT.STONE || !this.field.streakAt ? 0 : this.field.surfaceHint ? this.field.surfaceHint(x, h - 0.02, z) : this.field.streakAt(x, h - 0.02, z);
         this._colorAt(k, x, z, h, inv, curv, mat, rgb);
         // untouched flat ground around the pile looks like the camp ground outside this square
         // (no gravel carpet ending in a straight line at the terrain's edge - phase 7A)
@@ -400,10 +403,20 @@ export class DiggableTerrain {
           this.groundColor(x, z, this._gc || (this._gc = [0, 0, 0]));
           for (let c = 0; c < 3; c++) rgb[c] += (this._gc[c] - rgb[c]) * gw;
         }
+        // phase 9: the camp's apron is fill - packed gravel, greyer, with wheel ruts - as long as it is not dug
+        // through (below it the natural ground shows)
+        let fillW = 0;
+        const fw = this.field.campFillAt ? this.field.campFillAt(x, z) : 0;
+        if (fw > 0.05 && this.base[k] - h < this.field.fillDepthAt(x, z)) {
+          fillW = fw * (0.62 + 0.2 * noise2(x * 1.3, z * 1.3, this.seed + 841));
+          const P = this.pal, rut = smoothstep(0.82, 0.97, Math.abs(Math.sin(z * 2.4 + noise2(x * 0.2, z * 0.2, this.seed + 843) * 2.2))) * smoothstep(-0.2, 0.4, noise2(x * 0.3, z * 0.15, this.seed + 845));
+          for (let c = 0; c < 3; c++) rgb[c] += (P.campFill[c] - rgb[c]) * fillW;
+          for (let c = 0; c < 3; c++) rgb[c] += (P.campRut[c] - rgb[c]) * rut * fillW * 0.5;
+        }
         col[v * 3] = rgb[0];
         col[v * 3 + 1] = rgb[1];
         col[v * 3 + 2] = rgb[2];
-        matw[v * 4] = (mat === MAT.GRAVEL ? 1 : 0) * (1 - gw);
+        matw[v * 4] = Math.max((mat === MAT.GRAVEL ? 1 : 0) * (1 - gw), fillW * 0.75);
         matw[v * 4 + 1] = (mat === MAT.STONE ? 1 : 0) * (1 - gw);
         matw[v * 4 + 2] = smoothstep(CHANGED_EPS, 0.06, this.base[k] - h);     // worked ground: crumb relief in the shader
         // stone: its fracture state instead of a streak (phase 8): 0..1 cracking, 2 broken rubble
