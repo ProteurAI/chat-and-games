@@ -77,8 +77,8 @@ const KICK = { hand: [0.005, 0.007, 0.007, 0.01], shovel: [0.012, 0.015, 0.016, 
 // one short haptic pulse per hit (ms; phones with vibration switched on) - never a continuous buzz
 const HAPTIC = { hand: [4, 6, 7, 12], shovel: [8, 10, 12, 16], pickaxe: [10, 14, 14, 20] };
 const STONE_TIP = {
-  hand: "Zu hart für die Hand – hier braucht es eine Spitzhacke.",
-  shovel: "Die Schaufel prallt am Stein ab – dafür braucht es eine Spitzhacke.",
+  hand: "Fester Fels – mit bloßen Händen keine Chance. Die Spitzhacke bricht ihn auf.",
+  shovel: "Fester Fels – die Schaufel rutscht ab. Mit der Spitzhacke aufbrechen, dann schaufeln.",
   pickaxe: "",
 };
 
@@ -1131,6 +1131,24 @@ export class GoldRushGame {
     this.dirty = true;
   }
 
+  // the pick into solid stone (phase 8): every hit shows - a chip and a crack that grows; a few
+  // hits and the patch breaks into rubble (a burst, a heavier sound, a short hold of the blow)
+  _stoneCrack(hit, r, dir, pan, dist) {
+    const c = r.crack;
+    if (c.fractured) {
+      this.audio.play("rock_fracture", { pan, dist });
+      this.effects.impact(hit, MAT.STONE, "rock", dir, 1.3);
+      this._haptic([16, 30, 20]);
+      this.hands.hitStop && this.hands.hitStop(0.07);
+      this.hud.tip("stone-broken", "Der Fels ist gebrochen – das Geröll lässt sich jetzt schaufeln (oder mit der Hacke weiter lösen).", 30);
+    } else {
+      this.audio.play("rock_chip", { pan, dist, strength: 0.7 + 0.3 * c.level });
+      this.effects.impact(hit, MAT.STONE, "pickaxe", dir, 0.7 + 0.5 * c.level);
+      this.hands.hitStop && this.hands.hitStop(0.045);
+      if (c.level > 0) this.hud.tip("stone-crack", "Fester Fels – jeder Hieb lässt ihn weiter reißen. Noch ein paar Schläge, dann bricht er.", 30);
+    }
+  }
+
   _hintNoTarget() {
     if (this.farTarget) this.hud.tip("far", "Zu weit entfernt – geh näher heran.", 5);
   }
@@ -1172,7 +1190,8 @@ export class GoldRushGame {
       this.tools.react("blocked", bm);
       this.hands.contact("blocked", bm);
       this.effects.impact(hit, bm, def.id, dir, cem ? 0.35 : 0.5);
-      this.audio.play(DIG_SOUND[def.id] ? DIG_SOUND[def.id][bm] : "stone", { pan, dist, strength: def.id === "hand" ? 1 : 0.7 });
+      // solid stone: the shovel skids, steel grinding on rock (phase 8)
+      this.audio.play(!cem && def.id === "shovel" ? "stone_scrape" : DIG_SOUND[def.id] ? DIG_SOUND[def.id][bm] : "stone", { pan, dist, strength: def.id === "hand" ? 1 : 0.8 });
       this._haptic(haptics[bm]);
       if (cem) { this._streakSeen(hit); this.hud.tip("cemented-hand", "Verfestigter, rostiger Kies – mit bloßen Händen keine Chance. Die Spitzhacke bricht ihn auf.", 10); }
       else if (STONE_TIP[def.id]) this.hud.tip(`stone-${def.id}`, STONE_TIP[def.id], 10);
@@ -1183,12 +1202,15 @@ export class GoldRushGame {
       return;
     }
     const mdef = MATERIALS[r.material];
+    if (r.crack) this._stoneCrack(hit, r, dir, pan, dist);
     this.tools.react("ok", r.material);
     if (def.id === "shovel") { const c = mdef.fragmentColor; this.hands.models.loadRgb = [c[0] * 1.2, c[1] * 1.2, c[2] * 1.2]; }
     this.hands.contact("ok", r.material, r.removedMassKg);
     this.effects.impact(hit, r.material, def.id, dir, Math.min(1.5, 0.6 + r.removedMassKg / 2.5));
-    const kind = (DIG_SOUND[def.id] || DIG_SOUND.hand)[r.material] || "hand_dirt";
-    this.audio.play(kind, { pan, dist, strength: def.id === "hand" ? Math.min(1, 0.6 + r.removedMassKg * 2) : Math.min(1, 0.6 + r.removedMassKg / 3) });
+    // broken stone (rubble) sounds like the coarse gravel it now is; the pick's own crack has its sound
+    const soundMat = r.material === MAT.STONE && r.rubble && def.id !== "pickaxe" ? MAT.GRAVEL : r.material;
+    const kind = r.crack && !r.crack.fractured ? null : (DIG_SOUND[def.id] || DIG_SOUND.hand)[soundMat] || "hand_dirt";
+    if (kind) this.audio.play(kind, { pan, dist, strength: def.id === "hand" ? Math.min(1, 0.6 + r.removedMassKg * 2) : Math.min(1, 0.6 + r.removedMassKg / 3) });
     this._haptic(haptics[r.material] || mdef.haptic);
     if (!this.reducedMotion) this.player.kick = Math.min(0.03, this.player.kick + (kicks[r.material] || kicks[0]));
     this._trickleAfter(hit, r.material);
@@ -1497,13 +1519,14 @@ export class GoldRushGame {
     const hit = this.target || this.farTarget;
     if (!hit) return null;
     const f = this.terrain.field, y = hit.y - 0.02;
-    const mat = hit.boulder != null ? MAT.STONE : f.materialAt(hit.x, y, hit.z);
+    const mat = hit.boulder != null || this.mining.rubbleAtHit(hit) ? MAT.STONE : f.materialAt(hit.x, y, hit.z);
     const t = this.terrain, i = Math.round((hit.x - t.x0) / t.cell), j = Math.round((hit.z - t.z0) / t.cell);
     const k = j * t.vps + i, iy = Math.ceil((y - SLICE_ORIGIN_Y) / VOXEL_H - 0.5) - 1;
     const def = this.tools.def;
     return {
       material: MATERIALS[mat].id, hardness: MATERIALS[mat].hardness, handEfficiency: MATERIALS[mat].handEfficiency,
-      tool: def.id, toolEfficiency: +toolEfficiency(def, mat, t.loose[k] > 0, hit.boulder == null && !t.loose[k] && f.cementedAt(hit.x, hit.y - 0.01, hit.z)).toFixed(3), loose: t.loose[k],
+      tool: def.id, toolEfficiency: +toolEfficiency(def, mat, t.loose[k] > 0, hit.boulder == null && !t.loose[k] && f.cementedAt(hit.x, hit.y - 0.01, hit.z), mat === MAT.STONE && t.rubble[k] > 0).toFixed(3), loose: t.loose[k],
+      crack: hit.boulder == null ? +(t.crack[k] / 16).toFixed(3) : 0, rubble: hit.boulder == null ? t.rubble[k] : 0, at: { x: +hit.x.toFixed(3), z: +hit.z.toFixed(3) },
       cemented: hit.boulder == null && !t.loose[k] && f.cementedAt(hit.x, hit.y - 0.01, hit.z), streak: hit.boulder == null ? +f.streakAt(hit.x, hit.y - 0.01, hit.z).toFixed(3) : 0,
       rock: hit.boulder != null ? this.rocks.stage(hit.boulder) : null,
       gold: +f.goldDensityAt(hit.x, y, hit.z, mat, t.base[k] - y).toFixed(3), depth: +(t.base[k] - hit.y).toFixed(2),

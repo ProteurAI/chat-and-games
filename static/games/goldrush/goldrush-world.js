@@ -319,11 +319,25 @@ export class GoldRushWorld {
             float fine = clamp(1.0 - length(fwidth(q)) * 55.0, 0.0, 1.0);
             return grNoise(q * 17.0) * 0.55 + grNoise(q * 41.0 + 1.7) * 0.3 * (0.4 + 0.6 * fine) + grNoise(q * 93.0 + 5.1) * 0.15 * fine;
           }
+          // broken stone (phase 8): angular pieces - the distance to the nearest edge between them
+          float grVor(vec2 p, out float id) {
+            vec2 i = floor(p), f = fract(p);
+            float d1 = 8.0, d2 = 8.0; id = 0.0;
+            for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+              vec2 g = vec2(float(x), float(y)), o = vec2(grHash(i + g), grHash(i + g + 19.7));
+              vec2 r = g + o - f;
+              float d = dot(r, r);
+              if (d < d1) { d2 = d1; d1 = d; id = grHash(i + g + 7.3); } else if (d < d2) d2 = d;
+            }
+            return sqrt(d2) - sqrt(d1);
+          }
           vec2 grMicroD() {
             vec3 wn = normalize(cross(dFdx(vWPos), dFdy(vWPos)));
             float steep = 1.0 - abs(wn.y);
             // phase 7B: all of the pile has a little grain relief (stronger on steep faces), worked ground more
             float a = (0.0011 + 0.0026 * clamp(vMat.z, 0.0, 1.0) + 0.0018 * vFresh) * (1.0 + 1.2 * steep) * (1.0 - 0.6 * clamp(vMat.y, 0.0, 1.0));
+            a += 0.0045 * smoothstep(1.2, 1.9, vMat.w) * clamp(vMat.y, 0.0, 1.0);          // broken rock: rough
+            a += 0.0022 * clamp(vMat.y, 0.0, 1.0);                                          // solid rock: grainy
             float m = a * grMicroH();
             return vec2(dFdx(m), dFdy(m));
           }`)
@@ -343,7 +357,9 @@ export class GoldRushWorld {
           vec3 grWN = normalize(cross(dFdx(vWPos), dFdy(vWPos)));
           float grSteep = 1.0 - abs(grWN.y);
           float grToe = smoothstep(0.42, 0.04, vWPos.y) * (1.0 - grSteep) * smoothstep(-0.1, 0.5, grB);
-          float grS = clamp(vMat.w * 2.2, 0.0, 1.0);
+          // vMat.w is a streak on soil, the fracture state on stone (phase 8: 0..1 cracking, 2 rubble)
+          float grStone = clamp(vMat.y, 0.0, 1.0);
+          float grS = clamp(vMat.w * 2.2, 0.0, 1.0) * (1.0 - grStone);
           grGW = max(grGW, max(grToe * 0.5, grS * 0.45));                   // the foot and a cemented streak: gravelly
           diffuseColor.rgb *= mix(mix(soilT, gravT, grGW), rockT, grRW) * crust;
           // the face's own structure: faint layering, rills running down, a few fracture lines in firm ground
@@ -360,6 +376,33 @@ export class GoldRushWorld {
           diffuseColor.rgb *= 1.0 - grBand * 0.3;
           float grQ = smoothstep(0.045, 0.0, abs(grNoise(sq * vec2(1.3, 7.5) + vWPos.y * 2.0))) * smoothstep(0.1, 0.6, grNoise(sq * 0.7 + 9.0));
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.72, 0.66, 0.57), grQ * grS * 0.42);
+          // embedded stone (phase 8): every pick hit shows - cracks run and multiply, the rock round them
+          // chipped lighter; broken, it lies there as angular rubble with dark gaps
+          // solid rock bedded in the pile: its natural joints - blocks with darker seams, faces a little
+          // lighter or darker each (rock, not a dark stain in the earth)
+          if (grStone > 0.05) {
+            vec2 jq = wuv + vec2(vWPos.y * 0.6, -vWPos.y * 0.45);
+            float jid;
+            float je = grVor(jq * 2.4 + 3.7, jid);
+            float grSolid = smoothstep(0.4, 0.8, grStone);                  // the rock itself, not the soil at its edge
+            float joint = smoothstep(0.06, 0.0, je) * grSolid;
+            diffuseColor.rgb *= (1.0 - 0.42 * joint) * mix(1.0, 0.86 + 0.26 * jid, grSolid);
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.08, 1.06, 1.02), grStone * 0.35 * smoothstep(0.1, 0.6, grSteep));
+          }
+          float grCrk = clamp(vMat.w, 0.0, 1.0) * grStone * (1.0 - step(1.2, vMat.w));
+          float grRub = smoothstep(1.2, 1.9, vMat.w) * grStone;
+          if (grCrk > 0.01 || grRub > 0.01) {
+            vec2 cq = wuv + vec2(vWPos.y * 0.7, -vWPos.y * 0.5);
+            float n1 = grNoise(cq * 5.3 + 11.0);
+            float c1 = smoothstep(0.05, 0.0, abs(n1)), c2 = smoothstep(0.035, 0.0, abs(grNoise(cq * 13.0 + 3.0))), c3 = smoothstep(0.03, 0.0, abs(grNoise(cq * 29.0 + 17.0)));
+            float lines = c1 * smoothstep(0.03, 0.22, grCrk) + c2 * smoothstep(0.3, 0.55, grCrk) * 0.85 + c3 * smoothstep(0.55, 0.85, grCrk) * 0.7;
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.16, 1.12, 1.06), grCrk * 0.4 * smoothstep(0.22, 0.0, abs(n1)));
+            diffuseColor.rgb *= 1.0 - 0.62 * clamp(lines, 0.0, 1.0) * (1.0 - grRub);
+            float pid;
+            float edge = grVor(cq * 9.0, pid);
+            float gap = smoothstep(0.09, 0.0, edge);
+            diffuseColor.rgb *= mix(1.0, (0.8 + 0.34 * pid) * (1.0 - 0.6 * gap), grRub);
+          }
           float grFresh = vFresh;
           // just cut (7B: limited - exposed earth, not a burnt black patch): a little darker and moist
           vec3 freshTint = mix(vec3(0.86, 0.82, 0.78), vec3(1.07, 1.05, 1.02), clamp(grGW + grRW, 0.0, 1.0));

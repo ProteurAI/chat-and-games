@@ -84,6 +84,9 @@ export class MiningSystem {
   // material at the very surface of a hit (a boulder is always stone)
   materialAtHit(hit) {
     if (hit.boulder != null) return MAT.STONE;
+    // broken embedded stone (phase 8): the rubble is stone even where the crater's rim lies above
+    // the column's (lowered) stone top - its sound, dust and the crosshair say so
+    if (this.rubbleAtHit(hit)) return MAT.STONE;
     return this.field.materialAt(hit.x, hit.y - 0.01, hit.z);
   }
 
@@ -91,6 +94,13 @@ export class MiningSystem {
   cementedAtHit(hit) {
     if (hit.boulder != null || !this.field.cementedAt) return false;
     return this.field.cementedAt(hit.x, hit.y - 0.01, hit.z);
+  }
+
+  // broken stone (rubble) at the hit (phase 8)
+  rubbleAtHit(hit) {
+    const t = this.terrain, i = Math.round((hit.x - t.x0) / t.cell), j = Math.round((hit.z - t.z0) / t.cell);
+    if (i < 0 || j < 0 || i >= t.vps || j >= t.vps || !t.rubble) return false;
+    return t.rubble[j * t.vps + i] > 0;
   }
 
   looseAtHit(hit) {
@@ -111,7 +121,8 @@ export class MiningSystem {
   // efficiency of `def` right at the hit (crosshair state)
   efficiencyAtHit(hit, def) {
     if (hit.boulder != null) return def.rockDamage > 0 ? 1 : 0;
-    return toolEfficiency(def, this.materialAtHit(hit), this.looseAtHit(hit), this.cementedAtHit(hit));
+    const mat = this.materialAtHit(hit);
+    return toolEfficiency(def, mat, this.looseAtHit(hit), this.cementedAtHit(hit), mat === MAT.STONE && this.rubbleAtHit(hit));
   }
 
   _push(r, cls, massUg, mat, x, y, z, key) {
@@ -127,7 +138,7 @@ export class MiningSystem {
    */
   action(hit, def, player, eye) {
     const r = this.result;
-    r.ok = false; r.blocked = false; r.kind = ""; r.cells = 0; r.chunks = 0; r.rock = null; r.cemented = false; r.streak = 0;
+    r.ok = false; r.blocked = false; r.kind = ""; r.cells = 0; r.chunks = 0; r.rock = null; r.cemented = false; r.streak = 0; r.crack = null; r.rubble = false;
     r.requestedVolume = 0; r.removedVolume = 0; r.removedMassKg = 0; r.relocatedVolume = 0; r.processedVolume = 0;
     r.massKg = 0; r.freshKg = 0; r.volumeL = 0; r.massByMat.fill(0); r.slices = 0; r.findCount = 0; r.fineUg = 0;
     r.reason = this.check(hit, def, player);
@@ -147,13 +158,18 @@ export class MiningSystem {
     const loose0 = this.looseAtHit(hit);
     r.cemented = !loose0 && this.cementedAtHit(hit);
     r.streak = hit.boulder == null && this.field.streakAt ? this.field.streakAt(hit.x, hit.y - 0.01, hit.z) : 0;
-    if (!(toolEfficiency(def, r.material, loose0, r.cemented) > 0)) { r.kind = "blocked"; r.blocked = true; return r; }
+    // solid stone (phase 8): the pick cracks it - a few hits and the patch breaks into rubble
+    if (r.material === MAT.STONE) {
+      r.rubble = this.rubbleAtHit(hit);
+      if (!r.rubble && def.kernel.cutsStone && this.terrain.strikeStone) { r.crack = this.terrain.strikeStone(hit, def.rockDamage || 1); r.rubble = r.crack.rubble; }
+    }
+    if (!(toolEfficiency(def, r.material, loose0, r.cemented, r.rubble) > 0)) { r.kind = "blocked"; r.blocked = true; return r; }
 
     // 5.-9.
     const t = this.terrain, field = this.field, area = t.cell * t.cell, vps = t.vps, C = this.consumed, I = this.cidx;
     const K = this._kernel(hit, def, eye);
     const cem = field.cementedAt ? (x, y, z) => field.cementedAt(x, y, z) : () => false;
-    const eff = (k, x, y, z, mat) => { const l = t.loose[k] > 0; return toolEfficiency(def, mat, l, !l && cem(x, y - 0.01, z)); };
+    const eff = (k, x, y, z, mat) => { const l = t.loose[k] > 0; return toolEfficiency(def, mat, l, !l && cem(x, y - 0.01, z), mat === MAT.STONE && t.rubble[k] > 0); };
     const onCut = (rec) => {
       for (let n = 0; n < rec.n; n++) {
         const k = rec.k[n], before = rec.before[n], after = rec.after[n], mat = rec.mat[n];

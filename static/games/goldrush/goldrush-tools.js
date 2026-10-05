@@ -26,6 +26,7 @@ export const TOOL_DEFS = {
     materialEfficiency: [1.0, 0.45, 0.2, 0],
     loosenedBonus: [1, 2.0, 1.6, 1],
     cementEfficiency: 0,                  // a cemented streak (not loosened): share of the normal efficiency
+    rubbleEfficiency: 0.18,               // broken stone (phase 8): you can pick the rubble out by hand, slowly
     hardnessLimit: 3.5,
     // a small, flat scrape: ~0.135 l = ~0.18 kg of loose dirt
     kernel: { type: "scrape", a: 0.14, b: 0.11, vol: 0.000135, tMax: 0.012, edge: 0.55, tilt: 0, settleMargin: 0.7 },
@@ -41,6 +42,7 @@ export const TOOL_DEFS = {
     materialEfficiency: [1.0, 0.55, 0.5, 0],
     loosenedBonus: [1, 1.7, 1.6, 1],
     cementEfficiency: 0.08,               // the blade skids off cemented gravel: barely a scrape until it is loosened
+    rubbleEfficiency: 0.55,               // broken stone (phase 8): the blade takes the rubble like coarse gravel
     hardnessLimit: 3.5,
     // a scoop: wider, deeper, deepest at the leading edge: ~1.63 l = ~2.2 kg of loose dirt
     kernel: { type: "scoop", a: 0.23, b: 0.15, vol: 0.00163, tMax: 0.06, edge: 0.45, tilt: 0.35, settleMargin: 1.0 },
@@ -63,6 +65,7 @@ export const TOOL_DEFS = {
     materialEfficiency: [0.25, 0.35, 0.3, 0.12],
     loosenedBonus: [1, 1, 1, 1],
     cementEfficiency: 1,                  // what it is for: it breaks the cemented streaks up like any hard ground
+    rubbleEfficiency: 0.9,                // broken stone (phase 8): the point levers the pieces out
     hardnessLimit: 10,
     // a point strike: small crater (~0.4 l at full bite), loosens around it
     kernel: { type: "pick", a: 0.12, b: 0.09, vol: 0.0004, tMax: 0.05, edge: 0.3, tilt: 0, settleMargin: 0.6, cutsStone: true, loosenCm: 14, loosenR: 0.42 },
@@ -120,8 +123,10 @@ export function effectiveDef(id, upgrades) {
 }
 
 // efficiency of a tool on a material at a cell (loosened ground helps; a cemented
-// mineralised streak resists everything but the pickaxe until it is loosened)
-export function toolEfficiency(def, mat, loosened, cemented = false) {
+// mineralised streak resists everything but the pickaxe until it is loosened; solid
+// stone only the pickaxe chips - once it is broken (rubble, phase 8) every tool works it)
+export function toolEfficiency(def, mat, loosened, cemented = false, rubble = false) {
+  if (mat === MAT.STONE && rubble) return def.rubbleEfficiency || 0;
   const e = def.materialEfficiency[mat] || 0;
   if (loosened) return e * def.loosenedBonus[mat];
   return cemented ? e * (def.cementEfficiency != null ? def.cementEfficiency : 1) : e;

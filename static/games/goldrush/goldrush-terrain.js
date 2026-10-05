@@ -41,6 +41,10 @@ export const HEIGHT_Q = 10000;
 // there, so a cut at the toe of a steep flank can't start a slide that runs
 // up the whole mound. Stone never moves.
 const CRUST = TAN(62);
+// embedded stone (phase 8): crack points per pickaxe hit at the centre, points that break a
+// column, how deep the broken rubble goes, the strike's reach; once a column breaks, the cracked
+// ones round it (>= share of full) give way with it - a patch, not one cell
+export const FRACTURE = { hit: 4, full: 16, depthCm: 12, radius: 0.26, share: 0.4 };
 const REPOSE = [TAN(40), TAN(50), TAN(37), Infinity];      // by MAT: loose dirt, compact, gravel, stone
 const SETTLE_ITER = 16;
 
@@ -94,6 +98,10 @@ export class DiggableTerrain {
     this.height = new Float32Array(n);
     this.qh = new Int32Array(n);                     // height - base, in 0.1 mm (the stored truth)
     this.loose = new Uint8Array(n);                  // loosened depth below the surface, cm (pickaxe)
+    // embedded stone (phase 8): crack points of the exposed stone (pickaxe hits, FRACTURE.full = broken)
+    // and the depth of broken, workable rubble below the surface (cm) once it gave way
+    this.crack = new Uint8Array(n);
+    this.rubble = new Uint8Array(n);
     this.freshAt = new Float32Array(n).fill(-1e5);  // when the column was last cut / moved (game clock, s) - looks fresh
     this.clock = 0;                                  // game clock, set by the engine every frame
     this.rock = new Float32Array(n);
@@ -398,7 +406,8 @@ export class DiggableTerrain {
         matw[v * 4] = (mat === MAT.GRAVEL ? 1 : 0) * (1 - gw);
         matw[v * 4 + 1] = (mat === MAT.STONE ? 1 : 0) * (1 - gw);
         matw[v * 4 + 2] = smoothstep(CHANGED_EPS, 0.06, this.base[k] - h);     // worked ground: crumb relief in the shader
-        matw[v * 4 + 3] = this._st;
+        // stone: its fracture state instead of a streak (phase 8): 0..1 cracking, 2 broken rubble
+        matw[v * 4 + 3] = mat === MAT.STONE ? (this.rubble[k] > 0 ? 2 : this.crack[k] / FRACTURE.full) : this._st;
         fresh[v] = this.freshAt[k];
       }
     }
@@ -641,7 +650,8 @@ export class DiggableTerrain {
       const mat = inStone ? MAT.STONE : field.materialAt(cx, old - 0.01, cz, k);
       const f = eff(k, cx, old, cz, mat);
       requested += want;
-      if (!(f > 0) || (inStone && !K.cutsStone)) continue;
+      // solid stone: only a tool that cuts stone; broken rubble (phase 8): any tool that can work it
+      if (!(f > 0) || (inStone && !K.cutsStone && !(this.rubble[k] > 0))) continue;
       let target = old - want * f;
       if (!inStone) target = this._stoneLimit(k, target);  // a bite in soil stops on stone below
       const q = Math.max(this._qMin(k), Math.ceil((target - this.base[k]) * HEIGHT_Q));
@@ -652,6 +662,13 @@ export class DiggableTerrain {
       if (inStone) field.cutStone(k, H[k]);
       // loosening (pickaxe) / using it up (any removal)
       const cm = Math.round((old - H[k]) * 100);
+      if (inStone && this.rubble[k] > 0) {
+        // the broken layer is worked off; under it the stone is whole again
+        this.rubble[k] = Math.max(0, this.rubble[k] - Math.max(1, cm));
+        if (!this.rubble[k]) this.crack[k] = 0;
+      }
+      // cut right through the stone body: no stone state left in this column
+      if (inStone && !(H[k] <= this.stoneTop[k] + 1e-4 && H[k] >= this.stoneBot[k])) { this.rubble[k] = 0; this.crack[k] = 0; }
       let l = Math.max(0, this.loose[k] - cm);
       if (K.loosenCm && mat !== MAT.STONE) l = Math.min(30, l + Math.round(K.loosenCm * w));
       this.loose[k] = l;
@@ -702,6 +719,50 @@ export class DiggableTerrain {
     const H = this.height, c2 = this.cell * this.cell;
     for (let k = 0; k < H.length; k++) if (H[k] > 0) s += H[k];
     return s * c2;
+  }
+
+  /**
+   * A pickaxe strike on exposed stone (phase 8): the rock cracks round the
+   * point - FRACTURE.hit crack points at the centre (x power), less further
+   * out; a column that reaches FRACTURE.full breaks: its top FRACTURE.depthCm
+   * of stone become rubble that hand, shovel and pick can work (still stone -
+   * the mass is booked as stone). -> { level 0..1 at the hit, fractured: columns
+   * broken now, first: the hit point broke now, rubble: the hit point is rubble }
+   */
+  strikeStone(hit, power = 1) {
+    const c = this.cell, vps = this.vps, H = this.height, F = FRACTURE, R = F.radius;
+    const ci = Math.round((hit.x - this.x0) / c), cj = Math.round((hit.z - this.z0) / c), rr = Math.ceil(R / c);
+    const lo = this.edgeCells, hi = vps - 1 - this.edgeCells;
+    let fractured = 0, gi0 = Infinity, gi1 = -Infinity, gj0 = Infinity, gj1 = -Infinity;
+    for (let j = Math.max(lo, cj - rr); j <= Math.min(hi, cj + rr); j++) for (let i = Math.max(lo, ci - rr); i <= Math.min(hi, ci + rr); i++) {
+      const k = j * vps + i, x = this.x0 + i * c, z = this.z0 + j * c;
+      if (!(H[k] <= this.stoneTop[k] + 1e-4 && H[k] >= this.stoneBot[k]) || this.rubble[k] > 0) continue;
+      const d = Math.hypot(x - hit.x, z - hit.z, (H[k] - hit.y) * 0.7) / R;
+      if (d >= 1) continue;
+      const add = Math.round(F.hit * power * (1 - d * d) + 0.25);
+      if (add <= 0) continue;
+      const v = this.crack[k] + add;
+      if (v >= F.full) { this.crack[k] = 0; this.rubble[k] = F.depthCm; fractured++; } else this.crack[k] = v;
+      gi0 = Math.min(gi0, i); gi1 = Math.max(gi1, i); gj0 = Math.min(gj0, j); gj1 = Math.max(gj1, j);
+    }
+    // the crack network gives way together: what is cracked enough round a break breaks with it
+    if (fractured) {
+      for (let j = Math.max(lo, cj - rr); j <= Math.min(hi, cj + rr); j++) for (let i = Math.max(lo, ci - rr); i <= Math.min(hi, ci + rr); i++) {
+        const k = j * vps + i;
+        if (this.rubble[k] > 0 || this.crack[k] < F.full * F.share) continue;
+        if (Math.hypot(this.x0 + i * c - hit.x, this.z0 + j * c - hit.z) > R * 0.85) continue;
+        this.crack[k] = 0; this.rubble[k] = F.depthCm; fractured++;
+      }
+    }
+    if (gi1 >= gi0) { this._refresh(gi0 - 1, gi1 + 1, gj0 - 1, gj1 + 1); this.revision++; }
+    const k0 = Math.min(hi, Math.max(lo, cj)) * vps + Math.min(hi, Math.max(lo, ci));
+    return { level: this.rubble[k0] > 0 ? 1 : this.crack[k0] / F.full, fractured, rubble: this.rubble[k0] > 0, first: this.rubble[k0] === F.depthCm && fractured > 0 };
+  }
+
+  // the stone state of a column (tests / devtools): { stone, crack 0..1, rubble cm }
+  stoneState(k) {
+    const H = this.height, stone = H[k] <= this.stoneTop[k] + 1e-4 && H[k] >= this.stoneBot[k];
+    return { stone, crack: this.crack[k] / FRACTURE.full, rubble: this.rubble[k] };
   }
 
   _loosen(hit, K, i0, i1, j0, j1) {
@@ -832,7 +893,8 @@ export class DiggableTerrain {
   serialize() {
     let changed = 0;
     for (let k = 0; k < this.qh.length; k++) if (this.qh[k]) changed++;
-    return { gen: TERRAIN_GEN, cols: this.cols, cell: this.cell, unit: "0.1mm", encoding: "rle-zigzag-varint-b64", changed, data: encodeIntRle(this.qh), loose: encodeIntRle(this.loose) };
+    return { gen: TERRAIN_GEN, cols: this.cols, cell: this.cell, unit: "0.1mm", encoding: "rle-zigzag-varint-b64", changed, data: encodeIntRle(this.qh), loose: encodeIntRle(this.loose),
+      crack: encodeIntRle(this.crack), rubble: encodeIntRle(this.rubble) };
   }
 
   // the height column k will have after serialize() -> deserialize(): the
@@ -851,6 +913,9 @@ export class DiggableTerrain {
       const q = decodeIntRle(t.data, n);
       for (let k = 0; k < n; k++) this._setQ(k, Math.max(this._qMin(k), q[k]));
       if (typeof t.loose === "string") { const l = decodeIntRle(t.loose, n); for (let k = 0; k < n; k++) this.loose[k] = Math.max(0, Math.min(30, l[k])); }
+      // phase 8 (optional): cracked / broken embedded stone
+      if (typeof t.crack === "string") { const l = decodeIntRle(t.crack, n); for (let k = 0; k < n; k++) this.crack[k] = Math.max(0, Math.min(FRACTURE.full - 1, l[k])); }
+      if (typeof t.rubble === "string") { const l = decodeIntRle(t.rubble, n); for (let k = 0; k < n; k++) this.rubble[k] = Math.max(0, Math.min(FRACTURE.depthCm, l[k])); }
     }
     this.refreshAll();
     this.revision++;
