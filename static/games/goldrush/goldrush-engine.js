@@ -77,8 +77,8 @@ const KICK = { hand: [0.005, 0.007, 0.007, 0.01], shovel: [0.012, 0.015, 0.016, 
 // one short haptic pulse per hit (ms; phones with vibration switched on) - never a continuous buzz
 const HAPTIC = { hand: [4, 6, 7, 12], shovel: [8, 10, 12, 16], pickaxe: [10, 14, 14, 20] };
 const STONE_TIP = {
-  hand: "Fester Fels – mit bloßen Händen keine Chance. Die Spitzhacke bricht ihn auf.",
-  shovel: "Fester Fels – die Schaufel rutscht ab. Mit der Spitzhacke aufbrechen, dann schaufeln.",
+  hand: "Zu hart – fester Fels, mit bloßen Händen keine Chance. Die Spitzhacke bricht ihn auf.",
+  shovel: "Zu hart – die Schaufel rutscht am Fels ab. Mit der Spitzhacke aufbrechen, dann schaufeln.",
   pickaxe: "",
 };
 

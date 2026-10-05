@@ -62,9 +62,26 @@ function roughRoute(ctx) {
   return barrowAt(ctx, 60000, { x: best.x, z: best.z, yaw: Math.atan2(Math.cos(best.a), Math.sin(best.a)) });
 }
 
+// the whole pile from its centre outwards (materialSpot looks round you only - exposed stone is rare
+// and often further than that)
+function spotOnPile(g, mat) {
+  const f = g.terrain.field, T = g.terrain, mc = T.moundCenter;
+  for (let r = 0.5; r <= 15; r += 0.25) {
+    for (let a = 0; a < Math.PI * 2; a += 0.08) {
+      const x = mc.x + Math.cos(a) * r, z = mc.z + Math.sin(a) * r;
+      if (!T.inDigArea(x, z)) continue;
+      const h = T.getHeightAt(x, z);
+      if (h < 0.15 || f.materialAt(x, h - 0.006, z) !== mat) continue;
+      const px = x + Math.cos(a) * 1.5, pz = z + Math.sin(a) * 1.5, eye = g.world.groundAt(px, pz) + 1.62;
+      return { px, pz, yaw: Math.atan2(-(x - px), -(z - pz)), pitch: Math.atan2(h - eye, 1.5) };
+    }
+  }
+  return null;
+}
+
 function materialAt(ctx, mat, label) {
-  const g = ctx.game, sp = materialSpot(g, mat);
-  if (!sp) return fail(`${label}: in der Nähe keine offene Stelle.`);
+  const g = ctx.game, sp = materialSpot(g, mat) || spotOnPile(g, mat);
+  if (!sp) return fail(`${label}: am ganzen Berg keine offene Stelle.`);
   const r = g.teleport({ x: sp.px, z: sp.pz, yaw: sp.yaw, pitch: sp.pitch });
   g._stationSig = null;
   return r && r.ok ? ok(`${label}: Hand, Schaufel und Spitzhacke probieren.`) : fail(DEV_ERROR);

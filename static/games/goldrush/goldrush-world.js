@@ -438,8 +438,9 @@ export class GoldRushWorld {
           }
           float grFresh = vFresh;
           // just cut (7B: limited - exposed earth, not a burnt black patch): a little darker and moist
-          vec3 freshTint = mix(vec3(0.86, 0.82, 0.78), vec3(1.07, 1.05, 1.02), clamp(grGW + grRW, 0.0, 1.0));
-          diffuseColor.rgb *= mix(vec3(1.0), freshTint, grFresh * 0.9);
+          // (phase 8: a touch more moisture - the brighter phase-8 light had nearly washed the fade out)
+          vec3 freshTint = mix(vec3(0.84, 0.8, 0.76), vec3(1.07, 1.05, 1.02), clamp(grGW + grRW, 0.0, 1.0));
+          diffuseColor.rgb *= mix(vec3(1.0), freshTint, grFresh);
           float grSoil = 1.0 - clamp(grGW + grRW, 0.0, 1.0);
           diffuseColor.rgb *= 1.0 - vFreshQ * 0.09 * grSoil;
           float grCrumb = grNoise(wuv * 23.0) * 0.6 + grNoise(wuv * 61.0) * 0.4;
@@ -460,7 +461,7 @@ export class GoldRushWorld {
         .replace("#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
           roughnessFactor *= (0.93 + 0.1 * grN2) * (0.96 + 0.07 * grSteep) * (1.0 - 0.14 * grFresh - 0.16 * vFreshQ * (1.0 - clamp(grGW + grRW, 0.0, 1.0)));`);
     };
-    this.terrainMaterial.customProgramCacheKey = () => "goldrush-terrain-v10";
+    this.terrainMaterial.customProgramCacheKey = () => "goldrush-terrain-v11";
     this.terrain = new DiggableTerrain(THREE, {
       seed: this.seed, center: { x: 0, z: -6 }, size: 30, cell: 0.125, chunkCells: 30,
       moundCenter: MOUND_CENTER, material: this.terrainMaterial, spawn: SPAWN,
