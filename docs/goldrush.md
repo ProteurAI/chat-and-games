@@ -3,7 +3,7 @@
 Interne Notizen für die Weiterentwicklung (Prompt 6–12). Nicht für Spieler.
 Liegt bewusst außerhalb von `static/`, wird also nicht ausgeliefert.
 
-## Module (Stand Phase 7A)
+## Module (Stand Phase 7B)
 
 | Bereich | Datei(en) |
 |---|---|
@@ -27,7 +27,8 @@ Liegt bewusst außerhalb von `static/`, wird also nicht ausgeliefert.
 | Gold-Größenklassen (Phase 7A) | `goldrush-loot.js` (`FIND_LOOK`, `findSize`) |
 | Camp-Dressing, Wege (Phase 7A) | `goldrush-campdressing.js` (`CampDressing`, `PATHS`) |
 | Statische Teile zusammenbacken (Draw Calls) | `goldrush-merge.js` (`mergeStatic`) |
-| Entwickler-/QA-Werkzeuge | `goldrush-dev*.js` (siehe unten; Phase 6 / 7 / 7A: `goldrush-devcommands6.js`, `goldrush-devcommands7.js`, `goldrush-devcommands7a.js`) |
+| Loses Material in Schaufel / Eimer / Schubkarre / Sieb (Phase 7B) | `goldrush-heap.js` (`LooseLoad`, `LOOSE_MAT`) |
+| Entwickler-/QA-Werkzeuge | `goldrush-dev*.js` (siehe unten; Phase 6 / 7 / 7A / 7B: `goldrush-devcommands6.js`, `goldrush-devcommands7.js`, `goldrush-devcommands7a.js`, `goldrush-devcommands7b.js`) |
 
 ## Materialfluss und Maschinen (Phase 6)
 
@@ -141,19 +142,17 @@ grün / bernstein / aus. Status-Chip in der Nähe: Vorrat · Dosierer · Rinne �
 
 **Waschschale – der primitive Wasch-Loop ab dem ersten Eimer.** Am Trog liegt
 von Anfang an eine Holzschale (kein Shop-Item). Eimer am Waschplatz abstellen →
-[E] „Waschschale aus dem Eimer füllen“ → schwenken → Gold in den Beutel. Gleiche
+[E] „Mit Waschschale waschen“ (7B) → schwenken → Gold in den Beutel. Gleiche
 Physik wie die Pfanne (`panLoad`, Ledger: Eimer → Schale → Beutel + Tailings,
 µg-genau), nur schlechter: 1,4 l pro Ladung (Rest < 0,3 l geht mit), 3,2 s/l
 (≈ 4,5 s pro Ladung, Untergrenze 3 s), 48 % Feingold-Recovery (Pfanne 58 %).
 Sobald die Goldpfanne gekauft ist, ersetzt sie die Schale; eine angefangene
 Ladung behält ihr Werkzeug (`pan.tool`, gespeichert).
 
-**Sichtbare Funde verschwinden nicht im Eimer.** Beim Graben in Eimer oder
-Schubkarre werden Flitter, Flocken und Nuggets sofort am Grabort entdeckt
-(Loot, Beutel) – wie beim Graben ohne Eimer. In den Behälter gehen nur das
-Material und sein Feingold, das nur Waschen zurückholt. Gold wird dadurch
-nicht mehr oder weniger, es kommt nur früher sichtbar an. (`collect()` in
-`goldrush-processing.js`; Dev-Material darf weiter Stücke enthalten.)
+**Sichtbare Funde beim Graben in Behälter (7A, in 7B ersetzt).** In 7A wurden
+Flitter, Flocken und Nuggets auch beim Graben in Eimer / Schubkarre sofort am
+Grabort entdeckt; seit Phase 7B nimmt der Behälter-Anteil seine Stücke mit
+(siehe „Behälter-Ledger (Phase 7B)“ unten).
 
 **Methoden-Leiter: Wert pro aktiver Spielminute.** Gemessen mit
 `tests/e2e/goldrush_bench.py --kit …` (festes Kit, nichts gekauft, normale
@@ -262,6 +261,103 @@ ENDPOINT_NOT_FOUND / SERVER_ERROR und zeigt die Seiten-Origin neben der Adresse
 des antwortenden Servers. Häufigste Live-Ursache: die Seite läuft über eine
 andere Adresse (anderer Render-Dienst) als der, an dem die Variable gesetzt ist –
 Service-ID im Dialog mit dem Dashboard vergleichen.
+
+## Material-Realität, Processing-UX, Behälter-Ledger (Phase 7B)
+
+**Warum beim Füllen „+ €“ kam (7A).** `collect()` hat in 7A die sichtbaren
+Funde eines Digs immer sofort entdeckt (Loot → Beutel) und nur Material +
+Feingold in Eimer / Schubkarre gelegt. Das war keine Doppelbuchung (die Stücke
+wurden aus der Batch entfernt), aber falsch: der Behälter verlor seine Stücke,
+und das Geld kam beim Füllen statt beim Waschen.
+
+**Verbindliche Behälter-Logik (7B).** Direkt graben: sichtbare Funde sofort,
+Feingold in den Abraum (`ledger.spoilFineUg`). Graben in einen Behälter: der
+Teil des Digs, der hineinpasst (`dig.take(room)`), nimmt seine diskreten Funde
+und sein Feingold mit – sie gehen nicht in den Beutel, erst Waschen / Sieben /
+Rinne bringt sie heraus (`economy.recover`). Nur der Überlauf-Teil wird wie
+direktes Graben behandelt (seine Stücke werden entdeckt, sein Feingold geht in
+den Abraum). Die Aufteilung ist die von `MaterialBatch.take()`: Volumen, Massen
+und Feingold anteilig in ganzen Einheiten, Stücke `floor(n · f)` in Reihenfolge.
+Neu im Ledger: `inFinds` (Stücke, die in Behälter gingen, Dev-Material
+eingeschlossen). Gold rein = Beutel + Behälter + Processing + Tailings + Abraum,
+auf das µg; kein Stück zweimal (geprüft mit identischen Zellen A direkt /
+B Eimer / C Schubkarre, Teil-Füllung, Überlauf mit Stücken, Save / Reload vor
+und nach dem Waschen – `tests/e2e/goldrush_material_e2e.py --only ledger`).
+
+**Methoden-Leiter nach dem Fix:** unverändert gegenüber 7A (48 Seeds, gleiche
+Tabelle oben: Referenz-Schaufel 1,16 / 1,41 / 1,51), weil Waschen alle
+mitgenommenen Stücke zurückholt – der Wert kommt nur später an. Keine
+Neukalibrierung, kein Bonusgold.
+
+**Loses Material statt Kugeln** (`goldrush-heap.js`, `LooseLoad`): eine
+Polar-Gitter-Oberfläche aus mehreren Schüttkegeln (Böschungswinkel, Rauschen
+auf Umriss und Höhe, planare UVs, Vertex-Farben nach Zusammensetzung) plus ein
+instanziertes Mesh mit Krümeln / Klumpen / Kieseln / Steinen (`LOOSE_MAT`). Zwei
+Draws pro Ladung, feste Puffer – eine neue Füllung schreibt nur Vertex-Daten und
+Instanz-Matrizen um (Signatur-Cache), nichts wird nachträglich erzeugt.
+Schaufel: lockere, gehäufte Schicht (Erde Krümel, feste Erde Klumpen, Kies viele
+Kiesel), läuft dem Blatt beim Schwung nach und rutscht beim Abwerfen zur
+Spitze. Eimer: Füllhöhe nach Litern (Rand an der Wand, Mitte leicht gehäuft).
+Schubkarre: wachsender unregelmäßiger Haufen, bis zu 4 Kegel, voll eine Hand
+breit über dem Rand (die Wanne hat keinen Deckel mehr). Classifier: der Haufen
+sinkt beim Rütteln (das Feine fällt durch), am Ende liegt nur der Grobanteil
+(`COARSE`) da und rutscht ab. Goldpfanne: Kreisen kippt und dreht die Pfanne,
+Wasser und Material folgen verzögert (Feder `_slosh`); Stufen schlammig →
+helle Erde geht → weniger, kleinere Steine → Schwarzsand sammelt sich auf der
+tiefen Seite → Gold (wertabhängig wie 7A, das Popup bleibt).
+
+**Processing-UX:** am Trog „[E] Mit Waschschale waschen“ (mit Pfanne „Mit
+Goldpfanne waschen“), einmaliger Hinweis beim ersten vollen Eimer am Waschplatz
+(nur solange noch nie gewaschen wurde). Die Holzschale liegt am vorderen
+Trogrand, zum Spieler gekippt, helleres Holz – kein Leuchten, kein Marker.
+Schubkarre am Waschplatz: Pfanne direkt aus der Karre bleibt möglich (kein
+Lock), die Ansage nennt aber den besseren Weg (`barrowBetter()`: Vorratstrichter
+→ Trichter der Waschrinne → „erst sieben“), `secondary: true`.
+
+**Geologie / Terrain (Shader v7):** mineralisierte Zonen als zusammenhängender
+Rostschleier, dunkle Schwermineral-Bänder im Streichen, wenige dünne
+Quarzäderchen in warmem Altweiß (kein Konfetti), die Zone kiesig; Pile-Kiesel
+erdig grau-braun statt weiß. Nahbereich: leichte Schichtung, Rinnen und
+Bruchlinien an steilen Flächen, Kies sammelt sich am Fuß, Mikrorelief überall
+(stärker an steilen Flächen). Frische Schnitte nur noch leicht dunkler und
+feucht (keine „verbrannten“ Flecken). Gameplay-Geometrie unverändert.
+
+**Camp:** der Wassertank (vorher ein schwarzer Zylinder – Metall ohne
+Umgebungslicht) bekommt verzinkte, genietete Platten mit Roststreifen
+(Canvas-Textur), ein flaches Kegeldach mit Luke, zwei Bänder, Boden und den
+Auslass mit Ventil am Rohr zum Trog; die Welt-Metalle bekommen die
+Umgebungs-Reflexion. +2 Draw Calls (gebacken pro Material).
+
+**Session-Token im Access-Log:** der Browser öffnet `/ws?token=…`; uvicorn
+schrieb die Zeile mit Token in die (Render-)Logs. `backend/log_redact.py`
+hängt einen Filter an die uvicorn-Logger (und ihre Handler), der den Wert jedes
+Query-Parameters `token` vor dem Formatieren durch `***` ersetzt. WebSocket und
+Auth unverändert. Test: `python -m unittest tests.test_session_log -v`
+(WebSocket geht, falsches Token weiter 4401, Log ohne Token, andere Zeilen
+unverändert; ohne Filter schlägt er fehl).
+
+**Draw Calls / Frames:** alle 7B-Ladungen gleichzeitig sichtbar (volle
+Schubkarre, Eimer, Sieb): Camp-Ansicht 103 (Handy 95), Mine 114 (96), 60 fps.
+10 000 Schöpf-Zyklen, 20× Eimer / Karre füllen + leeren, 8 Sieb-Ladungen am
+Stück: keine neue Geometrie / Textur / Objekt, kein Heap-Wachstum.
+
+**Bekannt (seit vor 7B):** WebKit (Playwright, Windows) behält im GPU-Prozess
+~55 MB pro geschlossener Spielsitzung (7A und 7B gleich gemessen; den Kontext zu
+schließen gibt nichts frei) und hängt nach ~60–90 Sitzungen in einem Browser. Die
+Camp-Suite startet WebKit deshalb pro Benchmark-Strategie neu. Ob Safari das
+auch tut, ist offen.
+
+**Save:** keine neue Version (v7); neu und optional nur `ledger.inFinds`.
+Alte Saves: Behälter-Inhalte ohne Stücke bleiben gültig.
+
+**Dev-Pack 7B** (`goldrush-devcommands7b.js`): Preset „Phase 7B Material-QA“
+(Schaufel, Spitzhacke, Eimer, Pfanne, Classifier, Schubkarre, € 50, Gold-Ledger
+an), dann unter Material → „Material-QA (7B)“: Scoop Erde / Kies, Eimer 25 / 50 /
+100 %, Eimer mit bekanntem Fund (genau ein Flitter, nur Waschen holt ihn),
+Schubkarre 10 / 40 / 85 l, Classifier Start / Mitte / Ende, Pfanne wenig / viel
+Feingold, Pay-Streak / Quarz. Diagnose → „Gold-Ledger (7B)“ (nur Devtools):
+Behälter-Input (Stücke, Feingold), jetzt in Behältern, direkt geborgen,
+Processing gewonnen, Tailings und ob die Behälter-Bilanz auf das µg aufgeht.
 
 ## Entwicklertools (QA-Modus, Prompt 5.5)
 

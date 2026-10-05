@@ -530,12 +530,21 @@ def saves(A):
 # economy (31-43)
 # ======================================================================
 
-def economy(browser, base, user):
+def economy(browser, base, user, relaunch=None):
+    """relaunch (WebKit): a fresh browser per strategy - WebKit's GPU process keeps ~55 MB of every closed
+    game session (measured the same in phase 7A and 7B, closing the context does not free it) and stalls
+    after ~60-90 of them in one browser"""
     seeds = 100 if FULL else (24 if QUICK else 40)
-    ctx, A = client(browser, base, user, dict(viewport={"width": 960, "height": 600}), extra_init=[seeded()])
+    ctx, A = None, None
     sums, runs = {}, {}
     t0 = time.time()
     for st in ("A", "B", "C", "D"):
+        if ctx is None or relaunch:
+            if ctx is not None:
+                ctx.close()
+            if relaunch:
+                browser = relaunch()
+            ctx, A = client(browser, base, user, dict(viewport={"width": 960, "height": 600}), extra_init=[seeded()])
         rs = [bench_seed(A, 1001 + n * 7, 90, "hand", st) for n in range(seeds)]
         runs[st] = rs
         sums[st] = summarize4(rs)
@@ -715,7 +724,17 @@ def main():
             ctx.close()
             if engine == "chromium":
                 mobile(browser, base, user, shots)
-            economy(browser, base, user)
+            if engine == "webkit":
+                holder = [browser]
+
+                def relaunch():
+                    holder[0].close()
+                    holder[0] = p.webkit.launch()
+                    return holder[0]
+                economy(browser, base, user, relaunch)
+                browser = relaunch()
+            else:
+                economy(browser, base, user)
             long_run(browser, base, user, shots, engine)
             browser.close()
     finally:
