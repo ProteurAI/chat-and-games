@@ -62,7 +62,7 @@ function barrowAt(ctx, ml) {
 }
 
 // a full bucket onto the classifier, shaken to `to` (0 start, 0.5 middle, 1 done)
-function sieveTo(ctx, to) {
+export function sieveTo(ctx, to) {
   const g = ctx.game, pr = g.processing;
   for (const id of ["bucket", "classifier"]) { const r = own(g, id); if (!r.ok) return r; }
   const busy = free(g);
