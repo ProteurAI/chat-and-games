@@ -22,7 +22,11 @@ const MAT_ICONS = {
   barrow: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 9h12.8l-1.8 5.2c-.3.8-1 1.3-1.9 1.3H6.4c-.8 0-1.5-.5-1.8-1.3L3.5 9z" fill="currentColor"/><circle cx="17.6" cy="17.4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M14.8 15.2l2.1 1.4M16.3 9l3.9-3.2M8 15.6l-1.1 4M11.5 15.6l.6 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
   conc: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.8 10.5h18.4c-.6 4.2-4.4 7.3-9.2 7.3s-8.6-3.1-9.2-7.3z" fill="currentColor"/><path d="M8.2 13.3c1.4.9 4.6 1 6.7.1" stroke="#2b2622" stroke-width="2.2" stroke-linecap="round" fill="none"/><circle cx="10.4" cy="13.2" r=".9" fill="#f3cf6a"/><circle cx="13.3" cy="13.6" r=".7" fill="#f3cf6a"/></svg>`,
 };
-const MAT_LABELS = { bucket: "Eimer", barrow: "Karre", conc: "Konzentrat" };
+// phase 9: the sample bags (prospecting) and the excavator's bucket
+MAT_ICONS.samples = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6.5h8l-.8 2.2c2.6 1.4 4.3 4.2 4.3 7.3 0 2.8-3.4 4.5-7.5 4.5S4.5 18.8 4.5 16c0-3.1 1.7-5.9 4.3-7.3L8 6.5z" fill="currentColor"/><path d="M8.6 4.2h6.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M9 13.5h6M9 16.3h4" stroke="#2b2622" stroke-width="1.3" stroke-linecap="round"/></svg>`;
+MAT_ICONS.scoop = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h13.5c1.4 0 2.5 1.1 2.5 2.5v.8c0 4.3-3.5 7.7-7.7 7.7H9.6L4 12.6V7.5z" fill="currentColor"/><path d="M5.5 18.5l1.3 1.6M8.8 18.6l.9 1.8M12 18.6l.6 1.9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+const MAT_LABELS = { bucket: "Eimer", barrow: "Karre", conc: "Konzentrat", samples: "Proben", scoop: "Löffel" };
+const MAT_IDS = ["scoop", "bucket", "barrow", "samples", "conc"];
 const POUCH_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4.5h6l-1.4 2.6c3.4 1.3 5.9 4.6 5.9 8.2 0 3.3-2.8 4.7-7.5 4.7S4.5 18.6 4.5 15.3c0-3.6 2.5-6.9 5.9-8.2L9 4.5z" fill="currentColor"/><path d="M9.6 7.3h4.8" stroke="#fff3d0" stroke-width="1.3" stroke-linecap="round"/></svg>`;
 
 // a value that counts towards its target (no timers of its own)
@@ -94,7 +98,7 @@ export class GoldRushHud {
     mats.className = "gr-mats";
     mats.hidden = true;
     this.matChips = {};
-    for (const id of ["bucket", "barrow", "conc"]) {
+    for (const id of MAT_IDS) {
       const c = document.createElement("div");
       c.className = "gr-mat";
       c.dataset.mat = id;
@@ -182,7 +186,7 @@ export class GoldRushHud {
    */
   materials(m) {
     let any = false;
-    for (const id of ["bucket", "barrow", "conc"]) {
+    for (const id of MAT_IDS) {
       const c = this.matChips[id], v = m && m[id];
       const sig = v ? `${v.text}|${v.active ? 1 : 0}|${v.full ? 1 : 0}` : "";
       if (v) any = true;
@@ -273,6 +277,9 @@ export class GoldRushHud {
     this._tipT = 1.8;
     return true;
   }
+
+  // the tip on screen goes now (the cab's controls once you are out of it)
+  clearTip() { this._tipT = 0; this.tipEl.hidden = true; }
 
   // per game frame (no timers of its own)
   update(dt) {

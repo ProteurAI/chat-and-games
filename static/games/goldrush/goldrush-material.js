@@ -263,3 +263,40 @@ export function sluiceSplit(batch, capture, heavyShare, ids = [0, 0]) {
   batch.volumeMl = 0; batch.comp = [0, 0, 0, 0]; batch.fineUg = 0; batch.finds = [];
   return { heavy, tails };
 }
+
+/**
+ * TROMMEL (phase 9): the rotating screen washes the feed under its spray bars.
+ * What is too coarse for its 12 mm holes leaves at the low end (OVERSIZE:
+ * pebbles, stone, clay balls); the rest falls through (UNDERSIZE) with almost
+ * all of the gold - every piece this ground holds is far below 12 mm (the
+ * nuggets are 10-30 mg), and the fine gold is free; only a little rides out
+ * stuck in clay balls: TROMMEL_TUNING.clay x the share of the feed's mass that
+ * goes over as compact dirt (clods).
+ * Exact: under + over == input (volume, every material, fine gold, pieces).
+ */
+export const TROMMEL_TUNING = { over: [0.05, 0.14, 0.42, 0.92], clay: 0.6, loose: 1.1 };
+
+export function trommelSplit(batch, ids = [0, 0]) {
+  const T = TROMMEL_TUNING;
+  const under = new MaterialBatch({ id: ids[0], stage: STAGE.RAW, source: batch.source });
+  const over = new MaterialBatch({ id: ids[1], stage: STAGE.RAW, source: "oversize" });
+  const total = batch.massG;
+  let overG = 0;
+  for (let m = 0; m < 4; m++) {
+    const g = Math.floor(batch.comp[m] * T.over[m]);
+    over.comp[m] = g;
+    under.comp[m] = batch.comp[m] - g;
+    overG += g;
+  }
+  // volume follows the mass split (the coarse part packs a little looser)
+  const ov = total > 0 ? Math.min(batch.volumeMl, Math.round(batch.volumeMl * (overG / total) * T.loose)) : 0;
+  over.volumeMl = ov;
+  under.volumeMl = batch.volumeMl - ov;
+  const clay = total > 0 ? over.comp[1] / total : 0;
+  over.fineUg = Math.floor(batch.fineUg * Math.min(0.2, T.clay * clay));
+  under.fineUg = batch.fineUg - over.fineUg;
+  under.finds = batch.finds.slice();
+  under.history = [...batch.history, { op: "trommel", inG: total, overG }].slice(-6);
+  batch.volumeMl = 0; batch.comp = [0, 0, 0, 0]; batch.fineUg = 0; batch.finds = [];
+  return { under, over };
+}

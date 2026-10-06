@@ -26,7 +26,7 @@
 import { MaterialBatch, STAGE, SLUICE_TUNING, sluiceSplit } from "./goldrush-material.js";
 import { FIND } from "./goldrush-resources.js";
 import { SLUICE } from "./goldrush-mechmodels.js";
-import { mergeStatic } from "./goldrush-merge.js";
+import { mergeStatic, unmerge } from "./goldrush-merge.js";
 
 // the place: head (hopper) south of the water tank, the box running east,
 // down; a wheelbarrow comes from the open side (south / west) - Zone B
@@ -40,6 +40,9 @@ export const SLUICE_SPOTS = {
 export const HOPPER_ML = 50000;                     // large hopper (upgrade): 90 l
 export const FEED_LPM = 10;                         // litres a minute through the box (tuned, benchmark)
 export const STEADY_MAX_LPM = 14;                   // fed steadily by a feeder (phase 7) it takes up to this - surges overload it, an even feed does not
+// phase 9: the high-flow sluice (upgrade "sluice.highflow"): a wider box with deeper riffles - more litres a
+// minute, the riffles hold far more before a clean out, a little less of the fine gold per litre at that flow
+export const HIGHFLOW = { base: 20, max: 32, riffleL: 640, capture: 0.62, captureMat: 0.72, widen: 1.65 };
 const STEP_ML = 500;
 const BUILD_S = 2.4;
 const CLEAN_S = 4;
@@ -131,22 +134,33 @@ export class Sluice {
 
   get installed() { return this.state === "ready"; }
   // litres a minute through the box: FEED_LPM, more while a feeder doses it evenly (set every step by the processing system)
-  get rateLpm() { return Math.max(FEED_LPM, Math.min(STEADY_MAX_LPM, this.steadyLpm || 0)); }
+  get rateLpm() { return this.highflow ? Math.max(HIGHFLOW.base, Math.min(HIGHFLOW.max, this.steadyLpm || 0)) : Math.max(FEED_LPM, Math.min(STEADY_MAX_LPM, this.steadyLpm || 0)); }
   get capacityMl() { return this.hopper.capacityMl; }
-  get riffleLoad() { return this.loadMl / 1000 / SLUICE_TUNING.riffleL; }       // 1 = time to clean out
+  get riffleL() { return this.highflow ? HIGHFLOW.riffleL : SLUICE_TUNING.riffleL; }
+  get riffleLoad() { return this.loadMl / 1000 / this.riffleL; }       // 1 = time to clean out
   get processing() { return this.installed && this.running && this.hopper.batch.volumeMl > 0; }
 
   applyUpgrades() {
     const ups = this.ctx.upgrades();
     this.hopper.capacityMl = ups.has("sluice.hopper") ? 90000 : HOPPER_ML;
-    this.capture = ups.has("sluice.mat") ? 0.75 : SLUICE_TUNING.capture;
+    this.highflow = ups.has("sluice.highflow");
+    this.capture = this.highflow ? (ups.has("sluice.mat") ? HIGHFLOW.captureMat : HIGHFLOW.capture) : ups.has("sluice.mat") ? 0.75 : SLUICE_TUNING.capture;
     this.model.userData.hop.scale.setScalar(ups.has("sluice.hopper") ? 1.18 : 1);
     this.model.userData.bed.material.color.setHex(ups.has("sluice.mat") ? 0xb7c2a6 : 0xffffff);   // the moss mat: lighter, greener
+    // phase 9: the high-flow box is wider (its baked frame is rebuilt at the new width)
+    if (this.highflow !== this._wide) {
+      const u = this.model.userData;
+      this._wide = this.highflow;
+      if (this._merged) { unmerge(this.model, this._merged, u.parts); this._merged = null; }
+      u.box.scale.z = this.highflow ? HIGHFLOW.widen : 1;
+      this.collider.hd = this.highflow ? 0.46 : 0.34;
+      if (this.installed) { this._merged = mergeStatic(this.THREE, this.model, u.parts); if (this.ctx.warm) this.ctx.warm(); }
+    }
   }
 
   // what the riffles still hold of the fine gold right now (falls once overloaded)
   efficiency() {
-    const L = this.loadMl / 1000, cap = SLUICE_TUNING.riffleL, over = SLUICE_TUNING.overload;
+    const L = this.loadMl / 1000, cap = this.riffleL, over = SLUICE_TUNING.overload;
     const k = L <= cap ? 1 : Math.max(over, 1 - ((L - cap) / cap) * (1 - over));
     return this.capture * k;
   }

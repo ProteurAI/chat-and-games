@@ -41,6 +41,8 @@ const LEVEL = {
   // phase 8: the barrow in your hands, hard rock that answers the pick
   barrow_take: 14, barrow_roll: 12, barrow_bump: 13, stone_scrape: 12, rock_chip: 11, rock_fracture: 12,
   barrow_load: 12,                                 // phase 9: a full barrow groaning (wood, steel) as it gets going / stops
+  // phase 9: the plant (belt, trommel) and the excavator (diesel, tracks, hydraulics, bucket, breaker)
+  conveyor_run: 9, trommel_run: 9, trommel_idle: 8, exc_engine: 8, exc_tracks: 10, exc_hydraulic: 9, exc_scoop: 13, exc_dump: 11, exc_blow: 11, exc_start: 10, exc_stop: 10,
 };
 
 export class GoldRushAudio {
@@ -134,6 +136,7 @@ export class GoldRushAudio {
   //       | material_slide | bucket_fill | wheelbarrow_dump | sluice_water | sluice_feed | sluice_cleanout
   //       | feeder_run | gate_open
   //       | barrow_take | barrow_roll | barrow_bump | stone_scrape | rock_chip | rock_fracture
+  //       | conveyor_run | trommel_run | trommel_idle | exc_engine | exc_tracks | exc_hydraulic | exc_scoop | exc_dump | exc_blow | exc_start | exc_stop
   //       | dirt | compact | gravel | stone | air | dust | flake | tiny | nugget | pickup
   //       | shovel | dump | pick | pickStone | crack | break | swing | swap
   //       | scale | sell | shopOpen | purchase | insufficient
@@ -366,6 +369,62 @@ export class GoldRushAudio {
         for (let i = 0; i < 3; i++) this._tone(out, t + 0.03 + i * rv(0.04, 0.07), rv(85, 135), 0.1, 0.14 * s, { to: 58 });
         this._noise(out, t + 0.02, 0.28, { type: "lowpass", f: rv(550, 800), q: 0.7, gain: 0.18 * s, attack: 0.004 });
         this._grains(out, t + 0.06, 12, 0.3, 1500, 4000, 3, 0.03 * s, 0.08 * s);
+        break;
+      // ---- phase 9: the plant and the excavator (each its own character)
+      case "conveyor_run":                             // the belt: an electric motor's whine, rollers ticking, clods rumbling up
+        this._tone(out, t, rv(118, 124), rv(1.05, 1.2), 0.06 * s, { attack: 0.2 });
+        this._tone(out, t, rv(236, 248), rv(1.0, 1.15), 0.02 * s, { attack: 0.2 });
+        this._noise(out, t, rv(0.9, 1.1), { type: "lowpass", f: rv(300, 420), q: 0.6, gain: 0.08 * s, attack: 0.2 });
+        for (let i = 0; i < 6; i++) this._noise(out, t + i * rv(0.15, 0.2), 0.02, { f: rv(1700, 2300), q: 3, gain: 0.025 * s, attack: 0.002 });
+        break;
+      case "trommel_run":                              // the drum turning full: stones tumbling in steel, water spraying
+        this._noise(out, t, rv(1.1, 1.3), { type: "lowpass", f: rv(380, 520), q: 0.7, gain: 0.13 * s, attack: 0.2 });
+        this._grains(out, t + 0.05, 16, 1.15, 600, 1800, 1.6, 0.03 * s, 0.07 * s);
+        this._noise(out, t, rv(1.1, 1.3), { type: "highpass", f: rv(3600, 4400), q: 0.5, gain: 0.03 * s, attack: 0.25 });
+        this._tone(out, t, rv(68, 74), 1.2, 0.05 * s, { attack: 0.25 });
+        break;
+      case "trommel_idle":                             // empty drum: a hollow rumble, the spray
+        this._noise(out, t, rv(1.1, 1.3), { type: "lowpass", f: rv(240, 320), q: 0.9, gain: 0.08 * s, attack: 0.25 });
+        this._noise(out, t, rv(1.1, 1.3), { type: "highpass", f: rv(3600, 4400), q: 0.5, gain: 0.025 * s, attack: 0.25 });
+        break;
+      case "exc_engine":                               // the little diesel: a knocking low pulse (harder under load)
+        for (let i = 0; i < 9; i++) this._noise(out, t + i * 0.083, 0.06, { type: "lowpass", f: rv(160, 220) + 120 * s, q: 1.2, gain: (0.07 + 0.07 * s) * (i % 2 ? 0.7 : 1), attack: 0.006 });
+        this._tone(out, t, rv(44, 48) + 10 * s, 0.75, 0.06 * s, { attack: 0.08 });
+        break;
+      case "exc_tracks":                               // rubber tracks: a soft rolling crunch, the idlers squeaking now and then
+        this._noise(out, t, rv(0.45, 0.6), { type: "bandpass", f: rv(500, 700), q: 0.7, gain: 0.07 * s, attack: 0.08 });
+        this._grains(out, t + 0.04, 8, 0.5, 900, 2200, 2, 0.015 * s, 0.035 * s);
+        if (Math.random() < 0.3) this._tone(out, t + rv(0.05, 0.3), rv(780, 920), 0.12, 0.015 * s, { to: rv(700, 760), attack: 0.03 });
+        break;
+      case "exc_hydraulic":                            // the pump under load: a rising whine, oil hissing
+        this._tone(out, t, rv(330, 360), 0.48, 0.035 * s, { to: rv(390, 430), attack: 0.05 });
+        this._noise(out, t, 0.45, { f: rv(2800, 3400), q: 2, gain: 0.02 * s, attack: 0.08 });
+        break;
+      case "exc_scoop":                                // the bucket's teeth into the ground and the load breaking off
+        this._noise(out, t, rv(0.3, 0.38), { f: rv(380, 520), q: 0.7, gain: 0.3 * s, attack: 0.03 });
+        this._tone(out, t, rv(50, 60), 0.18, 0.22 * s, { to: 36 });
+        this._grains(out, t + 0.08, 18, 0.35, 900, 2600, 2, 0.04 * s, 0.1 * s);
+        this._noise(out, t, 0.02, { f: rv(2600, 3200), q: 4, gain: 0.06 * s, attack: 0.001 });          // steel teeth
+        break;
+      case "exc_dump":                                 // a bucket load sliding out, landing in steel / on the heap
+        this._noise(out, t, rv(0.55, 0.7), { f: rv(420, 600), q: 0.6, gain: 0.2 * s, attack: 0.08 });
+        this._grains(out, t + 0.1, 20, 0.6, 800, 2400, 2, 0.03 * s, 0.08 * s);
+        this._tone(out, t + 0.3, rv(46, 56), 0.16, 0.2 * s, { to: 34 });
+        this._ting(out, t + 0.32, rv(240, 280), 0.03 * s, 0.25, [1, 2.2, 3.6]);
+        break;
+      case "exc_blow":                                 // the breaker: a hard hammer blow on rock, ringing steel
+        this._noise(out, t, 0.03, { type: "highpass", f: rv(1800, 2400), q: 0.8, gain: 0.2 * s, attack: 0.0008 });
+        this._tone(out, t, rv(120, 140), 0.1, 0.24 * s, { to: 80 });
+        this._ting(out, t + 0.005, rv(650, 760), 0.05 * s, 0.2, [1, 2.7, 5.1]);
+        this._grains(out, t + 0.02, 8, 0.15, 2200, 5200, 4, 0.03 * s, 0.07 * s);
+        break;
+      case "exc_start":                                // the diesel catching: starter whirr, then the first knocks
+        this._tone(out, t, 210, 0.45, 0.04 * s, { to: 260, attack: 0.04 });
+        for (let i = 0; i < 6; i++) this._noise(out, t + 0.45 + i * rv(0.09, 0.12), 0.07, { type: "lowpass", f: rv(180, 260), q: 1.2, gain: 0.14 * s, attack: 0.005 });
+        break;
+      case "exc_stop":                                 // engine off: a last knock, a hydraulic sigh
+        this._noise(out, t, 0.12, { type: "lowpass", f: 200, q: 1, gain: 0.12 * s, attack: 0.005 });
+        this._noise(out, t + 0.1, 0.5, { f: rv(2400, 2900), q: 1.5, gain: 0.03 * s, attack: 0.05 });
         break;
       default: break;
     }

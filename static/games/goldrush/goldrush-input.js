@@ -22,6 +22,7 @@ export class GoldRushInput {
     this.move = { x: 0, y: 0 };          // strafe (+right), forward (+ahead), -1..1
     this.look = { x: 0, y: 0 };          // accumulated radians since the last take()
     this.digHeld = false;
+    this.altHeld = false;                // phase 9: the right button (locked) / the phone's second action - the excavator's dump
     this.sprint = false;
     this.locked = false;
     this.everLocked = false;             // the browser has granted the lock at least once
@@ -73,6 +74,7 @@ export class GoldRushInput {
         if (e.button === 2) this.dragLook = true;
         return;
       }
+      if (e.button === 2 && this.locked) { this.altHeld = true; return; }
       if (e.button !== 0) return;
       if (!this.locked) { this.requestLock(); return; }
       this.digHeld = true;
@@ -80,7 +82,7 @@ export class GoldRushInput {
     this.on(d, "mouseup", (e) => {
       if (this.touch) return;
       if (e.button === 0) this.digHeld = false;
-      if (e.button === 2) this.dragLook = false;
+      if (e.button === 2) { this.dragLook = false; this.altHeld = false; }
     });
     this.on(this.canvas, "contextmenu", (e) => e.preventDefault());
     // touch (pointer events, every finger by id)
@@ -116,6 +118,7 @@ export class GoldRushInput {
   releaseAll() {
     this.keys.clear();
     this.digHeld = false;
+    this.altHeld = false;
     this.dragLook = false;
     this.sprint = false;
     this.pointers.clear();
@@ -160,7 +163,7 @@ export class GoldRushInput {
 
   _down(e) {
     if (!this.enabled || e.pointerType === "mouse") return;
-    if (e.target.closest && e.target.closest(".gr-hud-btn, .gr-panel, .gr-dialog, .gr-tool, .gr-belt, .gr-sheet, .gr-ctx-btn")) return;   // HUD buttons / tool sheet keep their own taps
+    if (e.target.closest && e.target.closest(".gr-hud-btn, .gr-panel, .gr-dialog, .gr-tool, .gr-belt, .gr-sheet, .gr-ctx-btn, .gr-alt-btn")) return;   // HUD buttons / tool sheet keep their own taps
     e.preventDefault();
     const r = this.root.getBoundingClientRect();
     const x = e.clientX - r.left, y = e.clientY - r.top;

@@ -37,6 +37,7 @@ import { FIND, VOXEL_H } from "./goldrush-resources.js";
 import { decodeInt16Rle, decodeIntRle, encodeInt16Rle, encodeIntRle } from "./goldrush-save.js";
 import { SLICE_ORIGIN_Y } from "./goldrush-terrain.js";
 import { toolEfficiency } from "./goldrush-tools.js";
+import { MOUNTAIN_FLOOR } from "./goldrush-contract.js";
 
 const FEET_RADIUS = 0.45;        // m: no digging straight under your own feet
 // index of the lowest slice whose centre is at or above height h
@@ -67,6 +68,7 @@ export class MiningSystem {
       ok: false, reason: "", kind: "", material: MAT.DIRT, blocked: false, cells: 0, chunks: 0,
       requestedVolume: 0, removedVolume: 0, removedMassKg: 0, relocatedVolume: 0, processedVolume: 0,
       massKg: 0, freshKg: 0, volumeL: 0, massByMat: [0, 0, 0, 0], slices: 0, finds: [], findCount: 0, fineUg: 0, rock: null,
+      mountainVol: 0, mountainKg: 0,                  // phase 9: the part of the cut above the contract's floor (goldrush-contract.js)
     };
     for (let i = 0; i < MAX_FINDS; i++) this.result.finds.push({ cls: 0, massUg: 0, x: 0, y: 0, z: 0, mat: 0, key: "" });
     this._n = { x: 0, y: 1, z: 0 };
@@ -141,6 +143,7 @@ export class MiningSystem {
     r.ok = false; r.blocked = false; r.kind = ""; r.cells = 0; r.chunks = 0; r.rock = null; r.cemented = false; r.streak = 0; r.crack = null; r.rubble = false;
     r.requestedVolume = 0; r.removedVolume = 0; r.removedMassKg = 0; r.relocatedVolume = 0; r.processedVolume = 0;
     r.massKg = 0; r.freshKg = 0; r.volumeL = 0; r.massByMat.fill(0); r.slices = 0; r.findCount = 0; r.fineUg = 0;
+    r.mountainVol = 0; r.mountainKg = 0;
     r.reason = this.check(hit, def, player);
     if (r.reason) return r;
     r.ok = true;
@@ -178,6 +181,9 @@ export class MiningSystem {
         const vol = (before - after) * area;
         r.removedVolume += vol;
         r.massByMat[mat] += vol * dens;
+        // the mountain contract: what of it lay above the floor (the flat claim below it never counts)
+        const mv = (Math.max(0, before - MOUNTAIN_FLOOR) - Math.max(0, after - MOUNTAIN_FLOOR)) * area;
+        if (mv > 0) { r.mountainVol += mv; r.mountainKg += mv * dens; }
         const c0 = C[k];
         if (after < c0) {
           r.freshKg += (Math.min(before, c0) - after) * area * dens;

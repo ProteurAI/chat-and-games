@@ -34,6 +34,7 @@ export const BULK_ML = 360000;                 // 360 l (~4 wheelbarrow loads); 
 export const BULK_EXT_ML = 540000;
 export const FEEDER_LPM = 12;                  // an even feed: the sluice takes 12 instead of 10 l/min (surges would overload it)
 export const FEEDER_FINE_LPM = 14;             // fine-dosing gate (upgrade): 14 l/min, the most the sluice takes
+export const FEEDER_HIGHFLOW_LPM = 32;         // phase 9: the high-flow sluice comes with a wider outlet - it doses what that box takes
 export const GATE_LPM = 40;                    // the slide gate by hand: gravity, fast
 export const TRAY_ML = 2500;                   // what lies on the vibrating tray
 // the loading ramp runs north -> south up to the platform at the hopper's north rim
@@ -337,7 +338,7 @@ export class Feeder {
   get rateLpm() { return this.outLink.rateLpm; }
 
   applyUpgrades() {
-    const r = this.ctx.upgrades().has("feeder.fine") ? FEEDER_FINE_LPM : FEEDER_LPM;
+    const ups = this.ctx.upgrades(), r = ups.has("sluice.highflow") ? FEEDER_HIGHFLOW_LPM : ups.has("feeder.fine") ? FEEDER_FINE_LPM : FEEDER_LPM;
     this.inLink.rateLpm = this.outLink.rateLpm = r;
   }
 
@@ -391,7 +392,7 @@ export class Feeder {
   // how much runs down the tray right now (0..1, the bulk hopper's chute visuals)
   flow() {
     const k = this.status().key;
-    return k === "moving" ? Math.min(1, this.rateLpm / FEEDER_FINE_LPM) : this.tray.volumeMl > 200 ? 0.15 : 0;
+    return k === "moving" ? Math.min(1, this.rateLpm / FEEDER_FINE_LPM) : this.tray.volumeMl > 200 ? 0.15 : 0;      // (high flow: full)
   }
 
   _sync() {

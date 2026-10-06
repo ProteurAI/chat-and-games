@@ -90,7 +90,10 @@ export class Economy {
       playTimeMs: int(st.playTimeMs),
       rockHits: int(st.rockHits),
       rocksBroken: int(st.rocksBroken),
-      byTool: { hand: tool(tl.hand), shovel: tool(tl.shovel), pickaxe: tool(tl.pickaxe) },
+      byTool: { hand: tool(tl.hand), shovel: tool(tl.shovel), pickaxe: tool(tl.pickaxe), excavator: tool(tl.excavator), sample: tool(tl.sample) },
+      // phase 9: what the cuts took out of the original mountain (the contract; goldrush-contract.js)
+      mountainG: int(st.mountainG),
+      mountainMl: int(st.mountainMl),
       washedUg: int(st.washedUg),            // fine gold recovered by washing (all time)
       washedPieces: int(st.washedPieces),    // pieces that came out of the pan / off the screen
     };
@@ -162,6 +165,7 @@ export class Economy {
     tb.massG += g;
     st.freshMassG += Math.round(r.freshKg * 1000);
     st.slices += r.slices;
+    if (r.mountainKg > 0) { st.mountainG += Math.round(r.mountainKg * 1000); st.mountainMl += Math.round(r.mountainVol * 1e6); }
   }
 
   // the finds of one action are out of the ground: they become PENDING.
@@ -330,7 +334,7 @@ export class Economy {
       sold: { ...this.sold },
       shop: { purchases: this.shop.purchases.map((q) => ({ ...q })), spentCents: this.shop.spentCents, toolPurchases: this.shop.toolPurchases, upgradePurchases: this.shop.upgradePurchases },
       milestones: { ...this.milestones },
-      stats: { ...st, massG: { ...st.massG }, byTool: { hand: { ...st.byTool.hand }, shovel: { ...st.byTool.shovel }, pickaxe: { ...st.byTool.pickaxe } } },
+      stats: { ...st, massG: { ...st.massG }, byTool: { hand: { ...st.byTool.hand }, shovel: { ...st.byTool.shovel }, pickaxe: { ...st.byTool.pickaxe }, excavator: { ...st.byTool.excavator }, sample: { ...st.byTool.sample } } },
       flags: { ...this.flags, streaksFound: [...this.flags.streaksFound] },
       nextId: this.nextId,
       pending: [...this.pending.values()].map((q) => ({ id: q.id, cls: q.cls, massUg: q.massUg, key: q.key })),

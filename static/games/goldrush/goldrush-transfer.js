@@ -186,6 +186,100 @@ export class TransferLink {
 }
 
 /**
+ * A BELT (phase 9: the conveyor) - material that really travels. The belt is a
+ * row of `slots` cells from the tail (index 0) to the head (last); each cell
+ * holds at most `cellMl` (a MaterialBatch or nothing). Running, it advances at
+ * `speed` m/s: every time it has moved one cell length the head cell
+ * discharges into `to` and a new cell is loaded at the tail from `from` (up to
+ * cellMl - the feed under the intake's outlet). Rate = cellMl / cellLen x speed.
+ *   blocked   `to` cannot take the head cell (whole or the rest of it): the
+ *             belt stops where it is - BACKPRESSURE, nothing spills
+ *   starved   running, nothing on the belt and nothing to load
+ *   moving    running with material on it
+ *   off       switched off (it keeps what lies on it)
+ * Exact like transfer(): cells are taken from / put into holders whole or in
+ * part; saved as the cells' batches + the fraction of a cell it has moved.
+ */
+export class Belt {
+  constructor({ from, to, slots, cellLen, cellMl, speed, saved = null, stage = STAGE.RAW }) {
+    this.from = from;
+    this.to = to;
+    this.slots = slots;
+    this.cellLen = cellLen;
+    this.cellMl = cellMl;
+    this.speed = speed;
+    this.stage = stage;
+    const s = saved || {};
+    const cells = Array.isArray(s.cells) ? s.cells : [];
+    this.cells = Array.from({ length: slots }, (_, i) => { const b = cells[i] ? MaterialBatch.from(cells[i]) : null; return b && !b.empty ? b : null; });
+    this.phase = Number.isFinite(s.phase) ? Math.max(0, Math.min(1, s.phase)) : 0;
+    this.on = !!s.on;
+    this.moved = Number.isFinite(s.moved) ? Math.max(0, Math.round(s.moved)) : 0;
+    this.state = this.on ? "moving" : "off";
+    this.running = false;              // advanced this step (visuals: the belt texture, the rollers)
+    this.rateNow = 0;
+    this._win = 0; this._winMl = 0;
+  }
+
+  get rateLpm() { return (this.cellMl / 1000) * (this.speed / this.cellLen) * 60; }
+  get volumeMl() { let v = 0; for (const c of this.cells) if (c) v += c.volumeMl; return v; }
+  get goldUg() { let u = 0; for (const c of this.cells) if (c) u += c.goldUg; return u; }
+  get massG() { let g = 0; for (const c of this.cells) if (c) g += c.massG; return g; }
+  get loaded() { return this.cells.some((c) => c && c.volumeMl > 0); }
+
+  _h(x) { return typeof x === "function" ? x() : x; }
+
+  // the head cell into `to` (as much as fits) -> true when the cell is empty now
+  _discharge(nextId) {
+    const head = this.cells[this.slots - 1];
+    if (!head || head.empty) { this.cells[this.slots - 1] = null; return true; }
+    const to = this._h(this.to);
+    if (!to) return false;
+    const m = transfer({ batch: head, capacityMl: Infinity }, to, Infinity, nextId());
+    this._out += m;
+    if (head.volumeMl > 0) return false;                       // the rest does not fit: it waits on the belt
+    if (!head.empty) putInto(to, head);                        // gold / mass crumbs without volume (rounding) go along
+    this.cells[this.slots - 1] = null;
+    return true;
+  }
+
+  step(dt, nextId = () => 0) {
+    this._out = 0;
+    this.running = false;
+    if (!this.on || !(this.speed > 0)) { this.state = "off"; return 0; }
+    let adv = (this.speed * dt) / this.cellLen;
+    let why = null;
+    while (adv > 0) {
+      const room = 1 - this.phase;
+      if (adv < room) { this.phase += adv; adv = 0; this.running = true; break; }
+      // a full cell's length: the head discharges, everything shifts, the tail loads
+      if (!this._discharge(nextId)) { this.phase = 1; why = "blocked"; break; }
+      adv -= room;
+      this.phase = 0;
+      this.running = true;
+      for (let i = this.slots - 1; i > 0; i--) this.cells[i] = this.cells[i - 1];
+      this.cells[0] = null;
+      const from = this._h(this.from);
+      if (from && volumeOf(from) > 0) {
+        const cell = takeFrom(from, Math.min(this.cellMl, volumeOf(from)), nextId(), this.cellMl);
+        if (!cell.empty) { cell.stage = this.stage; this.cells[0] = cell; }
+      }
+    }
+    const loaded = this.loaded, src = this._h(this.from);
+    this.state = why || (loaded ? "moving" : src && volumeOf(src) > 0 ? "moving" : "starved");
+    this.moved += this._out;
+    this._win += dt; this._winMl += this._out;
+    if (this._win >= 3) { this.rateNow = (this._winMl / 1000) / (this._win / 60); this._win = 0; this._winMl = 0; }
+    return this._out;
+  }
+
+  // where along the belt (m from the tail) cell i is right now
+  cellAt(i) { return (i + this.phase) * this.cellLen; }
+
+  serialize() { return { cells: this.cells.map((c) => (c ? c.serialize() : null)), phase: +this.phase.toFixed(4), on: this.on, moved: this.moved }; }
+}
+
+/**
  * Advance a chain of links (ordered upstream -> downstream) by dt: downstream
  * first, in steps of at most maxStep seconds. -> ml moved in total.
  */
