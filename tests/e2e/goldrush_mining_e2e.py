@@ -218,9 +218,10 @@ def desktop_suite(browser, base, user, shots):
     # ---- TEST 1: hand dig on dirt - animation, contact, deformation, dust, material booked
     tgt = aim_material(A, "dirt")
     ok("T1 a fresh dirt patch within reach", tgt is not None, str(tgt))
+    # the mouse to the centre first: with the pointer lock granted (headless Chromium does now) a move turns the view
+    A.mouse.move(720, 450)
     A.evaluate("(p) => window.__goldrush.pose(p)", tgt)
     e0, r0 = eco(A)["stats"], st(A)["revision"]
-    A.mouse.move(720, 450)
     states, revs, parts = [], [], 0
     A.mouse.down()
     t0 = time.time()

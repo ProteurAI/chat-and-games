@@ -213,11 +213,14 @@ def access(browser):
         st = json.loads(body) if s == 200 else {}
         d = st.get("diagnosis") or {}
         ok("ACCESS no GOLDRUSH_DEV_CODE: the status says configured=false with a diagnosis - which server answered (service, id, commit, address), the variable missing",
-           s == 200 and st.get("configured") is False and st.get("routeVersion") == 2 and d.get("variable") == "missing" and d.get("service") == "instachat-qa"
+           s == 200 and st.get("configured") is False and st.get("routeVersion") == 3 and d.get("variable") == "missing" and d.get("service") == "instachat-qa"
            and d.get("serviceId") == "srv-qa7a" and d.get("commit") == "abcdef1" and d.get("externalUrl") == "https://instachat-qa.onrender.com", body[:240])
         vals = json.dumps([v for v in d.values()])
         ok("ACCESS the diagnosis carries no secret / hash / token / other variables (only booleans and Render's public metadata)",
-           "token" not in body and "TEAM_PASSWORD" not in body and set(d) == {"variable", "secretFile", "service", "serviceId", "instance", "commit", "externalUrl"} and "hash" not in vals, body[:200])
+           "token" not in body and "TEAM_PASSWORD" not in body and "hash" not in vals
+           # route version 3 (phase 9): + where the code comes from, quotes, the allowlist and this account on it - booleans / names only
+           and set(d) == {"variable", "secretFile", "source", "quoted", "allowlist", "accountAllowed", "service", "serviceId", "instance", "commit", "externalUrl"}
+           and all(isinstance(d[k], bool) for k in ("secretFile", "quoted", "allowlist", "accountAllowed")) and d["source"] in (None, "env", "secretFile"), body[:200])
         ctx, A = client(browser, base_off, user, dict(viewport={"width": 1280, "height": 720}), extra_init=[seeded()])
         open_game(A)
         t = dev_message(A)
@@ -550,8 +553,8 @@ def dig(A, shots):
     # the shovel's load: it builds up while scooping, sits on the blade, leaves it on the dump
     fresh(A)
     kit(A, ["shovel"])
+    A.mouse.move(683, 384)                                 # first: with the pointer lock granted a move turns the view
     G(A, M6.SPOT, {"want": "dirt", "reach": 2.0, "start": 0.3, "fresh": True})
-    A.mouse.move(683, 384)
     A.mouse.down()
     trace = []
     t0 = time.time()
@@ -567,8 +570,8 @@ def dig(A, shots):
     if shots:
         # the screenshots on strokes of their own (a shot takes a moment - it would break the trace's timing)
         time.sleep(0.6)
-        G(A, M6.SPOT, {"want": "dirt", "reach": 2.0, "start": 0.45, "fresh": True})     # the first cut moved the face out of reach
         A.mouse.move(683, 384)
+        G(A, M6.SPOT, {"want": "dirt", "reach": 2.0, "start": 0.45, "fresh": True})     # the first cut moved the face out of reach
         A.mouse.down()
         t1 = time.time()
         while time.time() - t1 < 4.0 and not os.path.exists(shots / "gr7a_06_shovel_release.png"):
