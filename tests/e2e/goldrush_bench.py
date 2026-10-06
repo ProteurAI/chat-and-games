@@ -8,6 +8,10 @@ and reports the distribution - P10 / median / P90 / min / max:
   with --kit shovel,bucket,pan (phase 7A): one way of working from the start,
   nothing bought, sold now and then - the value recovered per active minute
   (compare kits on the same seeds: dig to spoil vs bucket + bowl vs + pan ...)
+  with --strategy A9|B9|C9|D9|E9 (phase 9, --minutes 1500): the mechanised claim -
+  when each phase-9 machine is bought (prospecting kit, conveyor, trommel, high-flow
+  sluice, excavator, breaker), the mountain contract (% / m3 / t) and cash at
+  660 / 780 / 900 / 1050 / 1200 / 1500 minutes, what the excavator and the plant did
   with --strategy A|B|C|D (phase 4): a whole early game with sales trips to
   the camp and real purchases - first sale, when the shovel / pickaxe /
   upgrades are bought, cash and cash earned after 10 / 20 / 30 / 45 / 60 /
@@ -38,10 +42,12 @@ if hasattr(sys.stdout, "reconfigure"):
 
 BOT = open(os.path.join(os.path.dirname(__file__), "goldrush_bench.js"), encoding="utf-8").read()
 CHECK = [60, 300, 600, 1200, 1800]
-CHECK4 = [600, 1200, 1800, 2700, 3600, 5400, 7200, 9000, 10800, 14400, 18000, 21600, 25200, 28800, 32400, 36000, 39600]
+CHECK4 = [600, 1200, 1800, 2700, 3600, 5400, 7200, 9000, 10800, 14400, 18000, 21600, 25200, 28800, 32400, 36000, 39600, 46800, 54000, 63000, 72000, 90000]
+CHECK9 = [39600, 46800, 54000, 63000, 72000, 90000]                        # 660 / 780 / 900 / 1050 / 1200 / 1500 min
 ITEMS = ["shovel", "pickaxe", "shovel.blade", "shovel.handle", "pickaxe.tip", "pickaxe.head", "bucket", "pan", "classifier", "pan.riffles", "bucket.large",
-         "wheelbarrow", "sluice", "sluice.hopper", "sluice.mat", "bulkhopper", "feeder", "bulk.extension", "feeder.fine"]
-OWNED_AT = (1800, 3600, 5400, 7200, 10800, 14400, 18000, 21600, 28800, 36000, 39600)
+         "wheelbarrow", "sluice", "sluice.hopper", "sluice.mat", "bulkhopper", "feeder", "bulk.extension", "feeder.fine",
+         "prospectkit", "conveyor", "trommel", "sluice.highflow", "excavator", "excavator.breaker"]
+OWNED_AT = (1800, 3600, 5400, 7200, 10800, 14400, 18000, 21600, 28800, 36000, 39600, 54000, 72000, 90000)
 
 
 def arg(name, default):
@@ -146,6 +152,15 @@ def summarize4(results):
             key = "+".join([t for t in sn.get("owned", []) if t != "hand"] + sn.get("upgrades", []) + sn.get("equipment", [])) or "hand only"
             combos[key] = combos.get(key, 0) + 1
         out["owned"][str(c)] = dict(sorted(combos.items(), key=lambda kv: -kv[1]))
+    # phase 9: the contract and the machines at 660 ... 1500 min
+    if any(r.get("p9") for r in results):
+        out["contract_pct"] = {str(c): dist(at(c, "pct")) for c in CHECK9}
+        out["contract_m3"] = {str(c): dist(at(c, "m3")) for c in CHECK9}
+        out["contract_t"] = {str(c): dist(at(c, "t")) for c in CHECK9}
+        out["p9"] = {k: dist([(r.get("p9") or {}).get(k) for r in results]) for k in ("scoops", "excMl", "spoilMl", "intakeDumps", "spoilDumps", "breaks", "waited", "overClears", "surveys")}
+        out["p9"]["intakeOutMl"] = dist([(((r.get("p9") or {}).get("plant") or {}).get("conveyor") or {}).get("stats", {}).get("outMl") for r in results])
+        out["p9"]["trommelUnderMl"] = dist([(((r.get("p9") or {}).get("plant") or {}).get("trommel") or {}).get("stats", {}).get("underMl") for r in results])
+        out["p9"]["trommelOverMl"] = dist([(((r.get("p9") or {}).get("plant") or {}).get("trommel") or {}).get("stats", {}).get("overMl") for r in results])
     worth = [r["earned"] + 0 for r in results]
     out["richest"] = max(results, key=lambda r: r["earned"])["seed"]
     out["poorest"] = min(results, key=lambda r: r["earned"])["seed"]

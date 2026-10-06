@@ -93,9 +93,13 @@ export const STREAK = { count: 6, g: 0.42, redist: 0.985, cement: 0.3, flake: 1.
 // phase 9: the generation version of the ground's gold (saved; an older save keeps every slice it already
 // took - those never pay again - and its unmined ground follows this one)
 export const GEOLOGY_VERSION = 2;
+const G_MAX = 2.6;                               // the highest gold density a slice may have (phase 9; was 1)
 // ordinary ground: neutral grade +- regional variation, by material, the upper mountain's share of it
 // (smoothly from 0.3 m to 2.2 m of original height), how much deeper ground inside a body adds
-export const GEO = { base: 0.2, region: 0.12, mf: [0.88, 1.0, 1.15, 0], mountain: 0.94, mountainFrom: 0.3, mountainTo: 2.2, deep: 0.2, vein: 0.25 };
+export const GEO = { base: 0.2, region: 0.12, mf: [0.88, 1.0, 1.15, 0], mountain: 0.94, mountainFrom: 0.3, mountainTo: 2.2, deep: 0.2, vein: 0.25,
+  // the ground's grade as a whole (benchmark: geology 1's jackpot at ground level is gone - a player working the
+  // mountain gets what the phase-7 economy was tuned on; every ratio above stays; the starter band and the fill do not move)
+  scale: 1.9 };
 // paleochannels: how many, their width / bed / thickness ranges, the grade they add (poor .. rich stretch)
 export const CHANNEL = { min: 2, max: 4, width: [1.4, 3.4], bed: [-1.25, -0.3], thick: [0.35, 0.8], poor: 0.12, rich: 0.78, richPow: 1.3, gravel: 0.35 };
 // the camp's apron: imported, compacted fill on top of the natural ground (west of the pile, in front of
@@ -449,7 +453,9 @@ export class MaterialField {
     const ch = this.channels ? this.channelAt(x, y, z, k) : null;
     const chG = ch ? ch.w * (CHANNEL.poor + CHANNEL.rich * Math.pow(ch.rich, CHANNEL.richPow)) : 0;
     // REDIST: a small share of the ordinary gold sits in the mineralised streaks instead
-    let g = Math.min(1, Math.max(0, (ordinary * GEO.mf[mat] * mount * deep + GEO.vein * vein) * STREAK.redist + chG + pocket + STREAK.g * this.streakAt(x, y, z)));
+    // (a density above 1 is allowed since phase 9: the rich channel stretches and pockets keep their lead - the
+    // voxels below turn it into more fine gold per slice and a higher find chance, P_FIND g^0.85 < 1 up to g ~ 3.5)
+    let g = Math.min(G_MAX, Math.max(0, ((ordinary * GEO.mf[mat] * mount * deep + GEO.vein * vein) * STREAK.redist + chG + pocket + STREAK.g * this.streakAt(x, y, z)) * GEO.scale));
     // the starter zone: same geology, but held inside a fair band
     const sw = this.starterWeight(x, y, z, y + depth);
     if (sw > 0) g += (Math.min(STARTER.gMax, Math.max(STARTER.gMin, g)) - g) * sw;
