@@ -8,6 +8,11 @@
 //                       shovel and the pickaxe on a rack in the opening
 //                       until you buy them, shelves of gear inside.
 //
+//   BERGAUFTRAG (contract, phase 9)  a notice board at the camp's edge, facing
+//                       the mountain: the order to take the whole mountain away
+//                       and how far it has come (goldrush-contract.js) -
+//                       repainted when the numbers change; [E] opens its panel.
+//
 // Built here from simple shapes with the world's own materials (no
 // external asset); the signs are painted on canvas. All static parts are
 // merged into one mesh per material (a handful of draw calls for the whole
@@ -20,10 +25,12 @@ import { boardTexture, buildAssayBooth, buildSupplyShack, buildingMaterials } fr
 const ASSAY = { x: -12.4, z: 10.75 };            // the booth's counter (out of the shack's afternoon shadow)
 export const SHED = { x: -18.2, z: 13.2 };        // the supply shack (4.2 x 3.2 m)
 const SHED_FRONT_Z = 11.6;                        // its open front (towards the camp)
+export const BOARD = { x: -15.95, z: 7.6 };        // phase 9: the contract board (faces east, the mountain)
 
 export const STATIONS = [
   { id: "assay", label: "Goldankauf", action: "Gold verkaufen", x: ASSAY.x, z: 9.25, lookX: ASSAY.x, lookZ: ASSAY.z, r: 2.0 },
   { id: "supply", label: "Ausrüstung", action: "Ausrüstung ansehen", x: -18.75, z: 10.35, lookX: -18.75, lookZ: SHED_FRONT_Z, r: 1.9 },
+  { id: "contract", label: "Bergauftrag", action: "Bergauftrag lesen", x: BOARD.x + 1.35, z: BOARD.z, lookX: BOARD.x, lookZ: BOARD.z, r: 1.7 },
 ];
 
 // bake meshes (with their transforms) into one geometry per material
@@ -195,6 +202,29 @@ export class Stations {
     add(new THREE.Mesh(geo(new THREE.PlaneGeometry(3.5, 0.54)), supMat), SHED.x - 0.2, shack.signY, shack.signZ - 0.032, Math.PI);
     this.rackAt = shack.rackAt;
 
+    // ---------------- BERGAUFTRAG (phase 9): a notice board on two posts under a little roof, facing the
+    // mountain; the painted sheet on it is a canvas repainted when the contract's numbers change
+    const bx = BOARD.x, bz = BOARD.z;
+    for (const dz of [-0.82, 0.82]) add(box(0.11, 2.3, 0.11, darkWood), bx, 1.15, bz + dz);
+    add(box(0.05, 1.12, 1.62, darkWood), bx - 0.03, 1.5, bz);                                     // the backing boards
+    const roofB = add(box(0.42, 0.035, 1.86, wood), bx + 0.05, 2.18, bz);
+    roofB.rotation.z = -0.32;
+    add(box(0.06, 0.06, 1.7, darkWood), bx + 0.02, 0.92, bz);                                     // the ledge under it
+    this.boardCanvas = document.createElement("canvas");
+    this.boardCanvas.width = 768; this.boardCanvas.height = 520;
+    this.boardTex = new THREE.CanvasTexture(this.boardCanvas);
+    this.boardTex.colorSpace = THREE.SRGBColorSpace;
+    this.boardTex.anisotropy = 8;
+    this.texs.push(this.boardTex);
+    this.boardMat = mat(new THREE.MeshStandardMaterial({ map: this.boardTex, roughness: 0.92 }));
+    this.boardSheet = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.015), this.boardMat);
+    this.boardSheet.position.set(bx + 0.001, 1.5, bz);
+    this.boardSheet.rotation.y = Math.PI / 2;                    // faces east (+x)
+    this.boardSheet.receiveShadow = true;
+    world.colliders.push({ type: "box", x: bx, z: bz, hw: 0.12, hd: 0.9, rot: 0 });
+    this._boardSig = "";
+    this.paintContract(null);
+
     // merge everything static: one mesh per material
     const statics = this.group.children.filter((o) => o.isMesh);
     for (const m of statics) this.group.remove(m);
@@ -204,6 +234,8 @@ export class Stations {
     for (const g of this.geos) if (!inUse.has(g)) g.dispose();
     this.geos = [...inUse];
     for (const m of merged) { this.group.add(m); this.geos.push(m.geometry); }
+    this.group.add(this.boardSheet);                         // (its canvas changes: not merged)
+    this.geos.push(this.boardSheet.geometry);
 
     // the tools for sale on the rack: each merged per material, hidden once bought
     this.rackTools = {};
@@ -235,6 +267,46 @@ export class Stations {
       return s;
     }
     return null;
+  }
+
+  /**
+   * The contract board's sheet (goldrush-contract.js view): repainted only when what it says
+   * changed. Painted like a posted order - ink on paper, a ruled progress bar, no game colours.
+   */
+  paintContract(v) {
+    const sig = v ? `${v.text.pct}|${v.text.removed}|${v.text.t}|${v.steps.map((s) => (s.met ? 1 : 0)).join("")}` : "-";
+    if (sig === this._boardSig) return false;
+    this._boardSig = sig;
+    const c = this.boardCanvas, g = c.getContext("2d"), W = c.width, H = c.height;
+    g.fillStyle = "#e9dcc0"; g.fillRect(0, 0, W, H);
+    for (let i = 0; i < 90; i++) { g.fillStyle = `rgba(90,60,30,${0.015 + (i % 7) * 0.006})`; g.fillRect((i * 151) % W, (i * 97) % H, 30 + (i % 5) * 22, 2 + (i % 3)); }   // foxing
+    g.strokeStyle = "#5b4128"; g.lineWidth = 4; g.strokeRect(14, 14, W - 28, H - 28);
+    g.fillStyle = "#2c1d10"; g.textAlign = "left"; g.textBaseline = "alphabetic";
+    g.font = "700 54px Georgia, 'Times New Roman', serif"; g.fillText("BERGAUFTRAG", 40, 82);
+    g.font = "italic 26px Georgia, serif"; g.fillText("Claim 01 – der ganze Berg muss weg.", 42, 122);
+    g.fillRect(40, 140, W - 80, 2);
+    if (!v) { g.font = "26px Georgia, serif"; g.fillText("Vermessung läuft …", 42, 190); this.boardTex.needsUpdate = true; return true; }
+    g.font = "26px Georgia, serif";
+    g.fillText(`Ursprünglich: ${v.text.v0} · ≈ ${v.text.t0}`, 42, 180);
+    g.fillText(`Abgetragen: ${v.text.removed} · ${v.text.t}`, 42, 216);
+    // the bar: ruled ink, filled with hatching up to the share removed (log-ish: the first per cent is visible)
+    const x0 = 42, y0 = 240, bw = W - 84, bh = 34, f = Math.min(1, v.pct / 100);
+    g.strokeStyle = "#2c1d10"; g.lineWidth = 2; g.strokeRect(x0, y0, bw, bh);
+    for (let p = 10; p < 100; p += 10) { g.fillRect(x0 + (bw * p) / 100, y0 + bh - 8, 2, 8); }
+    g.save(); g.beginPath(); g.rect(x0, y0, Math.max(3, bw * f), bh); g.clip();
+    g.strokeStyle = "#5b4128"; g.lineWidth = 3;
+    for (let x = -bh; x < bw * f + bh; x += 9) { g.beginPath(); g.moveTo(x0 + x, y0 + bh); g.lineTo(x0 + x + bh, y0); g.stroke(); }
+    g.restore();
+    g.font = "700 30px Georgia, serif"; g.fillStyle = "#2c1d10"; g.fillText(`${v.text.pct} abgetragen`, 42, 312);
+    g.font = "24px Georgia, serif";
+    let y = 356;
+    g.fillText("Freigaben nach Fortschritt:", 42, y); y += 34;
+    for (const s of v.steps) {
+      g.fillText(`${s.met ? "✓" : "–"}  ${s.label} ab ${s.pctText}`, 60, y);
+      y += 32;
+    }
+    this.boardTex.needsUpdate = true;
+    return true;
   }
 
   // the tools still for sale hang on the rack

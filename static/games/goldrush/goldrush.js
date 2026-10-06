@@ -37,6 +37,11 @@ const ICONS = {
   bulkhopper: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 4.5h17l-6 8h-5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" fill="none"/><path d="M10.5 12.5v3h3v-3M5 4.5V21M19 4.5V21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/><path d="M6.5 7h11" stroke="currentColor" stroke-width="1.1" opacity=".6"/></svg>`,
   feeder: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9.5l15 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M3 12.5l15 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/><circle cx="8" cy="18" r="2.3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M19.5 15.5v4M21.5 14.5v4M6 6.5l1.5 1M9.5 5.5l1 1.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none"/></svg>`,
   classifier: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5h18l-1.5 4H4.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" fill="none"/><path d="M6 8.5l1 4M10 8.5l.4 4M14 8.5l-.4 4M18 8.5l-1 4" stroke="currentColor" stroke-width="1" opacity=".65"/><path d="M5 12.5v7M19 12.5v7M7 16h10v3.5H7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" fill="none"/></svg>`,
+  // phase 9
+  prospectkit: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20.5V4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M5.2 4.8h8.6l-2 2.7 2 2.7H5.2" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" fill="none"/><path d="M13.5 13.5h5.5l-.7 6.2c-.1.5-.5.8-1 .8h-2.1c-.5 0-.9-.3-1-.8z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" fill="none"/></svg>`,
+  conveyor: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.5L19 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="4.6" cy="18.6" r="1.6" stroke="currentColor" stroke-width="1.4" fill="none"/><circle cx="19.2" cy="9.4" r="1.6" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M7 15.3l1-2M11 13l1-2M15 10.6l1-2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M2 6h5l-1.5 3h-2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" fill="none"/></svg>`,
+  trommel: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5l15 3v5l-15-3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" fill="none"/><ellipse cx="4" cy="11" rx="1.3" ry="2.5" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M8 9.5v4.5M12 10.3v4.5M16 11.1v4.5" stroke="currentColor" stroke-width="1" opacity=".7"/><path d="M6 17.5l1 2.5M10 18l.5 2.5M20 17l1.5 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`,
+  excavator: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="16.5" width="11" height="3.4" rx="1.7" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M4 16.5v-4h6.5l1.2 4M6 12.5V9h3.4l1.1 3.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" fill="none"/><path d="M10.8 11.5l5.2-6.3 4 5.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M20 10.8c1.4.9 1.5 3.2 0 4.2l-2.6-2.3z" fill="currentColor"/></svg>`,
 };
 
 // what the dig button says per tool
@@ -44,14 +49,20 @@ const ACTION = { hand: "GRABEN", shovel: "SCHAUFELN", pickaxe: "HACKEN" };
 const CLASS_LABEL = { traceGold: "Goldstaub", fineGold: "Feiner Goldstaub", goldFlake: "Goldflitter", tinyGoldPiece: "Kleine Goldstücke", smallNugget: "Nuggets", washedGold: "Waschgold (Feingold)" };
 const SHOP_GROUPS = [["tool", null, "Werkzeug"], ["upgrade", "shovel", "Für die Schaufel"], ["upgrade", "pickaxe", "Für die Spitzhacke"],
   ["equipment", null, "Verarbeitung & Transport"], ["upgrade", "bucket", "Für den Eimer"], ["upgrade", "pan", "Für die Goldpfanne"], ["upgrade", "sluice", "Für die Waschrinne"],
-  ["upgrade", "bulkhopper", "Für den Vorratstrichter"], ["upgrade", "feeder", "Für den Dosierer"]];
+  ["upgrade", "bulkhopper", "Für den Vorratstrichter"], ["upgrade", "feeder", "Für den Dosierer"], ["upgrade", "excavator", "Für den Bagger"]];
 // where a bought piece of equipment is now (the claim, not an inventory)
 const EQUIP_WHERE = { bucket: "Steht vor dem Schuppen – stell ihn neben dich und grab hinein.", pan: "Liegt am Waschplatz beim Wassertank.", classifier: "Steht am Waschplatz über der Wanne.",
   wheelbarrow: "Steht neben dem Schuppen – an den Griffen greifen [E] und losschieben.", sluice: "Die Bretter liegen beim Wassertank – dort [E]: Waschrinne aufbauen.",
-  bulkhopper: "Die Teile liegen am Kopf der Waschrinne – am Kontrollpfosten [E]: Vorratstrichter aufbauen.", feeder: "Die Kiste steht am Kontrollpfosten – dort [E]: Dosierer montieren." };
+  bulkhopper: "Die Teile liegen am Kopf der Waschrinne – am Kontrollpfosten [E]: Vorratstrichter aufbauen.", feeder: "Die Kiste steht am Kontrollpfosten – dort [E]: Dosierer montieren.",
+  prospectkit: "Beutel, Fähnchen und Notizbuch hast du dabei: [R] Probe nehmen · [F] Fähnchen · [N] Notizbuch.",
+  conveyor: "Die Teile liegen am Westfuß des Bergs – dort [E]: Aufgabetrichter und Förderband aufbauen.",
+  trommel: "Die Trommel liegt neben dem Vorratstrichter – an der Schalttafel [E]: Trommelsieb aufbauen.",
+  excavator: "Der Bagger steht am Westfuß des Bergs neben dem Aufgabetrichter – [E] einsteigen." };
 
 const fmtMoney = (v) => `€ ${v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const TOOL_NAME = { hand: "Hand", shovel: "Schaufel", pickaxe: "Spitzhacke", bucket: "Eimer", pan: "Goldpfanne", classifier: "Sieb", wheelbarrow: "Schubkarre", sluice: "Waschrinne", bulkhopper: "Vorratstrichter", feeder: "Dosierer" };
+const TOOL_NAME = { hand: "Hand", shovel: "Schaufel", pickaxe: "Spitzhacke", bucket: "Eimer", pan: "Goldpfanne", classifier: "Sieb", wheelbarrow: "Schubkarre", sluice: "Waschrinne", bulkhopper: "Vorratstrichter", feeder: "Dosierer",
+  prospectkit: "Probenset", conveyor: "Förderband", trommel: "Trommelsieb", excavator: "Bagger" };
+const MAT_WORD = ["Erde", "feste Erde", "Kies", "Fels"];
 
 // "1 h 12 min" / "8 min" / "< 1 min"
 function fmtPlay(ms) {
@@ -114,6 +125,11 @@ class GoldRushShell {
           <button type="button" class="gr-slot" data-tool="hand"><span class="gr-slot-key">1</span><span class="gr-slot-ico">${ICONS.hand}</span><span class="gr-slot-label">Hand</span></button>
           <button type="button" class="gr-slot" data-tool="shovel"><span class="gr-slot-key">2</span><span class="gr-slot-ico">${ICONS.shovel}</span><span class="gr-slot-label">Schaufel</span><span class="gr-lock" aria-hidden="true">🔒</span></button>
           <button type="button" class="gr-slot" data-tool="pickaxe"><span class="gr-slot-key">3</span><span class="gr-slot-ico">${ICONS.pickaxe}</span><span class="gr-slot-label">Spitzhacke</span><span class="gr-lock" aria-hidden="true">🔒</span></button>
+          <span class="gr-belt-pro" data-role="belt-pro" hidden>
+            <button type="button" class="gr-slot gr-slot-pro" data-act="sample" aria-label="Probe nehmen (R)"><span class="gr-slot-key">R</span><span class="gr-slot-label">Probe</span></button>
+            <button type="button" class="gr-slot gr-slot-pro" data-act="flag" aria-label="Fähnchen stecken oder ziehen (F)"><span class="gr-slot-key">F</span><span class="gr-slot-label">Fähnchen</span></button>
+            <button type="button" class="gr-slot gr-slot-pro" data-act="notebook" aria-label="Notizbuch (N)"><span class="gr-slot-key">N</span><span class="gr-slot-label">Notizbuch</span></button>
+          </span>
         </div>
         <div class="gr-crosshair" aria-hidden="true"><span></span></div>
         <div class="gr-hint">WASD bewegen · Maus umsehen · Linksklick halten: graben · 1 2 3 Werkzeug · E: Eimer, Waschplatz, Camp · Esc: Pause</div>
@@ -122,6 +138,7 @@ class GoldRushShell {
       <div class="gr-stick" aria-hidden="true"><div class="gr-stick-knob"></div></div>
       <button type="button" class="gr-dig-btn" aria-label="Graben (gedrückt halten)"><span class="gr-dig-ico">${ICONS.hand}</span><span class="gr-dig-label">GRABEN</span></button>
       <button type="button" class="gr-ctx-btn" data-act="use-station" hidden></button>
+      <button type="button" class="gr-alt-btn" aria-label="Löffel abkippen (gedrückt halten)" hidden>KIPPEN</button>
       <div class="gr-sheet" data-sheet="assay" hidden role="dialog" aria-modal="true" aria-label="Goldankauf">
         <div class="gr-sheet-card">
           <div class="gr-sheet-head">
@@ -148,11 +165,30 @@ class GoldRushShell {
           <div class="gr-shop-list" data-role="shop-list"></div>
         </div>
       </div>
+      <div class="gr-sheet" data-sheet="contract" hidden role="dialog" aria-modal="true" aria-label="Bergauftrag">
+        <div class="gr-sheet-card gr-sheet-paper">
+          <div class="gr-sheet-head">
+            <div><div class="gr-sheet-title">Bergauftrag</div><div class="gr-sheet-sub">Claim 01 – der ganze Berg muss weg.</div></div>
+            <button type="button" class="gr-sheet-close" data-act="close-station" aria-label="Schließen">${ICONS.close}</button>
+          </div>
+          <div class="gr-contract" data-role="contract"></div>
+        </div>
+      </div>
+      <div class="gr-sheet" data-sheet="notebook" hidden role="dialog" aria-modal="true" aria-label="Notizbuch">
+        <div class="gr-sheet-card gr-sheet-paper">
+          <div class="gr-sheet-head">
+            <div><div class="gr-sheet-title">Notizbuch</div><div class="gr-sheet-sub" data-role="nb-sub"></div></div>
+            <button type="button" class="gr-sheet-close" data-act="close-station" aria-label="Schließen">${ICONS.close}</button>
+          </div>
+          <div class="gr-notebook" data-role="notebook"></div>
+        </div>
+      </div>
       <div class="gr-overlay gr-pause" hidden>
         <div class="gr-card">
           <div class="gr-card-title">Pausiert</div>
           <p class="gr-card-text" data-role="pause-text">Klicke, um weiterzugraben.</p>
-          <div class="gr-keys"><span><b>WASD</b> bewegen</span><span><b>Maus</b> umsehen</span><span><b>Linksklick</b> graben</span><span><b>1 2 3</b> Werkzeug</span><span><b>E</b> Eimer · Waschplatz · Goldankauf · Ausrüstung</span><span><b>Shift</b> schneller</span><span><b>Esc</b> Pause</span></div>
+          <p class="gr-card-text gr-contract-line" data-role="pause-contract" hidden></p>
+          <div class="gr-keys"><span><b>WASD</b> bewegen</span><span><b>Maus</b> umsehen</span><span><b>Linksklick</b> graben</span><span><b>1 2 3</b> Werkzeug</span><span><b>E</b> Eimer · Waschplatz · Goldankauf · Ausrüstung</span><span><b>R F N</b> Probe · Fähnchen · Notizbuch</span><span><b>Shift</b> schneller</span><span><b>Esc</b> Pause</span></div>
           <div class="gr-actions">
             <button type="button" class="primary-btn primary-btn--lg" data-act="resume">Weiterspielen</button>
             <button type="button" class="ghost-btn" data-act="settings">Einstellungen</button>
@@ -247,12 +283,17 @@ class GoldRushShell {
       loadText: q("[data-role=load-text]"), loadStep: q("[data-role=load-step]"), progress: q(".gr-progress"),
       dialog: q(".gr-dialog"), debug: q(".gr-debug"), tool: q(".gr-tool"), belt: q(".gr-belt"),
       digLabel: q(".gr-dig-label"), digIco: q(".gr-dig-ico"), toolIco: q(".gr-tool-ico"), toolName: q(".gr-tool-name"),
-      ctx: q(".gr-ctx-btn"), sheets: { assay: q("[data-sheet=assay]"), supply: q("[data-sheet=supply]") },
+      ctx: q(".gr-ctx-btn"), sheets: { assay: q("[data-sheet=assay]"), supply: q("[data-sheet=supply]"), contract: q("[data-sheet=contract]"), notebook: q("[data-sheet=notebook]") },
+      altBtn: q(".gr-alt-btn"), beltPro: q("[data-role=belt-pro]"), contract: q("[data-role=contract]"), notebook: q("[data-role=notebook]"), nbSub: q("[data-role=nb-sub]"), pauseContract: q("[data-role=pause-contract]"),
       weigh: q("[data-role=weigh]"), worth: q("[data-role=worth]"), sellList: q("[data-role=sell-list]"), sellCash: q("[data-role=sell-cash]"),
       sellBtn: q("[data-act=sell-all]"), shopList: q("[data-role=shop-list]"), shopCash: q("[data-role=shop-cash]"),
     };
     this._openSheet = null;
     this._near = null;
+    // phase 9: the excavator's second action on a phone (dump) - held like the dig button
+    const alt = (on) => (e) => { if (!this.game) return; e.preventDefault(); this.game.input.altHeld = on; this.el.altBtn.classList.toggle("is-active", on); };
+    this.on(this.el.altBtn, "pointerdown", alt(true));
+    for (const t of ["pointerup", "pointercancel", "pointerleave"]) this.on(this.el.altBtn, t, alt(false));
     this.on(root, "click", (e) => {
       // a click on the sale while it runs: straight to the result
       if (this._sale && e.target.closest("[data-sheet=assay]") && !e.target.closest("[data-act=close-station]")) { this._sale.skip = true; return; }
@@ -460,6 +501,7 @@ class GoldRushShell {
         el.pauseText.textContent = failed
           ? "Die Maussteuerung wurde vom Browser nicht freigegeben. Klicke noch einmal ins Spiel."
           : "Klicke, um weiterzugraben.";
+        this._pauseContract();
         el.pause.querySelector("[data-act=resume]").textContent = "Weiterspielen";
         el.pause.hidden = !show;
       },
@@ -475,12 +517,18 @@ class GoldRushShell {
       openStation: (id, view) => this._showStation(id, view),
       onStation: (s) => {
         this._near = s;
-        const label = !s ? "" : s.kind === "station" ? (s.id === "assay" ? "VERKAUFEN" : "AUSRÜSTUNG") : s.short || "";
+        const label = !s ? "" : s.kind === "station" ? (s.id === "assay" ? "VERKAUFEN" : s.id === "contract" ? "AUFTRAG" : "AUSRÜSTUNG") : s.short || "";
         el.ctx.hidden = !label || !this.touch;
         el.ctx.textContent = label;
       },
       onQuality: () => this._syncSettings(),
       onTool: (st) => this._renderTools(st),
+      // phase 9: in the excavator's cab - the dig button scoops (or hammers), KIPPEN dumps
+      setCab: (on, breaker) => {
+        el.altBtn.hidden = !(on && this.touch);
+        if (on) { el.digIco.innerHTML = ICONS.excavator; el.digLabel.textContent = breaker ? "HAMMER" : "SCHAUFELN"; el.digBtn.setAttribute("aria-label", breaker ? "Hammern" : "Schaufeln (Bagger)"); el.digBtn.classList.remove("is-busy"); }
+        else if (this.game) this._renderTools(this.game.toolState());
+      },
     };
   }
 
@@ -504,7 +552,18 @@ class GoldRushShell {
     el.digLabel.textContent = ACTION[cur.id];
     el.digBtn.setAttribute("aria-label", `${ACTION[cur.id].charAt(0)}${ACTION[cur.id].slice(1).toLowerCase()} (gedrückt halten)`);
     // the chip is a switch only when there is something to switch to
-    el.tool.classList.toggle("has-choice", st.order.filter((o) => o.usable).length > 1);
+    el.tool.classList.toggle("has-choice", st.order.filter((o) => o.usable).length > 1 || !!st.prospect);
+    // phase 9: the prospecting kit's three actions
+    if (el.beltPro.hidden === !!st.prospect) el.beltPro.hidden = !st.prospect;
+  }
+
+  // the pause card: how far the mountain contract has come (phase 9)
+  _pauseContract() {
+    const g = this.game, el = this.el;
+    if (!el || !el.pauseContract) return;
+    const line = g && g.contract ? g.contract.line() : "";
+    el.pauseContract.textContent = line;
+    el.pauseContract.hidden = !line;
   }
 
   _toolSheet(open) {
@@ -533,6 +592,13 @@ class GoldRushShell {
     if (act === "close-station") { this._closeStation(true); return; }
     if (act === "sell-all") { this._sellAll(); return; }
     if (act === "tools") { if (this.touch) this._toolSheet(!this._sheetOpen); return; }
+    // phase 9: prospecting from the belt (the phone's way to R / F / N)
+    if (act === "sample" || act === "flag" || act === "notebook") {
+      this._toolSheet(false);
+      if (!g || g.paused && !this.touch) return;
+      if (act === "sample") g.sample(); else if (act === "flag") g.flagAtCrosshair(); else g.openNotebook();
+      return;
+    }
     if (act === "close-settings") { this._closeSettings(); return; }
     if (act.startsWith("dlg:")) { const r = this._dlgResolve; this._hideDialog(); if (r) r(act.slice(4)); else if (act === "dlg:exit") this.close(); }
   }
@@ -543,7 +609,10 @@ class GoldRushShell {
     this._openSheet = id;
     for (const [k, el] of Object.entries(this.el.sheets)) el.hidden = k !== id;
     this.el.ctx.hidden = true;
-    if (id === "assay") this._renderSell(view); else this._renderShop(view);
+    if (id === "assay") this._renderSell(view);
+    else if (id === "contract") this._renderContract(view);
+    else if (id === "notebook") this._renderNotebook(view);
+    else this._renderShop(view);
     const f = this.el.sheets[id].querySelector(id === "assay" ? "[data-act=sell-all]" : ".gr-sheet-close");
     if (f && !this.touch) f.focus({ preventScroll: true });
   }
@@ -555,6 +624,79 @@ class GoldRushShell {
     for (const el of Object.values(this.el.sheets)) el.hidden = true;
     if (this.game) this.game.closeStation(resume);
     if (this._near && this.touch) this.el.ctx.hidden = false;
+  }
+
+  // phase 9: the mountain contract - the order, the numbers, what the progress unlocks
+  _renderContract(v) {
+    const box = this.el.contract;
+    box.innerHTML = "";
+    const add = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; e.textContent = text; box.appendChild(e); return e; };
+    add("p", "gr-contract-order", "Der Berg auf diesem Claim muss vollständig abgetragen werden. Das Gold, das darin steckt, bezahlt Werkzeug und Maschinen – je tiefer das Loch im Berg, desto größere Maschinen werden freigegeben.");
+    const dl = document.createElement("dl");
+    dl.className = "gr-contract-stats";
+    for (const [k, val] of [["Ursprünglicher Berg", `${v.text.v0} · ≈ ${v.text.t0}`], ["Abgetragen", `${v.text.removed} · ${v.text.t}`], ["Verbleibend", v.text.remaining], ["Fortschritt", v.text.pct]]) {
+      const dt = document.createElement("dt"), dd = document.createElement("dd");
+      dt.textContent = k; dd.textContent = val;
+      dl.append(dt, dd);
+    }
+    box.appendChild(dl);
+    const bar = add("div", "gr-contract-bar", "");
+    const fill = document.createElement("i");
+    fill.style.width = `${Math.max(0.6, Math.min(100, v.pct)).toFixed(2)}%`;
+    bar.appendChild(fill);
+    bar.setAttribute("role", "img");
+    bar.setAttribute("aria-label", `${v.text.pct} des Bergs abgetragen`);
+    add("div", "gr-shop-group", "Freigaben nach Fortschritt");
+    const ul = document.createElement("ul");
+    ul.className = "gr-contract-steps";
+    for (const s of v.steps) {
+      const li = document.createElement("li");
+      li.className = s.met ? "is-met" : "";
+      li.textContent = `${s.met ? "✓" : "○"} ${s.label} – ab ${s.pctText} abgetragen`;
+      ul.appendChild(li);
+    }
+    box.appendChild(ul);
+    add("p", "gr-contract-note", "Gezählt wird nur, was vom ursprünglichen Berg abgetragen ist – nicht das Graben in der Ebene oder auf dem Lagerplatz.");
+  }
+
+  // phase 9: the prospecting notebook - the last samples as plain lines (no colours, no verdict)
+  _renderNotebook(v) {
+    const box = this.el.notebook;
+    box.innerHTML = "";
+    this.el.nbSub.textContent = `${v.notes.length} / ${v.max.notes} Einträge · ${v.bags.length} / ${v.max.bags} Beutel gefüllt · ${v.flags.length} / ${v.max.flags} Fähnchen`;
+    if (v.bags.length) {
+      const h = document.createElement("div");
+      h.className = "gr-shop-group";
+      h.textContent = "Noch nicht ausgewaschen";
+      box.appendChild(h);
+      for (const b of v.bags) {
+        const row = document.createElement("div");
+        row.className = "gr-nb-row is-pending";
+        row.textContent = `Probe ${b.n} · ${b.place} · ${b.depth.toFixed(2).replace(".", ",")} m tief · ${b.mat} · ${(b.ml / 1000).toFixed(2).replace(".", ",")} l`;
+        box.appendChild(row);
+      }
+    }
+    const h = document.createElement("div");
+    h.className = "gr-shop-group";
+    h.textContent = "Ausgewaschen (neueste zuerst)";
+    box.appendChild(h);
+    if (!v.notes.length) {
+      const p = document.createElement("p");
+      p.className = "gr-nb-empty";
+      p.textContent = "Noch keine Probe ausgewaschen. [R] nimmt eine Probe unter dem Fadenkreuz, am Waschtrog wäschst du sie aus.";
+      box.appendChild(p);
+      return;
+    }
+    for (const q of v.notes) {
+      const row = document.createElement("div");
+      row.className = "gr-nb-row";
+      const a = document.createElement("div"), b = document.createElement("div");
+      a.className = "gr-nb-head"; b.className = "gr-nb-data";
+      a.textContent = `${q.head} · ${q.where}`;
+      b.textContent = `${q.amount} → ${q.gold} · ${q.grade}`;
+      row.append(a, b);
+      box.appendChild(row);
+    }
   }
 
   _renderSell(v) {
@@ -1080,7 +1222,8 @@ class GoldRushShell {
       },
       advanceClock: (s) => { g.terrain.clock += s; g.world.terrainUniforms.uTime.value = g.terrain.clock; g.render(); return g.terrain.clock; },
       probe: () => g.probe(),
-      aim: () => ({ state: g.aimState, material: g.target ? g.target.material : null, distance: g.target ? g.target.distance : g.farTarget ? g.farTarget.distance : null }),
+      aim: () => ({ state: g.aimState, material: g.target ? g.target.material : null, distance: g.target ? g.target.distance : g.farTarget ? g.farTarget.distance : null, y: g.target ? g.target.y : null,
+        x: g.target ? g.target.x : null, z: g.target ? g.target.z : null }),
       hand: () => ({ state: g.tools.state, phase: g.tools.phase, cycle: g.tools.cycles, inspecting: !!g.hands.inspecting, dirt: g.hands.dirt, tool: g.tools.equipped, view: g.tools.view(),
         soil: g.hands.models.soil.visible, load: g.hands.load, loadT: g.hands.loadT, crumbs: g.hands.models.crumbs ? g.hands.models.crumbs.count : 0, shake: g.hands.shake, kick: g.player.kick, shown: g.hands.tool }),
       // tool models: size / materials, and how far each glove sits from its grip (m)
@@ -1220,6 +1363,154 @@ class GoldRushShell {
       devRun: (id, arg) => (this.devtools ? this.devtools.runCommand(id, arg) : null),
       devRows: () => (this.devtools ? JSON.parse(JSON.stringify(this.devtools.ctx().actions.itemRows(g))) : null),
       positionCheck: () => g.positionCheck(),
+      // ---- phase 9: prospecting, the mountain contract
+      sampleNow: () => g.sampleNow(),
+      sampleKey: () => g.sample(),
+      flagNow: () => g.flagAtCrosshair(),
+      flagAt: (x, z) => (g.processing.prospect ? g.processing.prospect.toggleFlag(x, z) : null),
+      prospect: () => {
+        const pg = g.processing.prospect;
+        if (!pg) return null;
+        return { view: JSON.parse(JSON.stringify(pg.view())), bags: pg.bags.map((b) => ({ n: b.n, ml: b.batch.volumeMl, g: b.batch.massG, ug: b.batch.goldUg, fineUg: b.batch.fineUg, pieces: b.batch.finds.length, place: b.place, flag: b.flag })),
+          flags: pg.flags.map((f) => ({ ...f })), notes: pg.notes.map((q) => ({ ...q })), stats: { ...pg.stats }, inPan: g.processing.pan.sample ? { ...g.processing.pan.sample } : null,
+          meshes: { stakes: pg.stakes.visible, tris: pg.clothGeo.index ? pg.clothGeo.index.count / 3 : 0 } };
+      },
+      contract: () => { const v = g.contract.view(); return { v0: v.v0, removedM3: v.removedM3, remainingM3: v.remainingM3, pct: v.pct, removedKg: v.removedKg, massKg0: v.massKg0, text: v.text, steps: v.steps, line: g.contract.line(), mountainG: g.economy.stats.mountainG }; },
+      openPanel: (id) => g.openStation(id),
+      panelText: (id) => { const s = this.root.querySelector(`[data-sheet=${id}]`); return s && !s.hidden ? s.textContent : null; },
+      boardSig: () => g.stations._boardSig,
+      // the plant (intake + belt, trommel, spoil heap)
+      procInstallPlant: () => { const pr = g.processing; const c = pr.devInstallConveyor(); const t = pr.trommel ? pr.devInstallTrommel() : null; g._stationSig = null; return { conveyor: c, trommel: t }; },
+      procConveyorMode: (m) => g.processing.devConveyorMode(m),
+      exc: () => {
+        const ex = g.processing.excavator;
+        if (!ex) return null;
+        return { x: ex.x, z: ex.z, y: ex.y, heading: ex.heading, swing: ex.swing, pose: { ...ex.pose }, inCab: ex.inCab, cab: g.cab === ex, attachment: ex.attachment, ml: ex.volumeMl, g: ex.massG(), ug: ex.goldUg(),
+          room: ex.room, task: ex.task ? { kind: ex.task.kind, phase: ex.task.phase } : null, stats: { ...ex.stats }, v: ex.v, pitch: ex.root.rotation.z, roll: ex.root.rotation.x };
+      },
+      grantItem: (id) => g.devGrant(id),
+      excTeeth: () => { const ex = g.processing.excavator; if (!ex) return null; ex.root.updateMatrixWorld(true); const v = ex.rig.teethWorld(ex.root.position.clone()); return { x: v.x, y: v.y, z: v.z }; },
+      // the developer snapshot the way the dev tools take / restore it (goldrush-devtools.js ensureSnapshot / restoreSnapshot)
+      devSnapshotWrite: () => { this.saves.writeDevSnapshot(g.buildDoc()); return !!this.saves.devSnapshot(); },
+      devSnapshotRestore: () => { const s = this.saves.devSnapshot(); if (!s) return false; this.devReloadMine(s.doc, null, true); return true; },
+      // a phase-9 developer command run straight from its pack (tests: no unlock flow needed)
+      dev9: async (id, arg) => {
+        const reg = await import("./goldrush-devregistry.js");
+        await import("./goldrush-devcommands9.js");
+        const c = reg.devRegistry.get(id);
+        if (!c) return { ok: false, error: "unknown" };
+        const ctx = { game: g, shell: this, saves: this.saves, tools: null, actions: null, state: {} };
+        const r = c.kind === "info" ? { ok: true, rows: c.view(ctx) } : c.run(ctx, arg);
+        return JSON.parse(JSON.stringify(r || null));
+      },
+      excEnter: () => g.enterCab(),
+      excExit: () => g.exitCab(),
+      excPlace: (x, z, heading) => { const ex = g.processing.excavator; if (!ex) return null; ex.place(x, z, heading); return { x: ex.x, z: ex.z, y: ex.y }; },
+      // look from the cab (yaw / pitch of the view) and say what the crosshair is on
+      excAim: (yaw, pitch) => {
+        if (!g.cab) return null;
+        const p = g.player, ex = g.cab;
+        p.yaw = yaw; p.pitch = pitch;
+        ex.viewAz = Math.atan2(Math.sin(p.yaw + Math.PI / 2 - ex.heading), Math.cos(p.yaw + Math.PI / 2 - ex.heading));
+        ex.swing = ex.viewAz; ex.pose.swing = ex.swing; ex.rig.setPose(ex.pose);
+        const eye = ex.eye(new g.camera.position.constructor());
+        g.camera.position.copy(eye); g.camera.rotation.y = yaw; g.camera.rotation.x = pitch; g.camera.updateMatrixWorld();
+        const t = g._cabAim();
+        return { ok: t.ok, act: t.act, state: t.state, text: t.text, recv: t.recv ? t.recv.kind : null, hit: t.hit ? { x: t.hit.x, y: t.hit.y, z: t.hit.z, boulder: t.hit.boulder } : null };
+      },
+      // the transaction at the crosshair now (no animation): scoop / dump / break
+      excNow: (what) => {
+        const ex = g.cab;
+        if (!ex) return null;
+        const t = g._cabTgt;
+        if (!t || !t.ok) return { ok: false, text: t ? t.text : "" };
+        if (what === "scoop" && t.act === "scoop") return ex.scoopNow(t.recv ? { kind: "oversize", at: t.recv.at } : { kind: "ground", hit: { ...t.hit } });
+        if (what === "dump" && t.act === "dump") return ex.dumpNow({ kind: t.recv.kind, at: { ...t.recv.at } });
+        if (what === "break" && t.act === "break") return ex.breakNow({ hit: { ...t.hit } });
+        return { ok: false, text: t.text };
+      },
+      // ---- the benchmark's excavator (no animation; the bot pays the seconds): the ground at (x, z) as a hit
+      excHitAt: (x, z) => { const t = g.terrain; return { x, y: t.getHeightAt(x, z), z, normal: t.getNormalAt(x, z), diggable: t.inDigArea(x, z), boulder: null, distance: 3 }; },
+      // diggable spots in reach of the excavator where it stands, the highest first (it digs a face from the top)
+      excTargets: (n = 8, minUp = -0.9, minY = -Infinity) => {
+        const ex = g.processing.excavator;
+        if (!ex) return [];
+        const t = g.terrain, out = [];
+        for (let a = -1.1; a <= 1.1; a += 0.22) for (let r = 2.0; r <= 3.7; r += 0.3) {
+          const h = ex.heading + a, x = ex.x + Math.cos(h) * r, z = ex.z - Math.sin(h) * r;
+          if (!t.inDigArea(x, z)) continue;
+          const y = t.getHeightAt(x, z), hit = { x, y, z };
+          if (y < minY) continue;
+          const rel = ex.rel(hit);
+          if (rel.y + 0.56 < minUp || !ex.reachable(rel)) continue;
+          const i = Math.round((x - t.x0) / t.cell), j = Math.round((z - t.z0) / t.cell), k = j * t.vps + i;
+          const stone = y <= t.stoneTop[k] + 1e-4 && y >= t.stoneBot[k] && !(t.rubble[k] > 0);
+          out.push({ x, z, y, up: rel.y + 0.56, r: rel.r, a, stone, base: t.base[k] });
+        }
+        out.sort((p, q) => (q.stone ? -1 : 0) - (p.stone ? -1 : 0) || q.up - p.up);
+        return out.slice(0, n);
+      },
+      // a stand for the excavator near the intake: flat, free, facing the mountain, with the most ground to dig in reach
+      excFindStand: (maxD = 7.5) => {
+        const ex = g.processing.excavator, t = g.terrain, mc = t.moundCenter, cols = g.world.colliders;
+        if (!ex) return null;
+        const x0 = ex.x, z0 = ex.z, h0 = ex.heading;
+        let best = null;
+        const span = Math.max(7.5, maxD);
+        for (let x = -14.5; x <= -14.35 + span; x += 0.5) for (let z = -9.35 - span; z <= -9.35 + span; z += 0.5) {
+          const dI = Math.hypot(x + 14.35, z + 9.35);
+          if (dI < 2.6 || dI > maxD) continue;
+          const hd = Math.atan2(-(mc.z - z), mc.x - x);
+          const c = Math.cos(hd), s = Math.sin(hd), hs = [[0.8, 0.62], [0.8, -0.62], [-0.8, 0.62], [-0.8, -0.62]].map(([a, b]) => g.world.groundAt(x + c * a + s * b, z - s * a + c * b));
+          if (Math.max(...hs) - Math.min(...hs) > 0.42) continue;
+          let free = true;
+          for (const k of cols) { if (k === ex.collider) continue; const d = k.type === "circle" ? Math.hypot(x - k.x, z - k.z) - k.r : Math.max(Math.abs(x - k.x) - (k.hw || 0), Math.abs(z - k.z) - (k.hd || 0)); if (d < 1.15) { free = false; break; } }
+          if (!free || (g.world.decks.length && g.world.deckAt(x, z) > -Infinity)) continue;
+          ex.place(x, z, hd);
+          let score = 0;
+          for (let a = -1.0; a <= 1.0; a += 0.4) for (let r = 2.1; r <= 3.6; r += 0.5) {
+            const px = x + Math.cos(hd + a) * r, pz = z - Math.sin(hd + a) * r;
+            if (!t.inDigArea(px, pz)) continue;
+            const up = t.getHeightAt(px, pz) - (ex.y || 0);
+            if (up > -0.6) score += Math.min(2.2, up + 0.6);
+          }
+          score -= dI * 0.25;
+          if (!best || score > best.score) best = { x, z, heading: hd, score, dIntake: dI };
+        }
+        ex.place(x0, z0, h0);
+        return best;
+      },
+      excScoopAt: (x, z) => { const ex = g.processing.excavator; if (!ex) return null; const t = g.terrain; return ex.scoopNow({ kind: "ground", hit: { x, y: t.getHeightAt(x, z), z, normal: t.getNormalAt(x, z), diggable: t.inDigArea(x, z), boulder: null, distance: 3 } }); },
+      excBreakAt: (x, z) => { const ex = g.processing.excavator; if (!ex) return null; const t = g.terrain; return ex.breakNow({ hit: { x, y: t.getHeightAt(x, z), z, normal: t.getNormalAt(x, z), diggable: true, boulder: null, distance: 3 } }); },
+      // a dump / an oversize scoop wherever the receiver is (the bot pays the drive there and back)
+      excDumpForce: (kind) => { const ex = g.processing.excavator; if (!ex || ex.task || ex.volumeMl <= 0) return null; return ex._tip({ kind }); },
+      excScoopOversize: () => { const ex = g.processing.excavator; if (!ex || ex.task || ex.breaker) return null; return ex._cut({ kind: "oversize" }); },
+      excAttach: (kind) => { const ex = g.processing.excavator; if (!ex || ex.task || ex.volumeMl > 0) return false; ex.attachment = kind === "breaker" ? "breaker" : "bucket"; ex.rig.setAttachment(ex.attachment); ex.standSync(); return true; },
+      // hold a button for one frame, then let the machine work for `sec` (frames, like walk)
+      excPress: (button, sec = 3, fwd = 0, turn = 0) => {
+        const input = g.input, steps = Math.round(sec * 60);
+        for (let i = 0; i < steps; i++) {
+          input.digHeld = button === "dig" && i === 0; input.altHeld = button === "dump" && i === 0;
+          input.move.y = fwd; input.move.x = turn;
+          g.update(1 / 60);
+          g.processing.update(1 / 60, g.player);
+        }
+        input.digHeld = input.altHeld = false; input.move.x = input.move.y = 0;
+        g.render();
+        return g.processing.excavator ? { task: g.processing.excavator.task ? g.processing.excavator.task.kind : null, ml: g.processing.excavator.volumeMl } : null;
+      },
+      plant: () => {
+        const pr = g.processing, cv = pr.conveyor, tr = pr.trommel, sp = pr.spoil, bk = pr.bulk, sl = pr.sluice;
+        return {
+          conveyor: cv ? { state: cv.state, mode: cv.mode, status: cv.status(), intakeMl: cv.intake.volumeMl, intakeUg: cv.intake.goldUg, beltMl: cv.belt.volumeMl, beltUg: cv.belt.goldUg, beltState: cv.belt.state, phase: cv.belt.phase,
+            cells: cv.belt.cells.map((c) => (c ? c.volumeMl : 0)), rateLpm: cv.belt.rateLpm, stats: { ...cv.stats }, lumps: cv.model.userData.lumps.count } : null,
+          trommel: tr ? { state: tr.state, status: tr.status(), feedMl: tr.feed.volumeMl, overMl: tr.oversize.volumeMl, overUg: tr.oversize.goldUg, overG: tr.oversize.massG, stats: { ...tr.stats }, pileScale: tr.pile.visible ? [tr.pile.scale.x, tr.pile.scale.y, tr.pile.scale.z] : null } : null,
+          spoil: sp ? sp.serialize() : null,
+          bulk: bk ? { ml: bk.volumeMl, ug: bk.goldUg(), cap: bk.capacityMl } : null,
+          sluice: sl ? { rate: sl.rateLpm, highflow: !!sl.highflow, capture: sl.capture, riffleL: sl.riffleL, hopperMl: sl.hopper.batch.volumeMl, running: sl.running, width: sl.model.userData.box.scale.z } : null,
+          feeder: pr.feeder ? { rate: pr.feeder.rateLpm, status: pr.feeder.status().key } : null,
+        };
+      },
     };
   }
 

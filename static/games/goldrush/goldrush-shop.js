@@ -28,6 +28,13 @@
 // sluice's head that stores several barrow loads, and a motorised feeder that
 // doses it into the sluice on its own, with one small upgrade each. They save
 // ATTENTION - the sluice keeps running while you dig - not gold per litre.
+//
+// Phase 9 - the mechanised claim: a prospecting kit (samples, notebook, flags -
+// finding the rich ground), then machines that need money AND progress on the
+// mountain contract (requires.mountainPct, goldrush-contract.js): a mine intake
+// hopper with a conveyor to the plant, a trommel screen over the bulk hopper, a
+// wide high-flow sluice, a compact excavator and its hydraulic breaker. Each
+// one moves the bottleneck: hauling -> screening -> washing -> digging -> rock.
 
 export const SHOP_ITEMS = [
   {
@@ -131,18 +138,51 @@ export const SHOP_ITEMS = [
     text: "Ein genauer einstellbarer Auslass: 14 statt 12 Liter pro Minute, ohne die Rinne zu überladen – mehr nimmt sie nicht.",
     requires: { equipment: ["feeder"] },
   },
+  {
+    id: "prospectkit", kind: "equipment", label: "Probenset", price: 4500,
+    text: "Sechs Probenbeutel, eine kleine Kelle, zwölf nummerierte Fähnchen und ein Notizbuch: [R] nimmt genau unter dem Fadenkreuz eine Probe von etwa einem Liter, am Waschtrog wäscht du sie schnell in der Pfanne aus – das Notizbuch hält fest, wie viel Gold pro Liter drin war. [F] steckt ein Fähnchen.",
+    requires: { equipment: ["pan"] },
+  },
+  {
+    id: "conveyor", kind: "equipment", label: "Förderband mit Aufgabetrichter", price: 130000,
+    text: "Ein Stahltrichter am Westfuß des Bergs (240 l) und ein Gurtförderband, das ihn in den Vorratstrichter entleert: grab direkt in den Trichter oder kipp die Schubkarre hinein – der weite Weg die Rampe hinauf entfällt. Läuft, staut sich, wenn der Vorratstrichter voll ist, und läuft von selbst weiter.",
+    requires: { equipment: ["bulkhopper"], mountainPct: 0.9 },
+  },
+  {
+    id: "trommel", kind: "equipment", label: "Trommelsieb", price: 150000,
+    text: "Eine sich drehende Siebtrommel mit Sprühdüsen am Kopf des Förderbands: Wasser aus dem Tank wäscht das Material, Steine und Klumpen fallen am Ende als Überkorn auf einen Haufen, nur das Feine (mit fast allem Gold) geht in den Vorratstrichter – die Rinne bekommt weniger Ballast.",
+    requires: { equipment: ["conveyor"], mountainPct: 1.1 },
+  },
+  {
+    id: "sluice.highflow", kind: "upgrade", tool: "sluice", label: "Hochleistungsrinne", price: 100000,
+    text: "Eine breite Rinne mit tiefen Riffeln und ein weiterer Dosierauslass: gesiebt verarbeitet sie bis zu 32 Liter pro Minute statt 14 – und die Riffel fassen mehr, bevor sie gereinigt werden müssen.",
+    requires: { equipment: ["trommel"] },
+  },
+  {
+    id: "excavator", kind: "equipment", label: "Kompaktbagger", price: 200000,
+    text: "Ein kleiner Kettenbagger mit 45-Liter-Löffel: einsteigen, an den Hang fahren, der Löffel gräbt in einem Zug so viel wie ein paar Dutzend Schaufelstiche – und kippt in den Aufgabetrichter, die Schubkarre oder auf die Abraumhalde. Festen Fels bricht er nicht.",
+    requires: { equipment: ["conveyor"], mountainPct: 1.45 },
+  },
+  {
+    id: "excavator.breaker", kind: "upgrade", tool: "excavator", label: "Hydraulikhammer", price: 240000,
+    text: "Ein Anbauhammer für den Bagger (am Bagger gegen den Löffel tauschen): bricht festen Fels und Felsbrocken in Geröll, das der Löffel dann aufnimmt.",
+    requires: { equipment: ["excavator"], mountainPct: 2.0 },
+  },
 ];
 
 export const shopItem = (id) => SHOP_ITEMS.find((i) => i.id === id) || null;
 export const upgradesFor = (tool) => SHOP_ITEMS.filter((i) => i.kind === "upgrade" && i.tool === tool);
 export const EQUIPMENT = SHOP_ITEMS.filter((i) => i.kind === "equipment").map((i) => i.id);
 const NEED_TEXT = { shovel: "Schaufel besitzen", pickaxe: "Spitzhacke besitzen", bucket: "Eimer besitzen", pan: "Goldpfanne besitzen", classifier: "Sieb besitzen",
-  wheelbarrow: "Schubkarre besitzen", sluice: "Waschrinne besitzen", bulkhopper: "Vorratstrichter besitzen", feeder: "Dosierer besitzen" };
+  wheelbarrow: "Schubkarre besitzen", sluice: "Waschrinne besitzen", bulkhopper: "Vorratstrichter besitzen", feeder: "Dosierer besitzen",
+  prospectkit: "Probenset besitzen", conveyor: "Förderband besitzen", trommel: "Trommelsieb besitzen", excavator: "Kompaktbagger besitzen" };
+const pct = (v) => v.toFixed(v < 10 ? 2 : 1).replace(".", ",").replace(/,?0+$/, "").replace(/,$/, "");
 
 /**
  * What an item is for this player right now:
  *   { state: "owned" | "locked" | "available", needs: [{ text, met }], affordable, missing }
- * state = { owned: Set of tool ids, upgrades: Set of ids, equipment: Set of ids, hardSeen, cashCents }
+ * state = { owned: Set of tool ids, upgrades: Set of ids, equipment: Set of ids, hardSeen, cashCents,
+ *           mountainPct (phase 9: the contract - share of the original mountain removed, %) }
  */
 export function itemStatus(item, state) {
   const eq = state.equipment || new Set();
@@ -152,6 +192,10 @@ export function itemStatus(item, state) {
   for (const t of r.tools || []) needs.push({ text: NEED_TEXT[t], met: state.owned.has(t) });
   for (const t of r.equipment || []) needs.push({ text: NEED_TEXT[t], met: eq.has(t) });
   if (r.hard) needs.push({ text: "auf Stein oder einen Felsbrocken gestoßen", met: !!state.hardSeen });
+  if (r.mountainPct) {
+    const now = state.mountainPct || 0;
+    needs.push({ text: `Bergauftrag: ${pct(r.mountainPct)} % des Bergs abgetragen (jetzt ${pct(Math.floor(now * 100) / 100)} %)`, met: now >= r.mountainPct, contract: true });
+  }
   const locked = !owned && needs.some((n) => !n.met);
   const missing = Math.max(0, item.price - state.cashCents);
   return { state: owned ? "owned" : locked ? "locked" : "available", needs, affordable: !owned && !locked && missing === 0, missing };
