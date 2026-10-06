@@ -768,12 +768,22 @@ export class GoldRushGame {
 
   // the barrow's wheel on the ground: a soft roll with a creak now and then, more when it is loaded
   _barrowSound(dt, bw) {
-    const v = Math.abs(bw.ctl.v);
+    const c = bw.ctl, v = Math.abs(c.v), load = c.load || 0;
     this._creakT = (this._creakT || 0) - dt * v;
     if (v > 0.25 && this._creakT <= 0) {
       this._creakT = 0.9 + Math.random() * 0.8;
-      this.audio.play("barrow_roll", { dist: 0.5, strength: Math.min(1, 0.35 + v * 0.4 + Math.min(1, bw.massKg / 150) * 0.3 + bw.ctl.rough * 0.3) });
+      this.audio.play("barrow_roll", { dist: 0.5, strength: Math.min(1, 0.35 + v * 0.4 + Math.min(1, bw.massKg / 150) * 0.3 + c.rough * 0.3) });
     }
+    // a heavy load: the frame and the wood groan when it gets going / is pulled up, now and then while it rolls
+    this._loadT = (this._loadT || 0) - dt;
+    const jolt = Math.abs(c.surge) > 0.55 && Math.abs(this._lastSurge || 0) <= 0.55;
+    this._lastSurge = c.surge;
+    if (load > 0.4 && this._loadT <= 0 && (jolt || (v > 0.8 && Math.random() < dt * 0.25))) {
+      this._loadT = 1.2;
+      this.audio.play("barrow_load", { dist: 0.4, strength: Math.min(1, 0.4 + load * 0.6) });
+    }
+    // and you feel it: the view gives a little as it starts / stops (more when full)
+    if (jolt && !this.reducedMotion) this.player.kick = Math.max(this.player.kick || 0, 0.006 + 0.01 * load);
   }
 
   render() {

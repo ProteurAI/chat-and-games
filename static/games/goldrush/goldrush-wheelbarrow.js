@@ -29,7 +29,7 @@ const EMPTY_KG = 18;                            // the barrow itself
 const FULL_KG = (BARROW_ML * 1.8) / 1000;       // full of gravel: ~153 kg
 const PLAYER_R = 0.33;                          // where you stand behind it (the engine's player radius)
 const MAX_GRADE = 0.62;                         // the wheel does not climb steeper than this (~32 deg) ...
-const LIP = 0.06;                               // ... except a lip this high (it rolls over a clod) ...
+const LIP = 0.1;                                // ... except a lip this high (it rolls over a clod, a dug edge) ...
 const OVER_FEET = 0.08;                         // ... or ground no higher than this above your feet (out of a pit)
 const MAX_DH = 0.95;                            // nor more than this above / below the ground you stand on (the grips stay in reach)
 const TRAY_R = 0.46;                            // what a parked barrow blocks
@@ -91,7 +91,7 @@ export class Wheelbarrow {
   // walking speed with it, from the load and the slope ahead (rise per metre, > 0 uphill)
   speedFactor(grade = 0) {
     const load = Math.min(1, this.massKg / FULL_KG);
-    let f = 0.96 - 0.3 * load;
+    let f = 0.96 - 0.24 * load;                  // (phase 9 handling pass: full 0.72, was 0.66)
     if (grade > 0) f *= 1 - Math.min(0.5, grade) * (0.45 + 0.9 * load);
     else f *= 1 + Math.min(0.08, -grade * 0.2);
     return Math.max(0.42, Math.min(0.98, f));
@@ -158,8 +158,9 @@ export class Wheelbarrow {
 
   // the slope the wheel is about to take (rise per metre ahead)
   gradeAhead() {
-    const f = this.fwd(), g0 = this.world.groundAt(this.x, this.z), g1 = this.world.groundAt(this.x + f.x * 0.35, this.z + f.z * 0.35);
-    return (g1 - g0) / 0.35;
+    const f = this.fwd(), W = this.world, g0 = W.groundAt(this.x, this.z);
+    const g1 = W.groundAt(this.x + f.x * 0.3, this.z + f.z * 0.3), g2 = W.groundAt(this.x + f.x * 0.6, this.z + f.z * 0.6);
+    return ((g1 - g0) / 0.3 + (g2 - g0) / 0.6) / 2;
   }
 
   // how rough the ground under the wheel is (0 smooth .. 1 very rough): bumps, not the slope
@@ -223,7 +224,7 @@ export class Wheelbarrow {
     if (c.lift > 0) {
       // held: the grips at your hands (the ground you stand on + PUSH.handsY), level - a little bump on rough ground
       const sy = this._standY != null ? this._standY : yw;
-      const held = Wheelbarrow.pushTheta(sy + PUSH.handsY - yw) + c.bump * 0.035 * Math.sin(c.travel * 31);
+      const held = Wheelbarrow.pushTheta(sy + PUSH.handsY - yw) + c.bump * 0.035 * Math.sin(c.travel * 31) - c.surge * (0.012 + 0.03 * c.load);
       theta += (held - theta) * c.lift;
       roll += (c.bump * 0.04 * Math.sin(c.travel * 17) - roll) * c.lift;
     }

@@ -40,6 +40,7 @@ const LEVEL = {
   feeder_run: 10, gate_open: 12,
   // phase 8: the barrow in your hands, hard rock that answers the pick
   barrow_take: 14, barrow_roll: 12, barrow_bump: 13, stone_scrape: 12, rock_chip: 11, rock_fracture: 12,
+  barrow_load: 12,                                 // phase 9: a full barrow groaning (wood, steel) as it gets going / stops
 };
 
 export class GoldRushAudio {
@@ -338,6 +339,11 @@ export class GoldRushAudio {
         this._noise(out, t, rv(0.5, 0.7), { type: "lowpass", f: rv(240, 340), q: 0.6, gain: 0.12 * s, attack: 0.12 });
         this._grains(out, t + 0.05, 4 + Math.floor(Math.random() * 4), 0.5, 900, 2000, 2, 0.015 * s, 0.035 * s);
         if (Math.random() < 0.45) this._tone(out, t + rv(0.05, 0.3), rv(540, 700), rv(0.08, 0.14), 0.022 * s, { to: rv(480, 560), attack: 0.03 });
+        break;
+      case "barrow_load":                              // a heavy load: a low rumble, the handles' wood groaning, the steel tray creaking
+        this._noise(out, t, rv(0.35, 0.5), { type: "lowpass", f: rv(110, 160), q: 0.7, gain: 0.14 * s, attack: 0.06 });
+        this._tone(out, t + rv(0.02, 0.1), rv(190, 240), rv(0.18, 0.28), 0.03 * s, { to: rv(150, 180), attack: 0.05 });
+        if (Math.random() < 0.6) this._tone(out, t + rv(0.1, 0.25), rv(420, 520), rv(0.1, 0.16), 0.016 * s, { to: rv(380, 450), attack: 0.03 });
         break;
       case "barrow_bump":                              // the wheel against something: a dull knock, the load shifting
         this._tone(out, t, rv(80, 100), 0.1, 0.2 * s, { to: 55 });

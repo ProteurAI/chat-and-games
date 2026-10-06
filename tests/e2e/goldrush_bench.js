@@ -371,7 +371,7 @@
 
     // pushing speed with a load (the game's own factor; slopes on the way averaged out)
     _push(d, kg) {
-      const f = Math.max(0.42, 0.96 - 0.3 * Math.min(1, kg / BARROW_FULL_KG));
+      const f = Math.max(0.42, 0.96 - 0.24 * Math.min(1, kg / BARROW_FULL_KG));     // the barrow's speedFactor (phase 9 handling pass)
       return d / (WALK * f);
     },
 

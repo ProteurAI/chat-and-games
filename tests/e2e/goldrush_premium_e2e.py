@@ -263,8 +263,10 @@ def barrow(A):
         tu = push_series(A, 0.8, my=0.0, turn=2.0)
         feel[name] = {"v06": round(v06, 2), "vtop": round(vtop, 2), "decel": round(decel, 2), "turn": round(abs(tu[-1]["yaw"] - tu[0]["yaw"]) / 0.7, 2)}
     e, f = feel["empty"], feel["full"]
-    ok("BARROW full is more than a slower walk: slower to get going, needs more room to stop, turns more sluggishly (and a lower top speed)",
-       f["v06"] < e["v06"] * 0.75 and f["decel"] < e["decel"] * 0.7 and f["turn"] < e["turn"] * 0.85 and f["vtop"] < e["vtop"], json.dumps(feel))
+    # (phase 9 handling pass: heavy is not hard to steer - the weight is in the push, the stop and the slope;
+    # a full barrow turns only a little more lazily)
+    ok("BARROW full is more than a slower walk: slower to get going, needs more room to stop, turns a little more lazily (and a lower top speed)",
+       f["v06"] < e["v06"] * 0.75 and f["decel"] < e["decel"] * 0.7 and f["turn"] < e["turn"] * 0.95 and f["vtop"] < e["vtop"], json.dumps(feel))
     # the wheel on dug ground: a pit dug ahead - the wheel drops into it
     G(A, f"() => {GR}.procAct('barrow-park')")
     G(A, f"() => {GR}.walk(0.5, 0, 0)")
