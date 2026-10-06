@@ -3,13 +3,13 @@
 Interne Notizen für die Weiterentwicklung (Prompt 6–12). Nicht für Spieler.
 Liegt bewusst außerhalb von `static/`, wird also nicht ausgeliefert.
 
-## Module (Stand Phase 8)
+## Module (Stand Phase 9)
 
 | Bereich | Datei(en) |
 |---|---|
 | Einstieg, Startscreen, Menüs, Dialoge | `static/games/goldrush/goldrush.js` |
 | Spiel, Loop, Spieler, Kauf | `goldrush-engine.js` |
-| Spielstände (pro Konto), Migrationen, Dev-Snapshot | `goldrush-save.js` (`GoldRushSaveService`, Version 7) |
+| Spielstände (pro Konto), Migrationen, Dev-Snapshot | `goldrush-save.js` (`GoldRushSaveService`, Version 8) |
 | Geld, Goldbeutel, Verkauf | `goldrush-economy.js` |
 | Shop-Registry (Items, Preise, Voraussetzungen) | `goldrush-shop.js` (`SHOP_ITEMS`) |
 | Gelände, Ressourcen, Abbau | `goldrush-terrain.js`, `goldrush-resources.js`, `goldrush-mining.js` |
@@ -31,7 +31,13 @@ Liegt bewusst außerhalb von `static/`, wird also nicht ausgeliefert.
 | Schubkarre schieben (Phase 8) | `goldrush-wheelbarrow-controller.js` (`PushController`, `PUSH`, `clampLook`) |
 | Goldankauf-Bude, Ausrüstungs-Schuppen (Phase 8) | `goldrush-buildings.js` (`buildAssayBooth`, `buildSupplyShack`, `boardTexture`); Waage / Verkauf in `goldrush-stations.js` |
 | Autorierte Modelle .glb / .gltf (Phase 8, optional) | `goldrush-assets.js` (`model`, `modelOr`, `instance`), `models/manifest.json`, GLTFLoader in `static/vendor/three/addons/` |
-| Entwickler-/QA-Werkzeuge | `goldrush-dev*.js` (siehe unten; Phase 6 / 7 / 7A / 7B / 8: `goldrush-devcommands6.js`, `goldrush-devcommands7.js`, `goldrush-devcommands7a.js`, `goldrush-devcommands7b.js`, `goldrush-devcommands8.js`) |
+| Geologie 2.0: Paläorinnen, Camp-Auffüllung, Versionsnummer (Phase 9) | `goldrush-resources.js` (`GEOLOGY_VERSION`, `GEO`, `CHANNEL`, `CAMP_FILL`, `channelAt`, `campFillAt`) |
+| Prospektion: Probenbeutel, Notizbuch, Fähnchen (Phase 9) | `goldrush-prospect.js` (`ProspectSystem`, `SAMPLE_DEF`) |
+| Bergauftrag (Fortschritt am Berg, Freigaben) (Phase 9) | `goldrush-contract.js` (`MountainContract`, `MOUNTAIN_FLOOR`, `CONTRACT_STEPS`); Tafel in `goldrush-stations.js` |
+| Aufgabetrichter + Förderband, Trommelsieb, Abraumhalde (Phase 9) | `goldrush-plant.js` (`Conveyor`, `Trommel`, `SpoilHeap`), `goldrush-transfer.js` (`Belt`), `goldrush-material.js` (`trommelSplit`) |
+| Modelle der Anlage (Phase 9) | `goldrush-plantmodels.js` (`PlantModels`, Layout-Konstanten `INTAKE`, `BELT`, `TROMMEL`, `OVERSIZE`, `SPOIL`) |
+| Kompaktbagger (Phase 9) | `goldrush-excavator.js` (`Excavator`, `EXC_DEF`), Modell / Rig `goldrush-excavatormodel.js` (`ExcavatorRig`, `rigFromScene`) |
+| Entwickler-/QA-Werkzeuge | `goldrush-dev*.js` (siehe unten; Phase 6 / 7 / 7A / 7B / 8 / 9: `goldrush-devcommands6.js`, `goldrush-devcommands7.js`, `goldrush-devcommands7a.js`, `goldrush-devcommands7b.js`, `goldrush-devcommands8.js`, `goldrush-devcommands9.js`) |
 
 ## Materialfluss und Maschinen (Phase 6)
 
@@ -373,7 +379,8 @@ jeden Frame vor den Spieler und drehte sie mit dem Blick (`yaw = player.yaw`);
 `Glove._arm()` skalierte den Unterarm auf jede Länge (`arm.scale.y = len`).
 Beides ist weg:
 
-- `goldrush-wheelbarrow-controller.js` (`PushController`): Eingabe = Wunsch
+- `goldrush-wheelbarrow-controller.js` (`PushController`; Lenkung, Anfahren und
+  Gelände seit Phase 9 überarbeitet – „Schubkarren-Handling“ dort): Eingabe = Wunsch
   (W/S schieben, bremsen, rückwärts; A/D lenken; Blick), die Karre antwortet
   mit eigener Geschwindigkeit `v`, Drehrate `w`, Radwinkel `spin`, Neigung.
   Beschleunigung `2,9 − 1,9·Last`, Bremsen `5,2 − 3,5·Last` m/s², maximale
@@ -505,6 +512,283 @@ schieben); der Test-Hook `proc().held` meldet „barrow“, solange die Hände a
 der Karre sind.
 
 
+## Mechanisierter Claim (Phase 9)
+
+Aus dem kleinen Hand-Claim wird die erste mechanisierte Goldmine – auf drei
+Achsen: **Abbau** (Kompaktbagger, Hydraulikhammer), **Transport**
+(Aufgabetrichter + Förderband) und **Verarbeitung** (Trommelsieb,
+Hochleistungsrinne). Dazu Geologie 2.0, Prospektion und der Bergauftrag.
+Save **v8**. Keine Offline-Erträge: alles läuft nur, solange GoldRush aktiv ist.
+
+**Gold-Audit (vor dem Umbau).** Räumlich / deterministisch war und ist: das
+Material pro Säule, die Golddichte `goldDensityAt` (Seed + Position + Original-
+oberfläche), jede 1-cm-Scheibe (Fund, Feingold `fineUg = 6000·g`, Masse) und
+ihr Verbrauch (`terrain.used` – einmal bezahlt, nie wieder). Rein visuell sind
+nur: wo die Flitter in der Pfanne liegen, der Schwarzsand, die Oberflächen
+loser Ladungen, Glitzern, Färbungen, Effekte. Der Satz „Goldverteilung ist
+rein visuell“ im Prompt-8-Bericht meinte **nur die Anordnung der Flitter in
+der Pfanne**, nicht die Verteilung im Boden. Das eigentliche Problem war
+geologisch: die Kies-„Pay Layer“ um das alte Bodenniveau (plus Kies-Faktor)
+machte jedes Loch auf Bodenhöhe – auch vor dem Camp – zur besten Goldfarm.
+
+**Geologie 2.0** (`goldrush-resources.js`, `GEOLOGY_VERSION = 2`): keine Pay
+Layer mehr. Ein neutraler Grundgehalt mit regionaler Variation (`GEO`), Kies
+etwas reicher als Erde (`mf 0,88 / 1 / 1,15`), der obere Berg etwas ärmer
+(`mountain 0,94`, weich von 0,3 bis 2,2 m Originalhöhe). Dazu 2–4
+**Paläorinnen** pro Seed (`CHANNEL`): gekrümmte, begrabene alte Bachbetten
+über den Claim, teils unter dem Berg, Breite 1,4–3,4 m, Sohle −1,25…−0,3 m,
+Mächtigkeit 0,35–0,8 m, Kieslinsen, arme und reiche Abschnitte, Lücken.
+Der **Camp-Vorplatz** ist aufgeschütteter, verdichteter Fremdboden
+(`CAMP_FILL`, ~0,55 m tief, Gehalt 0,008): kaum Gold, darunter natürlicher
+Boden; sichtbar als graueres, gepresstes Kies mit Fahrspuren. Unter
+Gebäuden / Stationen wird nicht gegraben (Dig-Area unverändert). Nichts hängt
+an y = 0. `GEO.scale 1,9` hebt den Gehalt insgesamt (das Phase-7-Einkommen
+kam zu ~45 % aus der Pay Layer), `G_MAX 2,6` deckelt eine Scheibe. Starter-
+Zone bleibt fair (Band 0,21–0,29). Zementierte Streaks und Taschen bleiben.
+
+`tests/e2e/goldrush_geology_bench.py` (12 Seeds, Gold pro 10 l, relativ zum
+Claim-Mittel): Camp-Aufschüttung **0,05×**, Starter 0,77×, unterer Berg
+0,78×, **oberer Berg 0,79×**, Paläorinne arm **1,8×** / mittel 2,6× / reich
+**3,6×**, Streaks 2,4×, Taschen 2,6×; unter der Aufschüttung 1,0×.
+
+**Migration v7 → v8:** `geology: { version: 2, from: 1 }`. Verbrauchte
+Scheiben bleiben verbraucht, jede MaterialBatch (Eimer, Karre, Trichter,
+Rinne, Wanne …) behält exakt ihr Gold – nur unberührter Boden folgt der neuen
+Geologie. Einmaliger Hinweis beim Laden („Der Claim wurde neu vermessen …“).
+
+**Prospektion** (`goldrush-prospect.js`, Item „Probenset“ €45): `R` nimmt eine
+echte Probe (0,5–1,5 l, eigener kleiner Kernel, ins Ledger gebucht) aus dem
+Material unter dem Fadenkreuz, max. 6 Beutel. Am Waschplatz eine schnelle
+Testpfanne (2,4–4 s). Ergebnis: Masse, Volumen, Gold in mg und **mg/l**,
+Material, Ort – sachlich, keine Ampelfarben. `N` öffnet das Probenbuch
+(letzte 20 Einträge), `F` setzt / entfernt nummerierte Markierungsfähnchen
+(max. 12, eine Probe innerhalb 1,6 m trägt die Nummer). Keine Heatmap, kein
+Golddetektor, keine Dichte im HUD.
+
+**Bergauftrag** (`goldrush-contract.js`): misst nur den **ursprünglichen
+Berg** über `MOUNTAIN_FLOOR` (0,06 m): `V0 = Σ max(0, h0 − F)·A`, abgetragen
+= `V0 − Σ max(0, h − F)·A` (Gruben unter dem Boden zählen nicht, Aufschüttung
+zählt nicht als Berg). Tonnen aus der echten geschnittenen Masse
+(`mountainKg`). Anzeige exakt in m³, t und % (2 Nachkommastellen) auf dem
+Brett BERGAUFTRAG neben dem Camp (`E`), im Pausenmenü und in der Shop-Sperre
+(„Bergauftrag: X % des Bergs abgetragen (jetzt Y %)“). Freischaltungen
+brauchen **Geld und Bergfortschritt**:
+
+| Item | Preis | Voraussetzung |
+|---|---|---|
+| Probenset | €45 | Goldpfanne |
+| Förderband mit Aufgabetrichter | €1.300 | Vorratstrichter, Berg ≥ 0,9 % |
+| Trommelsieb | €1.500 | Förderband, Berg ≥ 1,1 % |
+| Hochleistungsrinne | €1.000 | Trommelsieb |
+| Kompaktbagger | €2.000 | Förderband, Berg ≥ 1,45 % |
+| Hydraulikhammer | €2.400 | Kompaktbagger, Berg ≥ 2,0 % |
+
+**Anlage** (`goldrush-plant.js`, Modelle `goldrush-plantmodels.js`, Transfer
+über `goldrush-transfer.js`):
+
+- **Aufgabetrichter** am Bergfuß (−14,35 / −9,35), 240 l, Schubkarre / Eimer /
+  Bagger kippen hinein. Füllung als echte Oberfläche, Hebel STOP / AUTO / AN
+  am Posten, Generator daneben.
+- **Förderband** (`Belt`): 24 Zellen à 900 ml, 0,42 m/s ≈ 64 l/min bis zum
+  Kopf über dem Vorratstrichter. Zustände **AUS / WARTET / LEER (starved) /
+  LÄUFT / STAU (blocked)**; Rückstau: ist das Ziel voll, steht das Band mit
+  Material. AUTO läuft, solange die Rinne läuft. Die echte Beladung liegt als
+  niedriges Materialbett pro Zelle (nach Material gefärbt, ein, zwei Klumpen
+  obenauf): wenig Material → getrennte Abschnitte, viel → ein durchgehendes
+  Band; nichts davon ist für Gold oder Masse maßgeblich.
+- **Trommelsieb** am Bandkopf: 60 l/min, exakte Aufteilung
+  (`trommelSplit`, `TROMMEL_TUNING`: Überkornanteil Erde 5 %, feste Erde 14 %,
+  Kies 42 %, Fels 92 %; Lehm-/Lockerfaktor). Gold folgt den Strömen
+  (Unterkorn → Vorratstrichter → Dosierer → Rinne; Überkorn → Haufen). Wasser
+  aus dem Tank. Überkorn liegt als wachsender Haufen nördlich der Rutsche
+  (bis ~7 m³, dann wartet die Trommel) und lässt sich mit Karre oder Bagger
+  zur **Abraumhalde** fahren – das Gold darin ist nicht verloren, nur
+  unverarbeitet.
+- **Warum die Trommel am Bandkopf sitzt** (statt hinter dem Dosierer, wie
+  zunächst skizziert): so puffert der Vorratstrichter nur noch Feines, der
+  Dosierer dosiert gleichmäßig nur Feines in die Rinne, Steine erreichen
+  Trichter und Rinne nie, und die Phase-7-Kette Trichter → Dosierer → Rinne
+  bleibt unverändert. Hinter dem Dosierer müsste die Trommel ihr Überkorn
+  neben der Rinne loswerden – dort ist kein Platz für einen Haufen. Alle
+  Einzelfunde dieses Bodens sind kleiner als die Siebmaschen und gehen mit dem
+  Unterkorn (Test: jedes Stück im Unterkorn); das Überkorn bleibt aufnehmbar
+  (Schubkarre / Bagger, zurück in den Aufgabetrichter oder auf die Halde).
+- **Hochleistungsrinne**: 20 → 32 l/min (Dosierer mit), Riffel fassen 640
+  statt 240 l, Fang 0,62 statt 0,65 (mit Moosmatte 0,72 statt 0,75) – mehr
+  Durchsatz, etwas weniger Feingold pro Liter; der Kasten wird sichtbar
+  breiter.
+- **Abraumhalde** (−18,5 / −15,5): gebucht als Tailing (Masse und Gold
+  exakt), Kegel wächst mit dem Volumen.
+
+**Kompaktbagger** (`goldrush-excavator.js`, Modell
+`goldrush-excavatormodel.js`): Rig mit Gelenken (Laufwerk, Oberwagen, Kabine
+links, Ausleger, Stiel, Werkzeug), Front +X, planare IK. Ein autoriertes
+`models/excavator.glb` mit denselben Knotennamen ersetzt das prozedurale Modell
+(Tabelle in `ASSETS.md`). Einsteigen an der Kabinenseite (`E`), Aussteigen `E`
+(neben der Kabine, sonst die andere Seite). **W/S** fahren, **A/D** drehen (Ketten laufen sichtbar), Maus
+schwenkt / zielt; **Primär** = Löffel füllen (assistiert: ansetzen → Zähne
+greifen → einrollen → Schnitt wird abgetragen → Löffel voll → anheben),
+**Sekundär / `Q` / KIPPEN** = auskippen (Teilmenge, wenn das Ziel nicht alles
+fasst), `T` wechselt Löffel ↔ Hammer. Löffel 45 l, gehäuft bis ~43 l pro
+Schnitt aus genau diesen Zellen (echte MaterialBatch, kein Zusatzgold);
+gemessen (pausiert, nur die echten Phasenzeiten) **474 l/min = 5,2×** die
+Schaufel (91 l/min) inklusive Schwenken zum Aufgabetrichter. Ziele: Aufgabetrichter, Schubkarre,
+Vorratstrichter, Abraumhalde. Intakter fester Fels: der Löffel kratzt
+(Wirkung 0), Geröll 90 %, Zement 55 %. **Hydraulikhammer**: jeder Schlag reißt
+festen Fels an vier Punkten mit der Phase-8-Bruchlogik (`strikeStone`, kein
+zweites Felssystem), Felsbrocken nehmen 5 Schadenspunkte; danach nimmt der
+Löffel das Geröll. Steigung max. 28°,
+Absatz max. 38°, keine Decks / Gebäude. Handy: Steuerkreuz + SCHAUFELN /
+KIPPEN / AUSSTEIGEN. Die Ketten drücken beim Fahren ihr Profil in den Boden
+(`TrackMarks`: fester Pool von 200 Instanzen, die ältesten werden ersetzt;
+abgegrabener Boden nimmt sie mit; kosmetisch, nicht gespeichert).
+
+**Schubkarren-Handling** (menschliche QA nach Prompt 8: zu langsam, schwer zu
+lenken, Kurven zäh). Regel: *schwer ≠ schlecht steuerbar.* Gewicht zeigt sich
+über Anfahren, Bremsweg, Steigung und Rückmeldung – nicht über die Lenkung.
+
+- Lenken = gewünschte Richtung (`HANDLING` in `goldrush-wheelbarrow-controller.js`):
+  A / D und der Blick. Bis 0,1 rad Blickabweichung bleibt die Karre ruhig,
+  darüber zieht sie progressiv (`2,4·e + 5·e²` rad/s); im Rollen richtet sie
+  sich sanft auf die Blicklinie aus (kein Schräglaufen). Im Stand ohne
+  Fahrbefehl darf man sich umsehen: Ruhezone 0,35 rad, darüber folgt sie
+  halb so stark.
+- Kurvenradius wächst mit dem Tempo (`0,7 m + 0,45 s · v`); langsam schwenken
+  die Griffe um das Rad (kein Drehen auf der Stelle um die Mitte). Die Drehrate
+  baut sich mit 10 − 4·Last rad/s² auf.
+- Anfahren 3,2 − 1,5·Last m/s², Bremsen 5,2 − 3,0·Last; Endtempo voll 0,72
+  statt 0,66 × Gehtempo (der Benchmark rechnet mit derselben Formel).
+- Gelände: Kanten bis 10 cm (statt 6) rollt sie hinauf, die Steigung wird über
+  0,6 m gemessen (ein Klumpen ist kein Hang), Rauheit kostet höchstens 10 %
+  Tempo (statt 22 %).
+- Rückmeldung: Griffe tauchen beim Anfahren ab und heben sich beim Bremsen
+  (`surge`, stärker voll), die Ansicht
+  nickt leicht beim Anfahren / Anhalten (nicht bei reduzierter Bewegung),
+  ein voller Rahmen knarzt und rumpelt (`barrow_load`).
+
+| leer / 50 % / voll | Phase 8 | Phase 9 |
+|---|---|---|
+| Endtempo eben | 3,14 / 2,69 / 2,24 m/s | 3,17 / 2,81 / 2,45 m/s |
+| 0 → 90 % Tempo | 1,07 / 1,33 / 2,03 s | 0,95 / 1,08 / 1,30 s |
+| Bremsweg aus dem Endtempo | 1,05 / 1,12 / 1,48 m | 1,05 / 1,13 / 1,36 m |
+| 90°-Kurve in Fahrt (A / D) | 1,37 / 1,57 / 2,27 s | 1,15 / 1,27 / 1,42 s |
+| 90°-Kurve per Blick (45°) | 1,55 / 1,60 / 2,27 s | 1,15 / 1,27 / 1,42 s |
+| Lenk-Latenz (halbe Drehrate) | 0,10 / 0,13 / 0,23 s | 0,07 / 0,07 / 0,08 s |
+| Kleinster Radius bei 1 m/s | 0,80 / 0,91 / 1,33 m | 0,90 / 1,05 / 1,25 m |
+| 8 % bergauf | 3,00 / 2,49 / 2,00 m/s | 3,03 / 2,59 / 2,18 m/s |
+
+(`measureHandling()` – der Controller auf ebenem Boden bzw. 8 % Steigung mit
+festen Eingaben; Phase 8 mit demselben Verfahren am alten Controller.) Im
+Spiel: volle Karre über Abbaudellen von 5–10 cm ohne Stillstand (≥ 2,3 m/s),
+der Blick 0,5 rad (≈ 29°) zur Seite → 96° Kurve in 1,5 s; rückwärts aus der Parkbox 1,3 m in 2,5 s. DevTools → „Schubkarre –
+Handling-Kurs (9)“ (`goldrush-barrowcourse.js`): Hütchen für Gerade, 90°-Kurve,
+S-Kurve, Abbauspuren und Parkbox auf freiem, ebenem Boden, dazu ein milder Hang
+am Bergfuß; Ladung leer / 50 % / voll; „Handling-Messwerte“ zeigt die Tabelle
+oben. Nicht gespeichert.
+
+**Bewegung mit Gewicht** (rein visuell; Phasendauern, Banddurchsatz und
+Trommelleistung unverändert): der Oberwagen schwenkt mit Trägheit (beschleunigt
+mit 3,2 rad/s² auf 1,35 rad/s und bremst rechtzeitig ab, kein Einrasten); beim
+Einrollen beißen die Zähne zuerst (langsamer Beginn, Zittern im Boden), die
+Last zieht den Ausleger beim Anheben kurz nach unten, nach dem Kippen federt er
+nach (gedämpft). Das Band läuft in ~1 s an und rollt aus, Rollen und
+Bandtextur folgen; die Trommel dreht in ~1,5 s hoch und läuft aus, ihr Rahmen
+vibriert im Betrieb leicht (mehr unter Last); das Wasser sprüht nur, solange
+sie dreht.
+
+**Speicherstand v8:** `geology`, `prospect` (Beutel, Buch, Fähnchen),
+Förderband (Modus, Trichter-Batch, Bandzellen), Trommel (Zulauf,
+Überkorn-Batch), Halde, Bagger (Position, Richtung, Pose, Werkzeug,
+Löffel-Batch). Laden mitten in der Kette, mitten im Baggerschnitt (Löffel im
+Schnitt) und mitten im Felsbrechen (die ersten Risse) ist exakt – Material,
+Gold, Risse, Pose; die laufende Armbewegung beginnt aus der gespeicherten Pose
+neu (Schnitt und Kippen sind atomar, es geht nichts doppelt oder verloren).
+Neue Mine: alles leer, Geologie 2. Der Dev-Snapshot einer mechanisierten Mine
+kommt exakt zurück (Test).
+
+**Ledger:** jeder neue Halter (Aufgabetrichter, Bandzellen, Trommel-Zulauf,
+Überkorn, Löffel, Probenbeutel) steht in `goldInContainers` /
+`massInContainers`; Halde = Tailing. `inUg = Behälter + gewonnen + Tailing`
+gilt über die volle Kette (Test `chain`: Bagger → Aufgabetrichter → Band →
+Trommel → Vorratstrichter → Dosierer → Rinne → Konzentrat → Pfanne → Beutel,
+zwei Save / Reloads unterwegs; jedes Einzelstück genau einmal – 132 von 132).
+
+**Welt / Look / Audio:** Aufschüttung mit Fahrspuren vor dem Camp, nasser
+Boden unter Trommel und Vorratstrichter (wird mit der Laufzeit dunkler),
+Kettenabdrücke des Baggers, Diesel-
+Generator mit Kabel zum Posten, Bandgerüst mit Tragrollen, Ober- und
+Untertrum, Antrieb mit Schutz am Kopf, Trommel auf Laufringen und
+Tragrollen, Sprühbalken mit Zuleitung vom Tank, Unterkorn-Vorhang,
+Überkorn-Rutsche; Werkzeugständer mit Hammer beim Bagger. Synthetische Klänge: Band,
+Trommel (läuft / leer), Diesel, Ketten, Hydraulik, Löffel, Kippen, Hammer,
+Start / Stopp.
+
+**Leistung** (`goldrush_mechanized_e2e.py --only perf`): Mine mit Anlage und
+Bagger 175 Draw Calls, Anlage 129, Aufgabetrichter 93, Kabine 101 – 59–60 fps;
+Bagger nach Merge pro Gelenk 25 Draw Calls; Maschinen-Wurzeln (auch Spuren und
+Nässe) in `warmMachines` (GPU-Warm-up) – beim ersten Anblick keine neue
+Geometrie / Textur / kein neues Programm. Band, Trommel und Spuren arbeiten mit
+festen Instanz-Puffern (keine Objekte pro Tick).
+
+**Dev-Pack 9** (`goldrush-devcommands9.js`): Preset **„PHASE 9 MECHANIZED
+CLAIM“** (alle Phase-9-Items, Anlage gebaut, Band auf AUTO, Bagger am
+Trichter) und Sprünge PROSPECTING TEST, MINE INTAKE, PROCESSING PLANT,
+EXCAVATOR, RICH CHANNEL, NORMAL MOUNTAIN, CONTRACT BOARD, dazu „Bagger mit
+Hydraulikhammer“ (steht an freiliegendem Fels) und „Abraumhalde“; Trichter
+voll / leer, „Kette blockieren“ (Vorratstrichter voll, Dosierer STOP),
+Überkornhaufen, Baggerlöffel voll; Info „Anlage & Bergauftrag“.
+
+**Benchmark** (`goldrush_bench.py --strategy A9…E9`, simulierte Zeit, 1500 min):
+A9 Auftrag zuerst, B9 Prospektor, C9 Geld zuerst, D9 ausgewogen, E9 Camp-Farmer.
+
+Finaler Lauf: 40 Seeds je Strategie (1001 + 7k), Stand 3f48b91, 200 × 1500 min
+in simulierter Zeit. Kaufzeit-Median in Minuten (P10–P90; gekauft von 40, wenn
+nicht alle):
+
+| Strategie | Förderband | Trommel | Hochleistungsrinne | Bagger | Hammer |
+|---|---|---|---|---|---|
+| A9 | 647 (580–698) · 39 | 796 (703–885) · 39 | 1211 (1078–1295) · 33 | 1086 (965–1223) · 39 | 1331 (1203–1432) · 32 |
+| B9 | 797 (700–912) | 893 (798–1007) · 38 | 954 (851–1034) · 38 | 1063 (977–1139) · 38 | 1226 (1100–1327) · 37 |
+| C9 | 1070 (949–1338) · 34 | 1164 (1051–1420) · 32 | 1173 (1076–1318) · 30 | 1257 (1177–1377) · 26 | 1398 (1297–1477) · 19 |
+| **D9** | **744 (653–826)** · 39 | **875 (774–970)** · 39 | **954 (845–1064)** · 39 | **1044 (935–1161)** · 39 | **1168 (1071–1267)** · 34 |
+| E9 | 913 (698–1277) · 31 | 1110 (873–1419) · 29 | 1129 (917–1422) · 28 | 1189 (988–1376) · 16 | 1324 (1172–1466) · 15 |
+| Ziel | 650–780 | 760–900 | 820–980 | 850–1050 | 1050–1250 |
+
+Frühe Ausrüstung (alle Strategien ähnlich): Pfanne 82–113, Schubkarre
+158–198, Classifier 190–232, Rinne 255–318, Vorratstrichter 385–484,
+Dosierer 493–600 min.
+
+| Median | 660 min | 900 min | 1200 min | 1500 min |
+|---|---|---|---|---|
+| D9 verdient | € 5.018 | € 7.845 | € 13.465 | € 19.406 |
+| D9 Berg | 1,14 % (12,4 m³) | 1,62 % | 2,54 % (27,9 m³) | 3,61 % (39,4 m³, 57,5 t) |
+| A9 Berg | 1,15 % | 2,06 % | 4,59 % | 8,00 % (88,1 m³, 135 t) |
+| B9 / C9 / E9 Berg | 0,68 / 0,23 / 0,65 % | 1,14 / 0,61 / 0,93 % | 2,08 / 1,24 / 1,31 % | 3,09 / 2,14 / 1,83 % |
+| D9 gewaschen / Rinne / Band / Trommel | 9.072 / 3.944 / 0 / 0 l | 13.835 / 6.837 / 1.973 / 364 l | 22.816 / 15.023 / 11.517 / 9.998 l | 32.416 / 24.615 / 22.892 / 21.262 l |
+
+- Strategien gepaart je Seed (verdient bei 1500 min / D9): B9 1,11× (vorn auf
+  33 / 40 Seeds) – wer reiche Rinnen sucht und findet, verdient mehr; C9
+  0,92×, A9 0,77× (räumt dafür 2–3× so viel Berg ab: bis 8 % nach 25 h),
+  **E9 (Camp-/Boden-Farmer) 0,85×, bester Verdiener auf 3 / 40 Seeds** – die
+  Ebene vor dem Camp ist keine Goldfarm mehr. Einkommen D9: 11,8 €/min
+  (600–900 min) → 20,1 €/min (1200–1500 min) mit den Maschinen.
+- Der Berg bleibt riesig: nach 20 h 1,2–4,6 %, nach 25 h 1,8–8,0 %
+  (Strategie-Median), D9 3,6 %.
+- Maschinen (gemessen): Schaufel 91 l/min, Bagger 474 l/min (5,2×), Band
+  64 l/min Nennleistung, Trommel 60 l/min Rohzulauf, Hochleistungsrinne
+  32 l/min. Im Benchmark liefen Band / Trommel bei 1500 min 83–95 % ihrer
+  Laufzeit im Rückstau und 0–5 % leer, das Unterkorn floss mit ~30 l/min:
+  **Engpass ist die Rinne** (32 l/min) – Bagger und Band liefern mehr, als die
+  Waschanlage schafft; der Rest geht (A9) auf die Halde oder der Bagger wartet
+  (D9 Median 6 h Wartezeit über 25 h). Genau das ist der Ansatz für die nächste
+  Stufe (größere Waschanlage).
+
+**Tests:** `tests/e2e/goldrush_mechanized_e2e.py` (`--only geology,prospect,
+contract,conveyor,trommel,excavator,chain,save,dev,handling,perf,mobile,shots`;
+die 24 Pflichtansichten aus Abschnitt 30 des Prompts plus Zusatzansichten mit
+`--shots DIR --tag NAME`; `--browser webkit` ohne perf / shots / mobile).
+
+
 ## Entwicklertools (QA-Modus, Prompt 5.5)
 
 - **Zugang nur serverseitig:** Umgebungsvariable `GOLDRUSH_DEV_CODE`
@@ -553,10 +837,10 @@ neue Systeme dürfen ihnen nicht widersprechen.
    Protagonisten dazu, den massiven Berg vollständig abzubauen. Gold ist das
    Mittel, um bessere Werkzeuge und Maschinen zu finanzieren – das
    übergeordnete Ziel ist: **den Berg entfernen.**
-3. **Der Berg ist endlich** (das Haufenvolumen wird bereits gemessen; nach
-   180 min sind < 1,5 % abgetragen, nach 360 min mit Schubkarre und
-   Waschrinne < 1,1 %, nach 660 min mit der ersten Automation ~1,5 % –
-   rund 1.100 m³).
+3. **Der Berg ist endlich** (seit Phase 9 als Bergauftrag sichtbar und
+   exakt gemessen – rund 1.100 m³ über dem alten Boden; nach 180 min sind
+   < 1,5 % abgetragen, nach 660 min mit der ersten Automation ~1 %, nach
+   1500 min mit dem ersten Bagger nur wenige Prozent).
 4. **Open Pit:** Nach dem vollständigen Abbau geht die Mine unter das
    ursprüngliche Bodenniveau weiter. (Technisch vorbereitet: die
    Abbaugrenze `FLOOR_Y` ist vom Ursprung des Ressourcen-Rasters

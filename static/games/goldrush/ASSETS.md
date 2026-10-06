@@ -36,7 +36,11 @@ you see and hear is generated at runtime by the game's own code:
 | Wheelbarrow (open steel tray, wooden handles, spoked wheel with tyre, legs, its load of soil / gravel) | `goldrush-mechmodels.js` (boxes, cylinders, a torus tyre with spokes; phase 7B: the load a loose heap from `goldrush-heap.js` that grows with the fill) | procedural, own code |
 | Sluice (the delivered stack of boards and rolled mat, the sloped wooden box on legs with its riffle bars over a mat, the hopper with its fill, the pipe from the water tank, running water, gravel moving down the riffles, the heavy concentrate behind the bars, the outlet and its growing tailings heap, the concentrate tray) | `goldrush-mechmodels.js`, `goldrush-sluice.js` (boxes, cylinders, a scrolling canvas-drawn flow texture, instanced pebbles; the heap a cone that grows with the tailings) | procedural, own code |
 | All sounds (digging per material, stone, gold, pickup, shovel scoop and dump, pickaxe on soil and stone, cracking / breaking boulders, swing, tool switch, the scale, a sale, the supply counter, a purchase, "not enough cash", water in the pan, the screen's rattle, a bucket set down; phase 6: hand / shovel / pickaxe per material (hand_dirt, hand_gravel, shovel_dirt, shovel_gravel, pickaxe_compact, pickaxe_stone), rock_break, material_slide, bucket_fill, wheelbarrow_dump, sluice_water (a quiet wash, repeated while you are near the running sluice), sluice_feed, sluice_cleanout; phase 7: feeder_run (hum and gravel chatter of the vibrating tray), gate_open (a steel plate scraping open, material sliding); phase 8: barrow_take, barrow_roll (the wheel's roll and a creak now and then), barrow_bump, stone_scrape (the shovel skidding on rock), rock_chip, rock_fracture) | `goldrush-audio.js` (WebAudio synthesis) | synthesised, own code - **provisional placeholders**: levels are measured (no clipping, nothing silent), but no person has judged them by ear yet |
-| HUD / shop icons (hand, shovel, pickaxe, bucket, gold pan, classifier, wheelbarrow, sluice, bulk hopper, feeder, pause, close, nugget, pouch; phase 8: the material row's bucket, wheelbarrow and concentrate) | inline SVG in `goldrush.js` / `goldrush-hud.js` | own drawings |
+| Phase 9 - the mechanised claim: the mine intake hopper (square galvanised funnel on steel posts, yellow wear strips, level gauge, fill in the colours of its loads), the belt conveyor (stringers, idlers, a cleated chevron belt drawn on canvas and scrolled, pulleys, the drive, yellow legs, a head chute; the load as flat lumps coloured by each belt cell's batch), the generator by the intake, the trommel (a perforated drum - round holes punched into a canvas texture, alpha-tested - riding rings, trunnion rollers, lifter bars, the feed box, a spray manifold with droplets, the undersize curtain, the oversize chute and pile), the high-flow sluice (the phase-6 box widened), the spoil heap and its sign | `goldrush-plantmodels.js`, `goldrush-plant.js` (boxes, cylinders, a torus, a four-sided frustum, a noise-displaced lump, polar-grid heaps with vertex colours; canvas textures) | procedural, own code |
+| The compact excavator (phase 9): rubber tracks (canvas lug texture, scrolled), sprockets, idlers, rollers, dozer blade, the house with counterweight, engine hood, exhaust, a "CLAIM 01" decal, the cab (posts, roof, glass, seat, control towers, work lights), the bent boom, the stick, hydraulic rams (barrel + chrome rod, laid out between their pins every frame), the bucket (shell, side plates, lip, teeth, its load) and the hydraulic breaker; the attachment stand | `goldrush-excavatormodel.js` (boxes, cylinders, a part-cylinder shell, circle sectors, cones; merged per joint) | procedural, own code - an authored `.glb` can replace it (below) |
+| Prospecting (phase 9): numbered survey flags (stake + pennant, the numbers painted into one canvas atlas), the contract board in the camp (an order sheet drawn on canvas: title, numbers, a hatched progress bar, the unlocks) | `goldrush-prospect.js`, `goldrush-stations.js` | procedural, own code |
+| Phase 9 sounds: conveyor_run (electric motor whine, rollers ticking), trommel_run / trommel_idle (stones tumbling in the drum, the spray), exc_engine (a small diesel's knock, harder under load), exc_tracks, exc_hydraulic (pump whine, oil hiss), exc_scoop (teeth into the ground, the load breaking off), exc_dump, exc_blow (the breaker on rock), exc_start / exc_stop | `goldrush-audio.js` (WebAudio synthesis) | synthesised, own code - provisional placeholders like the rest |
+| HUD / shop icons (hand, shovel, pickaxe, bucket, gold pan, classifier, wheelbarrow, sluice, bulk hopper, feeder, pause, close, nugget, pouch; phase 8: the material row's bucket, wheelbarrow and concentrate; phase 9: prospecting kit, conveyor, trommel, excavator, the sample bags, the excavator's bucket) | inline SVG in `goldrush.js` / `goldrush-hud.js` | own drawings |
 
 The only external code is three.js r176 (MIT), vendored in
 `static/vendor/three/` (see its README for version, source and checksum) -
@@ -68,6 +72,30 @@ time - the procedural one stays as the fallback:
 4. Register what is always visible in the GPU warm pass (like the machines in
    `ProcessingSystem.warmMachines`) so it does not upload mid-game, and check
    the draw calls (`tests/e2e/goldrush_premium_e2e.py --only perf`).
+
+### The excavator (phase 9) - an authored model behind its rig
+
+`goldrush-excavatormodel.js` builds the compact excavator in code; an authored
+`models/excavator.glb` (listed in `manifest.json`) replaces it when it has the
+rig's nodes - **named exactly**: `tracks`, `house`, `cab`, `boom`, `stick`,
+`tool` (optional: `bucket`, `breaker`, `eye` - the operator's eye point). The
+game only sets rotations on them, so the pivots must sit where the procedural
+model has them:
+
+| Node | Parent | Pivot (in its parent) | The game sets |
+|---|---|---|---|
+| `tracks` | the model root | ground, footprint centre | nothing (the root gets position, heading, pitch / roll) |
+| `house` | root | the slewing ring, 0.56 m up | `rotation.y` = swing |
+| `cab` | `house` | anywhere (left side, -Z) | nothing |
+| `boom` | `house` | boom foot `[0.66, 0.64, 0.1]` | `rotation.z` = boom angle (+ up from horizontal); the boom runs along its +X, 2.1 m to the stick pin |
+| `stick` | `boom` | `[2.1, 0, 0]` | `rotation.z` (relative to the boom); 1.45 m along +X to the tool pin |
+| `tool` | `stick` | `[1.45, 0, 0]` | `rotation.z`; the bucket's teeth at `[0.42, -0.34]`, its load at `[0.2, -0.2]` (tool frame) |
+
+Note: unlike the other models the excavator's **front is +X** (its kinematics
+run in the X-Y plane), the cab on the **-Z** side. Hydraulic rams are not
+required (the procedural ones are laid out between pins each frame). The
+bucket's load (`fill`, lumps) is added to `bucket` by the game. If a node is
+missing the procedural model stays (no error).
 
 If real recordings or models are added later, they must be CC0 or our own,
 and are listed here with source and licence.
