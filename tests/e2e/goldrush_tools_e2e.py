@@ -327,7 +327,8 @@ def foundation_and_tools(browser, base, user, shots):
     time.sleep(0.4)
     t1 = tools(A)
     tip = G(A, "() => window.__goldrush.hudState().tip")
-    belt = G(A, "() => [...document.querySelectorAll('.gr-belt .gr-slot')].map((b) => ({ t: b.dataset.tool, locked: b.classList.contains('is-locked'), active: b.classList.contains('is-active') }))")
+    # (the tool slots - since phase 9 the belt also holds the sample kit's actions, hidden until it is bought)
+    belt = G(A, "() => [...document.querySelectorAll('.gr-belt .gr-slot[data-tool]')].map((b) => ({ t: b.dataset.tool, locked: b.classList.contains('is-locked'), active: b.classList.contains('is-active') }))")
     ok("T20 a new game owns ONLY the hand; key 2 refuses the locked shovel with a quiet hint; the belt shows the locks",
        t0["owned"] == ["hand"] and t0["equipped"] == "hand" and t1["equipped"] == "hand" and tip and "noch nicht freigeschaltet" in tip
        and belt == [{"t": "hand", "locked": False, "active": True}, {"t": "shovel", "locked": True, "active": False}, {"t": "pickaxe", "locked": True, "active": False}],
@@ -855,8 +856,10 @@ def economy(browser, base, user):
       return empty / n;
     }""")
     hand_share = sum(r["finds"] for r in runs) / max(1, sum(r["digs"] for r in runs))
-    ok("T16 gold stays scarce (not generous): >= 88 % of the mountain's 1 cm resource slices hold nothing; < 12 % of hand actions bring any gold",
-       nulls >= 0.88 and hand_share < 0.12, f"empty slices {nulls * 100:.1f} %, actions with a find {hand_share * 100:.1f} %")
+    # (phase 9: geology 2 without the ground-level jackpot carries the gold in the ground as a whole - GEO.scale 1.9 -
+    # a few more slices hold a trace; the hand still finds something in fewer than 1 of 8 strokes)
+    ok("T16 gold stays scarce (not generous): >= 85 % of the mountain's 1 cm resource slices hold nothing; < 12 % of hand actions bring any gold",
+       nulls >= 0.85 and hand_share < 0.12, f"empty slices {nulls * 100:.1f} %, actions with a find {hand_share * 100:.1f} %")
     # T18: fair start on many seeds, the worlds still differ
     fair = []
     for seed in range(2001, 2021):
@@ -906,7 +909,7 @@ def mobile(browser, base, user, shots):
     M.tap(".gr-tool")
     time.sleep(0.2)
     open1 = G(M, "() => document.querySelector('.gr-belt').classList.contains('is-open')")
-    slots = G(M, "() => [...document.querySelectorAll('.gr-belt .gr-slot')].map((b) => { const r = b.getBoundingClientRect(); return { t: b.dataset.tool, locked: b.classList.contains('is-locked'), h: Math.round(r.height), inside: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight }; })")
+    slots = G(M, "() => [...document.querySelectorAll('.gr-belt .gr-slot[data-tool]')].map((b) => { const r = b.getBoundingClientRect(); return { t: b.dataset.tool, locked: b.classList.contains('is-locked'), h: Math.round(r.height), inside: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight }; })")
     M.tap(".gr-belt [data-tool=shovel]")
     time.sleep(0.5)
     still = tools(M)["equipped"]

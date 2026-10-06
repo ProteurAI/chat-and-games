@@ -596,7 +596,8 @@ def dev_pack(browser, shots):
         info = dict(zip(A.locator(".gr-dev-info dt").all_inner_texts(), A.locator(".gr-dev-info dd").all_inner_texts()))
         shot(A, shots, "dev_phase7")
         ok("DEV hopper 25 %, START, downstream full -> the feeder waits (backpressure), the automation debug shows it; the ledger still balances",
-           b25 == 90000 and pf["feeder"]["mode"] == "on" and pf["feeder"]["status"]["key"] == "blocked" and "Dosierer" in info and "Vorratstrichter" in info and ledger_ok(A)[0], str(info)[:200])
+           b25 == 90000 and pf["feeder"]["mode"] == "on" and pf["feeder"]["status"]["key"] == "blocked" and "Dosierer" in info and "Vorratstrichter" in info and ledger_ok(A)[0],
+           f"bulk {b25} ml, feeder {pf['feeder']['mode']} / {pf['feeder']['status']['key']}, info keys {[k for k in info if k in ('Dosierer', 'Vorratstrichter')]}, ledger {ledger_ok(A)[0]}")
         DEV.tab(A, "world")
         DEV.cmd(A, "world.tp.automation")
         pos = G(A, f"() => {GR}.positionCheck()")
