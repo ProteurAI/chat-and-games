@@ -641,6 +641,9 @@ button.gr-tool { border: none; font-family: inherit; cursor: default; }
 .gr-nb-head { font-weight: 600; }
 .gr-nb-data { margin-top: 2px; color: #4e3b27; }
 .gr-nb-empty { margin: 4px 2px; font-size: 13px; color: #c9b796; line-height: 1.45; }
+/* GoldRush 9.1: collect the flags / reset prospecting */
+.gr-nb-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(90, 70, 50, 0.35); }
+.gr-nb-actions .ghost-btn { min-height: 44px; }
 /* ---------- phase 9: the excavator's cab (the belt / tool chip / hint rest; a second action on phones) ---------- */
 .gr-cab .gr-belt, .gr-cab .gr-tool, .gr-cab .gr-hint { display: none; }
 .gr-alt-btn {

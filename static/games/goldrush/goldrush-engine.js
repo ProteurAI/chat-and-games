@@ -656,7 +656,7 @@ export class GoldRushGame {
     this.hands.contact("ok", r.material, r.removedMassKg);
     this.effects.impact(hit, r.material, this.tools.def.id, this._toolDir(), 0.45);
     this.audio.play("bucket_fill", { pan, dist, strength: 0.45 });
-    if (t.ok) this.hud.message(`Probe ${t.bag.n} im Beutel`, `${(t.bag.batch.volumeMl / 1000).toFixed(2).replace(".", ",")} l · ${t.bag.place} · Beutel ${pg.count} / ${BAGS}`);
+    if (t.ok) this.hud.message(`Probe ${t.bag.n} im Beutel`, `${(t.bag.batch.volumeMl / 1000).toFixed(2).replace(".", ",")} l · ${t.bag.place} · Beutel ${pg.count} / ${BAGS} · [F] hier: Fähnchen ${t.bag.n}`);
     if (t.ok && pg.stats.samples === 1) this.hud.tip("sample-first", "Am Waschtrog [E]: die Probe schnell auswaschen – das Ergebnis steht dann im Notizbuch [N].", 8);
     this.lastStroke = { tool: "sample", kind: "dig", material: r.material, massKg: +r.removedMassKg.toFixed(4), finds: 0, cents: 0, sample: t.ok ? t.bag.n : 0 };
     this.dirty = true;
@@ -691,11 +691,34 @@ export class GoldRushGame {
     }
     if (!h || h.boulder != null) { this.hud.tip("flag-none", "Zum Abstecken auf den Boden zielen.", 4); return null; }
     const r = pg.toggleFlag(h.x, h.z);
-    if (r.kind === "full") this.hud.tip("flags-full", `Alle ${MAX_FLAGS} Fähnchen stecken schon – [F] an einem Fähnchen zieht es wieder heraus.`, 5);
-    else this.hud.message(r.kind === "set" ? `Fähnchen ${r.n} gesteckt` : `Fähnchen ${r.n} gezogen`, r.kind === "set" ? "Proben daneben tragen seine Nummer im Notizbuch." : `${pg.flags.length} / ${MAX_FLAGS} stecken`);
+    if (r.kind === "full") this.hud.tip("flags-full", `Alle ${MAX_FLAGS} Fähnchen stecken schon – [F] an einem Fähnchen zieht es wieder heraus, im Notizbuch alle einsammeln.`, 5);
+    else if (r.kind === "set") this.hud.message(`Fähnchen ${r.label} gesteckt`, r.flag === "sample" ? `Markiert die Stelle von Probe ${r.n}.` : "Freies Fähnchen (keine Probe hier) – zum Abstecken.");
+    else this.hud.message(`Fähnchen ${r.label} gezogen`, `${pg.flags.length} / ${MAX_FLAGS} stecken`);
     if (r.kind !== "full") this.audio.play("swap", { dist: 0.6, strength: 0.5 });
     this.dirty = true;
     return r;
+  }
+
+  // GoldRush 9.1 - the notebook's actions: every flag out of the ground (the notebook stays) ...
+  collectFlags() {
+    const pg = this.processing.prospect;
+    if (!pg) return null;
+    const n = pg.collectFlags();
+    if (n) this.audio.play("swap", { dist: 0.6, strength: 0.5 });
+    this.dirty = true;
+    this.save("prospect");
+    return { ok: true, collected: n };
+  }
+
+  // ... and the whole prospecting record anew: notebook, numbering, flags (the next sample is #1). The ground
+  // the samples used stays used, unwashed bags keep their material (goldrush-prospect.js reset)
+  resetProspect() {
+    const pg = this.processing.prospect;
+    if (!pg) return null;
+    const r = pg.reset(this.processing.pan.sample || null);
+    this.dirty = true;
+    this.save("prospect");
+    return { ok: true, ...r };
   }
 
   shopView() {

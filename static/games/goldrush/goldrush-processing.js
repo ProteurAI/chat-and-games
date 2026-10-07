@@ -1093,7 +1093,8 @@ export class ProcessingSystem {
     load.stage = STAGE.RAW;
     this.pan.tool = "pan";
     this.pan.batch = load;
-    this.pan.sample = { n: bag.n, place: bag.place, depth: bag.depth, mat: bag.mat, flag: bag.flag, t: bag.t || 0, ml: load.volumeMl, g: load.massG };
+    // (its spot too - GoldRush 9.1: a flag can be set at a washed sample's place and carries its number)
+    this.pan.sample = { n: bag.n, place: bag.place, depth: bag.depth, mat: bag.mat, flag: bag.flag, t: bag.t || 0, ml: load.volumeMl, g: load.massG, x: bag.x, z: bag.z };
     this.pan.progress = 0;
     this._fills();
     this.startWork("pan");
