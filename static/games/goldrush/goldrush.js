@@ -1368,6 +1368,8 @@ class GoldRushShell {
       sampleKey: () => g.sample(),
       flagNow: () => g.flagAtCrosshair(),
       flagAt: (x, z) => (g.processing.prospect ? g.processing.prospect.toggleFlag(x, z) : null),
+      // GoldRush 9.1: the camp's fill told once (economy.flags.fillSeen)
+      fillSeen: () => !!g.economy.flags.fillSeen,
       prospect: () => {
         const pg = g.processing.prospect;
         if (!pg) return null;

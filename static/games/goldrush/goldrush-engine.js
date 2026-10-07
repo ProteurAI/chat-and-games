@@ -185,6 +185,9 @@ export class GoldRushGame {
     }
     // phase 9: a mine dug in geology 1 now lies on geology 2 (goldrush-save.js) - said once
     const geo = this.doc.geology || (this.doc.geology = { version: GEOLOGY_VERSION });
+    // GoldRush 9.1: a mine of geology 2 follows the recalibrated ground from here on (the untouched ground only -
+    // what was dug stays dug, what sits in a container keeps its gold); no notice, nothing moved
+    if (geo.version < GEOLOGY_VERSION && geo.version >= 2) geo.version = GEOLOGY_VERSION;
     if (geo.from && !geo.noted && !this.loadNotice) {
       this.loadNotice = "Der Claim wurde neu vermessen: alte Flussrinnen im Untergrund, der Lagerplatz am Camp ist aufgeschüttet. Was du schon abgebaut hast und alles in Behältern bleibt genau so.";
       geo.noted = true;
@@ -1631,6 +1634,15 @@ export class GoldRushGame {
     this.ui.onDig && this.ui.onDig();
     // a mineralised streak: told once per streak; the shovel's limit in it now and then
     if (r.streak > 0.3) this._streakSeen(hit);
+    // GoldRush 9.1: the camp's apron is fill - next to no gold (on purpose); said once per mine, then a short
+    // reminder now and then while you keep digging in it (the natural ground starts about half a metre down)
+    const fld = this.terrain.field;
+    if (fld.inFill && fld.inFill(hit.x, hit.y, hit.z, this.terrain.getBaseHeightAt(hit.x, hit.z))) {
+      if (!this.economy.flags.fillSeen) {
+        this.economy.flags.fillSeen = true;
+        this.hud.message("Aufgeschütteter Lagerplatz", "Verdichteter Fremdboden – hier liegt kaum Gold. Gewachsener Boden beginnt etwa einen halben Meter tiefer; der Berg lohnt sich.");
+      } else this.hud.tip("camp-fill", "Lagerplatz-Aufschüttung: kaum Gold.", 120);
+    }
     if (r.cemented && def.id !== "pickaxe") this.hud.tip("cemented", "Verfestigter Kies – die Schaufel rutscht ab. Erst mit der Spitzhacke lockern, dann schaufeln.", 12);
     // into the bucket / barrow next to you (with its fine gold and its pieces - washing gets them
     // out), or spoil: then its finds come out of the ground now (pending), shown (loot), money on pickup
