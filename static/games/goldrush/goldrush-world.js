@@ -232,6 +232,7 @@ export class GoldRushWorld {
     this.disposables = [];
     this.colliders = [];
     this.decks = [];               // phase 7: walkable timber (a loading ramp, a platform) - see addDeck
+    this.heightSources = [];       // Prompt 10: more walkable surfaces on the ground (stockpiles) - see addHeightSource
     const scene = (this.scene = new THREE.Scene());
     scene.fog = new THREE.FogExp2(FOG_COLOR, 0.0062);
     scene.background = new THREE.Color(FOG_COLOR);
@@ -1153,10 +1154,23 @@ export class GoldRushWorld {
   }
 
   groundAt(x, z) {
+    const g = this.groundBelowAt(x, z);
+    if (!this.heightSources.length) return g;
+    let h = g;
+    for (const s of this.heightSources) { const y = s.heightAt(x, z); if (y > h) h = y; }
+    return h;
+  }
+
+  // the ground itself (terrain / camp ground and the decks) - what a pile lies on
+  groundBelowAt(x, z) {
     const t = this.terrain;
     const g = x >= t.x0 && x <= t.x0 + t.size && z >= t.z0 && z <= t.z0 + t.size ? t.getHeightAt(x, z) : this.groundHeightAt(x, z);
     return this.decks.length ? Math.max(g, this.deckAt(x, z)) : g;
   }
+
+  // Prompt 10: a surface lying on the ground ({ heightAt(x, z) -> world y or -Infinity }) - a stockpile
+  addHeightSource(s) { if (!this.heightSources.includes(s)) this.heightSources.push(s); return s; }
+  removeHeightSource(s) { const i = this.heightSources.indexOf(s); if (i >= 0) this.heightSources.splice(i, 1); }
 
   /**
    * Walkable timber on the claim (phase 7): an axis-aligned rectangle

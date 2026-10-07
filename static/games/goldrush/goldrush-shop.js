@@ -168,6 +168,13 @@ export const SHOP_ITEMS = [
     text: "Ein Anbauhammer für den Bagger (am Bagger gegen den Löffel tauschen): bricht festen Fels und Felsbrocken in Geröll, das der Löffel dann aufnimmt.",
     requires: { equipment: ["excavator"], mountainPct: 2.0 },
   },
+  // Prompt 10 - the working mine: logistics and processing. The excavator digs onto the raw stockpile, the
+  // loader carries it to the plant; the plant grows to keep up (prices / gates: the A10-E10 benchmark)
+  {
+    id: "loader", kind: "equipment", label: "Kompakt-Radlader", price: 280000,
+    text: "Ein knickgelenkter Radlader mit einer Schaufel von gut 250 Litern: holt das Rohmaterial vom Haufen, den der Bagger aufschüttet, und kippt es in den Aufgabetrichter – oder räumt Überkorn und Tailings weg. Er gräbt keinen gewachsenen Berg; das bleibt die Arbeit des Baggers.",
+    requires: { equipment: ["excavator"], mountainPct: 2.3 },
+  },
 ];
 
 export const shopItem = (id) => SHOP_ITEMS.find((i) => i.id === id) || null;
@@ -175,7 +182,8 @@ export const upgradesFor = (tool) => SHOP_ITEMS.filter((i) => i.kind === "upgrad
 export const EQUIPMENT = SHOP_ITEMS.filter((i) => i.kind === "equipment").map((i) => i.id);
 const NEED_TEXT = { shovel: "Schaufel besitzen", pickaxe: "Spitzhacke besitzen", bucket: "Eimer besitzen", pan: "Goldpfanne besitzen", classifier: "Sieb besitzen",
   wheelbarrow: "Schubkarre besitzen", sluice: "Waschrinne besitzen", bulkhopper: "Vorratstrichter besitzen", feeder: "Dosierer besitzen",
-  prospectkit: "Probenset besitzen", conveyor: "Förderband besitzen", trommel: "Trommelsieb besitzen", excavator: "Kompaktbagger besitzen" };
+  prospectkit: "Probenset besitzen", conveyor: "Förderband besitzen", trommel: "Trommelsieb besitzen", excavator: "Kompaktbagger besitzen", loader: "Radlader besitzen",
+  washplant: "Waschanlage besitzen" };
 const pct = (v) => v.toFixed(v < 10 ? 2 : 1).replace(".", ",").replace(/,?0+$/, "").replace(/,$/, "");
 
 /**

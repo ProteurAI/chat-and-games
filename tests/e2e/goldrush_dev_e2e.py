@@ -681,6 +681,94 @@ def mobile(browser, base, user, shots):
 
 # ======================================================================
 
+# ======================================================================
+# PROD (Prompt 10, section 0): the live path - no test hooks at all
+# ======================================================================
+
+def production_path(p, base, shots):
+    """GoldRush's developer tools the way a tester on the live server gets there: a browser that does not
+    announce automation (navigator.webdriver false -> the game exposes no test hooks), only clicks in the real
+    UI - games library -> GoldRush -> Neue Mine -> pause -> Entwicklertools -> code -> panel -> Cash / Items /
+    Presets - checked on what the screen shows"""
+    b = p.chromium.launch(args=GPU_ARGS + ["--disable-blink-features=AutomationControlled"])
+    user = login(base, "DevLive")
+    ctx = b.new_context(viewport={"width": 1366, "height": 768})
+    ctx.add_init_script(f"localStorage.setItem('instachat_token', {json.dumps(user['token'])});"
+                        f"localStorage.setItem('instachat_user', {json.dumps(json.dumps(user['user']))});")
+    P = ctx.new_page()
+    errs = []
+    P.on("pageerror", lambda e: errs.append(str(e)))
+    P.goto(base + "/")
+    P.wait_for_function("() => typeof ws !== 'undefined' && ws && ws.readyState === 1", timeout=15000)
+    gr_open(P, via_library=True)
+    P.wait_for_selector(".gr-start:not([hidden]) [data-act=start-new]", timeout=60000)
+    P.click(".gr-start [data-act=start-new]")
+    P.wait_for_selector(".gr-hud:not([hidden])", timeout=60000)
+    P.wait_for_function("() => document.querySelector('.gr-loading').hidden", timeout=60000)
+    env = P.evaluate("() => ({ webdriver: navigator.webdriver, hooks: typeof window.__goldrush })")
+    # the pause card (desktop: the game waits for a click - that IS the pause menu with the entry)
+    if not P.is_visible(".gr-pause"):
+        P.click(".gr-hud [data-act=settings]")
+    entry = ".gr-pause [data-act=dev]" if P.is_visible(".gr-pause [data-act=dev]") else ".gr-panel [data-act=dev]"
+    P.wait_for_selector(entry, timeout=8000)
+    P.click(entry)
+    P.wait_for_selector(".gr-dev-modal:not([hidden]) #gr-dev-code", timeout=10000)
+    diag = P.inner_text(".gr-dev-modal [data-role=m-text]")
+    if shots:
+        P.screenshot(path=str(shots / "gr55_prod_diagnosis.png"))
+    P.fill("#gr-dev-code", "falsch-123")
+    P.keyboard.press("Enter")
+    P.wait_for_function("() => document.querySelector('[data-role=m-error]').textContent.length > 0", timeout=8000)
+    P.wait_for_function("() => /Fehlversuche: 1 von/.test(document.querySelector('.gr-dev-modal [data-role=m-text]').textContent)", timeout=8000)
+    after_wrong = P.inner_text(".gr-dev-modal [data-role=m-text]")
+    if shots:
+        P.screenshot(path=str(shots / "gr55_prod_wrong.png"))
+    P.check("[data-role=m-show]")
+    shown = P.evaluate("() => document.querySelector('#gr-dev-code').type")
+    P.fill("#gr-dev-code", CODE)
+    P.keyboard.press("Enter")
+    P.wait_for_selector(".gr-dev:not(.is-locked) .gr-dev-card", timeout=10000)
+
+    def act(sel, confirm=False):
+        P.evaluate("() => { const t = document.querySelector('[data-role=toast]'); if (t) t.textContent = ''; }")
+        P.click(sel)
+        if confirm:
+            try:
+                P.wait_for_selector(".gr-dev-modal:not([hidden]) [data-dev-modal=ok]", timeout=2500)
+                P.click("[data-dev-modal=ok]")
+            except Exception:
+                pass
+        P.wait_for_function("() => { const t = document.querySelector('[data-role=toast]'); return t && t.textContent.length > 0; }", timeout=15000)
+        return P.inner_text("[data-role=toast]")
+
+    def tab_(cat):
+        P.click(f".gr-dev-tab[data-dev-cat={cat}]")
+        P.wait_for_selector(f".gr-dev-tab[data-dev-cat={cat}][aria-selected=true]", timeout=4000)
+
+    tab_("economy")
+    cash = act("[data-dev-cmd='economy.add100000']")
+    tab_("equipment")
+    item = act("[data-dev-row='equipment.items|shovel|give']")
+    tab_("quick")
+    preset = act("[data-dev-cmd='quick.phase9']", confirm=True)
+    if shots:
+        P.screenshot(path=str(shots / "gr55_prod_panel.png"))
+    P.click("[data-dev=close]")
+    P.wait_for_function("() => document.querySelector('.gr-dev').hidden", timeout=8000)
+    money = P.inner_text(".gr-money")
+    ok("PROD no test hooks on this path (navigator.webdriver false, no window.__goldrush): only the real UI", env["webdriver"] is False and env["hooks"] == "undefined", str(env))
+    ok("PROD the code dialog explains itself in one screenshot: account, page, server, code source, account list, attempts, versions, next step",
+       all(s in diag for s in ("DIAGNOSE", "Angemeldet als DevLive", "Seite geöffnet über:", "Antwortender Server:", "Code auf dem Server: Umgebungsvariable GOLDRUSH_DEV_CODE",
+                               "Kontoliste GOLDRUSH_DEV_USER_IDS", "Fehlversuche: 0 von 6", "Version: Client v4 = Server v4", "→ Nächster Schritt: Code eingeben")), diag[:400])
+    ok("PROD a wrong code: 'Code nicht gültig.' and the checklist counts the attempt (Fehlversuche: 1 von 6) - 'Code anzeigen' shows what was typed",
+       "Fehlversuche: 1 von 6" in after_wrong and "Groß-/Kleinschreibung" in after_wrong and shown == "text", after_wrong[-200:])
+    ok("PROD Pause -> Entwicklertools -> code -> panel -> Cash (+ € 1.000) -> Items (Schaufel) -> Preset PHASE 9 - all through the real UI",
+       "1.000,00" in cash and item and preset and money.strip() not in ("", "€ 0,00"), f"cash {cash!r} item {item!r} preset {preset[:60]!r} HUD {money!r}")
+    ok("PROD no page errors on the live path", not errs, str(errs[:3]))
+    ctx.close()
+    b.close()
+
+
 def main():
     shots = None
     if "--shots" in sys.argv:
@@ -700,6 +788,8 @@ def main():
             if engine == "chromium":
                 mobile(browser, base, login(base, "DevMobil"), shots)
             browser.close()
+            if engine == "chromium":
+                production_path(p, base, shots)
     finally:
         on.terminate()
         off.terminate()

@@ -23,6 +23,11 @@
 //   SPOIL      the spoil heap NW of the mountain (comes with the excavator): where
 //              waste goes - the overburden you do not want to wash. It is
 //              booked like tailings (gold included - nothing vanishes).
+//   Prompt 10: the oversize pile and the spoil heap are real stockpiles
+//   (goldrush-stockpile.js: a height field that settles, its material kept
+//   layer by layer) - the trommel drops its oversize onto the OVERSIZE pile
+//   (it waits once the pile reaches the chute), the spoil heap is the SPOIL
+//   pile; a save of phase 9 brings both over (nothing booked twice).
 //
 // Everything runs only while the game runs (frames, or the simulation hook);
 // the processing ledger (goldrush-processing.js) counts every holder here.
@@ -40,7 +45,8 @@ export const BELT_SPEED = 0.42;                      // m/s -> ~64 l/min
 export const TROMMEL_LPM = 60;
 export const TROMMEL_STEP_ML = 1000;
 export const TROMMEL_FEED_ML = 30000;                // the feed box and what tumbles in the drum
-export const OVERSIZE_MAX_ML = 7000000;              // the pile (north along the fence) reaches the chute at ~7 m3: the trommel waits
+export const OVERSIZE_MAX_ML = 7000000;              // phase 9's pile reached the chute at ~7 m3 (Prompt 10: the real pile's height decides)
+export const CHUTE_H = 1.25;                          // m: the oversize pile up to the chute's end -> the trommel waits
 export const CONVEYOR_KIT = { x: -15.95, z: -11.45 };
 export const TROMMEL_KIT = { x: -17.7, z: -4.75 };
 const BUILD_S = 3.2;
@@ -367,7 +373,11 @@ export class Trommel {
     const s = saved || {};
     this.state = s.state === "ready" ? "ready" : "delivered";
     this.feed = new MaterialBuffer({ capacityMl: TROMMEL_FEED_ML, stage: STAGE.RAW, layers: s.feed && s.feed.layers });
-    this.oversize = new MaterialBuffer({ capacityMl: OVERSIZE_MAX_ML, stage: STAGE.RAW, layers: s.oversize && s.oversize.layers });
+    // Prompt 10: the oversize lies on the OVERSIZE stockpile; a phase-9 save's oversize buffer moves onto it once
+    this._none = new MaterialBuffer({ capacityMl: 0, stage: STAGE.RAW });
+    const legacy = s.oversize && Array.isArray(s.oversize.layers) ? new MaterialBuffer({ capacityMl: 1e12, stage: STAGE.RAW, layers: s.oversize.layers }) : null;
+    const pile = ctx.pile ? ctx.pile() : null;
+    if (legacy && pile) for (const l of legacy.layers.splice(0)) pile.restore(l, OVERSIZE.x, OVERSIZE.z - 0.6, 0.9);
     this.acc = Number.isFinite(s.acc) ? Math.max(0, Math.min(TROMMEL_STEP_ML, s.acc)) : 0;
     const st = s.stats || {};
     this.stats = { inMl: int(st.inMl), underMl: int(st.underMl), overMl: int(st.overMl), underUg: int(st.underUg), overUg: int(st.overUg), runS: int(st.runS), recoveredMl: int(st.recoveredMl),
@@ -400,7 +410,12 @@ export class Trommel {
   }
 
   get installed() { return this.state === "ready"; }
+  get pileRef() { return this.ctx.pile ? this.ctx.pile() : null; }
+  // the oversize: the pile's material (Prompt 10)
+  get oversize() { const p = this.pileRef; return p ? p.buffer : this._none; }
   get overMl() { return this.oversize.volumeMl; }
+  // the pile right under the chute's end reaches up to it
+  get pileAtChute() { const p = this.pileRef; return !p || p.thickAt(OVERSIZE.x, OVERSIZE.z) >= CHUTE_H || p.room < TROMMEL_STEP_ML; }
 
   _under() { const bk = this.ctx.bulk(); return bk && bk.installed ? bk.buffer : null; }
 
@@ -428,14 +443,18 @@ export class Trommel {
       if (this.feed.volumeMl <= 0) { this.why = "starved"; break; }
       const under = this._under();
       if (!under || roomOf(under) < TROMMEL_STEP_ML) { this.why = "blocked"; break; }
-      if (this.oversize.room < TROMMEL_STEP_ML) { this.why = "pile"; break; }
+      if (this.pileAtChute) { this.why = "pile"; break; }
       const part = this.feed.take(TROMMEL_STEP_ML, this.ctx.nextId(), TROMMEL_STEP_ML);
       const vol = part.volumeMl;
       const { under: u, over: o } = trommelSplit(part, [this.ctx.nextId(), this.ctx.nextId()]);
       this.stats.underMl += u.volumeMl; this.stats.underUg += u.goldUg;
       this.stats.overMl += o.volumeMl; this.stats.overUg += o.goldUg;
       putInto(under, u);
-      if (!o.empty) this.oversize.put(o);
+      // the oversize slides down the chute and lands a little apart every time (stones roll on)
+      if (!o.empty) {
+        const j = this._j = ((this._j || 0) + 1) % 997, a = j * 2.39996, rr = 0.15 + 0.45 * ((j * 0.618) % 1);
+        this.pileRef.dump(o, OVERSIZE.x + Math.cos(a) * rr * 0.6, OVERSIZE.z - 0.35 + Math.sin(a) * rr, 0.4);
+      }
       const bk = this.ctx.bulk();
       if (bk) bk.stats.inMl += u.volumeMl;
       this.acc -= TROMMEL_STEP_ML;
@@ -458,15 +477,23 @@ export class Trommel {
     return { key: "moving", text: `siebt · ${TROMMEL_LPM} l/min`, lamp: "on" };
   }
 
-  // recovering the oversize: up to maxMl into a holder (a barrow, the excavator's bucket) -> ml
+  // recovering the oversize: up to maxMl into a holder (a barrow, the excavator's bucket) - off the top of the
+  // pile (the loader takes it with its bucket from the pile itself) -> ml
   takeOversize(holder, maxMl = Infinity) {
-    const ml = transfer(this.oversize, holder, maxMl, this.ctx.nextId());
-    if (ml > 0) { this.stats.recoveredMl += ml; this._pileSig = null; }
+    const p = this.pileRef;
+    if (!p || p.volumeMl <= 0) return 0;
+    const pk = p.peak(), want = Math.min(maxMl, roomOf(holder));
+    const got = p.cut(pk.x - 0.6, pk.z, 1, 0, 0.55, 1.2, pk.y - 0.45, want);
+    if (got.volumeMl <= 0) return 0;
+    const ml = got.volumeMl;
+    putInto(holder, got);
+    this.stats.recoveredMl += ml;
     return ml;
   }
 
-  goldUg() { return this.feed.goldUg + this.oversize.goldUg; }
-  massG() { return this.feed.massG + this.oversize.massG; }
+  // the ledger: the feed box (the pile counts as a stockpile)
+  goldUg() { return this.feed.goldUg; }
+  massG() { return this.feed.massG; }
 
   // ---- visuals
 
@@ -474,6 +501,7 @@ export class Trommel {
     const on = this.installed || this.build >= 0;
     this.kit.visible = this.state === "delivered" && this.build < 0;
     this.model.visible = on;
+    this.pile.visible = false;                       // (the phase-9 cone: the real pile draws itself)
     if (this.installed && !this._merged) {
       const u = this.model.userData, keep = new Set([u.lamp]);
       this._merged = [...mergeStatic(this.THREE, this.model, u.parts.filter((p) => !keep.has(p) && p.parent === this.model)),
@@ -481,29 +509,6 @@ export class Trommel {
         ...mergeStatic(this.THREE, u.rotor, u.rotorParts)];
       if (this.ctx.warm) this.ctx.warm();
     }
-    this._pileSig = null;
-    this._pile();
-  }
-
-  // the oversize pile: grows from the chute's foot; a collider once it is in the way
-  _pile() {
-    const v = this.oversize.volumeMl, sig = Math.round(v / 20000);
-    if (sig === this._pileSig) return;
-    this._pileSig = sig;
-    this.pile.visible = v > 3000;
-    const cols = this.world.colliders, pc = this.pileCollider, i = cols.indexOf(pc);
-    if (!this.pile.visible) { if (i >= 0) cols.splice(i, 1); return; }
-    // round up to r 1.05, then higher (1.3 m), then it grows north along the fence (the control post is
-    // south of it; the ramp east of it) - an elongated pile, V = K r rz h - and at last higher again, up to the chute
-    const m3v = v / 1e6;
-    let r = Math.cbrt(m3v / (HEAP_K * 0.55)), h = 0.55 * r, rz;
-    if (r > 1.05) { r = 1.05; h = m3v / (HEAP_K * r * r); }
-    rz = r;
-    if (h > 1.3) { h = 1.3; rz = Math.min(3.5, m3v / (HEAP_K * r * h)); if (rz >= 3.5) h = m3v / (HEAP_K * r * rz); }
-    this.pile.scale.set(r, h, rz);
-    this.pile.position.z = OVERSIZE.z - (rz - r);
-    if (h > 0.35) { pc.x = OVERSIZE.x; pc.z = this.pile.position.z; pc.hw = r * 0.7; pc.hd = rz * 0.75; if (i < 0) cols.push(pc); }
-    else if (i >= 0) cols.splice(i, 1);
   }
 
   update(dt, near, onSound) {
@@ -558,7 +563,6 @@ export class Trommel {
       }
       ov.instanceMatrix.needsUpdate = true; ov.instanceColor.needsUpdate = true;
     }
-    this._pile();
     // the ground under it gets wet with the hours it has run (and stays so)
     const wk = this.installed ? Math.min(1, this.stats.runS / 120) : 0;
     this.wet.visible = wk > 0.02;
@@ -591,7 +595,7 @@ export class Trommel {
   }
 
   serialize() {
-    return { state: this.build >= 0 ? "ready" : this.state, feed: this.feed.serialize(), oversize: this.oversize.serialize(), acc: Math.round(this.acc),
+    return { state: this.build >= 0 ? "ready" : this.state, feed: this.feed.serialize(), acc: Math.round(this.acc),
       stats: { ...this.stats, runS: Math.round(this.stats.runS), blockedS: Math.round(this.stats.blockedS), starvedS: Math.round(this.stats.starvedS) } };
   }
 
@@ -607,59 +611,69 @@ export class Trommel {
 // SPOIL HEAP: where the waste goes (booked like tailings)
 // =====================================================================================
 export class SpoilHeap {
-  /** @param saved doc.processing.spoil (v8) or null; ctx { ledger } */
+  /**
+   * Prompt 10: the SPOIL stockpile behind phase 9's interface (dump / dumpFrom / over / radius / ml).
+   * @param saved doc.processing.spoil: phase 9 { ml, g, ug, loads } (brought onto the pile once, its tailings
+   *              booking kept) or v9 { v: 9, loads }; ctx { ledger, pile() }
+   */
   constructor(THREE, scene, world, pm, saved, ctx, signTex) {
     this.scene = scene;
     this.world = world;
     this.ctx = ctx;
     const s = saved || {};
-    this.ml = int(s.ml); this.g = int(s.g); this.ug = int(s.ug); this.loads = int(s.loads);
-    this.model = pm.spoilHeap();
+    this.loads0 = int(s.loads);
+    const pile = this.pile;
+    if (s.v !== 9 && int(s.ml) > 0 && pile) {
+      // phase 9 kept totals only: one layer of that volume / mass / gold (already booked as tailings)
+      const b = new MaterialBatch({ stage: STAGE.TAILINGS, source: "spoil" });
+      b.volumeMl = int(s.ml); b.comp = [int(s.g), 0, 0, 0]; b.fineUg = int(s.ug);
+      pile.restore(b, SPOIL.x, SPOIL.z, 1.4);
+    }
+    this.model = pile ? pile.load.surface : pm.spoilHeap();
     this.sign = pm.spoilSign(signTex);
-    scene.add(this.model, this.sign);
-    this.collider = { type: "box", x: SPOIL.x, z: SPOIL.z, hw: 0, hd: 0, rot: 0 };
+    scene.add(this.sign);
     this.signCollider = { type: "circle", x: SPOIL_SIGN.x, z: SPOIL_SIGN.z, r: 0.12 };
     world.colliders.push(this.signCollider);
-    this._fit();
   }
 
-  get radius() { return Math.max(1.2, heapSize(this.ml, 3.2, 0.55, 4.2).r); }
+  get pile() { return this.ctx.pile ? this.ctx.pile() : null; }
+  get ml() { const p = this.pile; return p ? p.volumeMl : 0; }
+  get g() { const p = this.pile; return p ? p.buffer.massG : 0; }
+  get ug() { const p = this.pile; return p ? p.buffer.goldUg : 0; }
+  get loads() { const p = this.pile; return this.loads0 + (p ? p.stats.dumps : 0); }
+  get radius() { const p = this.pile; return p ? Math.max(1.2, p.radius) : 1.2; }
 
-  // waste in: everything in it leaves the containers for good (tailings in the ledger)
-  dump(batch) {
-    if (!batch || batch.empty) return 0;
-    const L = this.ctx.ledger, v = batch.volumeMl;
-    L.tailUg += batch.goldUg; L.tailG += batch.massG; L.tailMl += batch.volumeMl;
-    this.ml += batch.volumeMl; this.g += batch.massG; this.ug += batch.goldUg; this.loads++;
-    batch.volumeMl = 0; batch.comp = [0, 0, 0, 0]; batch.fineUg = 0; batch.finds = [];
-    this._fit();
-    return v;
+  // where the next load lands: a little apart every time (a broad heap, not a cone)
+  _spot() {
+    const j = this._j = ((this._j || 0) + 1) % 997, a = j * 2.39996, r = 0.4 + 1.6 * ((j * 0.618) % 1);
+    return { x: SPOIL.x + Math.cos(a) * r, z: SPOIL.z + Math.sin(a) * r * 0.8 };
+  }
+
+  // waste in: everything in it leaves the containers for good (booked as tailings by the pile)
+  dump(batch, at = null) {
+    const p = this.pile;
+    if (!p || !batch || batch.empty) return 0;
+    const q = at || this._spot();
+    return p.dump(batch, q.x, q.z, 0.6);
   }
 
   // a holder's content (up to maxMl) onto the heap -> ml
-  dumpFrom(holder, maxMl = Infinity) {
-    const tmp = { batch: new MaterialBatch({ stage: STAGE.TAILINGS }), capacityMl: maxMl };
-    transfer(holder, tmp, maxMl, 0);
-    return this.dump(tmp.batch);
+  dumpFrom(holder, maxMl = Infinity, at = null) {
+    const p = this.pile;
+    if (!p) return 0;
+    const q = at || this._spot();
+    return p.dumpFrom(holder, maxMl, q.x, q.z, 0.6);
   }
 
   // is (x, z) over the heap (where a load can be tipped)?
   over(x, z, margin = 0.6) { return Math.hypot(x - SPOIL.x, z - SPOIL.z) <= this.radius + margin; }
 
-  _fit() {
-    const { r, h } = heapSize(this.ml, 3.2, 0.55, 4.2);
-    this.model.visible = this.ml > 5000;
-    this.model.scale.set(r, h, r);
-    const cols = this.world.colliders, i = cols.indexOf(this.collider);
-    if (h > 0.4) { this.collider.hw = this.collider.hd = r * 0.62; if (i < 0) cols.push(this.collider); }
-    else if (i >= 0) cols.splice(i, 1);
-  }
-
-  serialize() { return { ml: this.ml, g: this.g, ug: this.ug, loads: this.loads }; }
+  serialize() { return { v: 9, loads: this.loads }; }
 
   dispose() {
-    for (const c of [this.collider, this.signCollider]) { const i = this.world.colliders.indexOf(c); if (i >= 0) this.world.colliders.splice(i, 1); }
-    this.scene.remove(this.model, this.sign);
+    const i = this.world.colliders.indexOf(this.signCollider);
+    if (i >= 0) this.world.colliders.splice(i, 1);
+    this.scene.remove(this.sign);
   }
 }
 

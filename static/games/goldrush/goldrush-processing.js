@@ -66,6 +66,8 @@ import { Conveyor, Trommel, SpoilHeap, INTAKE, INTAKE_SPOT, CONVEYOR_KIT, TROMME
 import { MaterialBuffer } from "./goldrush-transfer.js";
 import { boardTexture } from "./goldrush-buildings.js";
 import { Excavator } from "./goldrush-excavator.js";
+import { StockpileSystem } from "./goldrush-stockpile.js";
+import { Loader } from "./goldrush-loader.js";
 
 // the wash place, next to the water tank (-19.5, 1.8)
 export const WASH = {
@@ -78,7 +80,7 @@ export const WASH = {
   barrowDrop: { x: -15.2, z: 9.2, yaw: -Math.PI / 2 },     // ... a bought wheelbarrow next to it
   feedZone: { x: -16.0, z: 3.4, r: 3.1 },                  // a barrow parked here feeds screen and pan
 };
-export const EQUIP = ["bucket", "pan", "classifier", "wheelbarrow", "sluice", "bulkhopper", "feeder", "prospectkit", "conveyor", "trommel", "excavator"];
+export const EQUIP = ["bucket", "pan", "classifier", "wheelbarrow", "sluice", "bulkhopper", "feeder", "prospectkit", "conveyor", "trommel", "excavator", "loader"];
 const INTAKE_REACH = 2.6;          // m: standing this close to the intake hopper, what you dig goes into it
 const BARROW_REACH = 2.6;        // m: a parked barrow this close (its tray) catches what you dig
 const HOPPER_AT = { x: SLUICE_AT.x - 0.27, z: SLUICE_AT.z };
@@ -178,14 +180,18 @@ export class ProcessingSystem {
     this.feeder = this.owned.has("feeder") && this.bulk ? new Feeder(THREE, this.scene, this.world, this.auto, s.feeder, this._autoCtx()) : null;
     if (this.owned.has("feeder") && !this.bulk) this.owned.delete("feeder");
     this.prospect = this.owned.has("prospectkit") ? this._newProspect(ctx.prospect) : null;
+    // Prompt 10: the stockpiles (raw pay dirt, oversize, tailings, spoil) - real piles on the ground; they exist from the
+    // start (an empty one draws nothing), the trommel and the spoil heap put their material onto them
+    this.piles = new StockpileSystem(THREE, this.scene, this.world, s.piles || null, { ledger: this.ledger, nextId: () => this.nextBatch++, soilTex: this.world.soilTex || null, seed: this.world.seed || 1 });
     // phase 9: the plant - intake + conveyor, trommel, the spoil heap (with the excavator)
     this.conveyor = this.owned.has("conveyor") && this.bulk ? new Conveyor(THREE, this.scene, this.world, this.pm, s.conveyor, this._plantCtx()) : null;
     if (this.owned.has("conveyor") && !this.conveyor) this.owned.delete("conveyor");
-    this.trommel = this.owned.has("trommel") && this.conveyor ? new Trommel(THREE, this.scene, this.world, this.pm, s.trommel, this._plantCtx()) : null;
+    this.trommel = this.owned.has("trommel") && this.conveyor ? new Trommel(THREE, this.scene, this.world, this.pm, s.trommel, this._trommelCtx()) : null;
     if (this.owned.has("trommel") && !this.trommel) this.owned.delete("trommel");
     if (this.conveyor) this.conveyor._sync();
     this.spoil = this.owned.has("excavator") || this.owned.has("trommel") ? this._newSpoil(s.spoil) : null;       // the waste dump: with the trommel (oversize) or the excavator
     this.excavator = this.owned.has("excavator") ? this._newExcavator(s.excavator) : null;
+    this.loader = this.owned.has("loader") ? this._newLoader(s.loader) : null;
     this._spoilBin = new MaterialBuffer({ capacityMl: 1e12 });          // a barrow tipped onto the heap passes through here (same frame)
     this._refitBarrow();                                       // parked on the platform: it stands on the deck (made just now)
   }
@@ -210,18 +216,31 @@ export class ProcessingSystem {
       ledger: this.ledger, warm: () => { this.warmPending = true; } });
   }
 
+  // Prompt 10: the trommel's oversize lies on the OVERSIZE pile, the spoil heap is the SPOIL pile
+  _trommelCtx() { return this._tctx || (this._tctx = { ...this._plantCtx(), pile: () => this.piles.get("oversize") }); }
+  _spoilCtx() { return this._sctx || (this._sctx = { ...this._plantCtx(), pile: () => this.piles.get("spoil") }); }
+
+  // Prompt 10: the compact wheel loader (goldrush-loader.js) - its bucket is a container like the barrow
+  _newLoader(saved) {
+    const c = this.ctx;
+    return new Loader(this.THREE, this.scene, this.world, saved, {
+      ledger: this.ledger, nextId: () => this.nextBatch++, piles: () => this.piles, assets: c.assets || null, envMap: c.envMap || null,
+      soilTex: this.world.soilTex || null, warm: () => { this.warmPending = true; },
+    });
+  }
+
   // phase 9: the compact excavator (goldrush-excavator.js) - its bucket is a container like the barrow
   _newExcavator(saved) {
     const c = this.ctx;
     return new Excavator(this.THREE, this.scene, this.world, saved, {
       ledger: this.ledger, nextId: () => this.nextBatch++, mining: () => c.mining(), terrain: () => c.terrain, rocks: () => c.rocks(), economy: () => this.economy,
-      conveyor: () => this.conveyor, barrow: () => this.barrow, bulk: () => this.bulk, spoil: () => this.spoil, trommel: () => this.trommel, upgrades: this.upgrades,
+      conveyor: () => this.conveyor, barrow: () => this.barrow, bulk: () => this.bulk, spoil: () => this.spoil, trommel: () => this.trommel, upgrades: this.upgrades, piles: () => this.piles,
       assets: c.assets || null, envMap: c.envMap || null, warm: () => { this.warmPending = true; }, standModel: () => this.pm.attachmentStand(),
     });
   }
 
   _newSpoil(saved) {
-    return new SpoilHeap(this.THREE, this.scene, this.world, this.pm, saved, this._plantCtx(), boardTexture(this.THREE, "ABRAUM", { w: 512, h: 160 }));
+    return new SpoilHeap(this.THREE, this.scene, this.world, this.pm, saved, this._spoilCtx(), boardTexture(this.THREE, "ABRAUM", { w: 512, h: 160 }));
   }
 
   // phase 9: the prospecting kit (bags, notebook, flags)
@@ -415,9 +434,10 @@ export class ProcessingSystem {
     const sl = this.sluice, bk = this.bulk;
     const cv = this.conveyor, tr = this.trommel, sp = this.spoil;
     const roots = [this.barrow && this.barrow.group, sl && sl.root, sl && sl.trayModel, bk && bk.root, bk && bk.rampModel, bk && bk.post, bk && bk.kit, this.feeder && this.feeder.kit,
-      cv && cv.intakeModel, cv && cv.model, cv && cv.chute, cv && cv.post, cv && cv.kit, tr && tr.model, tr && tr.pile, tr && tr.kit, sp && sp.model, sp && sp.sign,
+      cv && cv.intakeModel, cv && cv.model, cv && cv.chute, cv && cv.post, cv && cv.kit, tr && tr.model, tr && tr.pile, tr && tr.kit, sp && sp.sign,
       this.excavator && this.excavator.root, this.excavator && this.excavator.stand, this.excavator && this.excavator.marks.mesh, cv && cv.gen, tr && tr.wet,
-      this.prospect && this.prospect.stakes, this.prospect && this.prospect.cloths, ...(this.extraWarm ? this.extraWarm() : [])];
+      this.prospect && this.prospect.stakes, this.prospect && this.prospect.cloths, this.loader && this.loader.root, ...this.piles.list().map((p) => p.group),
+      ...(this.extraWarm ? this.extraWarm() : [])];
     for (const r of roots) if (r) r.traverse((o) => {
       w.push([o, o.visible, o.frustumCulled, o.isInstancedMesh ? o.count : null]);
       o.visible = true;
@@ -445,12 +465,13 @@ export class ProcessingSystem {
     }
     if (id === "trommel") {
       if (!this.conveyor) { this.owned.delete(id); return false; }
-      this.trommel = new Trommel(this.THREE, this.scene, this.world, this.pm, null, this._plantCtx());           // delivered: the drum on timbers by the bulk hopper
+      this.trommel = new Trommel(this.THREE, this.scene, this.world, this.pm, null, this._trommelCtx());         // delivered: the drum on timbers by the bulk hopper
       if (!this.spoil) this.spoil = this._newSpoil(null);
     }
     if (id === "excavator" && !this.spoil) this.spoil = this._newSpoil(null);
     if (id === "excavator" && !this.excavator) this.excavator = this._newExcavator(null);                       // parked by the intake, ready
-    if (["wheelbarrow", "sluice", "bulkhopper", "feeder", "prospectkit", "conveyor", "trommel", "excavator"].includes(id)) this.warmPending = true;
+    if (id === "loader" && !this.loader) this.loader = this._newLoader(null);                                   // parked north of the raw pile, ready
+    if (["wheelbarrow", "sluice", "bulkhopper", "feeder", "prospectkit", "conveyor", "trommel", "excavator", "loader"].includes(id)) this.warmPending = true;
     this._sync();
     return true;
   }
@@ -661,6 +682,12 @@ export class ProcessingSystem {
       const c = Math.cos(ex.heading), s = Math.sin(ex.heading), dx = ex.x - s * 0.4 - p.x, dz = ex.z - c * 0.4 - p.z;      // (the cab: its left side)
       if (facing(ex.x, ex.z) > 0.45 && Math.hypot(dx, dz) < 2.1) return { id: "exc-enter", action: ex.volumeMl > 0 ? `In den Bagger steigen (Löffel ${Math.round(ex.volumeMl / 1000)} l)` : "In den Bagger steigen", short: "EINSTEIGEN" };
     }
+    // 3l - Prompt 10: the wheel loader - get in at its steps (the cab's left side)
+    const ld = this.loader;
+    if (ld && !ld.inCab && Math.hypot(ld.x - p.x, ld.z - p.z) < 3.0) {
+      const c = Math.cos(ld.heading), s = Math.sin(ld.heading), dx = ld.x - c * 0.4 - s * 0.9 - p.x, dz = ld.z + s * 0.4 - c * 0.9 - p.z;      // (the cab's left side)
+      if (facing(ld.x - c * 0.4, ld.z + s * 0.4) > 0.4 && Math.hypot(dx, dz) < 2.2) return { id: "ldr-enter", action: ld.volumeMl > 0 ? `In den Radlader steigen (Schaufel ${Math.round(ld.volumeMl / 1000)} l)` : "In den Radlader steigen", short: "EINSTEIGEN" };
+    }
     // 3p - phase 9: the plant - build the conveyor / the trommel, the lever at the intake's post, the oversize pile
     const cv = this.conveyor, tr = this.trommel;
     if (cv) {
@@ -814,6 +841,7 @@ export class ProcessingSystem {
       return ml > 0 ? { ok: true, kind: "feed", ml, into: "intake" } : { ok: false };
     }
     if (id === "exc-enter" && this.excavator) return { ok: true, kind: "enter" };
+    if (id === "ldr-enter" && this.loader) return { ok: true, kind: "enter", machine: "loader" };
     if (id === "conveyor-build" && cv) return cv.startBuild() ? { ok: true, kind: "build", what: "conveyor" } : { ok: false };
     if (id === "conveyor-mode" && cv && cv.installed) { cv.setMode(cv.nextMode()); return { ok: true, kind: "mode", mode: cv.mode, what: "conveyor" }; }
     if (id === "trommel-build" && tr) return tr.startBuild() ? { ok: true, kind: "build", what: "trommel" } : { ok: false };
@@ -1426,6 +1454,9 @@ export class ProcessingSystem {
     if (!this.simWork) { if (this.feeder) this.feeder.process(dt); if (this.bulk) this.bulk.process(dt); if (this.trommel) this.trommel.process(dt); if (this.conveyor) this.conveyor.process(dt); }
     if (this.trommel) { this.trommel.lowDetail = !!(this.ctx.quality && this.ctx.quality() === "low"); this.trommel.update(dt, player ? Math.hypot(player.x - BULK_AT.x, player.z - BULK_AT.z) < 11 : false, this.onSound); }
     if (this.excavator) this.excavator.update(dt, this.excEvent || null);
+    // Prompt 10: the loader's arms / its work (the engine hands in the throttle while you sit in it), the piles settle
+    if (this.loader) this.loader.update(dt, this.loaderInput || null, this.loaderEvent || null);
+    this.piles.update(dt);
     if (this.conveyor) this.conveyor.update(dt, player ? Math.min(Math.hypot(player.x - INTAKE.x, player.z - INTAKE.z), Math.hypot(player.x - (INTAKE.x + BULK_AT.x) / 2, player.z - (INTAKE.z + BULK_AT.z) / 2)) < 7 : false, this.onSound);
     this._steady();
     if (this.feeder) this.feeder.update(dt, this.onSound, player ? Math.hypot(player.x - BULK_AT.x, player.z - BULK_AT.z) < 10 : false);
@@ -1494,7 +1525,7 @@ export class ProcessingSystem {
     const H = { bucket: this.bucket ? { batch: this.bucket.batch, capacityMl: this.capacityMl } : null, barrow: this.barrow, hopper: this.sluice ? this.sluice.hopper : null,
       bulk: this.bulk && this.bulk.installed ? this.bulk.buffer : null, tray: this.feeder ? this.feeder.tray : null,
       intake: this.conveyor && this.conveyor.installed ? this.conveyor.intake : null, oversize: this.trommel ? this.trommel.oversize : null,
-      scoop: this.excavator ? this.excavator.bucket : null, spoil: this.spoil ? this._spoilBin : null };
+      scoop: this.excavator ? this.excavator.bucket : null, spoil: this.spoil ? this._spoilBin : null, loader: this.loader ? this.loader.bucket : null };
     if (!H[from] || !H[to]) return 0;
     const ml = transfer(H[from], H[to], Infinity, this.nextBatch++);
     if (ml > 0 && to === "bulk") { this.bulk.stats.inMl += ml; this.bulk.stats.loads++; }
@@ -1519,6 +1550,7 @@ export class ProcessingSystem {
       if (this.conveyor) this.conveyor.process(h);
       this._steady();
     }
+    for (const p of this.piles.list()) p.relax(40000);            // (the simulation draws nothing: the piles only settle)
     return done;
   }
 
@@ -1547,6 +1579,9 @@ export class ProcessingSystem {
       trommel: this.trommel ? this.trommel.serialize() : null,
       spoil: this.spoil ? this.spoil.serialize() : null,
       excavator: this.excavator ? this.excavator.serialize() : null,
+      // Prompt 10 (v9)
+      piles: this.piles.serialize(),
+      loader: this.loader ? this.loader.serialize() : null,
     };
   }
 
@@ -1556,7 +1591,8 @@ export class ProcessingSystem {
       + (this.barrow ? this.barrow.batch.goldUg : 0) + (this.sluice ? this.sluice.goldUg() : 0)
       + (this.bulk ? this.bulk.goldUg() : 0) + (this.feeder ? this.feeder.goldUg() : 0)
       + (this.prospect ? this.prospect.goldUg() : 0) + (this.conveyor ? this.conveyor.goldUg() : 0) + (this.trommel ? this.trommel.goldUg() : 0)
-      + (this.excavator ? this.excavator.goldUg() : 0) + this._spoilBin.goldUg;
+      + (this.excavator ? this.excavator.goldUg() : 0) + this._spoilBin.goldUg
+      + this.piles.goldUg() + (this.loader ? this.loader.goldUg() : 0);
   }
 
   massInContainers() {
@@ -1564,7 +1600,8 @@ export class ProcessingSystem {
       + (this.barrow ? this.barrow.batch.massG : 0) + (this.sluice ? this.sluice.massG() : 0)
       + (this.bulk ? this.bulk.massG() : 0) + (this.feeder ? this.feeder.massG() : 0)
       + (this.prospect ? this.prospect.massG() : 0) + (this.conveyor ? this.conveyor.massG() : 0) + (this.trommel ? this.trommel.massG() : 0)
-      + (this.excavator ? this.excavator.massG() : 0) + this._spoilBin.massG;
+      + (this.excavator ? this.excavator.massG() : 0) + this._spoilBin.massG
+      + this.piles.massG() + (this.loader ? this.loader.massG() : 0);
   }
 
   dispose() {
@@ -1581,6 +1618,8 @@ export class ProcessingSystem {
     if (this.conveyor) this.conveyor.dispose();
     if (this.spoil) this.spoil.dispose();
     if (this.excavator) this.excavator.dispose();
+    if (this.loader) this.loader.dispose();
+    this.piles.dispose();
     this.models.dispose();
     this.mech.dispose();
     if (this._wetTex) { this._wetTex.dispose(); this._wetGeo.dispose(); for (const m of this._wetMats) m.dispose(); for (const g of this._wetGeos || []) g.dispose(); }

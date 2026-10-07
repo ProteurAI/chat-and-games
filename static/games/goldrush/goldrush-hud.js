@@ -25,8 +25,10 @@ const MAT_ICONS = {
 // phase 9: the sample bags (prospecting) and the excavator's bucket
 MAT_ICONS.samples = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6.5h8l-.8 2.2c2.6 1.4 4.3 4.2 4.3 7.3 0 2.8-3.4 4.5-7.5 4.5S4.5 18.8 4.5 16c0-3.1 1.7-5.9 4.3-7.3L8 6.5z" fill="currentColor"/><path d="M8.6 4.2h6.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M9 13.5h6M9 16.3h4" stroke="#2b2622" stroke-width="1.3" stroke-linecap="round"/></svg>`;
 MAT_ICONS.scoop = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h13.5c1.4 0 2.5 1.1 2.5 2.5v.8c0 4.3-3.5 7.7-7.7 7.7H9.6L4 12.6V7.5z" fill="currentColor"/><path d="M5.5 18.5l1.3 1.6M8.8 18.6l.9 1.8M12 18.6l.6 1.9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
-const MAT_LABELS = { bucket: "Eimer", barrow: "Karre", conc: "Konzentrat", samples: "Proben", scoop: "Löffel" };
-const MAT_IDS = ["scoop", "bucket", "barrow", "samples", "conc"];
+// Prompt 10: the wheel loader's bucket
+MAT_ICONS.loader = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h10.5l3.5 2.5v4.5H3z" fill="currentColor"/><circle cx="6.5" cy="17.5" r="2.4" fill="currentColor"/><circle cx="14" cy="17.5" r="2.4" fill="currentColor"/><path d="M16.5 10.5l3-3.5 2 1-1.5 5.5h-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+const MAT_LABELS = { bucket: "Eimer", barrow: "Karre", conc: "Konzentrat", samples: "Proben", scoop: "Löffel", loader: "Schaufel" };
+const MAT_IDS = ["loader", "scoop", "bucket", "barrow", "samples", "conc"];
 const POUCH_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4.5h6l-1.4 2.6c3.4 1.3 5.9 4.6 5.9 8.2 0 3.3-2.8 4.7-7.5 4.7S4.5 18.6 4.5 15.3c0-3.6 2.5-6.9 5.9-8.2L9 4.5z" fill="currentColor"/><path d="M9.6 7.3h4.8" stroke="#fff3d0" stroke-width="1.3" stroke-linecap="round"/></svg>`;
 
 // a value that counts towards its target (no timers of its own)

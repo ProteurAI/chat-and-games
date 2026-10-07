@@ -528,9 +528,10 @@ class GoldRushShell {
       onQuality: () => this._syncSettings(),
       onTool: (st) => this._renderTools(st),
       // phase 9: in the excavator's cab - the dig button scoops (or hammers), KIPPEN dumps
-      setCab: (on, breaker) => {
+      setCab: (on, breaker, kind = "excavator") => {
         el.altBtn.hidden = !(on && this.touch);
-        if (on) { el.digIco.innerHTML = ICONS.excavator; el.digLabel.textContent = breaker ? "HAMMER" : "SCHAUFELN"; el.digBtn.setAttribute("aria-label", breaker ? "Hammern" : "Schaufeln (Bagger)"); el.digBtn.classList.remove("is-busy"); }
+        if (on && kind === "loader") { el.digIco.innerHTML = ICONS.excavator; el.digLabel.textContent = "SCHAUFEL"; el.digBtn.setAttribute("aria-label", "Schaufel absenken / anheben (Radlader)"); el.digBtn.classList.remove("is-busy"); }
+        else if (on) { el.digIco.innerHTML = ICONS.excavator; el.digLabel.textContent = breaker ? "HAMMER" : "SCHAUFELN"; el.digBtn.setAttribute("aria-label", breaker ? "Hammern" : "Schaufeln (Bagger)"); el.digBtn.classList.remove("is-busy"); }
         else if (this.game) this._renderTools(this.game.toolState());
       },
     };

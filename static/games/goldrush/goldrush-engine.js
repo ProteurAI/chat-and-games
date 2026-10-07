@@ -27,6 +27,8 @@ import { BULK_AT } from "./goldrush-automation.js";
 import { BULK } from "./goldrush-automodels.js";
 import { INTAKE, TROMMEL, OVERSIZE, SPOIL, m3 } from "./goldrush-plant.js";
 import { EXC_DEF, EXC_HOME, BUCKET_ML as EXC_BUCKET_ML } from "./goldrush-excavator.js";
+import { BUCKET_ML as LDR_BUCKET_ML } from "./goldrush-loader.js";
+import { m3Text } from "./goldrush-stockpile.js";
 import { SLICE_ORIGIN_Y } from "./goldrush-terrain.js";
 import { TOOL_DEFS, TOOL_ORDER, ToolController, cycleSeconds, effectiveDef, toolEfficiency } from "./goldrush-tools.js";
 import { DigEffects } from "./goldrush-vfx.js";
@@ -235,6 +237,7 @@ export class GoldRushGame {
       mining: () => this.mining, rocks: () => this.rocks, assets: this.assets,
     });
     this.processing.excEvent = (kind, r) => this._excEvent(kind, r);
+    this.processing.loaderEvent = (kind, r) => this._ldrEvent(kind, r);
     // phase 9: the mountain contract - measured on the ground itself (goldrush-contract.js), shown on the camp's board
     this.contract = new MountainContract(this.terrain, this.economy);
     this.stations.paintContract(this.contract.view());
@@ -301,7 +304,8 @@ export class GoldRushGame {
     this.loot.warmup(false);
     progress(0.97, "Erster Blick in die Mine …");
     await step();
-    if (this.processing.excavator && this.processing.excavator.inCab) this.enterCab(true);
+    if (this.processing.loader && this.processing.loader.inCab) this.enterCab(true, "loader");
+    else if (this.processing.excavator && this.processing.excavator.inCab) this.enterCab(true);
     this.render();
     this.ready = true;
     progress(1, "Bereit");
@@ -457,7 +461,7 @@ export class GoldRushGame {
     if (s.disabled) { this.hud.tip(`proc-${s.id}`, s.action, 4); return false; }
     const r = this.processing.act(s.id, this.player);
     if (!r.ok) return false;
-    if (r.kind === "enter") { this.enterCab(); return true; }
+    if (r.kind === "enter") { this.enterCab(false, r.machine); return true; }
     if (r.kind === "pick") this.audio.play("swap", { dist: 0.3 });
     else if (r.kind === "drop") {
       this.audio.play(s.id === "barrow-park" ? "shopOpen" : "bucket", { dist: 0.5, strength: 0.8 });
@@ -961,6 +965,13 @@ export class GoldRushGame {
       v.text = ex.breaker ? "Hammer" : `${fmt(ex.volumeMl / 1000)}/${Math.round(EXC_BUCKET_ML / 1000)} l${ex.volumeMl > 0 ? ` · ${Math.round(ex.massG() / 1000)} kg` : ""}`;
       v.active = !!ex.inCab; v.full = ex.room < 2000; v.aria = `Baggerlöffel ${fmt(ex.volumeMl / 1000)} Liter`;
     } else row.scoop = null;
+    // Prompt 10: the wheel loader's bucket (while you sit in it, or when it holds something)
+    const ld = pr.loader;
+    if (ld && (ld.inCab || ld.volumeMl > 0)) {
+      const v = row.loader || (row.loader = {});
+      v.text = `${fmt(ld.volumeMl / 1000)}/${Math.round(LDR_BUCKET_ML / 1000)} l${ld.volumeMl > 0 ? ` · ${Math.round(ld.massG() / 1000)} kg` : ""}`;
+      v.active = !!ld.inCab; v.full = ld.room < 4000; v.aria = `Radladerschaufel ${fmt(ld.volumeMl / 1000)} Liter`;
+    } else row.loader = null;
     // phase 9: sample bags waiting to be panned
     const pg = pr.prospect;
     if (pg && pg.count > 0) {
@@ -1024,7 +1035,7 @@ export class GoldRushGame {
     if (this._release && (this._release.t -= dt) <= 0) { this._shovelRelease(this._release); this._release = null; }
     const p = this.player, input = this.input, world = this.world;
     const look = input.takeLook();
-    if (this.cab) { this._cabUpdate(dt, look); return; }
+    if (this.cab) { if (this.cab.kind === "loader") this._loaderUpdate(dt, look); else this._cabUpdate(dt, look); return; }
     if (this.processing.work) { this._workUpdate(dt, look); return; }
     const pr = this.processing, bw = pr.pushing ? pr.barrow : null;
     p.yaw -= look.x;
@@ -1104,7 +1115,9 @@ export class GoldRushGame {
   // ------------------------------------------------------------ the excavator's cab (phase 9)
 
   // get in: the view from the cab, the hands at the controls (not drawn), the tracks under W A S D
-  enterCab(restoring = false) {
+  // (Prompt 10: machine "loader" - the wheel loader's seat)
+  enterCab(restoring = false, machine = "excavator") {
+    if (machine === "loader") return this._enterLoader(restoring);
     const ex = this.processing.excavator;
     if (!ex || this.processing.work || this.processing.carrying || this.processing.pushing) return false;
     this.tools.cancel();
@@ -1127,12 +1140,38 @@ export class GoldRushGame {
     return true;
   }
 
+  // Prompt 10: into the wheel loader's seat - looking ahead over the bucket
+  _enterLoader(restoring) {
+    const ld = this.processing.loader;
+    if (!ld || this.processing.work || this.processing.carrying || this.processing.pushing) return false;
+    this.tools.cancel();
+    this._sampleArm = false;
+    this.input.releaseAll();
+    this.cab = ld;
+    ld.inCab = true;
+    const p = this.player;
+    p.yaw = restoring ? p.yaw : ld.heading - Math.PI / 2;
+    p.pitch = restoring ? Math.max(-1.0, Math.min(0.45, p.pitch)) : -0.2;
+    this._ldrDig = this._ldrAlt = false;
+    this.reticle.visible = false;
+    ld.rig.setFirstPerson(true);
+    this.ui.root.classList.add("gr-cab");
+    this.ui.setCab && this.ui.setCab(true, false, "loader");
+    this.audio.play("exc_start", { dist: 0.4 });
+    if (!restoring) this.hud.tip("cab-loader", this.touch ? "Stick: fahren und lenken · ziehen: umsehen · SCHAUFEL: absenken / anheben · KIPPEN · AUSSTEIGEN" : "W / S fahren · A / D lenken · Maus: umsehen · Linksklick: Schaufel absenken / anheben · in den Haufen fahren: füllen · Rechtsklick / Q: am Trichter kippen · E: aussteigen", 30);
+    this._stationSig = null;
+    this.dirty = true;
+    return true;
+  }
+
   exitCab() {
     const ex = this.cab;
     if (!ex) return false;
     this.cab = null;
     ex.inCab = false;
-    ex.v = ex.w = 0;
+    ex.v = 0;
+    if (ex.w != null) ex.w = 0;
+    if (ex.kind === "loader") this.processing.loaderInput = null;
     ex.rig.setFirstPerson(false);
     const spot = ex.exitSpot(), p = this.player;
     p.x = spot.x; p.z = spot.z; p.vx = p.vz = 0;
@@ -1191,6 +1230,32 @@ export class GoldRushGame {
     }
     const load = ex.volumeMl, tgt = this._cabTgt || (this._cabTgt = {});
     tgt.recv = null; tgt.hit = null; tgt.ok = false; tgt.act = null; tgt.state = "idle"; tgt.text = "";
+    // Prompt 10: a stockpile under the crosshair (its surface, or the bare ground of its site): tip onto it
+    // with a load, scoop from it with an empty bucket
+    const piles = this.processing.piles;
+    const ph = piles ? piles.raycast(ox, oy, oz, dx, dy, dz, hit ? hit.distance + 0.05 : 12) : null;
+    let pileAt = null;
+    if (ph && (!best || ph.distance < bestT)) pileAt = { pile: ph.pile, at: { x: ph.x, y: ph.y, z: ph.z }, surface: true };
+    else if (!best && hit && hit.boulder == null && piles) { const p0 = piles.at(hit.x, hit.z, 0); if (p0 && (p0.id === "raw" || p0.id === "spoil")) pileAt = { pile: p0, at: { x: hit.x, y: hit.y, z: hit.z }, surface: false }; }
+    if (pileAt && !ex.breaker) {
+      const P = pileAt.pile, reach = ex.reachable(ex.rel(pileAt.at), "dump"), name = P.def.name;
+      if (load > 0) {
+        if (!reach) { tgt.text = `${name} – näher heranfahren`; tgt.state = "far"; }
+        else if (P.room <= 200) { tgt.text = `${name} ist voll`; tgt.state = "hard"; }
+        else { tgt.ok = true; tgt.act = "dump"; tgt.state = "dig"; tgt.recv = { kind: "pile", id: P.id, label: name, at: pileAt.at }; tgt.text = `${this.touch ? "KIPPEN" : "[Rechtsklick / Q]"}: auf den Haufen ${P.def.label} · ${m3Text(P.volumeMl)}`; }
+        this.ui.setCrosshair(tgt.state);
+        this.reticle.visible = false;
+        return tgt;
+      }
+      if (pileAt.surface) {
+        const sreach = ex.reachable(ex.rel(pileAt.at));
+        if (!sreach) { tgt.text = `${P.def.label} ${m3Text(P.volumeMl)} – näher heranfahren`; tgt.state = "far"; }
+        else { tgt.ok = true; tgt.act = "scoop"; tgt.state = "dig"; tgt.recv = { kind: "pile", id: P.id, source: true, at: pileAt.at }; tgt.text = `${this.touch ? "SCHAUFELN" : "[Klick]"}: vom Haufen nehmen · ${P.def.label} ${m3Text(P.volumeMl)}`; }
+        this.ui.setCrosshair(tgt.state);
+        this.reticle.visible = false;
+        return tgt;
+      }
+    }
     if (best) {
       tgt.recv = best;
       const reach = ex.reachable(ex.rel(best.at), "dump");
@@ -1256,9 +1321,9 @@ export class GoldRushGame {
     const dump = input.altHeld || this._cabDump;
     this._cabDump = false;
     if (!ex.busy && tgt.ok) {
-      if (input.digHeld && tgt.act === "scoop") ex.startScoop(tgt.recv ? { kind: "oversize", at: tgt.recv.at } : { kind: "ground", hit: { ...tgt.hit, normal: tgt.hit.normal ? { ...tgt.hit.normal } : null } });
+      if (input.digHeld && tgt.act === "scoop") ex.startScoop(tgt.recv ? (tgt.recv.kind === "pile" ? { kind: "pile", id: tgt.recv.id, at: tgt.recv.at } : { kind: "oversize", at: tgt.recv.at }) : { kind: "ground", hit: { ...tgt.hit, normal: tgt.hit.normal ? { ...tgt.hit.normal } : null } });
       else if (input.digHeld && tgt.act === "break") ex.startBreak({ hit: { ...tgt.hit } });
-      else if (dump && tgt.act === "dump") ex.startDump({ kind: tgt.recv.kind, at: { ...tgt.recv.at } });
+      else if (dump && tgt.act === "dump") ex.startDump({ kind: tgt.recv.kind, id: tgt.recv.id, at: { ...tgt.recv.at } });
     } else if (!ex.busy && dump && ex.volumeMl > 0 && !(tgt.recv && !tgt.recv.source)) this.hud.tip("dump-where", "Zum Abkippen auf den Aufgabetrichter, eine Schubkarre, den Vorratstrichter oder die Abraumhalde zielen.", 6);
     // the cab's quiet HUD: the bucket in the material row, what the crosshair is on below
     const busy = ex.task ? { scoop: "gräbt …", dump: "kippt …", break: "hämmert …", swap: "wechselt das Anbaugerät …" }[ex.task.kind] : "";
@@ -1272,6 +1337,110 @@ export class GoldRushGame {
     if (ex.swinging && (this._swT = (this._swT || 0) - dt) <= 0) { this._swT = 0.6; this.audio.play("exc_hydraulic", { dist: 0.9, strength: 0.45 }); }
     this.tools.blocked = true;
     this.tools.tick(dt, false);
+  }
+
+  // ------------------------------------------------------------ the wheel loader (Prompt 10)
+
+  // what lies in front of its bucket: a receiver to pour into (the intake, a stockpile site), the pile it digs
+  _loaderAim() {
+    const ld = this.cab, pr = this.processing, tgt = this._ldrTgt || (this._ldrTgt = {});
+    tgt.recv = null; tgt.text = ""; tgt.state = "idle";
+    const lip = ld.rig.lipWorld(this._lipV || (this._lipV = new THREE.Vector3())), fh = ld.frontHeading, dx = Math.cos(fh), dz = -Math.sin(fh);
+    const ax = lip.x + dx * 0.45, az = lip.z + dz * 0.45;
+    const cv = pr.conveyor;
+    if (cv && cv.installed && Math.hypot(ax - INTAKE.x, az - INTAKE.z) < 1.35) {
+      const top = this.world.groundBelowAt(INTAKE.x, INTAKE.z) + INTAKE.top;
+      tgt.recv = { kind: "intake", label: "Aufgabetrichter", top, holder: cv.intake, fill: `${Math.round(cv.volumeMl / 1000)} / ${Math.round(cv.capacityMl / 1000)} l`, room: cv.intake.room };
+    } else if (pr.piles) {
+      const P = pr.piles.at(ax, az, 0.2);
+      if (P) {
+        const y = Math.max(this.world.groundBelowAt(ax, az), P.heightAt(ax, az));
+        tgt.recv = { kind: "pile", pile: P, label: P.def.name, top: Number.isFinite(y) ? y : this.world.groundBelowAt(ax, az), fill: m3Text(P.volumeMl), room: P.room };
+      }
+    }
+    const R = tgt.recv, load = ld.volumeMl, kbd = !this.touch;
+    if (ld.dumping) { tgt.text = `kippt … ${R ? R.label : ""}`; tgt.state = "dig"; }
+    else if (ld.wall) { tgt.text = "Gewachsener Boden – der Radlader gräbt keinen Berg. Das macht der Bagger; der Lader nimmt vom Haufen."; tgt.state = "hard"; }
+    else if (ld.mode === "dig") {
+      if (ld.room < 4000) { tgt.text = "Schaufel voll"; tgt.state = "hard"; }
+      else if (ld.face > 0) { tgt.text = `In den Haufen schieben – die Schaufel füllt sich · ${Math.round(load / 1000)} / ${Math.round(LDR_BUCKET_ML / 1000)} l`; tgt.state = "dig"; }
+      else tgt.text = R && R.kind === "pile" && R.pile.volumeMl > 0 ? `Weiter in den Haufen ${R.pile.def.label} fahren` : `Schaufel unten · in einen Haufen fahren · ${kbd ? "Linksklick" : "SCHAUFEL"}: anheben`;
+    } else if (R && load > 0) {
+      if (R.room <= 200) { tgt.text = `${R.label} ist voll (${R.fill})`; tgt.state = "hard"; }
+      else { tgt.text = `${kbd ? "[Rechtsklick / Q]" : "KIPPEN"}: ${R.kind === "intake" ? "in den Aufgabetrichter" : `auf den Haufen ${R.pile.def.label}`} · ${R.fill}`; tgt.state = "dig"; tgt.ok = true; }
+    } else if (R && R.kind === "pile" && R.pile.volumeMl > 0) tgt.text = `${R.pile.def.label} ${R.fill} · ${kbd ? "Linksklick" : "SCHAUFEL"}: Schaufel absenken, dann hineinfahren`;
+    else tgt.text = load > 0 ? `Schaufel ${Math.round(load / 1000)} l – zum Aufgabetrichter oder auf einen Haufen fahren` : `${kbd ? "Linksklick" : "SCHAUFEL"}: Schaufel absenken – Rohmaterial holt der Lader vom Haufen am Bagger`;
+    return tgt;
+  }
+
+  _loaderUpdate(dt, look) {
+    const ld = this.cab, p = this.player, input = this.input, pr = this.processing;
+    // the view: around the seat within limits of the machine's heading (you turn with the rear frame)
+    p.yaw -= look.x;
+    p.pitch = Math.max(-1.0, Math.min(0.45, p.pitch - look.y));
+    const ahead = ld.heading - Math.PI / 2, rel = Math.max(-1.95, Math.min(1.95, Math.atan2(Math.sin(p.yaw - ahead), Math.cos(p.yaw - ahead))));
+    p.yaw = ahead + rel;
+    const h0 = ld.heading;
+    const r = ld.drive(dt, input.move.y, input.move.x);
+    p.yaw += ld.heading - h0;
+    const li = pr.loaderInput = this._ldrIn || (this._ldrIn = { fwd: 0 });
+    li.fwd = input.move.y;
+    if (r.blocked && (this._bumpT = (this._bumpT || 0) - dt) <= 0) { this._bumpT = 0.8; this.audio.play("barrow_bump", { dist: 1.2, strength: 0.9 }); }
+    const eye = ld.eye(this._eyeV || (this._eyeV = new THREE.Vector3()));
+    p.x = eye.x; p.z = eye.z; p.y = eye.y; p.vx = p.vz = 0;
+    const cam = this.camera;
+    cam.position.copy(eye);
+    cam.rotation.y = p.yaw;
+    cam.rotation.x = p.pitch;
+    const tgt = this._loaderAim();
+    // [Linksklick] / SCHAUFEL: the bucket down / up (on the press); [Rechtsklick / Q] / KIPPEN: pour into what is in front
+    const dig = input.digHeld, alt = input.altHeld || this._cabDump;
+    this._cabDump = false;
+    if (dig && !this._ldrDig && !ld.busy) {
+      const m = ld.toggleDig();
+      this.audio.play("exc_hydraulic", { dist: 0.7, strength: 0.6 });
+      if (m === "dig" && ld.stats.takes === 0) this.hud.tip("ldr-first", "Schaufel unten: jetzt langsam in den Rohhaufen fahren – je kräftiger du schiebst, desto schneller füllt sie sich. Voll hebt sie sich von selbst.", 10);
+    }
+    if (alt && !this._ldrAlt && !ld.busy) {
+      if (tgt.recv && ld.volumeMl > 0 && tgt.recv.room > 200) { ld.startDump(tgt.recv); this.audio.play("exc_hydraulic", { dist: 0.7, strength: 0.7 }); }
+      else if (ld.volumeMl > 0) this.hud.tip("ldr-where", "Zum Kippen mit der Schaufel an den Aufgabetrichter fahren – oder über einen Haufen.", 5);
+    }
+    this._ldrDig = dig; this._ldrAlt = alt;
+    this.hud.work(tgt.text);
+    this.ui.setCrosshair(tgt.state === "dig" ? "dig" : tgt.state === "hard" ? "hard" : "idle");
+    this.reticle.visible = false;
+    // sounds: the diesel (it works harder pushing, lifting, climbing), the tyres on gravel, the hydraulics
+    const work = (ld.pushing ? 1 : 0) + (ld.armsMoving ? 0.6 : 0) + Math.min(1, Math.abs(ld.v) / 2.5);
+    this._dieselT = (this._dieselT || 0) - dt;
+    if (this._dieselT <= 0) { this._dieselT = 0.7; this.audio.play("exc_engine", { dist: 0.6, strength: Math.min(1, 0.5 + 0.35 * work) }); }
+    this._tyreT = (this._tyreT || 0) - dt * Math.min(2.2, Math.abs(ld.v));
+    if (this._tyreT <= 0 && Math.abs(ld.v) > 0.3) { this._tyreT = 0.6; this.audio.play("barrow_roll", { dist: 0.9, strength: Math.min(1, 0.4 + Math.abs(ld.v) * 0.2) }); }
+    if (ld.armsMoving && (this._hydT = (this._hydT || 0) - dt) <= 0) { this._hydT = 0.55; this.audio.play("exc_hydraulic", { dist: 0.8, strength: 0.5 }); }
+    this.tools.blocked = true;
+    this.tools.tick(dt, false);
+  }
+
+  // the loader's moments: material taken from a pile, the bucket full, a pour, the edge against a bank
+  _ldrEvent(kind, r) {
+    const ld = this.processing.loader;
+    if (!ld) return;
+    const near = !!this.cab || Math.hypot(this.player.x - ld.x, this.player.z - ld.z) < 16;
+    const dist = this.cab ? 1.4 : Math.max(1.5, Math.hypot(this.player.x - ld.x, this.player.z - ld.z));
+    if (kind === "take") {
+      if (near && (this._scrapeT = (this._scrapeT || 0) - 1) <= 0) { this._scrapeT = 10; this.audio.play("exc_scoop", { dist, strength: 0.55 }); }
+    } else if (kind === "filled") {
+      if (near) this.audio.play("exc_scoop", { dist, strength: 0.9 });
+      this.hud.tip("ldr-full", `Schaufel voll – ${Math.round(r.ml / 1000)} l. Zum Aufgabetrichter fahren und kippen (Rechtsklick / Q).`, 8);
+    } else if (kind === "pour") {
+      if (near && (this._pourT = (this._pourT || 0) - 1) <= 0) { this._pourT = 6; this.audio.play("exc_dump", { dist, strength: Math.min(1, 0.4 + r.ml / 60000) }); }
+      if (this.effects && r.ml > 4000) { const at = ld.rig.lipWorld(this._lipV2 || (this._lipV2 = new THREE.Vector3())); this.effects.spill(at.x, at.y - 0.25, at.z, MATERIALS[0], 1.4); }
+    } else if (kind === "poured") {
+      this._pourT = 0;
+      if (r.full && r.rest > 1000 && this.cab) this.hud.tip("ldr-rest", `Voll – ${Math.round(r.rest / 1000)} l bleiben in der Schaufel.`, 5);
+    } else if (kind === "wall") {
+      if ((this._wallT = (this._wallT || 0) - 1) <= 0) { this._wallT = 40; if (near) this.audio.play("stone_scrape", { dist, strength: 0.8 }); }
+    }
+    this.dirty = true;
   }
 
   // the excavator's moments (from its animation): the cut, the tip, a blow, the attachment changed
