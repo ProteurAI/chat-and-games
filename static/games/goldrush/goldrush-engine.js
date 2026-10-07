@@ -185,6 +185,9 @@ export class GoldRushGame {
     }
     // phase 9: a mine dug in geology 1 now lies on geology 2 (goldrush-save.js) - said once
     const geo = this.doc.geology || (this.doc.geology = { version: GEOLOGY_VERSION });
+    // GoldRush 9.1: a mine of geology 2 follows the recalibrated ground from here on (the untouched ground only -
+    // what was dug stays dug, what sits in a container keeps its gold); no notice, nothing moved
+    if (geo.version < GEOLOGY_VERSION && geo.version >= 2) geo.version = GEOLOGY_VERSION;
     if (geo.from && !geo.noted && !this.loadNotice) {
       this.loadNotice = "Der Claim wurde neu vermessen: alte Flussrinnen im Untergrund, der Lagerplatz am Camp ist aufgeschüttet. Was du schon abgebaut hast und alles in Behältern bleibt genau so.";
       geo.noted = true;
@@ -653,7 +656,7 @@ export class GoldRushGame {
     this.hands.contact("ok", r.material, r.removedMassKg);
     this.effects.impact(hit, r.material, this.tools.def.id, this._toolDir(), 0.45);
     this.audio.play("bucket_fill", { pan, dist, strength: 0.45 });
-    if (t.ok) this.hud.message(`Probe ${t.bag.n} im Beutel`, `${(t.bag.batch.volumeMl / 1000).toFixed(2).replace(".", ",")} l · ${t.bag.place} · Beutel ${pg.count} / ${BAGS}`);
+    if (t.ok) this.hud.message(`Probe ${t.bag.n} im Beutel`, `${(t.bag.batch.volumeMl / 1000).toFixed(2).replace(".", ",")} l · ${t.bag.place} · Beutel ${pg.count} / ${BAGS} · [F] hier: Fähnchen ${t.bag.n}`);
     if (t.ok && pg.stats.samples === 1) this.hud.tip("sample-first", "Am Waschtrog [E]: die Probe schnell auswaschen – das Ergebnis steht dann im Notizbuch [N].", 8);
     this.lastStroke = { tool: "sample", kind: "dig", material: r.material, massKg: +r.removedMassKg.toFixed(4), finds: 0, cents: 0, sample: t.ok ? t.bag.n : 0 };
     this.dirty = true;
@@ -688,11 +691,34 @@ export class GoldRushGame {
     }
     if (!h || h.boulder != null) { this.hud.tip("flag-none", "Zum Abstecken auf den Boden zielen.", 4); return null; }
     const r = pg.toggleFlag(h.x, h.z);
-    if (r.kind === "full") this.hud.tip("flags-full", `Alle ${MAX_FLAGS} Fähnchen stecken schon – [F] an einem Fähnchen zieht es wieder heraus.`, 5);
-    else this.hud.message(r.kind === "set" ? `Fähnchen ${r.n} gesteckt` : `Fähnchen ${r.n} gezogen`, r.kind === "set" ? "Proben daneben tragen seine Nummer im Notizbuch." : `${pg.flags.length} / ${MAX_FLAGS} stecken`);
+    if (r.kind === "full") this.hud.tip("flags-full", `Alle ${MAX_FLAGS} Fähnchen stecken schon – [F] an einem Fähnchen zieht es wieder heraus, im Notizbuch alle einsammeln.`, 5);
+    else if (r.kind === "set") this.hud.message(`Fähnchen ${r.label} gesteckt`, r.flag === "sample" ? `Markiert die Stelle von Probe ${r.n}.` : "Freies Fähnchen (keine Probe hier) – zum Abstecken.");
+    else this.hud.message(`Fähnchen ${r.label} gezogen`, `${pg.flags.length} / ${MAX_FLAGS} stecken`);
     if (r.kind !== "full") this.audio.play("swap", { dist: 0.6, strength: 0.5 });
     this.dirty = true;
     return r;
+  }
+
+  // GoldRush 9.1 - the notebook's actions: every flag out of the ground (the notebook stays) ...
+  collectFlags() {
+    const pg = this.processing.prospect;
+    if (!pg) return null;
+    const n = pg.collectFlags();
+    if (n) this.audio.play("swap", { dist: 0.6, strength: 0.5 });
+    this.dirty = true;
+    this.save("prospect");
+    return { ok: true, collected: n };
+  }
+
+  // ... and the whole prospecting record anew: notebook, numbering, flags (the next sample is #1). The ground
+  // the samples used stays used, unwashed bags keep their material (goldrush-prospect.js reset)
+  resetProspect() {
+    const pg = this.processing.prospect;
+    if (!pg) return null;
+    const r = pg.reset(this.processing.pan.sample || null);
+    this.dirty = true;
+    this.save("prospect");
+    return { ok: true, ...r };
   }
 
   shopView() {
@@ -1631,6 +1657,15 @@ export class GoldRushGame {
     this.ui.onDig && this.ui.onDig();
     // a mineralised streak: told once per streak; the shovel's limit in it now and then
     if (r.streak > 0.3) this._streakSeen(hit);
+    // GoldRush 9.1: the camp's apron is fill - next to no gold (on purpose); said once per mine, then a short
+    // reminder now and then while you keep digging in it (the natural ground starts about half a metre down)
+    const fld = this.terrain.field;
+    if (fld.inFill && fld.inFill(hit.x, hit.y, hit.z, this.terrain.getBaseHeightAt(hit.x, hit.z))) {
+      if (!this.economy.flags.fillSeen) {
+        this.economy.flags.fillSeen = true;
+        this.hud.message("Aufgeschütteter Lagerplatz", "Verdichteter Fremdboden – hier liegt kaum Gold. Gewachsener Boden beginnt etwa einen halben Meter tiefer; der Berg lohnt sich.");
+      } else this.hud.tip("camp-fill", "Lagerplatz-Aufschüttung: kaum Gold.", 120);
+    }
     if (r.cemented && def.id !== "pickaxe") this.hud.tip("cemented", "Verfestigter Kies – die Schaufel rutscht ab. Erst mit der Spitzhacke lockern, dann schaufeln.", 12);
     // into the bucket / barrow next to you (with its fine gold and its pieces - washing gets them
     // out), or spoil: then its finds come out of the ground now (pending), shown (loot), money on pickup

@@ -180,8 +180,8 @@ reg({ id: "p9.prospect", category: "world", group: GROUP, label: "PROSPECTING TE
     const ch = f.channels[f.chIdx[k]], u = f.chT[k], a = {}, b = {};
     f._channelPoint(ch, Math.max(0, u - 0.02), a); f._channelPoint(ch, Math.min(1, u + 0.02), b);
     const dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz) || 1, px = -dz / L, pz = dx / L;
-    for (const fl of [...pg.flags]) pg.toggleFlag(fl.x, fl.z);
-    for (const s of [-2.2, 0, 2.2]) pg.toggleFlag(sp.x + px * s, sp.z + pz * s);
+    pg.collectFlags();
+    for (const s of [-2.2, 0, 2.2]) pg.toggleFlag(sp.x + px * s, sp.z + pz * s);      // free flags A-C (no sample there yet)
     equipNow(g, "shovel");
     return look(g, sp.x + px * -2.2 - pz * 1.6, sp.z + pz * -2.2 + px * 1.6, sp.x + px * -2.2, sp.h - 0.2, sp.z + pz * -2.2) ? ok("Drei Fähnchen quer über eine Rinne: an jedem [R] eine Probe, dann am Waschtrog auswaschen und im Notizbuch [N] vergleichen.") : fail(DEV_ERROR);
   } });

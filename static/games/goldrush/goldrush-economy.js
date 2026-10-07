@@ -120,6 +120,7 @@ export class Economy {
       firstSaleSeen: !!fl.firstSaleSeen,
       firstPurchaseSeen: !!fl.firstPurchaseSeen,
       hardSeen: !!fl.hardSeen,                // has come up against stone / a boulder
+      fillSeen: !!fl.fillSeen,                // GoldRush 9.1: has dug into the camp's fill (told once)
       // phase 7A: the mineralised streaks already come across (their indices - told once each)
       streaksFound: Array.isArray(fl.streaksFound) ? fl.streaksFound.filter((i) => Number.isInteger(i) && i >= 0 && i < 64).slice(0, 64) : [],
     };

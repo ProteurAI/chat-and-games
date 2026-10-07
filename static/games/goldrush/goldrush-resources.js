@@ -83,22 +83,30 @@ const MASS = {
 const FINE_PER_SLICE = 6000;
 // starter zone: gold density held inside this band (fair, not lucky)
 // (narrow on purpose: early progress should come from steady work, not from
-// whether a seed's first nugget shows up early - see the phase-4 benchmark)
-const STARTER = { radius: 6.5, fade: 2.5, depth: 1.6, gMin: 0.21, gMax: 0.29 };
+// whether a seed's first nugget shows up early - see the phase-4 benchmark).
+// GoldRush 9.1: gMax 0.29 -> 0.23 - the recalibrated mountain lifted the
+// starter face's surface to the band's top (an early game +54 % at 30 min);
+// held at 0.23 it is +21 % / +16 % / +10 % at 30 / 60 / 120 min over PRE-P9
+// (goldrush_gold_ab.py early) - and the mountain beyond it pays a little more
+const STARTER = { radius: 6.5, fade: 2.5, depth: 1.6, gMin: 0.21, gMax: 0.23 };
 // mineralised streaks: how many, how rich (added density at the core), the share of
 // the ordinary gold left outside them (redist: the rest sits in the streaks - the
 // pile's total stays the same within ~0,6 % per seed, measured over the volume),
 // and the core value above which they are cemented
 export const STREAK = { count: 6, g: 0.42, redist: 0.985, cement: 0.3, flake: 1.4, pieceCap: 0.12 };
 // phase 9: the generation version of the ground's gold (saved; an older save keeps every slice it already
-// took - those never pay again - and its unmined ground follows this one)
-export const GEOLOGY_VERSION = 2;
+// took - those never pay again - and its unmined ground follows this one). 3: GoldRush 9.1's calibration
+export const GEOLOGY_VERSION = 3;
 const G_MAX = 2.6;                               // the highest gold density a slice may have (phase 9; was 1)
 // ordinary ground: neutral grade +- regional variation, by material, the upper mountain's share of it
 // (smoothly from 0.3 m to 2.2 m of original height), how much deeper ground inside a body adds
-export const GEO = { base: 0.2, region: 0.12, mf: [0.88, 1.0, 1.15, 0], mountain: 0.94, mountainFrom: 0.3, mountainTo: 2.2, deep: 0.2, vein: 0.25,
+// GoldRush 9.1 (the PRE-P9 / P9 A/B on identical voxels, docs/goldrush.md): the mountain is ordinary ground -
+// the dirt of its flanks no longer far poorer than the gravel of the flat (that kept a trace of the old ground
+// level's lead), the overburden only a little poorer, the depth bonus small (it made the surface you dig first
+// the poorest part): mountain ~ baseline, ground level means nothing; the claim's total stays where P9 put it
+export const GEO = { base: 0.2, region: 0.12, mf: [0.97, 1.0, 1.04, 0], mountain: 0.98, mountainFrom: 0.3, mountainTo: 2.2, deep: 0.06, vein: 0.25,
   // the ground's grade as a whole (benchmark: geology 1's jackpot at ground level is gone - a player working the
-  // mountain gets what the phase-7 economy was tuned on; every ratio above stays; the starter band and the fill do not move)
+  // mountain gets what the phase-7 economy was tuned on; the starter band and the fill do not move)
   scale: 1.9 };
 // paleochannels: how many, their width / bed / thickness ranges, the grade they add (poor .. rich stretch)
 export const CHANNEL = { min: 2, max: 4, width: [1.4, 3.4], bed: [-1.25, -0.3], thick: [0.35, 0.8], poor: 0.12, rich: 0.78, richPow: 1.3, gravel: 0.35 };

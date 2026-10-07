@@ -1,7 +1,7 @@
 """End-to-end check of GoldRush phase 9: the mechanised claim.
 
-  geology   geology 2: an explicit version in the save, 2-4 paleochannels per seed (some under the mountain),
-            the camp's fill next to barren, the upper mountain a little poorer than the claim, the channels
+  geology   geology 2 (3 since GoldRush 9.1): an explicit version in the save, 2-4 paleochannels per seed (some under
+            the mountain), the camp's fill next to barren, the upper mountain ~ the claim (9.1), the channels
             2-4 x the claim, no gold peak at the old ground level; a v7 mine migrates (used slices stay used,
             containers keep their gold, the notice once)
   prospect  a sample is a real small dig at exactly the crosshair (its gold = the used slices' gold), 0.5-1.5 l,
@@ -166,12 +166,13 @@ def geology(A):
         fresh(A, seed)
         rows.append(G(A, ZONE_JS))
     doc = G(A, f"() => {{ {GR}.save(); return JSON.parse(localStorage.getItem(grKey())); }}")
-    ok("GEO a new mine records geology 2 (explicit version)", doc.get("geology", {}).get("version") == 2 and doc["saveVersion"] == 8, str(doc.get("geology")))
+    # (GoldRush 9.1: geology 3 - the recalibration; goldrush_hotfix91_e2e.py)
+    ok("GEO a new mine records its geology (explicit version, 3 since GoldRush 9.1)", doc.get("geology", {}).get("version") == 3 and doc["saveVersion"] == 8, str(doc.get("geology")))
     ok("GEO 2-4 paleochannels per seed, some under the mountain", all(2 <= r["channels"] <= 4 for r in rows) and sum(1 for r in rows if r["under"] > 0) >= 3, str([(r["channels"], r["under"]) for r in rows]))
     m = lambda k: sum(r.get(k, 0) for r in rows) / len(rows)
     claim = m("claim")
     ok("GEO the camp's fill is next to barren (< 15 % of the claim)", m("fill") < 0.15 * claim, f"fill {m('fill'):.0f} vs claim {claim:.0f} ug/slice")
-    ok("GEO the upper mountain 0.70-0.95 x the neutral claim", 0.7 <= m("upper") / claim <= 0.95, f"{m('upper') / claim:.2f}")
+    ok("GEO the upper mountain ~ the neutral claim (0.85-1.15 x since GoldRush 9.1; it was 0.70-0.95)", 0.85 <= m("upper") / claim <= 1.15, f"{m('upper') / claim:.2f}")
     ok("GEO the channels 2-4 x the claim (mean over seeds)", 2.0 <= m("channel") / claim <= 4.0, f"{m('channel') / claim:.2f}")
     ok("GEO no gold peak at the old ground level: the top 0.3 m of the flat claim not richer than below", m("claimTop") <= 1.15 * m("claimDeep"), f"top {m('claimTop'):.0f} mid {m('claimMid'):.0f} deep {m('claimDeep'):.0f}")
     fresh(A, 4242)
@@ -192,7 +193,7 @@ def geology(A):
     after = G(A, f"() => {{ const g = {GR}; return {{ h: g.hashes(), bucket: g.procObj().bucket.batch.goldUg, ml: g.procObj().bucket.batch.volumeMl, notice: document.querySelector('.gr-notice') ? document.querySelector('.gr-notice').textContent : '' }}; }}")
     doc = G(A, f"() => {{ {GR}.save(); return JSON.parse(localStorage.getItem(grKey())); }}")
     ok("GEO v7 -> v8: used slices stay used, the bucket keeps exactly its gold", after["h"]["slices"] == before["h"]["slices"] and after["bucket"] == before["bucket"] and after["ml"] == before["ml"], f"{before['bucket']} -> {after['bucket']}")
-    ok("GEO v7 -> v8: geology {version 2, from 1}, told once", doc["geology"].get("version") == 2 and doc["geology"].get("from") == 1 and doc["geology"].get("noted") is True and "neu vermessen" in after["notice"], str(doc["geology"]))
+    ok("GEO v7 -> v8: geology {version 3 (9.1), from 1}, told once", doc["geology"].get("version") == 3 and doc["geology"].get("from") == 1 and doc["geology"].get("noted") is True and "neu vermessen" in after["notice"], str(doc["geology"]))
 
 
 # ======================================================================
@@ -676,7 +677,7 @@ def save(A):
     G(A, f"() => {GR}.flagAt(-5, -14)")
     doc = G(A, f"() => {{ {GR}.save(); return JSON.parse(localStorage.getItem(grKey())); }}")
     pr = doc["processing"]
-    ok("SAV v8: geology, prospect, conveyor, trommel, spoil, excavator in the document", doc["saveVersion"] == 8 and doc["geology"]["version"] == 2 and doc["prospect"]["flags"] and all(pr.get(k) for k in ("conveyor", "trommel", "spoil", "excavator")), str(list(pr.keys())))
+    ok("SAV v8: geology, prospect, conveyor, trommel, spoil, excavator in the document", doc["saveVersion"] == 8 and doc["geology"]["version"] == 3 and doc["prospect"]["flags"] and all(pr.get(k) for k in ("conveyor", "trommel", "spoil", "excavator")), str(list(pr.keys())))
     # a new mine: nothing of it
     G(A, f"() => {GR}.setPaused(false)")
     gr_pause(A)
@@ -685,7 +686,7 @@ def save(A):
     gr_ready(A, choice="new")
     d2 = G(A, f"() => {{ {GR}.save(); return JSON.parse(localStorage.getItem(grKey())); }}")
     p2 = d2["processing"]
-    ok("SAV a new mine starts clean: no plant, no excavator, no prospecting, contract at 0", not d2.get("prospect") and not p2.get("conveyor") and not p2.get("excavator") and not p2.get("trommel") and G(A, f"() => {GR}.contract()")["pct"] == 0 and d2["geology"]["version"] == 2)
+    ok("SAV a new mine starts clean: no plant, no excavator, no prospecting, contract at 0", not d2.get("prospect") and not p2.get("conveyor") and not p2.get("excavator") and not p2.get("trommel") and G(A, f"() => {GR}.contract()")["pct"] == 0 and d2["geology"]["version"] == 3)
     # mid-excavation: saved while the bucket is in the cut (its material taken, the arm half way) - the cut, the
     # bucket, the pose and the ledger come back exactly; the motion itself starts again from that pose
     fresh(A, 4242)

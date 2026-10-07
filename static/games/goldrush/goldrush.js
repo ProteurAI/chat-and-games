@@ -181,6 +181,10 @@ class GoldRushShell {
             <button type="button" class="gr-sheet-close" data-act="close-station" aria-label="Schließen">${ICONS.close}</button>
           </div>
           <div class="gr-notebook" data-role="notebook"></div>
+          <div class="gr-nb-actions">
+            <button type="button" class="ghost-btn" data-act="nb-collect">Alle Fähnchen einsammeln</button>
+            <button type="button" class="ghost-btn gr-reset" data-act="nb-reset">Prospektion zurücksetzen …</button>
+          </div>
         </div>
       </div>
       <div class="gr-overlay gr-pause" hidden>
@@ -599,6 +603,8 @@ class GoldRushShell {
       if (act === "sample") g.sample(); else if (act === "flag") g.flagAtCrosshair(); else g.openNotebook();
       return;
     }
+    // GoldRush 9.1: the notebook's two actions
+    if (act === "nb-collect" || act === "nb-reset") { this._notebookAction(act); return; }
     if (act === "close-settings") { this._closeSettings(); return; }
     if (act.startsWith("dlg:")) { const r = this._dlgResolve; this._hideDialog(); if (r) r(act.slice(4)); else if (act === "dlg:exit") this.close(); }
   }
@@ -659,11 +665,31 @@ class GoldRushShell {
     add("p", "gr-contract-note", "Gezählt wird nur, was vom ursprünglichen Berg abgetragen ist – nicht das Graben in der Ebene oder auf dem Lagerplatz.");
   }
 
+  // GoldRush 9.1: collect every flag (the notebook stays) / reset prospecting (asked first)
+  async _notebookAction(act) {
+    const g = this.game;
+    if (!g || !g.processing.prospect) return;
+    if (act === "nb-collect") {
+      const r = g.collectFlags();
+      if (r) g.hud.message(r.collected ? `${r.collected} ${r.collected === 1 ? "Fähnchen" : "Fähnchen"} eingesammelt` : "Keine Fähnchen gesteckt", "Das Notizbuch bleibt, wie es ist.");
+    } else {
+      const pg = g.processing.prospect, kept = pg.bags.length + (g.processing.pan.sample ? 1 : 0);
+      const text = "Löscht das Notizbuch, alle Fähnchen und die Nummerierung – die nächste Probe ist wieder Probe 1."
+        + " Das Gelände bleibt, wie es ist: entnommenes Material kommt nicht zurück, Gold wächst nicht nach."
+        + (kept ? ` ${kept} noch nicht ausgewaschene ${kept === 1 ? "Probe behält ihr Material und heißt dann Probe 1" : `Proben behalten ihr Material und heißen dann Probe 1–${kept}`}.` : "");
+      const id = await this._ask("Prospektion zurücksetzen?", text, [{ id: "cancel", label: "Abbrechen", ghost: true }, { id: "reset-prospect", label: "Zurücksetzen", danger: true }]);
+      if (id !== "reset-prospect" || this.closed || this.game !== g) return;
+      const r = g.resetProspect();
+      if (r) g.hud.message("Prospektion zurückgesetzt", `Nächste Probe: Probe ${r.next}.`);
+    }
+    if (this._openSheet === "notebook") this._renderNotebook(g.processing.prospect.view());
+  }
+
   // phase 9: the prospecting notebook - the last samples as plain lines (no colours, no verdict)
   _renderNotebook(v) {
     const box = this.el.notebook;
     box.innerHTML = "";
-    this.el.nbSub.textContent = `${v.notes.length} / ${v.max.notes} Einträge · ${v.bags.length} / ${v.max.bags} Beutel gefüllt · ${v.flags.length} / ${v.max.flags} Fähnchen`;
+    this.el.nbSub.textContent = `${v.notes.length} / ${v.max.notes} Einträge · ${v.bags.length} / ${v.max.bags} Beutel gefüllt · ${v.flags.length} / ${v.max.flags} Fähnchen · nächste: Probe ${v.next}`;
     if (v.bags.length) {
       const h = document.createElement("div");
       h.className = "gr-shop-group";
@@ -672,7 +698,7 @@ class GoldRushShell {
       for (const b of v.bags) {
         const row = document.createElement("div");
         row.className = "gr-nb-row is-pending";
-        row.textContent = `Probe ${b.n} · ${b.place} · ${b.depth.toFixed(2).replace(".", ",")} m tief · ${b.mat} · ${(b.ml / 1000).toFixed(2).replace(".", ",")} l`;
+        row.textContent = `Probe ${b.n}${b.flagged ? " ⚑" : ""} · ${b.place} · ${b.depth.toFixed(2).replace(".", ",")} m tief · ${b.mat} · ${(b.ml / 1000).toFixed(2).replace(".", ",")} l`;
         box.appendChild(row);
       }
     }
@@ -692,7 +718,7 @@ class GoldRushShell {
       row.className = "gr-nb-row";
       const a = document.createElement("div"), b = document.createElement("div");
       a.className = "gr-nb-head"; b.className = "gr-nb-data";
-      a.textContent = `${q.head} · ${q.where}`;
+      a.textContent = `${q.head}${q.flagged ? ` · ⚑ Fähnchen ${q.n}` : ""} · ${q.where}`;
       b.textContent = `${q.amount} → ${q.gold} · ${q.grade}`;
       row.append(a, b);
       box.appendChild(row);
@@ -1370,6 +1396,10 @@ class GoldRushShell {
       sampleKey: () => g.sample(),
       flagNow: () => g.flagAtCrosshair(),
       flagAt: (x, z) => (g.processing.prospect ? g.processing.prospect.toggleFlag(x, z) : null),
+      // GoldRush 9.1: the notebook's actions (as the buttons do them, without the question)
+      flagsCollect: () => g.collectFlags(),
+      prospectReset: () => g.resetProspect(),
+      fillSeen: () => !!g.economy.flags.fillSeen,
       prospect: () => {
         const pg = g.processing.prospect;
         if (!pg) return null;

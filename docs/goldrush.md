@@ -32,7 +32,7 @@ Liegt bewusst außerhalb von `static/`, wird also nicht ausgeliefert.
 | Goldankauf-Bude, Ausrüstungs-Schuppen (Phase 8) | `goldrush-buildings.js` (`buildAssayBooth`, `buildSupplyShack`, `boardTexture`); Waage / Verkauf in `goldrush-stations.js` |
 | Autorierte Modelle .glb / .gltf (Phase 8, optional) | `goldrush-assets.js` (`model`, `modelOr`, `instance`), `models/manifest.json`, GLTFLoader in `static/vendor/three/addons/` |
 | Geologie 2.0: Paläorinnen, Camp-Auffüllung, Versionsnummer (Phase 9) | `goldrush-resources.js` (`GEOLOGY_VERSION`, `GEO`, `CHANNEL`, `CAMP_FILL`, `channelAt`, `campFillAt`) |
-| Prospektion: Probenbeutel, Notizbuch, Fähnchen (Phase 9) | `goldrush-prospect.js` (`ProspectSystem`, `SAMPLE_DEF`) |
+| Prospektion: Probenbeutel, Notizbuch, Fähnchen (Phase 9; 9.1: eine Nummerierung, Einsammeln, Reset) | `goldrush-prospect.js` (`ProspectSystem`, `SAMPLE_DEF`) |
 | Bergauftrag (Fortschritt am Berg, Freigaben) (Phase 9) | `goldrush-contract.js` (`MountainContract`, `MOUNTAIN_FLOOR`, `CONTRACT_STEPS`); Tafel in `goldrush-stations.js` |
 | Aufgabetrichter + Förderband, Trommelsieb, Abraumhalde (Phase 9) | `goldrush-plant.js` (`Conveyor`, `Trommel`, `SpoilHeap`), `goldrush-transfer.js` (`Belt`), `goldrush-material.js` (`trommelSplit`) |
 | Modelle der Anlage (Phase 9) | `goldrush-plantmodels.js` (`PlantModels`, Layout-Konstanten `INTAKE`, `BELT`, `TROMMEL`, `OVERSIZE`, `SPOIL`) |
@@ -787,6 +787,123 @@ Dosierer 493–600 min.
 contract,conveyor,trommel,excavator,chain,save,dev,handling,perf,mobile,shots`;
 die 24 Pflichtansichten aus Abschnitt 30 des Prompts plus Zusatzansichten mit
 `--shots DIR --tag NAME`; `--browser webkit` ohne perf / shots / mobile).
+
+
+## GoldRush 9.1 – Gold-Audit und Prospektions-Reset
+
+Human-QA nach Phase 9: „seit Geologie 2.0 findet man nur noch einen Bruchteil
+des Goldes“. Bewiesen statt geraten – mit `tests/e2e/goldrush_gold_ab.py`:
+
+* **`geology`**: Das `MaterialField` von PRE-P9 (`9aec716`, über eine
+  Playwright-Route geladen) wird auf **demselben Terrain-Objekt** gebaut wie das
+  aktuelle. Beide lesen exakt dieselben Säulen und Scheiben. Pro Zone 1600
+  Proben à 10 l (2 × 2 Säulen × 16 Scheiben) über 40 Seeds, dazu das
+  Claim-Budget jeder 2. Säule.
+* **`early`**: **Derselbe** Bot (der Bench-Bot von `9aec716`, Strategie M:
+  Hand → Schaufel → Eimer → Pfanne) spielt 120 min auf beiden Ständen, minütlich
+  abgefragt. Gestartet wird am normalen Startbereich oder neben dem Waschplatz.
+
+**Was passiert war (P9 gegen PRE-P9, identische Voxel, € pro 10 l Gesamtgold):**
+Es wurde **kein** Gold gelöscht. Das Budget ohne Camp lag bei 1,25×, erreichbar
+(Berg + offener Boden) bei 1,52×, im Berg bei 1,90×. Der Starter-Hang lag bei
+1,17×, der Berg bei 1,7–2,2×, sichtbare Stücke im Berg bei 2×. Das frühe Spiel
+am normalen Start war gleichauf (1,00–1,03×), ebenso die sichtbaren Funde und
+die längste Pause ohne sichtbares Stück.
+
+Den „Bruchteil“ gab es an genau einer Stelle: im **Boden neben Camp und
+Waschplatz** – dem bequemsten Grabplatz und in PRE-P9 dank der Pay Layer der
+reichste Oberflächenboden der Karte:
+
+* oberste 30 cm: **€16,07 → €0,35 / 10 l (2 %)**, sichtbare Stücke 0,72 → 0,02
+* derselbe Bot neben dem Waschplatz: **0,40× (30 min)**, 0,66× (60 min),
+  0,63× (120 min)
+* längste Pause ohne jedes Stück: 1 → 7 min
+
+Dazu kam der Verlust des „überall auf Bodenhöhe reich“: die oberen 30 cm des
+flachen Claims lagen bei 0,79×. Das war Absicht (Ground Zero ist kein Jackpot
+mehr), wurde aber nirgends erklärt.
+
+**Kalibrierung 9.1** (`GEOLOGY_VERSION 3`):
+
+* **Der Berg wird gewöhnlicher Boden.** `mf 0,88 / 1 / 1,15 → 0,97 / 1 / 1,04`:
+  Die Erde der Flanken ist nicht mehr viel ärmer als der Kies der Ebene, das war
+  ein Rest des alten Bodenniveau-Vorteils. Dazu `mountain 0,94 → 0,98` und
+  `deep 0,2 → 0,06`; der Tiefenbonus machte die zuerst gegrabene Oberfläche zur
+  ärmsten Schicht.
+* **Ergebnis gegen normalen Claim-Boden** (ohne Rinnen, Streaks, Taschen):
+  oberer Berg 1,00×, untere Flanken 0,88× (vorher etwa 0,8×).
+* **Starter-Band:** `STARTER.gMax 0,29 → 0,23`. Ohne diese Grenze hätte die
+  angehobene Oberfläche das frühe Spiel um +54 % (30 min) verschoben.
+* **Camp-Aufschüttung:** unverändert wertlos, sie wird jetzt aber **gesagt**.
+  Der erste Stich in die Aufschüttung meldet einmal pro Mine „Aufgeschütteter
+  Lagerplatz – verdichteter Fremdboden, kaum Gold; gewachsener Boden etwa einen
+  halben Meter tiefer; der Berg lohnt sich“ (`economy.flags.fillSeen`, wird
+  gespeichert). Danach kommt höchstens alle 2 min ein kurzer Tipp.
+* **Bestehende Minen:** Eine Geologie-2-Mine folgt still Geologie 3. Verbrauchte
+  Scheiben bleiben verbraucht, Behälter behalten ihr Gold.
+
+| PRE-P9 → 9.1, € / 10 l (alles Gold) | PRE-P9 | P9 | **9.1** | sichtbare Stücke / 10 l (PRE → 9.1) |
+|---|---|---|---|---|
+| Starter-Hang | 8,37 | 9,82 | **9,67** | 0,32 → 0,38 |
+| unterer Berg (0,4–2 m) | 5,34 | 9,18 | **10,04** | 0,20 → 0,41 |
+| oberer Berg (> 2 m) | 5,24 | 11,50 | **11,79** | 0,20 → 0,45 |
+| zufällige Bergpositionen | 6,16 | 10,94 | **11,16** | 0,23 → 0,45 |
+| Claim-Boden (oberster Meter) | 14,08 | 13,31 | **13,27** | 0,60 → 0,56 |
+| alter Ground Zero / Camp (oberster Meter) | 14,76 | 6,63 | **6,55** | 0,62 → 0,28 |
+| … davon oberste 30 cm (Aufschüttung) | 16,07 | 0,35 | **0,35** | 0,72 → 0,02 |
+| Paläorinne arm / mittel / reich | – | 22,9 / 34,1 / 52,2 | **21,6 / 32,8 / 50,8** | 1,1 / 1,9 / 4,1 |
+| Streak-Kern / Tasche | 15,1 / 20,5 | 25,6 / 38,5 | **25,7 / 38,2** | 1,9 / 2,6 |
+
+Claim-Budget 9.1 gegenüber PRE-P9 (€ pro m³):
+
+* alles ohne Camp: 976 → **1205 (1,23×)**
+* Berg: 596 → 1145
+* offener flacher Boden: 1259 → 1215
+* unter dem Berg: 1937 → 1394
+* Camp: 1422 → 644
+
+Das Budget liegt bewusst über „neutral“. Gut 60 % des PRE-P9-Goldes lagen in
+der Pay Layer auf Bodenhöhe, der Berg hatte 596 €/m³. Ein Rückschnitt auf das
+PRE-P9-Budget hätte den Hauptauftrag (den Berg) wieder ärmer gemacht als das
+frühe Spiel.
+
+Frühes Spiel, derselbe Bot am normalen Start, Median über 40 Seeds:
+
+| Spielzeit | € PRE-P9 → 9.1 | Verhältnis |
+|---|---|---|
+| 30 min | 29,5 → 34,9 | 1,21× |
+| 60 min | 114 → 125 | 1,16× |
+| 120 min | 348 → 371 | 1,10× |
+
+* sichtbare Stücke: 1,24× / 1,03× / 1,04×
+* Gold pro Pfanne: 1,04× (60 min), 1,12× (120 min)
+* Gold pro Eimer: 1,04× (60 min), 1,10× (120 min)
+* längste Pause ohne sichtbares Stück unverändert (5–6 / 12 min)
+* P10 der schwächsten Seeds nach 60 min: €79 → €106
+
+**Prospektion 9.1** (`goldrush-prospect.js`): **eine** Nummerierung.
+
+* `F` an der Stelle einer Probe (≤ 1,2 m, auch einer schon ausgewaschenen) setzt
+  **ihr** Fähnchen mit ihrer Nummer: orange, Probe 7 → Fähnchen 7, auch zwei-
+  und dreistellig.
+* `F` anderswo setzt ein **freies** Fähnchen: blau, Buchstabe A–L, nie eine
+  Zahl.
+* Eine Probe neben einem Fähnchen heißt „bei Probe 7“ bzw. „Fähnchen B“.
+* Das Notizbuch zeigt ⚑ an markierten Proben und „nächste: Probe n“.
+* Unten im Notizbuch stehen zwei Knöpfe:
+  * **Alle Fähnchen einsammeln:** nur die Fähnchen.
+  * **Prospektion zurücksetzen …** (mit Rückfrage): löscht Notizbuch,
+    Nummerierung, alle Fähnchen und ihre Verknüpfungen, die nächste Probe ist
+    #1. Gelände, Ledger, Bergauftrag, Geld und Goldbeutel bleiben unberührt.
+    Entnommenes Material bleibt entnommen. Noch nicht ausgewaschene Beutel und
+    eine Probe in der Pfanne behalten ihr Material und heißen dann Probe 1…k.
+* Speicher bleibt v8: Fähnchen haben `kind` („sample“ / „free“), Notizbuchzeilen
+  ihre Stelle. Fähnchen eines Phase-9-Stands laden als freie Fähnchen.
+
+**Tests:** `tests/e2e/goldrush_hotfix91_e2e.py` (Geologie 3, Fill-Hinweis,
+Fähnchen und Proben, Einsammeln, Reset, Save/Reload, wartende Beutel, Altstand,
+Knöpfe und Rückfrage). Die Benchmarks laufen mit `tests/e2e/goldrush_gold_ab.py`
+(`geology` / `early` / `report`).
 
 
 ## Entwicklertools (QA-Modus, Prompt 5.5)
