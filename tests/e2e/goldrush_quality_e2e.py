@@ -213,13 +213,15 @@ def access(browser):
         st = json.loads(body) if s == 200 else {}
         d = st.get("diagnosis") or {}
         ok("ACCESS no GOLDRUSH_DEV_CODE: the status says configured=false with a diagnosis - which server answered (service, id, commit, address), the variable missing",
-           s == 200 and st.get("configured") is False and st.get("routeVersion") == 3 and d.get("variable") == "missing" and d.get("service") == "instachat-qa"
+           s == 200 and st.get("configured") is False and st.get("routeVersion") == 4 and d.get("variable") == "missing" and d.get("service") == "instachat-qa"
            and d.get("serviceId") == "srv-qa7a" and d.get("commit") == "abcdef1" and d.get("externalUrl") == "https://instachat-qa.onrender.com", body[:240])
         vals = json.dumps([v for v in d.values()])
         ok("ACCESS the diagnosis carries no secret / hash / token / other variables (only booleans and Render's public metadata)",
            "token" not in body and "TEAM_PASSWORD" not in body and "hash" not in vals
            # route version 3 (phase 9): + where the code comes from, quotes, the allowlist and this account on it - booleans / names only
-           and set(d) == {"variable", "secretFile", "source", "quoted", "allowlist", "accountAllowed", "service", "serviceId", "instance", "commit", "externalUrl"}
+           # route version 4 (phase 10): + this account (its own id / name), the process uptime, its own failed attempts
+           and set(d) == {"variable", "secretFile", "source", "quoted", "allowlist", "accountAllowed", "service", "serviceId", "instance", "commit", "externalUrl",
+                          "accountId", "accountName", "uptimeS", "failedAttempts", "attemptLimit", "attemptWindowS", "retryInS"}
            and all(isinstance(d[k], bool) for k in ("secretFile", "quoted", "allowlist", "accountAllowed")) and d["source"] in (None, "env", "secretFile"), body[:200])
         ctx, A = client(browser, base_off, user, dict(viewport={"width": 1280, "height": 720}), extra_init=[seeded()])
         open_game(A)

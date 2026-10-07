@@ -930,10 +930,12 @@ class GoldRushShell {
     if (!g || this._devLoading) return;
     this._devLoading = true;
     let mod = null;
-    try { mod = await import("./goldrush-devtools.js"); } catch (e) { mod = null; }
+    let why = "";
+    try { mod = await import("./goldrush-devtools.js"); } catch (e) { mod = null; why = String((e && e.message) || e || "").slice(0, 220); }
     this._devLoading = false;
     if (this.closed || this.game !== g) return;
-    if (!mod) { this.notice("Die Entwicklertools konnten nicht geladen werden."); return; }
+    // the reason in words (phase 10: one screenshot) - a module that did not arrive names its address
+    if (!mod) { this.notice(`Die Entwicklertools konnten nicht geladen werden${why ? `: ${why}` : "."}`); return; }
     if (!this.devtools) this.devtools = new mod.GoldRushDevTools(this);
     this.el.panel.hidden = true;
     this.el.pause.hidden = true;

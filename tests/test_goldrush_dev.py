@@ -57,7 +57,7 @@ class DevAccessDiagnosis(unittest.TestCase):
         text = json.dumps(st)
         self.assertNotIn(SECRET, text)
         self.assertNotIn(hashlib.sha256(SECRET.encode()).hexdigest()[:12], text)
-        self.assertNotIn(str(len(SECRET)), json.dumps({k: v for k, v in d.items() if k not in ("serviceId", "commit")}))
+        self.assertNotIn(str(len(SECRET)), json.dumps({k: v for k, v in d.items() if k not in ("serviceId", "commit", "uptimeS")}))
 
     def unlock(self, code, uid=1):
         gd._fails.clear()
@@ -87,6 +87,32 @@ class DevAccessDiagnosis(unittest.TestCase):
         self.assertNotIn("Code nicht gültig", right["detail"])
         self.assertIn("token", self.unlock(SECRET, uid=9))
         self.assertEqual(self.unlock("nope", uid=9), {"status": 403, "detail": "Code nicht gültig."})
+
+    def test_route4_account_uptime_attempts(self):
+        # phase 10: one screenshot - who asks, how long the process runs, this account's own failed attempts / lock-out
+        self.env(GOLDRUSH_DEV_CODE=SECRET)
+        gd.ATTEMPT_DELAY = 0
+        st = asyncio.run(gd.dev_status(user={"id": 5, "name": "Tim", "token": "tok-should-not-appear"}, x_goldrush_dev=None))
+        d = st["diagnosis"]
+        self.assertEqual(st["routeVersion"], 4)
+        self.assertEqual((d["accountId"], d["accountName"], d["failedAttempts"], d["attemptLimit"], d["retryInS"]), (5, "Tim", 0, gd.FAIL_LIMIT, 0))
+        self.assertIsInstance(d["uptimeS"], int)
+        self.assertGreaterEqual(d["uptimeS"], 0)
+        self.assertNotIn("tok-should-not-appear", json.dumps(st))
+        for _ in range(gd.FAIL_LIMIT):
+            try:
+                asyncio.run(gd.dev_unlock({"code": "nope"}, user={"id": 5}))
+            except gd.HTTPException as e:
+                self.assertEqual(e.detail, "Code nicht gültig.")
+        d = asyncio.run(gd.dev_status(user={"id": 5, "name": "Tim"}, x_goldrush_dev=None))["diagnosis"]
+        self.assertEqual(d["failedAttempts"], gd.FAIL_LIMIT)
+        self.assertTrue(0 < d["retryInS"] <= gd.FAIL_WINDOW)
+        with self.assertRaises(gd.HTTPException) as cm:
+            asyncio.run(gd.dev_unlock({"code": SECRET}, user={"id": 5}))       # even the right code waits
+        self.assertEqual(cm.exception.status_code, 429)
+        self.assertRegex(cm.exception.detail, r"noch ca\. 10 Minuten")
+        # another account is not affected (and sees only its own attempts)
+        self.assertEqual(asyncio.run(gd.dev_status(user={"id": 6, "name": "Ann"}, x_goldrush_dev=None))["diagnosis"]["failedAttempts"], 0)
 
     def test_unicode_forms_compare_equal(self):
         self.env(GOLDRUSH_DEV_CODE="T\u00e9st-\uff23ode")          # composed e-acute, a full-width C

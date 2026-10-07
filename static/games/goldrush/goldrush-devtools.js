@@ -16,7 +16,7 @@
 
 import { devRegistry } from "./goldrush-devregistry.js";
 import * as actions from "./goldrush-devactions.js";
-import { DevAccess, DEV_ERROR as ACCESS } from "./goldrush-devaccess.js";
+import { DevAccess, DEV_ERROR as ACCESS, ROUTE_VERSION } from "./goldrush-devaccess.js";
 import { DevHud } from "./goldrush-devhud.js";
 import { SAVE_VERSION } from "./goldrush-save.js";
 import { formatEuro, formatMass } from "./goldrush-economy.js";
@@ -31,53 +31,98 @@ import "./goldrush-devcommands9.js";
 
 const DEV_ERROR = actions.DEV_ERROR;
 
-// what the developer sees when the server could not be asked / says no - one class each,
-// so a 404 or a dead connection never reads as "not configured"
-// which server answers, compactly - the lines to compare with the Render dashboard (phase 9: shown in
-// the code dialog too, not only when the code is missing - a rejected code names the server that checked it)
-function serverLines(d) {
-  const lines = [`Seite geöffnet über: ${location.origin}`];
-  if (!d) return lines;
+// One screenshot is enough (phase 10): every condition of the developer access as one line - ✓ holds,
+// ✗ fails, • for information - then the ONE next step, computed from the first failing condition. Only
+// what the server reports as public metadata / booleans and this browser's own facts; never the code.
+const MARK = { ok: "✓", bad: "✗", info: "•" };
+const ago = (s) => (s < 90 ? `${s} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`);
+
+const FAIL_TEXT = {
+  [ACCESS.AUTH_ERROR]: "Deine Anmeldung ist abgelaufen – bitte neu anmelden.",
+  [ACCESS.ENDPOINT_NOT_FOUND]: "Dieser Server kennt den Entwicklerzugang nicht (ältere Version oder falsche Adresse).",
+  [ACCESS.NETWORK_ERROR]: "Keine Verbindung zum Server.",
+};
+
+/**
+ * -> { lines, step } for the access dialog / message
+ * st: DevAccess.status() (+ rejected: the code was just refused, retryText: the server's own words)
+ * me: { id, name } of this browser's account
+ */
+function diagnose(st, me) {
+  const d = st.diagnosis || null, rows = [];
+  let step = null;
+  const add = (mark, text, next) => { rows.push(`${MARK[mark]} ${text}`); if (mark === "bad" && next && !step) step = next; };
+  // the account (the server's view when it answered, else this browser's)
+  const accId = d && d.accountId != null ? d.accountId : me && me.id, accName = (d && d.accountName) || (me && me.name) || "";
+  if (st.error === ACCESS.AUTH_ERROR) add("bad", `Angemeldet als ${accName || "–"}: Sitzung abgelaufen`, "Neu anmelden (Chat & Games), dann GoldRush erneut öffnen.");
+  else add("ok", `Angemeldet als ${accName || "?"} (Konto-ID ${accId != null ? accId : "?"})`);
+  // where the page comes from - the status is asked at the same address, so this IS the answering server
+  add("info", `Seite geöffnet über: ${location.origin}`);
+  if (!d) {
+    // the question itself failed: what was asked, what came back
+    const how = st.error === ACCESS.NETWORK_ERROR ? "keine Antwort" : st.status ? `HTTP ${st.status}` : st.error === ACCESS.ENDPOINT_NOT_FOUND ? "keine Entwickler-Antwort (andere Seite)" : "Fehler";
+    add("bad", `Anfrage GET /api/goldrush/dev/status: ${how}`,
+      st.error === ACCESS.ENDPOINT_NOT_FOUND ? `Der Server unter ${location.origin} hat den Entwicklerzugang nicht: in Render → Events prüfen, ob der letzte Deploy des aktuellen Commits erfolgreich war.`
+      : st.error === ACCESS.NETWORK_ERROR ? "Verbindung prüfen; eine schlafende Render-Free-Instanz braucht bis zu 1 min – Seite neu laden und erneut öffnen."
+      : st.error === ACCESS.SERVER_ERROR ? `Render → Logs dieses Dienstes ansehen (HTTP ${st.status || "5xx"}); wacht die Instanz gerade auf, in 30 s erneut versuchen.`
+      : null);
+    add("info", `Client-Version: Route v${ROUTE_VERSION}`);
+    return { lines: rows, step };
+  }
+  // the answering server: Render's own name / id / instance / commit, and how long this process runs
   const srv = [d.service, d.serviceId, d.instance && `Instanz ${d.instance}`, d.commit && `Commit ${d.commit}`].filter(Boolean).join(" · ");
-  lines.push(srv ? `Antwortender Server: ${srv}` : "Antwortender Server: lokal (keine Render-Metadaten)");
+  const up = Number.isFinite(d.uptimeS) ? ` · läuft seit ${ago(d.uptimeS)}` : "";
+  add("info", srv ? `Antwortender Server: ${srv}${up}` : `Antwortender Server: lokal (keine Render-Metadaten)${up}`);
   if (d.externalUrl) {
-    lines.push(`Adresse dieses Servers: ${d.externalUrl}`);
     let other = false;
     try { other = new URL(d.externalUrl).origin !== location.origin; } catch (e) { other = false; }
-    if (other) lines.push("Achtung: Die Seite läuft über eine andere Adresse als die dieses Servers.");
+    add("info", other ? `Render-Adresse dieses Dienstes: ${d.externalUrl} (Seite über eine andere Adresse geöffnet – eigene Domain?)` : `Render-Adresse dieses Dienstes: ${d.externalUrl}`);
   }
-  return lines;
+  // the code on the server
+  const where = d.service ? `Render → Dienst „${d.service}“${d.serviceId ? ` (${d.serviceId})` : ""} → Environment` : "In der Server-Umgebung";
+  if (st.configured) {
+    add("ok", `Code auf dem Server: ${d.source === "secretFile" ? "Secret-Datei GOLDRUSH_DEV_CODE" : "Umgebungsvariable GOLDRUSH_DEV_CODE"}${d.quoted ? " (in Anführungszeichen eingetragen – gilt ohne sie)" : ""}`);
+  } else {
+    const deploy = " speichern und neu deployen („Save, rebuild, and deploy“); danach diesen Dialog erneut öffnen – „läuft seit“ beginnt dann neu.";
+    if (d.variable === "empty") add("bad", "GOLDRUSH_DEV_CODE ist gesetzt, aber leer.", `${where}: bei GOLDRUSH_DEV_CODE einen Wert eintragen,${deploy}`);
+    else if (d.variable === "nearMiss") add("bad", "Eine ähnlich benannte Variable existiert – Schreibweise / Leerzeichen von GOLDRUSH_DEV_CODE prüfen.", `${where}: die Variable exakt GOLDRUSH_DEV_CODE nennen (Großbuchstaben, ohne Leerzeichen),${deploy}`);
+    else add("bad", "GOLDRUSH_DEV_CODE fehlt in der Umgebung dieses Servers.", `${where}: GOLDRUSH_DEV_CODE anlegen (an genau diesem Dienst, nicht nur in einer anderen Umgebungsgruppe),${deploy}`);
+    if (d.secretFile) add("bad", "Eine Secret-Datei GOLDRUSH_DEV_CODE ist vorhanden, aber leer.");
+  }
+  // the account list
+  if (!d.allowlist) add("ok", "Kontoliste GOLDRUSH_DEV_USER_IDS: nicht gesetzt (jedes angemeldete Konto)");
+  else if (d.accountAllowed) add("ok", `Konto-ID ${accId} steht in GOLDRUSH_DEV_USER_IDS`);
+  else add("bad", `Konto-ID ${accId} fehlt in GOLDRUSH_DEV_USER_IDS – mit diesem Konto geht es auch mit richtigem Code nicht.`,
+    `${where}: ${accId} in GOLDRUSH_DEV_USER_IDS ergänzen (Komma-getrennt) oder die Variable löschen, dann neu deployen – oder mit dem freigegebenen Konto anmelden.`);
+  // this account's attempts
+  if (Number.isFinite(d.failedAttempts)) {
+    const lim = d.attemptLimit || 6, win = Math.round((d.attemptWindowS || 600) / 60);
+    if (d.retryInS > 0) add("bad", `Fehlversuche: ${d.failedAttempts} von ${lim} in ${win} min – gesperrt für noch ca. ${Math.max(1, Math.ceil(d.retryInS / 60))} min`,
+      `Ca. ${Math.max(1, Math.ceil(d.retryInS / 60))} min warten, dann den Code erneut eingeben (Groß-/Kleinschreibung zählt).`);
+    else add(d.failedAttempts ? "info" : "ok", `Fehlversuche: ${d.failedAttempts} von ${lim} in ${win} min`);
+  }
+  if (st.staleSession) add("info", `Gespeicherte Entwicklersitzung gilt nicht mehr – der Server lief seitdem neu an${Number.isFinite(d.uptimeS) ? ` (vor ${ago(d.uptimeS)})` : ""} oder eine andere Instanz antwortet.`);
+  // versions: the page's JavaScript and the server's route
+  if ((st.routeVersion || 1) === ROUTE_VERSION) add("ok", `Version: Client v${ROUTE_VERSION} = Server v${st.routeVersion}`);
+  else add("bad", `Version: Client v${ROUTE_VERSION} ≠ Server v${st.routeVersion || 1}`,
+    (st.routeVersion || 1) < ROUTE_VERSION ? "Der Server läuft mit älterem Stand: in Render → Events den letzten Deploy prüfen / „Manual Deploy → Deploy latest commit“." : "Die Seite ist veraltet: hart neu laden (Strg+F5 / am Handy Seite schließen und neu öffnen).");
+  if (!step && st.configured) step = st.rejected
+    ? "Code exakt wie in Render → Environment → GOLDRUSH_DEV_CODE eingeben – Groß-/Kleinschreibung zählt; mit „Code anzeigen“ prüfen."
+    : "Code eingeben (Groß-/Kleinschreibung zählt).";
+  return { lines: rows, step };
 }
 
-// the code dialog's own text: the server, where its code comes from, what to fix there
-function accessHint(d) {
-  if (!d) return "";
-  const lines = serverLines(d);
-  if (d.source) lines.push(`Code auf dem Server: ${d.source === "env" ? "Umgebungsvariable GOLDRUSH_DEV_CODE" : "Secret-Datei GOLDRUSH_DEV_CODE"}`);
-  if (d.quoted) lines.push("Hinweis: Der Wert auf dem Server steht in Anführungszeichen – er gilt ohne sie; in Render besser ohne Anführungszeichen eintragen.");
-  if (d.allowlist && !d.accountAllowed) lines.push("Dieses Konto steht nicht in GOLDRUSH_DEV_USER_IDS – mit diesem Konto geht es auch mit richtigem Code nicht.");
-  else if (d.allowlist) lines.push("GOLDRUSH_DEV_USER_IDS ist gesetzt; dieses Konto ist freigegeben.");
-  return lines.join("\n");
+function diagnosisText(st, me, head) {
+  const { lines, step } = diagnose(st, me);
+  return [head, head ? "" : null, "DIAGNOSE", ...lines, step ? `→ Nächster Schritt: ${step}` : null].filter((x) => x !== null).join("\n");
 }
 
-function accessText(st) {
-  switch (st.error) {
-    case ACCESS.NOT_CONFIGURED: {
-      const d = st.diagnosis || {}, lines = ["Entwicklerzugang ist auf diesem Server nicht konfiguriert."];
-      lines.push("", ...serverLines(st.diagnosis));
-      lines.push(d.variable === "empty" ? "GOLDRUSH_DEV_CODE ist gesetzt, aber leer."
-        : d.variable === "nearMiss" ? "Eine ähnlich benannte Variable existiert – Schreibweise / Leerzeichen von GOLDRUSH_DEV_CODE prüfen."
-        : "GOLDRUSH_DEV_CODE fehlt in der Umgebung dieses Servers.");
-      if (d.secretFile) lines.push("Eine Secret-Datei GOLDRUSH_DEV_CODE ist vorhanden, aber leer.");
-      lines.push("Die Variable muss an genau diesem Dienst gesetzt sein; danach neu deployen.");
-      if (d.serviceId) lines.push("Weicht die Service-ID von der im Render-Dashboard ab, antwortet ein anderer Dienst (alte Adresse / Lesezeichen?).");
-      return lines.join("\n");
-    }
-    case ACCESS.AUTH_ERROR: return "Deine Anmeldung ist abgelaufen – bitte neu anmelden.";
-    case ACCESS.ENDPOINT_NOT_FOUND: return "Dieser Server kennt den Entwicklerzugang nicht (ältere Version oder falsche Adresse).";
-    case ACCESS.SERVER_ERROR: return `Der Server hat gerade ein Problem${st.status ? ` (HTTP ${st.status})` : ""}. Bitte gleich nochmal versuchen.`;
-    default: return "Keine Verbindung zum Server.";
-  }
+// a failed question / "not configured": the plain message first, then the checklist
+function accessText(st, me) {
+  const head = st.error === ACCESS.NOT_CONFIGURED ? "Entwicklerzugang ist auf diesem Server nicht konfiguriert."
+    : st.error === ACCESS.SERVER_ERROR ? `Der Server hat gerade ein Problem${st.status ? ` (HTTP ${st.status})` : ""}. Bitte gleich nochmal versuchen.`
+    : FAIL_TEXT[st.error] || FAIL_TEXT[ACCESS.NETWORK_ERROR];
+  return diagnosisText(st, me, head);
 }
 const CLOSE = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>`;
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -132,7 +177,8 @@ export class GoldRushDevTools {
           <p class="gr-card-text" id="gr-dev-m-text" data-role="m-text"></p>
           <form class="gr-dev-code" data-role="m-form" hidden novalidate>
             <label class="gr-dev-label" for="gr-dev-code">Code</label>
-            <input id="gr-dev-code" class="gr-dev-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="128" />
+            <input id="gr-dev-code" class="gr-dev-input" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="128" />
+            <label class="gr-dev-show"><input type="checkbox" data-role="m-show" /><span>Code anzeigen</span></label>
             <div class="gr-dev-error" data-role="m-error" role="alert"></div>
           </form>
           <div class="gr-actions" data-role="m-actions"></div>
@@ -143,7 +189,7 @@ export class GoldRushDevTools {
     const q = (s) => el.querySelector(s);
     this.$ = { card: q(".gr-dev-card"), status: q("[data-role=status]"), tabs: q("[data-role=tabs]"), body: q("[data-role=body]"), toast: q("[data-role=toast]"),
       modal: q(".gr-dev-modal"), mTitle: q("[data-role=m-title]"), mText: q("[data-role=m-text]"), mForm: q("[data-role=m-form]"), mInput: q("#gr-dev-code"),
-      mError: q("[data-role=m-error]"), mActions: q("[data-role=m-actions]"), file: q("[data-role=file]") };
+      mError: q("[data-role=m-error]"), mActions: q("[data-role=m-actions]"), file: q("[data-role=file]"), mShow: q("[data-role=m-show]") };
     this._off = [];
     const on = (t, type, fn) => { t.addEventListener(type, fn); this._off.push(() => t.removeEventListener(type, fn)); };
     on(el, "click", (e) => this._click(e));
@@ -168,8 +214,8 @@ export class GoldRushDevTools {
     let st;
     try { st = await this.access.status(); } catch (e) { st = { configured: null, error: ACCESS.NETWORK_ERROR }; }
     if (!this.active) return;
-    if (st.error) { await this._message("Entwicklerzugang", accessText(st)); return this._leave(); }
-    if (!st.unlocked && !(await this._accessDialog(st.diagnosis))) return this._leave();
+    if (st.error) { await this._message("Entwicklerzugang", accessText(st, this.saves.player)); return this._leave(); }
+    if (!st.unlocked && !(await this._accessDialog(st))) return this._leave();
     if (!this.active || !this.game) return this._leave();
     this.shell.devStateChanged();
     this._openPanel();
@@ -231,7 +277,10 @@ export class GoldRushDevTools {
     $.mTitle.textContent = title;
     $.mText.textContent = text || "";
     $.mText.style.whiteSpace = text && text.includes("\n") ? "pre-line" : "";
+    $.mText.classList.toggle("gr-dev-diag", !!text && text.includes("\nDIAGNOSE\n") || /^DIAGNOSE\n/.test(text || ""));
     $.mText.hidden = !text;
+    $.mShow.checked = false;
+    $.mInput.type = "password";
     $.mForm.hidden = !form;
     $.mError.textContent = "";
     $.mInput.value = "";
@@ -256,6 +305,8 @@ export class GoldRushDevTools {
     this._modalResolve = null;
     this.$.modal.hidden = true;
     this.$.mInput.value = "";                                  // the code is never kept
+    this.$.mInput.type = "password";
+    this.$.mShow.checked = false;
     if (r) {
       r(id);
       const back = this._modalFocus;
@@ -269,9 +320,10 @@ export class GoldRushDevTools {
     return this._modal({ title, text, buttons: [{ id: "cancel", label: cancel, ghost: true }, { id: "ok", label: ok, danger }] }).then((id) => id === "ok");
   }
 
-  // ENTWICKLERZUGANG: the code goes to the server once; wrong -> one plain message
-  _accessDialog(diagnosis = null) {
-    const p = this._modal({ title: "Entwicklerzugang", text: accessHint(diagnosis), form: true, buttons: [{ id: "cancel", label: "Abbrechen", ghost: true }, { id: "unlock", label: "Freischalten" }] });
+  // ENTWICKLERZUGANG: the code goes to the server once; wrong -> one plain message, and the checklist is asked again
+  // (attempts, lock-out) - the dialog as a whole is the screenshot that explains it
+  _accessDialog(st = {}) {
+    const p = this._modal({ title: "Entwicklerzugang", text: diagnosisText(st, this.saves.player), form: true, buttons: [{ id: "cancel", label: "Abbrechen", ghost: true }, { id: "unlock", label: "Freischalten" }] });
     this._unlocking = false;
     return p.then((id) => id === "unlocked");
   }
@@ -289,8 +341,14 @@ export class GoldRushDevTools {
     if (!this._modalResolve) return;
     if (r.ok) { this._resolveModal("unlocked"); return; }
     const own = !r.kind || r.kind === ACCESS.REJECTED || r.kind === ACCESS.NOT_CONFIGURED;      // the server's own words
-    $.mError.textContent = own ? r.error || "Code nicht gültig." : accessText({ error: r.kind });
+    $.mError.textContent = own ? r.error || "Code nicht gültig." : FAIL_TEXT[r.kind] || accessText({ error: r.kind }, this.saves.player).split("\n")[0];
     $.mInput.focus({ preventScroll: true });
+    // the checklist again: this account's attempts / a lock-out / a server that went away meanwhile
+    let st = null;
+    try { st = await this.access.status(); } catch (e) { st = null; }
+    if (st && this._modalResolve && !this.$.modal.hidden && !this.$.mForm.hidden) {
+      $.mText.textContent = st.error && st.error !== ACCESS.NOT_CONFIGURED ? accessText(st, this.saves.player) : diagnosisText({ ...st, rejected: own }, this.saves.player, st.error ? accessText(st, this.saves.player).split("\n")[0] : null);
+    }
   }
 
   // ------------------------------------------------------------ events
@@ -326,6 +384,7 @@ export class GoldRushDevTools {
   }
 
   _change(e) {
+    if (e.target === this.$.mShow) { this.$.mInput.type = this.$.mShow.checked ? "text" : "password"; this.$.mInput.focus({ preventScroll: true }); return; }
     const t = e.target.closest("[data-dev-toggle]");
     if (!t || !this.isOpen) return;
     const cmd = devRegistry.get(t.dataset.devToggle);

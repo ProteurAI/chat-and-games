@@ -562,6 +562,10 @@ button.gr-tool { border: none; font-family: inherit; cursor: default; }
 .gr-dev-code .gr-dev-label { color: var(--text-primary); }
 .gr-dev-code .gr-dev-input { flex: none; background: var(--bg-surface-alt); color: var(--text-primary); border-color: var(--border-strong); }
 .gr-dev-error { min-height: 1.2em; font-size: var(--text-sm); color: #c2410c; font-weight: 600; }
+/* phase 10: the access checklist - one screenshot shows every condition and the next step */
+.gr-dev-modal-card .gr-card-text.gr-dev-diag { font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.gr-dev-show { display: flex; align-items: center; gap: 8px; min-height: 32px; font-size: var(--text-sm); color: var(--text-secondary); cursor: pointer; align-self: flex-start; }
+.gr-dev-show input { width: 18px; height: 18px; }
 /* touch: a sheet from the bottom, nearly the whole screen */
 .gr-touch .gr-dev { padding: 0; align-items: flex-end; }
 .gr-touch .gr-dev-card {

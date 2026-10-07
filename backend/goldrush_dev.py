@@ -22,6 +22,11 @@ A value pasted with surrounding quotes ("..." / '...') is accepted without
 them (and reported); both sides are compared NFKC-normalised.
 With an allowlist the account is checked BEFORE the code, with its own
 message - "Code nicht gültig." always means the code itself.
+Route version 4 (phase 10, one screenshot is enough): + the account the
+browser is logged in with (id / name - its own), how long this server
+process runs (a restart / a sleeping free instance forgets every developer
+session), this account's failed attempts in the window and when it may try
+again.
 
 Flow: a logged-in user (X-Auth-Token, as everywhere) posts the code ->
 compared here in constant time -> a short-lived developer session token
@@ -44,7 +49,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 
 router = APIRouter()
 
-ROUTE_VERSION = 3                  # 2: a diagnosis when not configured (7A); 3: always, + source / quotes / allowlist (9)
+ROUTE_VERSION = 4                  # 2: a diagnosis when not configured (7A); 3: always, + source / quotes / allowlist (9);
+                                   # 4: + account, uptime, failed attempts / retry (10)
 ENV_KEY = "GOLDRUSH_DEV_CODE"
 SECRET_FILES = (Path("/etc/secrets") / ENV_KEY,)     # Render secret file (dashboard: Environment -> Secret Files)
 
@@ -53,6 +59,7 @@ FAIL_WINDOW = 600                  # failed attempts counted over 10 minutes ...
 FAIL_LIMIT = 6                     # ... at most this many, then a pause
 ATTEMPT_DELAY = 0.35               # every attempt takes a moment (no rapid guessing)
 
+_STARTED = time.time()                           # this process (a restart forgets every developer session)
 _sessions: dict[str, tuple[int, float]] = {}      # token -> (user id, expiry)
 _fails: dict[int, list[float]] = {}               # user id -> times of failed attempts
 
@@ -110,13 +117,26 @@ def _allowlist() -> Optional[set]:
     return {p.strip() for p in raw.split(",") if p.strip()} if raw else None
 
 
-def _diagnosis(user_id: Optional[int] = None) -> dict:
+def _recent_fails(user_id, now: float) -> list:
+    return [t for t in _fails.get(user_id, []) if now - t < FAIL_WINDOW]
+
+
+def _retry_in(recent: list, now: float) -> int:
+    """seconds until this account may try again (0: now)"""
+    if len(recent) < FAIL_LIMIT:
+        return 0
+    return max(1, int(sorted(recent)[len(recent) - FAIL_LIMIT] + FAIL_WINDOW - now + 0.999))
+
+
+def _diagnosis(user_id: Optional[int] = None, user_name: Optional[str] = None) -> dict:
     """which server answered and how its developer access is set up - public metadata and booleans only"""
     present = ENV_KEY in os.environ
     near = any(k != ENV_KEY and k.strip().upper() == ENV_KEY for k in os.environ)
     commit = os.environ.get("RENDER_GIT_COMMIT", "")
     code, src, quoted = _read_source()
     allow = _allowlist()
+    now = time.time()
+    fails = _recent_fails(user_id, now) if user_id is not None else []
     return {
         "variable": ("set" if code and src == "env" else "empty") if present else ("nearMiss" if near else "missing"),
         "secretFile": any(f.exists() for f in SECRET_FILES),
@@ -129,6 +149,14 @@ def _diagnosis(user_id: Optional[int] = None) -> dict:
         "instance": os.environ.get("RENDER_INSTANCE_ID") or None,
         "commit": commit[:7] or None,
         "externalUrl": os.environ.get("RENDER_EXTERNAL_URL") or None,
+        # route version 4: who asks, how long this process runs, this account's own failed attempts
+        "accountId": user_id,
+        "accountName": user_name,
+        "uptimeS": int(time.time() - _STARTED),
+        "failedAttempts": len(fails),
+        "attemptLimit": FAIL_LIMIT,
+        "attemptWindowS": FAIL_WINDOW,
+        "retryInS": _retry_in(fails, now),
     }
 
 
@@ -156,7 +184,7 @@ async def dev_status(user: dict = Depends(_current_user), x_goldrush_dev: Option
     configured = bool(_code())
     left = _session(x_goldrush_dev, user["id"]) if configured else None
     out = {"configured": configured, "unlocked": left is not None, "expiresIn": int(left) if left else 0, "routeVersion": ROUTE_VERSION}
-    out["diagnosis"] = _diagnosis(user["id"])
+    out["diagnosis"] = _diagnosis(user["id"], user.get("name"))
     return out
 
 
@@ -171,11 +199,12 @@ async def dev_unlock(payload: dict, user: dict = Depends(_current_user)):
         # as "wrong code" (and this answer says nothing about the code)
         raise HTTPException(status_code=403, detail=f"Dieses Konto (ID {uid}) ist für den Entwicklerzugang nicht freigegeben – GOLDRUSH_DEV_USER_IDS auf dem Server prüfen.")
     now = time.time()
-    recent = [t for t in _fails.get(uid, []) if now - t < FAIL_WINDOW]
+    recent = _recent_fails(uid, now)
     _fails[uid] = recent
     await asyncio.sleep(ATTEMPT_DELAY)
     if len(recent) >= FAIL_LIMIT:
-        raise HTTPException(status_code=429, detail="Zu viele Versuche. Bitte warte ein paar Minuten.")
+        mins = max(1, (_retry_in(recent, now) + 59) // 60)
+        raise HTTPException(status_code=429, detail=f"Zu viele Versuche. Bitte warte noch ca. {mins} Minute{'' if mins == 1 else 'n'}.")
     given = payload.get("code") if isinstance(payload, dict) else None
     given = given.strip() if isinstance(given, str) else ""
     given, _ = _unquote(given)

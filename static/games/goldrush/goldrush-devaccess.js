@@ -7,7 +7,7 @@
 // never the code itself. Loaded on demand: a normal player never fetches it.
 
 const STORE = "goldrush.devSession";
-export const ROUTE_VERSION = 2;          // backend/goldrush_dev.py ROUTE_VERSION (the status's shape)
+export const ROUTE_VERSION = 4;          // backend/goldrush_dev.py ROUTE_VERSION (the status's shape)
 
 // what can go wrong when asking the server - "not configured" is only ever the
 // server's own answer, never a guess from a failed request
@@ -67,6 +67,7 @@ export class DevAccess {
   async status() {
     if (!this.available) return { configured: false, unlocked: false, error: DEV_ERROR.AUTH_ERROR };
     let r;
+    const had = !!(this._token() || this._mem);              // a session this browser tab still holds
     try {
       r = await this.api("/api/goldrush/dev/status", { headers: this._headers() });
     } catch (e) {
@@ -79,6 +80,8 @@ export class DevAccess {
     if (!this.unlocked) { this._keep(null); this._mem = null; }
     // (route version 3, phase 9: the diagnosis comes always - which server answered, how it is set up)
     const out = { configured: this.configured, unlocked: this.unlocked, routeVersion: r.routeVersion || 1, diagnosis: r.diagnosis || null };
+    // the server no longer knows this tab's session: it restarted (a free instance sleeps) or another instance answered
+    out.staleSession = had && !this.unlocked;
     this.diagnosis = out.diagnosis;
     if (!r.configured) out.error = DEV_ERROR.NOT_CONFIGURED;
     return out;
