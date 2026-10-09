@@ -28,6 +28,7 @@ import { STAGE } from "./goldrush-material.js";
 import { MaterialBuffer, TransferLink, stepChain, transfer, volumeOf, roomOf } from "./goldrush-transfer.js";
 import { BULK, bulkLevelFor } from "./goldrush-automodels.js";
 import { mergeStatic } from "./goldrush-merge.js";
+import { sluiceFlowMax } from "./goldrush-sluice.js";
 
 export const BULK_AT = { x: -20.82, z: -3.45 };
 export const BULK_ML = 360000;                 // 360 l (~4 wheelbarrow loads); extension 540 l (tuned, benchmark)
@@ -340,7 +341,8 @@ export class Feeder {
 
   applyUpgrades() {
     const ups = this.ctx.upgrades(), wp = this.ctx.washplant ? this.ctx.washplant() : null;
-    const r = wp && wp.installed ? FEEDER_PLANT_LPM : ups.has("sluice.highflow") ? FEEDER_HIGHFLOW_LPM : ups.has("feeder.fine") ? FEEDER_FINE_LPM : FEEDER_LPM;
+    // (10.0.1: with each high-flow stage the outlet doses what the box takes - 32 / 45 / 60 l/min)
+    const r = wp && wp.installed ? FEEDER_PLANT_LPM : ups.has("sluice.highflow") ? Math.max(FEEDER_HIGHFLOW_LPM, sluiceFlowMax(ups)) : ups.has("feeder.fine") ? FEEDER_FINE_LPM : FEEDER_LPM;
     this.inLink.rateLpm = this.outLink.rateLpm = r;
   }
 

@@ -48,6 +48,10 @@ export const STEADY_MAX_LPM = 14;                   // fed steadily by a feeder 
 // phase 9: the high-flow sluice (upgrade "sluice.highflow"): a wider box with deeper riffles - more litres a
 // minute, the riffles hold far more before a clean out, a little less of the fine gold per litre at that flow
 export const HIGHFLOW = { base: 20, max: 32, riffleL: 640, capture: 0.62, captureMat: 0.72, widen: 1.65 };
+// GoldRush 10.0.1: two more throughput stages on the same high-flow box (a steeper bed, a wider outlet each time) -
+// what it takes fed evenly; the feeder doses exactly that (goldrush-automation.js), so it never holds one back
+export const FLOW_STAGES = [["sluice.highflow", 32], ["sluice.flow2", 45], ["sluice.flow3", 60]];
+export function sluiceFlowMax(ups) { let m = 0; for (const [id, l] of FLOW_STAGES) if (ups && ups.has(id)) m = l; return m; }
 const STEP_ML = 500;
 const BUILD_S = 2.4;
 const CLEAN_S = 4;
@@ -141,7 +145,7 @@ export class Sluice {
   // Prompt 10: the wash plant around this box (goldrush-washplant.js) - while it stands it does the washing
   get wp() { const w = this.ctx.washplant ? this.ctx.washplant() : null; return w && w.installed ? w : null; }
   // litres a minute through the box: FEED_LPM, more while a feeder doses it evenly (set every step by the processing system)
-  get rateLpm() { const wp = this.wp; if (wp) return wp.rateLpm; return this.highflow ? Math.max(HIGHFLOW.base, Math.min(HIGHFLOW.max, this.steadyLpm || 0)) : Math.max(FEED_LPM, Math.min(STEADY_MAX_LPM, this.steadyLpm || 0)); }
+  get rateLpm() { const wp = this.wp; if (wp) return wp.rateLpm; return this.highflow ? Math.max(HIGHFLOW.base, Math.min(this.flowMax || HIGHFLOW.max, this.steadyLpm || 0)) : Math.max(FEED_LPM, Math.min(STEADY_MAX_LPM, this.steadyLpm || 0)); }
   get capacityMl() { return this.hopper.capacityMl; }
   get riffleL() { return this.wp ? WP.riffleL : this.highflow ? HIGHFLOW.riffleL : SLUICE_TUNING.riffleL; }
   get riffleLoad() { const wp = this.wp; return wp ? wp.maxRiffleLoad() : this.loadMl / 1000 / this.riffleL; }       // 1 = time to clean out
@@ -151,6 +155,7 @@ export class Sluice {
     const ups = this.ctx.upgrades(), wp = this.wp;
     this.hopper.capacityMl = wp ? WP.distMl : ups.has("sluice.hopper") ? 90000 : HOPPER_ML;
     this.highflow = ups.has("sluice.highflow") || !!wp;
+    this.flowMax = Math.max(HIGHFLOW.max, sluiceFlowMax(ups));          // (10.0.1: 32 / 45 / 60 l/min)
     this.capture = this.highflow ? (ups.has("sluice.mat") ? HIGHFLOW.captureMat : HIGHFLOW.capture) : ups.has("sluice.mat") ? 0.75 : SLUICE_TUNING.capture;
     this.model.userData.hop.scale.setScalar(ups.has("sluice.hopper") ? 1.18 : 1);
     this.model.userData.bed.material.color.setHex(ups.has("sluice.mat") ? 0xb7c2a6 : 0xffffff);   // the moss mat: lighter, greener

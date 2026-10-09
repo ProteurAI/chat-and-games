@@ -197,6 +197,17 @@ export const SHOP_ITEMS = [
     text: "Eine breite Rinne mit tiefen Riffeln und ein weiterer Dosierauslass: gesiebt verarbeitet sie bis zu 32 Liter pro Minute statt 14 – und die Riffel fassen mehr, bevor sie gereinigt werden müssen.",
     requires: { equipment: ["trommel"] },
   },
+  // GoldRush 10.0.1: two small steps for the high-flow sluice between the big machines (the feeder grows with it)
+  {
+    id: "sluice.flow2", kind: "upgrade", tool: "sluice", label: "Rinnen-Durchsatz II · 32 → 45 l/min", price: 45000,
+    text: "Ein steileres Rinnenbett und ein weiterer Dosierauslass: die Hochleistungsrinne verarbeitet gleichmäßig dosiert 45 statt 32 Liter pro Minute – der Dosierer gibt gleich mit 45 auf. Gilt, bis die Waschanlage die Rinne übernimmt.",
+    requires: { equipment: ["feeder"], upgrades: ["sluice.highflow"] },
+  },
+  {
+    id: "sluice.flow3", kind: "upgrade", tool: "sluice", label: "Rinnen-Durchsatz III · 45 → 60 l/min", price: 75000,
+    text: "Noch ein Auslass und Prallbleche am Kopf: 60 statt 45 Liter pro Minute, der Dosierer gibt mit 60 auf – so viel, wie Förderband und Trommel liefern.",
+    requires: { upgrades: ["sluice.flow2"] },
+  },
   {
     id: "excavator", kind: "equipment", label: "Kompaktbagger", price: 200000,
     text: "Ein kleiner Kettenbagger mit 45-Liter-Löffel: einsteigen, an den Hang fahren, der Löffel gräbt in einem Zug so viel wie ein paar Dutzend Schaufelstiche – und kippt in den Aufgabetrichter, die Schubkarre oder auf die Abraumhalde. Festen Fels bricht er nicht.",
