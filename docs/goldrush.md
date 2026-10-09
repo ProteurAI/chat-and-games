@@ -3,13 +3,13 @@
 Interne Notizen für die Weiterentwicklung (Prompt 6–12). Nicht für Spieler.
 Liegt bewusst außerhalb von `static/`, wird also nicht ausgeliefert.
 
-## Module (Stand Phase 9)
+## Module (Stand Prompt 10)
 
 | Bereich | Datei(en) |
 |---|---|
 | Einstieg, Startscreen, Menüs, Dialoge | `static/games/goldrush/goldrush.js` |
 | Spiel, Loop, Spieler, Kauf | `goldrush-engine.js` |
-| Spielstände (pro Konto), Migrationen, Dev-Snapshot | `goldrush-save.js` (`GoldRushSaveService`, Version 8) |
+| Spielstände (pro Konto), Migrationen, Dev-Snapshot | `goldrush-save.js` (`GoldRushSaveService`, Version 9) |
 | Geld, Goldbeutel, Verkauf | `goldrush-economy.js` |
 | Shop-Registry (Items, Preise, Voraussetzungen) | `goldrush-shop.js` (`SHOP_ITEMS`) |
 | Gelände, Ressourcen, Abbau | `goldrush-terrain.js`, `goldrush-resources.js`, `goldrush-mining.js` |
@@ -37,7 +37,12 @@ Liegt bewusst außerhalb von `static/`, wird also nicht ausgeliefert.
 | Aufgabetrichter + Förderband, Trommelsieb, Abraumhalde (Phase 9) | `goldrush-plant.js` (`Conveyor`, `Trommel`, `SpoilHeap`), `goldrush-transfer.js` (`Belt`), `goldrush-material.js` (`trommelSplit`) |
 | Modelle der Anlage (Phase 9) | `goldrush-plantmodels.js` (`PlantModels`, Layout-Konstanten `INTAKE`, `BELT`, `TROMMEL`, `OVERSIZE`, `SPOIL`) |
 | Kompaktbagger (Phase 9) | `goldrush-excavator.js` (`Excavator`, `EXC_DEF`), Modell / Rig `goldrush-excavatormodel.js` (`ExcavatorRig`, `rigFromScene`) |
-| Entwickler-/QA-Werkzeuge | `goldrush-dev*.js` (siehe unten; Phase 6 / 7 / 7A / 7B / 8 / 9: `goldrush-devcommands6.js`, `goldrush-devcommands7.js`, `goldrush-devcommands7a.js`, `goldrush-devcommands7b.js`, `goldrush-devcommands8.js`, `goldrush-devcommands9.js`) |
+| Haufen: Rohmaterial, Überkorn, Tailings-Auslauf / -Zone, Abraum (Prompt 10) | `goldrush-stockpile.js` (`StockpileSystem`, `Stockpile`, `PILE_TYPES`, `PILE_SITES`) |
+| Kompakt-Radlader (Prompt 10) | `goldrush-loader.js` (`Loader`, `LOADER_HOME`, `DRIVE`), Modell / Rig `goldrush-loadermodel.js` (`LoaderRig`, `LDR`, `loaderRigFromScene`) |
+| Waschanlage: Verteilerkasten, drei Rinnen, Konzentratwanne (Prompt 10) | `goldrush-washplant.js` (`WashPlant`, `WP`); die Rinne gibt ab (`Sluice.wp`) |
+| Bergseiten-Abbaugerät (Prompt 10) | `goldrush-autominer.js` (`AutoMiner`, `MINER`, `MINER_DEF`, `MINER_HOME`), Modell / Rig `goldrush-autominermodel.js` (`AutoMinerRig`, `AM`); Platzierung in `goldrush-engine.js` (`_placeStart` / `_placeUpdate` / `_placeEnd`) |
+| Empfänger-Tabelle (alles, worin gekippt wird) (Prompt 10) | `ProcessingSystem.receivers()` in `goldrush-processing.js` |
+| Entwickler-/QA-Werkzeuge | `goldrush-dev*.js` (siehe unten; Phase 6 / 7 / 7A / 7B / 8 / 9 / 10: `goldrush-devcommands6.js`, `goldrush-devcommands7.js`, `goldrush-devcommands7a.js`, `goldrush-devcommands7b.js`, `goldrush-devcommands8.js`, `goldrush-devcommands9.js`, `goldrush-devcommands10.js`) |
 
 ## Materialfluss und Maschinen (Phase 6)
 
@@ -905,6 +910,358 @@ Fähnchen und Proben, Einsammeln, Reset, Save/Reload, wartende Beutel, Altstand,
 Knöpfe und Rückfrage). Die Benchmarks laufen mit `tests/e2e/goldrush_gold_ab.py`
 (`geology` / `early` / `report`).
 
+
+## Arbeitsmine (Prompt 10)
+
+Aus dem mechanisierten Claim wird eine kleine Arbeitsmine. Der Engpass von
+Phase 9 (Bagger ~474 l/min, Band ~64, Trommel 60, Hochleistungsrinne 32 l/min)
+wird gelöst, ohne einen größeren Bagger: **Abbau → Haufen → Logistik →
+Aufbereitung → Tailings.**
+
+```
+Berg ─Bagger→ ROHHAUFEN ─Lader→ Aufgabetrichter (420 l) ─Band (~137 l/min)→ Trommel (120 l/min)
+   Trommel ─Überkorn→ Überkornband → ÜBERKORNHAUFEN (Südende am Zaun) ─Lader→ Abraumhalde
+   Trommel ─Unterkorn→ Vorratstrichter ─Dosierer (120 l/min)→ VERTEILERKASTEN → 3 Rinnen à 40 l/min
+   Rinnen ─Konzentrat (Reinigen)→ KONZENTRATWANNE ─Eimer→ Waschtrog ─Pfanne→ Goldbeutel
+   Rinnen ─Tailings→ TAILINGS-AUSLAUF ─Lader / Bagger / Karre→ TAILINGS-ZONE
+```
+
+**Haufen** (`goldrush-stockpile.js`): Jeder Ort ist ein Höhenfeld mit 25-cm-Zellen.
+Material rutscht über acht Nachbarn auf den Schüttwinkel seiner Art (Rohmaterial
+0,74, Überkorn 0,92, Tailings 0,14 als flacher nasser Fächer, Abraum 0,72),
+jede Zelle mit eigenem Zufallsanteil. Damit entstehen breite, unregelmäßige
+Haufen statt Kegel. Maßgeblich ist der `MaterialBuffer` (FIFO-Schichten): Er
+hält Gold, Masse und Funde. `fit()` skaliert das Feld genau auf sein Volumen,
+auch nach jedem `settle()`. Tailings- und Abraumhaufen buchen beim Ablegen auf
+`tail` und beim Aufnehmen zurück in die Behälter. Rohmaterial und Überkorn zählen
+als Behälter im Ledger. Gezeichnet wird als `GridLoad` (Oberfläche plus
+instanzierte Brocken); die Brocken von Haufen in über 26 m Entfernung ruhen (LOD).
+Die Farbe des losen Materials ergibt sich nach Volumen, nicht nach Masse.
+Schaut man auf einen Haufen, steht dort z. B. „RAW PAY DIRT 6,0 m³“, ohne Goldwert.
+
+**Radlader** (`goldrush-loader.js`, gekauft ab ~1200 min): Knicklenkung
+(Kurvenrate v·sin γ / (lf·cos γ + lr)), schwerer als die Karre (Anfahren,
+Ausrollen, Steigung), 260-l-Schaufel. Linksklick senkt die Schaufel. Wer in einen
+Haufen fährt, füllt sie stückweise (je kräftiger geschoben, desto schneller);
+voll hebt sie sich von selbst. Gewachsenen Berg gräbt der Lader nicht (eine
+Wand-Erkennung stoppt die Schaufel), das bleibt Sache des Baggers. Kippen
+(Rechtsklick / Q) geht über die **Empfänger-Tabelle** `receivers()`, dieselbe,
+die die Schubkarre fragt: Aufgabetrichter, Rohhaufen, Tailings-Zone,
+Abraumhalde. Tailings-Auslauf und Überkornhaufen sind keine Kippziele, nur
+Grabquellen. Gekippt wird teilweise, wenn der Empfänger voll ist; der Rest bleibt
+in der Schaufel. Die Meldung erscheint einmal pro Schaufel.
+
+**Anlagen-Upgrades** (sichtbar, echte Zahlen):
+* *Förderband-Ausbau*: zweiter Antrieb, Leitbleche, ein Aufsatz auf dem
+  Aufgabetrichter. 0,62 m/s × 1,3 l pro Zelle ≈ 137 l/min, der Trichter fasst
+  420 l, also passt eine volle Laderschaufel.
+* *Trommel-Ausbau*: zweiter Antrieb und Sprühbalken, 120 l/min; die Trommel
+  dreht sichtbar schneller.
+
+Die Upgrade-Teile werden mit den Maschinenteilen pro Material zusammengebacken
+und kosten keinen Draw Call extra.
+
+**Überkornband**: Die Trommelrutsche fällt auf ein kurzes Band, das am Zaun
+entlang nach Süden läuft. Sein Kopf wirft das Überkorn am Südende des Streifens
+ab, also dort, wo der Lader von der offenen Zone B hineinfährt. Reicht der Haufen
+bis an den Kopf (1,65 m), steht das Band; ist sein Aufgabestück voll, wartet die
+Trommel. Ein Phase-9-Überkornpuffer landet beim Laden am neuen Abwurfpunkt.
+
+**Waschanlage** (`goldrush-washplant.js`): Die Hochleistungsrinne wird die erste
+von drei breiten Rinnen. Ein Verteilerkasten (150 l) über den Köpfen ersetzt
+ihren kleinen Trichter; der Dosierer öffnet auf 120 l/min. Der Kasten verteilt
+reihum auf die Rinnen, die frei sind. Jede Rinne schafft 40 l/min, hält etwa
+**77 % des Feingolds** und jedes Stück. Mit dem Recovery-Ausbau (Streckmetall
+über Moosmatten, sichtbar) sind es 84 %. Überladene Matten halten weniger.
+Reinigen (Wasser aus) bürstet alle drei Matten zugleich aus: Nuggets gehen in den
+Beutel, das schwarze Konzentrat (Massenanteil 0,4 %) in die **Konzentratwanne**
+an der Anlage. Von dort holt man es mit dem Eimer, trägt es zum Waschtrog und
+wäscht es als Schwerkonzentrat in der Pfanne. Die Anlage zahlt nichts selbst aus.
+Rinnen-Effekte (Wasser, Auslaufschleier, Schaum, Kies, Konzentratschicht) sind
+für alle drei Rinnen je ein Mesh; die zweite und dritte Rinne sind statisch
+zusammengebacken.
+
+**Tailings und Rückstau** (Human-QA C): Jede Rinne wirft ihre Tailings über ihr
+Ende auf den Auslauf-Haufen. Reicht der Haufen bis ans Rinnenende (0,6 m), wartet
+die Rinne. Die Hysterese hält sie zu, bis gut 12 cm geräumt sind. Warten alle
+Rinnen, füllt sich der Kasten, der Dosierer stoppt, der Vorratstrichter läuft
+voll, die Trommel wartet, das Band steht. Es geht nichts verloren. Der Auslauf
+fasst etwa 6 m³ (Rinne allein: rund 3 h bei 32 l/min; Waschanlage: gut 1 h).
+Geräumt wird mit dem Lader (≈ 26 s pro 260 l auf die Tailings-Zone), dem Bagger
+oder der Schaufel in die Karre.
+
+**Bergseiten-Abbaugerät** (`goldrush-autominer.js`, Modell `goldrush-autominermodel.js`):
+die erste Maschine, die den Berg selbst abbaut. Manueller Abbau → Bagger →
+stationärer automatischer Abbau.
+* **Ein fester Abschnitt statt Idle-Automation:** Das Gerät steht am Fuß der
+  Flanke und arbeitet nur einen Kasten vor sich ab: 2,4 m breit, 1,5–3,4 m
+  voraus, bis 2,0 m über seinem Boden, nie darunter. Es nimmt von oben nach unten
+  zuerst den höchsten erreichbaren Punkt und arbeitet sich so stufenweise in die
+  Flanke. Die Flanke darüber rutscht im Schüttwinkel nach (Terrain-Physik wie
+  beim Bagger, sichtbare Arbeitsfront). Darum hat jeder Stand ein Budget:
+  Abschnittsvolumen beim Aufstellen × 1,3. Danach meldet es **ABBAUBEREICH
+  ERSCHÖPFT** und muss versetzt werden.
+* **Aufstellen:** gekauft steht es in der Nordwest-Ecke. Dort [E] startet den
+  Platzierungsmodus: Ein Geist folgt dem Fadenkreuz auf dem Boden, zur Bergmitte
+  ausgerichtet ([R] dreht in 22,5°-Schritten). Grün heißt gültig, rot zeigt den
+  Grund: zu nah am Zaun, etwas im Weg, Plattform, Haufen, zu steil (> 14°),
+  zu uneben, kein Berg im Arbeitsbereich (< 0,8 m³), nur Fels, Arbeitsbereich
+  nicht frei, kein Anschluss. Klick stellt auf, [E] bricht ab. Versetzen geht
+  nur im Stillstand ([E] am Heck) oder wenn der Abschnitt erschöpft ist (Pult).
+  Kein freies Teleportieren.
+* **Anschluss:** Das Austragsband am Heck schwenkt (±80°), ist 0,22 rad
+  angestellt (Spitze ~1,9 m hoch) und wirft gut 3,1 m hinter dem Gerät ab: Der
+  Aufgabetrichter muss unter der Spitze liegen (2,6–3,6 m), oder die Spitze
+  zeigt auf den Rohhaufen.
+  Ohne Aufgabetrichter (Förderband) oder Rohhaufen in Reichweite ist der Platz
+  ungültig; die Position zählt also.
+* **Takt** (Spielgefühl): Kopf fährt an und nimmt kurz zurück (Anticipation),
+  Kontakt mit Ruck, Widerstand mit Vibration je Material (Kies schüttelt mehr,
+  dreht langsamer), dann der Schnitt: echter Abbau über `mining().action` mit
+  `MINER_DEF` – jede 1-cm-Scheibe einmal, ihr Feingold und ihre Stücke in die
+  Batch des Bisses, der Bergauftrag zählt mit. Danach Nachlauf, der Biss fällt
+  aufs interne Band (Staub, Brocken), Ausschwingen. ~8 l pro Biss, gemessen
+  80–82 l/min Arbeitsrate (Erde schneller, Kies langsamer).
+* **Rückstau:** Das interne Band (60 l) gibt mit 150 l/min in den Trichter bzw.
+  auf den Rohhaufen. Ist der Trichter voll (Band, Trommel oder Waschanlage
+  stehen) oder reicht der Haufen bis an die Spitze, hält das Austragsband. Das
+  interne Band füllt sich, der Kopf wird langsamer und wartet („wartet –
+  Austrag voll“). Nichts geht verloren. Gibt es wieder Platz, läuft es von selbst
+  weiter.
+* **Fels:** Intakter Fels blockiert den Kopf, Geröll (Spitzhacke, Hammer)
+  nimmt er. Bleibt nur Fels: **HARTGESTEIN – ABBAUKOPF BLOCKIERT**. Kein zweites
+  Gesteinssystem, es gilt die Bruchlogik aus Phase 8.
+* **Kein Offline-Ertrag:** Es arbeitet nur in Frames bzw. `tickSim`, nie im
+  Pausenmenü, nie bei geschlossenem Spiel.
+* **Speicherstand 9:** aufgestellt ja/nein, Lage und Ausrichtung, an/aus,
+  Status, Budget und schon Abgebautes, die Bandladung (MaterialBuffer im
+  Ledger), Statistik. Ein Biss ist atomar.
+* **Shop:** 3.000 €, freigegeben ab 3 % Bergauftrag, braucht Bagger und
+  Förderband. Upgrades gibt es noch nicht; die Basismaschine geht vor.
+* **Modell:** Raupen, Deck mit Hydraulikaggregat, Ausleger mit Teleskop-Stiel
+  und Schneidtrommel (Pickel), internes Band, schwenkbares Austragsband. Ein
+  einziges Skinned-Mesh mit Vertexfarben, jedes bewegte Teil an seinem Bone:
+  1 Draw Call. Töne: Hydraulik-Brummen, Pickel-Anschlag, Schneid-Rattern,
+  Abschalten.
+
+**Sehr seltene Großnuggets** (`goldrush-resources.js` `JACKPOT`, Geologie 4):
+Gewöhnliche Nuggets bleiben bei 1–4 €. Darüber gibt es vier eigene Stufen:
+
+| Stufe | Wert | am Berg je m³ | je 35-h-Claim (110–160 m³) |
+|---|---|---|---|
+| Großer Nugget | 5–12 € | 0,038 | ~5 |
+| Seltener Nugget | 12–30 € | 0,010 | ~1,3 |
+| Außergewöhnlicher Nugget | 30–50 € | 0,0023 | ~0,3 |
+| Legendärer Nugget | 50–86 € | 0,0005 | ~0,07 |
+
+* **Echte Orte im Boden, kein Würfel pro Schlag.** Jeder 1-cm-Voxel hat einen
+  eigenen Hash (Seed + Lage); ob dort ein Großnugget liegt und wie schwer er
+  ist, steht fest, bevor jemand gräbt, und wird wie jede Scheibe einmal
+  verbraucht. Eine zweite Geologie auf demselben Seed findet dieselben Stücke.
+* **Eigene, steile Seltenheit, nicht die Golddichte.** Ein „Host“-Faktor sagt,
+  wo große Stücke liegen können: Kies (1,8×), Erde (0,55×), die reichen
+  Abschnitte einer Paläorinne (quadratisch mit ihrer Güte), Taschen, Streaks,
+  Gangzonen, etwas tiefer etwas mehr. In der Aufschüttung des Lagerplatzes und
+  im Kern der Startflanken ist er 0. Die vergrabenen Rinnen unter der Ebene
+  haben etwa doppelt so viele wie der Berg.
+* **Budget neutral.** Das erwartete Gold der Großnuggets eines Voxels kommt von
+  seinem Feingold herunter. Gemessen mit `goldrush_gold_ab.py geology --ref HEAD`
+  (20 Seeds, identische Voxel): Claim 1234,64 → 1234,64 €/m³, Berg 1173,09 →
+  1172,97 €/m³. Umverteilt werden < 0,05 %.
+* **Sichtbar nach Masse** (`findSize`): über 4 € wächst der Radius mit der
+  vierten Wurzel des Werts – 10 € ~1,3×, 30 € ~1,65×, 80 € ~2,1× ein 4-€-Nugget.
+  Klar größer, kein Comic-Klumpen. Die Pfanne (Blick aus ~30 cm) zeigt Nuggets
+  als eigene Klumpen in 0,65facher Größe, die großen mit Quadratwurzel.
+* **Fundmoment je Stufe** (`engine._bigFind`), egal wo das Stück herauskommt
+  (Boden, Pfanne, Sieb, Matten, Trommelfalle):
+  * 5–12 €: der Nugget-Klang etwas voller, ein etwas größerer Glanz.
+  * 12–30 €: ein eigener kurzer Klang (zwei warme Glockentöne).
+  * ab 30 €: ein kurzer Stinger (vier steigende Glockentöne über einem warmen
+    Grundton), dezenter Goldrand am Hinweis, **„Großer Goldfund – € XX“**.
+  * Aus dem Boden länger hochgehalten (1,35× / 1,8×). Kein Blitz, keine Münzen,
+    kein Lichtquellen-Effekt.
+* **Verarbeitung.** Pfanne und Sieb behalten jedes Stück. Rinne und Waschanlage
+  halten jedes Stück in den Riffeln; Reinigen pickt es in den Beutel. Die
+  **Trommel** hat 40-mm-Löcher (wie gezeichnet): Ein Nugget ab ~10 €
+  (`SCREEN_CATCH_UG` 100.000 µg) passt nicht durch. Er läuft ans Trommelende und
+  fällt in die **Nuggetfalle**: ein vergitterter Kasten in Brusthöhe unter der
+  Rutsche (`TRAP`), nie auf den Überkornhaufen. Hinweis „Nuggetfalle an der
+  Trommel“ plus ein dumpfes Klonk. Dort `[E] Nuggetfalle leeren` → Beutel.
+* **Ledger, genau einmal.** Jedes Stück behält seinen Schlüssel (Voxel bzw.
+  `dev:…`). Die Falle zählt als Halter der Trommel im Ledger und im
+  Speicherstand (`processing.trommel.trap`). Teilübergaben bewegen Stücke nur
+  ganz. Gezählt werden Statistiken je Stufe (`economy.stats.bigNuggets`,
+  `bigNuggetCents`) beim Weg in den Beutel.
+* **Geologie 4:** Minen von Geologie 2 und 3 laufen ohne Hinweis weiter.
+  Unberührter Boden folgt der neuen Verteilung, Gegrabenes und Behälter bleiben
+  genau so.
+
+**Die Mine im Gebrauch** (geordnete Bereiche statt Maschinen im leeren Sand):
+* Abbau am Berg, Rohhaufen davor, Aufgabe an der Bergflanke, Waschanlage am
+  Tank, Tailings-Auslauf und -Zone östlich davon, Überkorn am Westzaun, der
+  Abstellplatz des Laders nördlich vom Rohhaufen.
+* **Reifenspuren**: Die vier Räder des Laders drücken alle ~0,45 m ihr Profil in
+  den Boden (Chevron-Stollen, ein fester Pool von 480 Abdrücken, ein Draw Call).
+  So entstehen Fahrspuren genau dort, wo man fährt: Abstellplatz → Rohhaufen →
+  Aufgabe, Auslauf → Tailings-Zone. Wo sich der Boden ändert (gegraben,
+  aufgeschüttet, geräumt), verschwinden die Abdrücke. Sie werden nicht gespeichert.
+* **Abstellplatz**: festgefahrener Boden mit den beiden Fahrrinnen und einem
+  Ölfleck unter dem Motor; ein flaches Decal außerhalb des Grab-Quadrats (kein
+  Collider, keine Höhe).
+* **Nasse Bereiche**: an den Rinnenenden, am Verteilerkasten und unter der
+  Konzentratwanne, sobald die Waschanlage steht; unter Trommelrutsche und
+  Überkornband (die gewaschenen Steine tropfen), sobald die Trommel steht. Sie
+  gehören zu den nassen Gruppen der Rinne, also kein Draw Call extra.
+* Rohre, Stützen, Pfade und Karrenspuren aus Phase 7–9 bleiben.
+
+**Spielgefühl und Ton**:
+* Schieber, Wasserventil, Band- und Dosiererhebel: Die rechte Hand lässt das
+  Werkzeug kurz los, greift hin und kommt zurück (0,6 s). Das Werkzeug bleibt
+  derweil in der linken Hand.
+* Lader: Diesel mit Turbo-Pfeifen unter Last, große Stollenreifen auf Kies, die
+  Schaufelkante beim Einstechen.
+* Waschanlage: drei Rinnen Wasser und ein plätschernder Kasten, räumlich gedämpft
+  und nicht dauerhaft laut.
+* Sprung und Landung: Stiefel auf Kies.
+
+**Human-QA** (nach 9.1):
+* **A** Schubkarre rückwärts: 60 % des Vorwärtstempos, eigene Beschleunigung,
+  lenkt rückwärts, auch voll.
+* **B** Ein Kipp-Pfad für alle Trichter (Verteilerkasten / Rinnentrichter,
+  Vorratstrichter auf der Rampe, Aufgabetrichter an der Bergflanke) über
+  `receivers()`, Teiltransfer exakt.
+* **C** siehe oben.
+* **D** Shop-Stufen:
+  * Schaufel: großes Blatt (+28 %, sichtbar größer), verstärkte Kante, Eschenstiel,
+    Profi-Schaufel (Glasfaserstiel), zusammen etwa +52 %.
+  * Zinkeimer 19 l.
+  * Schubkarre: Kugellager & Gummigriffe, breiter Luftreifen, Aufsatzbretter (110 l).
+  * Ein Upgrade darf andere voraussetzen (`requires.upgrades`).
+* **E** Springen (Leertaste; die undokumentierte Tastatur-Grabfunktion auf
+  der Leertaste entfällt):
+  * etwa 38 cm, 60 ms Ansatz, wenig Luftkontrolle (Schwung bleibt), schwereres Fallen
+  * Landung mit Knick der Sicht und Tempoabzug, 0,32 s Ruhe danach (kein Bunny-Hop)
+  * nur vom Boden aus, kein Doppelsprung
+  * nicht mit der Karre, nicht in Maschinen, nicht bei der Arbeit; ein Tastendruck
+    dort wird verworfen, nicht aufgehoben
+* **F** Sieb und Matte haben die Phasen Geste → Ausklingen → Ergebnis → [E] →
+  wieder Blick. Mausbewegungen in der Zwischenzeit werden verworfen, danach
+  0,2 s stumm, also kein Kamerasprung.
+* **G** Der Prospektions-Reset aus 9.1 bleibt (Test).
+
+**Kauf-Reihenfolge und Freigaben** (Tafel: zwei Spalten mit sieben Stufen):
+
+| Kauf | Preis | Freigabe |
+|---|---|---|
+| Radlader | 2.800 € | Bagger, 2,3 % Bergauftrag |
+| Förderband-Ausbau | 1.600 € | Förderband und Radlader |
+| Trommel-Ausbau | 1.800 € | Trommel und Radlader |
+| Waschanlage | 3.200 € | Trommel, Radlader, Hochleistungsrinne |
+| Bergseiten-Abbaugerät | 3.000 € | Bagger, Förderband, 3 % Bergauftrag |
+| Streckmetall-Riffel & Moosmatten | 9.500 € | Waschanlage, 8 % Bergauftrag |
+
+**Speicherstand 9**: Haufen (Höhenfeld als Int16-RLE mit Raster-Prüfung, Buffer,
+Statistik), Radlader (Lage, Arme, Schaufel), Waschanlage (Rinnen-Riffel, Last,
+Wanne), Überkornband und Upgrades, das Abbaugerät, die Nuggetfalle der Trommel,
+die Großnugget-Statistik. Ein v8-Stand lädt seinen Überkornpuffer und die
+Abraumsummen auf die Haufen, nichts wird doppelt gebucht.
+
+**Entwicklertools** (`goldrush-devcommands10.js`):
+* Preset **PHASE 10 WORKING MINE** und die Orte LOADER COURSE, RAW STOCKPILE,
+  PROCESSING PLANT, TAILINGS, EXCAVATION FACE, CAMP OVERVIEW.
+* Füllstände: Lader leer / voll, Rohhaufen klein / groß / arm / reich, Überkorn,
+  Waschanlage läuft / blockiert, Konzentrat bereit, Auslauf niedrig / voll,
+  Tailings-Zone, volle Karre.
+* Volle Karre vor jedem Kippziel, Rückwärtskurs.
+* Sieb- und Mattenergebnis, alle Werkzeug-Upgrades an / aus, Sprungtest und
+  Sprung-Messwerte, „Kette & Engpass“ (l/min, wartet / leer in %).
+* Gruppe **Abbaugerät (10)**: ABBAUGERÄT, besitzen (geparkt), gute Bergflanke,
+  Material auf dem Band, Rückstau, Hartgestein, Abschnitt fast erschöpft,
+  versetzen.
+* Gruppe **Großnuggets (10)**: ein gewöhnlicher Nugget (2,50 €) und 10 / 30 /
+  50 / 80 € – im Boden am Fadenkreuz (einmal graben), im Aufgabetrichter (ab
+  10 € landet er in der Nuggetfalle), im Eimer am Waschplatz (Pfanne / Sieb),
+  direkt in der Falle; der Blick auf die NUGGETFALLE; die Statistik je Stufe.
+
+Das beweist den lokalen Produktionspfad, nicht das Live-Rendering auf Render.com.
+
+**Performance**:
+* Die ganze Mine im Blick (Waschanlage läuft, Lader, Haufen, Band, Trommel,
+  Überkornband): Ziel unter 250 Draw Calls; gemessen 244 bei 60 fps (p95
+  16,7 ms), Handy (emuliert) 170 Draw Calls bei 60 fps.
+* 16 s Arbeitsbetrieb (Anlage läuft, Lader fährt): Geometrien, Texturen,
+  Programme und JS-Heap bleiben gleich. Reifenspuren sind ein fester Pool, das
+  Pad ein Decal, die nassen Flächen stecken in den Gruppen der Rinne.
+* Zusammengebacken werden die Schubkarre (17 → 6), der Dosierer, die Lader-Achsen
+  (je beide Räder in einem Mesh) und die Rinnen der Waschanlage.
+
+**Benchmark** (`goldrush_bench.py --strategy A10…E10 --minutes 2100`, simulierte
+Zeit): A10 Auftrag zuerst, B10 Prospektor, C10 Betreiber (Lader und Anlage gleich
+nach dem Bagger), D10 ausgewogen, E10 Geld zuerst (jedes kleine Upgrade vor den
+Maschinen).
+
+**Stand Early Release (09.10.):** Die Zahlen unten stammen aus dem Lauf **vor** dem
+Bergseiten-Abbaugerät und den Großnuggets. Der finale A10–E10-Lauf mit beiden
+(40 Seeds × 2100 min) wurde für das Release nach 18 Seeds angehalten und wird
+zusammen mit der vollen Regression nachgeholt. Das Budget der Großnuggets ist
+separat gemessen (Gold-A/B, oben).
+
+Finaler Lauf: 40 Seeds je Strategie (1001 + 7k), 200 × 2100 min. C10 Block 0
+brach nach einem Browser-Timeout ab und wurde nachgerechnet; fünf seiner Seeds
+weichen dabei ab (1006 + 7k), deshalb ist C10 nur auf 35 Seeds gepaart.
+Kaufzeit-Median in Minuten (P10–P90; gekauft von 40, wenn nicht alle):
+
+| Strategie | Radlader | Förderband-Ausbau | Trommel-Ausbau | Waschanlage | Recovery-Ausbau |
+|---|---|---|---|---|---|
+| A10 | 1399 (1279–1546) · 39 | 1468 (1335–1625) · 39 | 1531 (1417–1690) · 39 | 1667 (1524–1837) · 38 | 1786 (1639–1964) · 37 |
+| B10 | 1318 (1204–1407) | 1354 (1246–1438) | 1413 (1292–1504) | 1532 (1379–1642) | 1883 (1789–2004) · 38 |
+| C10 | 1179 (1129–1360) | 1219 (1131–1442) | 1292 (1159–1509) | 1410 (1262–1605) · 38 | 1786 (1682–1899) · 37 |
+| **D10** | **1261 (1157–1471)** | **1327 (1181–1505)** · 39 | **1401 (1238–1569)** · 39 | **1541 (1347–1675)** · 39 | **1827 (1738–1916)** · 36 |
+| E10 | 1655 (1458–1825) · 34 | 1665 (1486–1881) · 34 | 1667 (1511–1903) · 33 | 1766 (1628–2009) · 32 | 2056 (1993–2090) · 9 |
+| alle 200 | 1327 | 1381 | 1448 | 1578 | 1833 |
+| Ziel | 1200–1350 | 1300–1500 | 1300–1500 | 1450–1700 | 1700–1950 |
+
+D10 und der Median über alle 200 Seeds treffen jedes Fenster. C10 kauft
+absichtlich früh, E10 spät, A10 steckt das Geld zuerst in den Berg.
+
+| Median | 1200 min | 1500 min | 1800 min | 2100 min |
+|---|---|---|---|---|
+| D10 verdient | € 14.108 | € 21.524 | € 42.400 | € 68.022 |
+| D10 Berg | 2,56 % (27,8 m³) | 5,07 % (55,5 m³) | 7,77 % (84,9 m³) | 10,25 % (113,4 m³, 177 t) |
+| A10 / B10 / C10 / E10 Berg | 4,73 / 2,02 / 2,92 / 1,04 % | 7,88 / 4,56 / 5,54 / 1,81 % | 10,91 / 7,10 / 8,32 / 4,33 % | 13,88 / 10,07 / 10,90 / 6,97 % |
+| D10 gewaschen gesamt / davon Waschanlage | 15.359 / 0 l | 25.364 / 0 l | 50.486 / 23.410 l | 76.638 / 49.585 l |
+| D10 Band | 12.349 l | 24.526 l | 53.450 l | 84.398 l |
+| D10 Rohhaufen / Auslauf / Tailings-Zone / Überkorn | 0 / 2.335 / 13.450 / 1.266 l | 14.777 / 1.644 / 23.590 / 956 l | 14.545 / 2.056 / 47.380 / 1.000 l | 14.100 / 1.669 / 74.392 / 1.241 l |
+
+- **Strategien gepaart je Seed** (verdient bei 2100 min, bezogen auf A10):
+  B10 1,22×, C10 1,32×, D10 1,24×, E10 0,80×. Wer die Anlage früh ausbaut,
+  verdient am meisten; wer zuerst spart, bleibt zurück.
+- **Einkommen D10:** 24 €/min (1200–1500) → 70 €/min (1500–1800) → 85 €/min
+  (1800–2100). Der Sprung kommt mit der Waschanlage.
+- **Maschinen:**
+  * Bagger 474 l/min (unverändert).
+  * Band ~137 l/min, Trommel 120 l/min Rohzulauf.
+  * Waschanlage 3 × 40 l/min, gemessen 101–103 l pro Laufminute. Der Bagger
+    schafft damit rund das Vierfache der Anlage.
+  * Lader effektiv 466–603 l pro Minute im Führerhaus (Aufgabe, Tailings,
+    Überkorn).
+- **Engpass ist jetzt die Waschanlage:**
+  * Band 59–73 % der Laufzeit im Rückstau (Phase 9: 83–95 %), 6–11 % leer.
+  * Trommel 38–63 % im Rückstau, 5–10 % leer.
+  * Waschanlage nie blockiert: der Lader räumt den Auslauf 14–21-mal.
+  * Der Rohhaufen hält sich bei ~14 m³ (die Haufen-Grenze des Bots), der Bagger
+    wartet.
+- **Goldbilanz:** in = Behälter + gewonnen + Tailings, in allen 200 Seeds auf
+  0 µg genau.
+- **Der Berg bleibt groß:** nach 35 h 7–14 % abgetragen (Strategie-Median),
+  D10 10,3 %.
+
+**Tests:**
+* `tests/e2e/goldrush_workingmine_e2e.py` (`--only barrow,tailings,upgrades,
+  jump,work,prospect,piles,loader,plant,wash,chain,save,area,miner,nuggets,dev,perf`;
+  Ansichten mit `--shots DIR`; `--browser webkit` ohne perf).
+* Der Produktionspfad der Entwicklertools (nur echte UI, keine Test-Hooks)
+  läuft in `tests/e2e/goldrush_dev_e2e.py`.
 
 ## Entwicklertools (QA-Modus, Prompt 5.5)
 

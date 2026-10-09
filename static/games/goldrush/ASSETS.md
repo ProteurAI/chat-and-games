@@ -40,7 +40,15 @@ you see and hear is generated at runtime by the game's own code:
 | The compact excavator (phase 9): rubber tracks (canvas lug texture, scrolled), sprockets, idlers, rollers, dozer blade, the house with counterweight, engine hood, exhaust, a "CLAIM 01" decal, the cab (posts, roof, glass, seat, control towers, work lights), the bent boom, the stick, hydraulic rams (barrel + chrome rod, laid out between their pins every frame), the bucket (shell, side plates, lip, teeth, its load) and the hydraulic breaker; the attachment stand | `goldrush-excavatormodel.js` (boxes, cylinders, a part-cylinder shell, circle sectors, cones; merged per joint) | procedural, own code - an authored `.glb` can replace it (below) |
 | Prospecting (phase 9): numbered survey flags (stake + pennant, the numbers painted into one canvas atlas), the contract board in the camp (an order sheet drawn on canvas: title, numbers, a hatched progress bar, the unlocks) | `goldrush-prospect.js`, `goldrush-stations.js` | procedural, own code |
 | Phase 9 sounds: conveyor_run (electric motor whine, rollers ticking), trommel_run / trommel_idle (stones tumbling in the drum, the spray), exc_engine (a small diesel's knock, harder under load), exc_tracks, exc_hydraulic (pump whine, oil hiss), exc_scoop (teeth into the ground, the load breaking off), exc_dump, exc_blow (the breaker on rock), exc_start / exc_stop | `goldrush-audio.js` (WebAudio synthesis) | synthesised, own code - provisional placeholders like the rest |
-| HUD / shop icons (hand, shovel, pickaxe, bucket, gold pan, classifier, wheelbarrow, sluice, bulk hopper, feeder, pause, close, nugget, pouch; phase 8: the material row's bucket, wheelbarrow and concentrate; phase 9: prospecting kit, conveyor, trommel, excavator, the sample bags, the excavator's bucket) | inline SVG in `goldrush.js` / `goldrush-hud.js` | own drawings |
+| HUD / shop icons (hand, shovel, pickaxe, bucket, gold pan, classifier, wheelbarrow, sluice, bulk hopper, feeder, pause, close, nugget, pouch; phase 8: the material row's bucket, wheelbarrow and concentrate; phase 9: prospecting kit, conveyor, trommel, excavator, the sample bags, the excavator's bucket; Prompt 10: the wheel loader) | inline SVG in `goldrush.js` / `goldrush-hud.js` | own drawings |
+| Prompt 10 - the working mine: stockpiles (a height field per site that settles at its kind's angle of repose, drawn as a vertex-coloured grid with ragged alpha edges and instanced clods / cobbles by composition), the compact wheel loader (articulated frames, four lugged tyres, cab with ROPS and glass, boom arms with a bellcrank and link, lift / tilt rams laid out between pins each frame, a 260-l bucket with its load), the conveyor upgrade (a second drive, skirt boards, the intake's raised flared extension), the trommel upgrade (a second drive with chain guard, a second spray bar), the oversize stacker (a short belt along the fence), the wash plant (a galvanised distribution box with three spouts and a valve wheel, two more wide lanes, expanded-metal overlays drawn on canvas, the concentrate tub on a pallet), shop upgrades seen on the tools (a bigger shovel blade, the pro shovel's fibreglass handle, the zinc bucket, the barrow's pneumatic tyre and sideboards) | `goldrush-stockpile.js`, `goldrush-loadermodel.js`, `goldrush-plantmodels.js`, `goldrush-washplant.js`, `goldrush-mechmodels.js`, `goldrush-toolmodels.js` (boxes, cylinders, tori, lathe-free shells; canvas textures; merged per material once built) | procedural, own code - the loader can be replaced by an authored `.glb` (below) |
+| Prompt 10 - the automatic hillside miner: crawler tracks, a deck with its power pack and tank, a slewing boom with a telescoping stick and a rotary cutter drum (carbide picks), the internal belt with its load, the slewing / luffing discharge belt, the control panel; its placement ghost | `goldrush-autominermodel.js` (boxes / cylinders / cones with baked vertex colours, ONE skinned mesh - every moving part on its own bone) | procedural, own code - an authored `.glb` can replace it (below) |
+| Prompt 10 - the mine in use: the loader's tyre imprints (a chevron tread drawn on canvas, a pooled instanced decal like the excavator's), its parking pad (compacted ground with ruts and an oil stain, canvas), the wet ground at the wash plant / under the oversize stacker (the phase-7 wet patches) | `goldrush-loadermodel.js` (`tyreMarkTex`, `parkPadTex`), `goldrush-excavatormodel.js` (`TrackMarks`), `goldrush-processing.js` (`_wetSpots`) | procedural, own code |
+| Prompt 10 - the trommel's nugget trap: a drop pipe from a slot in the oversize chute, a small steel box at chest height with grates on its long sides, the big nugget lying in it (a slow faint gleam) | `goldrush-plantmodels.js` (boxes merged with the trommel frame; the nugget the loot's lump geometry, its own small mesh shown only while the trap holds one) | procedural, own code |
+| Prompt 10 - big nuggets drawn by value (EUR 5-86: fourth root of the value above EUR 4), a nugget in the pan / bowl as a lump instead of a flake | `goldrush-loot.js` (`findSize`, `lumpGeometry` - exported), `goldrush-processmodels.js` (one instanced lump mesh per pan / bowl, the loot's gold material) | procedural, own code |
+| Prompt 10 sounds: big nuggets by tier - nugget_big (EUR 5-12: the nugget's ring a little fuller), nugget_rare (EUR 12-30: two warm bell notes), nugget_jackpot (EUR 30+: a short rising sting of four bell notes over a warm low tone - no coins), nugget_trap (a heavy piece dropping into the steel trap) | `goldrush-audio.js` (WebAudio synthesis) | synthesised, own code |
+| Prompt 10 sounds: the hillside miner - miner_motor (the power pack winding up, the pump's whine), miner_hit (the picks meeting the face), miner_cut (the drum's rattling pick strikes, the load breaking off), miner_stop | `goldrush-audio.js` (WebAudio synthesis) | synthesised, own code |
+| Prompt 10 sounds: jump / land (boots on gravel), ldr_engine (a smoother diesel with a turbo whistle under load), ldr_tyres (big lugged tyres crunching gravel), ldr_bucket (the bucket's edge into a pile), washplant_run (three lanes of water, the box splashing) | `goldrush-audio.js` (WebAudio synthesis) | synthesised, own code - provisional placeholders like the rest |
 
 The only external code is three.js r176 (MIT), vendored in
 `static/vendor/three/` (see its README for version, source and checksum) -
@@ -96,6 +104,41 @@ run in the X-Y plane), the cab on the **-Z** side. Hydraulic rams are not
 required (the procedural ones are laid out between pins each frame). The
 bucket's load (`fill`, lumps) is added to `bucket` by the game. If a node is
 missing the procedural model stays (no error).
+
+### The wheel loader (Prompt 10) - an authored model behind its rig
+
+`goldrush-loadermodel.js` builds the compact wheel loader in code; an authored
+`models/loader.glb` (listed in `manifest.json`) replaces it when it has the
+rig's nodes - **named exactly**: `rear`, `front`, `boom`, `bucket`, `wheelFL`,
+`wheelFR`, `wheelRL`, `wheelRR` (optional: `cab`, `eye` - the operator's eye).
+The game sets only these:
+
+| Node | Parent | Pivot | The game sets |
+|---|---|---|---|
+| `rear` | root | the rear axle's centre at ground (`LDR.lr` behind the joint) | nothing (the root gets position, heading, pitch / roll) |
+| `front` | root | the articulation joint | `rotation.y` = articulation (+ left) |
+| `boom` | `front` | the arms' pivot `LDR.boomPivot` | `rotation.z` = arm angle |
+| `bucket` | `boom` | the bucket pin at the arms' end (`LDR.boomL` along +X) | `rotation.z` = tilt; the game adds the load (`fill`) to it |
+| `wheel*` | `rear` / `front` | each hub | `rotation.z` = roll |
+
+Like the excavator its **front is +X**. Rams and links are not required (the
+procedural ones are laid out between pins each frame). If a node is missing
+the procedural model stays (no error).
+
+The hillside miner (Prompt 10) is built the same way behind its rig in
+`goldrush-autominermodel.js` (`AutoMinerRig`): bones `root`, `boom` (y = slew,
+z = boom angle), `stick` (z = its angle; the `drum` bone's x = the stick's
+extension), `drum` (z = spin), `out` (the discharge belt: y = slew, z = luff)
+and `load` (the internal belt's load, scaled). An authored model needs those
+nodes; the logic (`goldrush-autominer.js`) only sets them.
+
+Replacement points of the other Prompt-10 machines (no authored path wired yet -
+the models are built in one function each, a later `.glb` hook goes there):
+the wash plant's distribution box / lanes / tub in `WashPlant._build`
+(`goldrush-washplant.js`; the lanes reuse `MechModels.sluice()`), the conveyor
+and its upgrade in `PlantModels.conveyor()` / `intake()` (`up`, `ext` groups),
+the trommel and its upgrade in `PlantModels.trommel()` (`up` group), the
+oversize stacker in `PlantModels.overBelt()`.
 
 If real recordings or models are added later, they must be CC0 or our own,
 and are listed here with source and licence.
