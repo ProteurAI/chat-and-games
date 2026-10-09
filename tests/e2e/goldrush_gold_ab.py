@@ -58,6 +58,8 @@ def module_at(rev):
 RUN = r"""async ({ seed, nSamples }) => {
   const P8 = await import('/ab/ref-resources.js');
   const PB = window.__abB ? await import('/ab/b-resources.js') : null;
+  // Prompt 10: the rare big nuggets (JACKPOT) of the field under test - counted and expected per part of the claim
+  const JR = (PB || await import('/games/goldrush/goldrush-resources.js')).JACKPOT || null;
   const t = window.__goldrush.terrain(), fB0 = t.field, vps = t.vps, cell = t.cell;
   const fA = new P8.MaterialField(seed, t, fB0.floorY);                      // PRE-P9 on the same terrain
   const fB = PB ? new PB.MaterialField(seed, t, fB0.floorY) : fB0;           // P9 (or a candidate)
@@ -168,6 +170,8 @@ RUN = r"""async ({ seed, nSamples }) => {
         if (sub) bud[key][sub] += ug;
         if (!isCamp) bud[key].all += ug;
         if (r.cls >= 3 && !isCamp) bud[key].visA += 1;
+        if (r.jackpot >= 0) { const J = bud[key].jack || (bud[key].jack = {}); J[part + r.jackpot] = (J[part + r.jackpot] || 0) + 1; }
+        if (key === "B" && JR && f.host > 0) { const X = bud.B.expJ || (bud.B.expJ = {}); for (let q = 0; q < JR.tiers.length; q++) X[part + q] = (X[part + q] || 0) + f.host * JR.tiers[q][0]; }
       }
       bud.l[part] += SLICE_L * 4;              // every 2nd column in both directions
       if (sub) bud.l[sub] += SLICE_L * 4;
@@ -176,6 +180,7 @@ RUN = r"""async ({ seed, nSamples }) => {
   }
   for (const key of ["A", "B"]) for (const p of ["all", "mount", "flat", "open", "under", "camp"]) bud[key][p] *= 4;
   bud.A.visA *= 4; bud.B.visA *= 4;
+  for (const key of ["A", "B"]) for (const o of [bud[key].jack, bud[key].expJ]) if (o) for (const q in o) o[q] *= 4;
   out.budget = bud;
   out.sliceL = SLICE_L;
   return out;
@@ -252,6 +257,17 @@ def report_geology(rows):
     for p in PARTS:
         print(f"  {p:6s} A {b['A'][p] / E / (L[p] / 1000):7.2f}  B {b['B'][p] / E / (L[p] / 1000):7.2f}   {b['B'][p] / b['A'][p]:5.2f}   ({L[p] / 1000 / len(rows):.0f} m3 / seed)")
     print(f"  visible pieces (flake+) excl. camp: A {b['A']['visA'] / len(rows):.0f}  B {b['B']['visA'] / len(rows):.0f} per seed  B/A {b['B']['visA'] / b['A']['visA']:.2f}")
+    # Prompt 10: the rare big nuggets per seed (found in every 2nd column x 4 / expected from the host and the rates)
+    if any(r["budget"]["B"].get("expJ") for r in rows):
+        n = len(rows)
+        print()
+        print("big nuggets per seed (B)   large   rare   exceptional   legendary      per m3: large  rare   exc    leg")
+        for p in ("mount", "flat", "camp"):
+            obs = [sum(r["budget"]["B"].get("jack", {}).get(f"{p}{q}", 0) for r in rows) / n for q in range(4)]
+            exp = [sum(r["budget"]["B"].get("expJ", {}).get(f"{p}{q}", 0) for r in rows) / n for q in range(4)]
+            m3 = L[p] / 1000 / n
+            print(f"  {p:6s} seen   " + "  ".join(f"{v:7.2f}" for v in obs) + f"   ({m3:.0f} m3)")
+            print(f"  {p:6s} expect " + "  ".join(f"{v:7.2f}" for v in exp) + "      " + "  ".join(f"{v / max(1e-9, m3):.4f}" for v in exp))
 
 
 POLL = r"""() => { const G = window.__goldrush, e = G.economy(), p = G.proc(), L = p.ledger, B = window.__grBench;

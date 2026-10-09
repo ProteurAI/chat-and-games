@@ -12,6 +12,9 @@ and reports the distribution - P10 / median / P90 / min / max:
   when each phase-9 machine is bought (prospecting kit, conveyor, trommel, high-flow
   sluice, excavator, breaker), the mountain contract (% / m3 / t) and cash at
   660 / 780 / 900 / 1050 / 1200 / 1500 minutes, what the excavator and the plant did
+  with --strategy A10|B10|C10|D10|E10 (Prompt 10, --minutes 2100): the working mine - when the loader, the
+  conveyor / trommel upgrades, the wash plant and its recovery upgrade are bought; earnings, cash, the mountain,
+  what was excavated / washed, the raw pile and the tailings, the plant's use at 1200 / 1500 / 1800 / 2100 min
   with --strategy A|B|C|D (phase 4): a whole early game with sales trips to
   the camp and real purchases - first sale, when the shovel / pickaxe /
   upgrades are bought, cash and cash earned after 10 / 20 / 30 / 45 / 60 /
@@ -44,9 +47,11 @@ BOT = open(os.path.join(os.path.dirname(__file__), "goldrush_bench.js"), encodin
 CHECK = [60, 300, 600, 1200, 1800]
 CHECK4 = [600, 1200, 1800, 2700, 3600, 5400, 7200, 9000, 10800, 14400, 18000, 21600, 25200, 28800, 32400, 36000, 39600, 46800, 54000, 63000, 72000, 90000]
 CHECK9 = [39600, 46800, 54000, 63000, 72000, 90000]                        # 660 / 780 / 900 / 1050 / 1200 / 1500 min
+CHECK10 = [72000, 90000, 108000, 126000]                                    # 1200 / 1500 / 1800 / 2100 min
 ITEMS = ["shovel", "pickaxe", "shovel.blade", "shovel.handle", "pickaxe.tip", "pickaxe.head", "bucket", "pan", "classifier", "pan.riffles", "bucket.large",
          "wheelbarrow", "sluice", "sluice.hopper", "sluice.mat", "bulkhopper", "feeder", "bulk.extension", "feeder.fine",
-         "prospectkit", "conveyor", "trommel", "sluice.highflow", "excavator", "excavator.breaker"]
+         "prospectkit", "conveyor", "trommel", "sluice.highflow", "excavator", "excavator.breaker",
+         "loader", "conveyor.fast", "trommel.fast", "autominer", "washplant", "washplant.recovery"]
 OWNED_AT = (1800, 3600, 5400, 7200, 10800, 14400, 18000, 21600, 28800, 36000, 39600, 54000, 72000, 90000)
 
 
@@ -161,6 +166,25 @@ def summarize4(results):
         out["p9"]["intakeOutMl"] = dist([(((r.get("p9") or {}).get("plant") or {}).get("conveyor") or {}).get("stats", {}).get("outMl") for r in results])
         out["p9"]["trommelUnderMl"] = dist([(((r.get("p9") or {}).get("plant") or {}).get("trommel") or {}).get("stats", {}).get("underMl") for r in results])
         out["p9"]["trommelOverMl"] = dist([(((r.get("p9") or {}).get("plant") or {}).get("trommel") or {}).get("stats", {}).get("overMl") for r in results])
+    # Prompt 10: the working mine at 1200 / 1500 / 1800 / 2100 min
+    if any(r.get("p10") for r in results):
+        keys = ("earned", "cash", "pct", "m3", "kg", "washL", "sluiceL", "beltL", "screenL", "rawL", "tailOutL", "tailZoneL", "overL", "ldrFeedL", "ldrTailL", "rawInL", "washRunS", "washBlockedS", "ldrS",
+                "minerL", "minerWaitS", "minerRunS", "cvRunS", "cvBlockedS", "cvStarvedS", "trRunS", "trBlockedS", "trStarvedS")
+        out["p10"] = {str(c): {k: dist(at(c, k)) for k in keys} for c in CHECK10}
+        out["p10"]["work"] = {k: dist([(r.get("p10") or {}).get(k) for r in results]) for k in ("feeds", "feedMl", "rawMl", "rawDumps", "tailClears", "tailMl", "overClears", "overMl", "conc", "concMl", "sessions", "ldrS", "minerMoves", "minerStuck", "trap")}
+    # Prompt 10: the nuggets that reached the pouch - their values (pooled over the seeds), how often the big ones came,
+    # their share of all the gold recovered (cents of goldFoundUg)
+    if any("nugCents" in r for r in results):
+        allc = sorted(c for r in results for c in r.get("nugCents", []))
+        pq = lambda q: allc[min(len(allc) - 1, int(q * len(allc)))] if allc else None
+        out["nuggets"] = {
+            "per_run": dist([len(r.get("nugCents", [])) for r in results]),
+            "mean_cents": round(sum(allc) / len(allc), 1) if allc else None, "p50_cents": pq(0.5), "p90_cents": pq(0.9), "p99_cents": pq(0.99), "max_cents": allc[-1] if allc else None,
+            "ge_per_run": {f"{e}": round(sum(1 for c in allc if c >= e * 100) / len(results), 3) for e in (5, 10, 30, 50, 80)},
+            "runs_with": {f"{e}": sum(1 for r in results if any(c >= e * 100 for c in r.get("nugCents", []))) for e in (5, 10, 30, 50, 80)},
+            "big_share_pct": dist([100 * sum(c for c in r.get("nugCents", []) if c >= 500) / max(1, (r.get("goldFoundUg") or 0) / 100) for r in results]),
+            "nugget_share_pct": dist([100 * sum(r.get("nugCents", [])) / max(1, (r.get("goldFoundUg") or 0) / 100) for r in results]),
+        }
     worth = [r["earned"] + 0 for r in results]
     out["richest"] = max(results, key=lambda r: r["earned"])["seed"]
     out["poorest"] = min(results, key=lambda r: r["earned"])["seed"]

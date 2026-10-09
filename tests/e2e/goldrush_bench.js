@@ -82,6 +82,22 @@
 // intake (G.excFindStand): the highest ground in reach first, ~40 l a scoop (2.65 s + the swing),
 // into the intake (2.05 s; driving back when the stand is far); a full intake -> spoil or wait
 // (by strategy); stone -> the hydraulic breaker (once owned), else round it.
+// Prompt 10 (the working mine, up to 2100 min) - the phase-9 strategies with the loader, the plant upgrades,
+// the wash plant and its recovery upgrade on their plans:
+//   A10   objective-first (A9's order, the Prompt-10 machines right after the breaker)
+//   B10   prospector (B9's order)
+//   C10   operator / processing: the loader and the plant (upgrades, wash plant, recovery) straight after
+//         the excavator, the breaker after them
+//   D10   balanced (D9's order)
+//   E10   money-first (C9's order: every small upgrade before the machines, never dumps to spoil)
+// With the loader the excavator never waits at a full intake: its surplus goes onto the RAW PILE (into the
+// intake while it has room and is no further than the pile); the loader feeds the intake from the pile
+// (~32 s a 260-l load: in, up, over, tip, back), clears the tailings outlet onto the tailings zone (~26 s a
+// load) and the oversize at the stacker's head onto the spoil heap (~36 s) - each a session: out of the
+// excavator, over to the loader and back (~9 s each way). Every move is the game's own exact transfer
+// (goldrush-processing.js benchLoaderMove); the plant, the belt, the trommel, the stacker, the wash plant run
+// in simulated time. The wash plant's mats are cleaned like the sluice's riffles; the concentrate tub goes
+// into the bucket, to the trough, and is panned.
 // Phase 7A: with a bucket alone it already processes - in the wooden wash bowl
 // (the free basic washing at the trough) until it owns a gold pan. Cemented
 // mineralised streaks: without a pickaxe they count as hard ground (it moves on),
@@ -102,7 +118,7 @@
   const WALK = 3.4, TRIP = 4.6;                    // m/s digging around / walking to the camp (partly sprinting)
   const SWITCH = 0.42;                             // lower + raise a tool
   const CHECK = [60, 300, 600, 1200, 1800, 2700, 3600, 5400, 7200, 9000, 10800, 12600, 14400, 16200, 18000, 19800, 21600, 25200, 28800, 32400, 36000, 39600,
-    43200, 46800, 50400, 54000, 57600, 63000, 68400, 72000, 81000, 90000];
+    43200, 46800, 50400, 54000, 57600, 63000, 68400, 72000, 81000, 90000, 99000, 108000, 117000, 126000];
   const WASH_SPOT = { x: -16.15, z: 3.5 };
   const HOPPER_SPOT = { x: -20.82, z: -4.9 };          // behind a barrow in front of the sluice hopper
   const HOPPER_FEED = { x: -20.82, z: -1.12 };         // at the hopper with a bucket
@@ -119,7 +135,14 @@
   const SLUICE_SERVICE = { x: -19.2, z: -1.26 };
   const CAMP_FARM = { x: -11.2, z: 3.4 };                  // E9: the ground next to the camp and the wash place
   const EXC = { scoop: 2.6, dump: 1.75, swing: 1.35, overlap: 0.45, drive: 1.15, reach: 3.9, swap: 6.0, blow: 0.9 };
-  const P9 = ["prospectkit", "conveyor", "trommel", "sluice.highflow", "excavator", "excavator.breaker"];
+  const P9 = ["prospectkit", "conveyor", "trommel", "sluice.highflow", "excavator", "excavator.breaker", "loader", "conveyor.fast", "trommel.fast", "washplant", "autominer", "washplant.recovery"];
+  // Prompt 10: the loader's cycles (s a bucket), switching machines; where the raw pile lies; how big it may grow
+  const LDR = { feed: 32, tail: 26, over: 36, swap: 9 };
+  // the tailings outlet (Prompt 10, human QA: it backs the sluice up once full): cleared onto the tailings zone -
+  // by the loader, the excavator (45 l a ~5.5-s cycle from a stand between the two, driving there and back) or
+  // shovelled into the barrow (2 l a stroke from loose tailings, ~1 s, pushed over, tipped)
+  const TAIL_AT = { x: -15.6, z: -1.6 }, TAIL_ZONE = { x: -12.4, z: 4.6 };
+  const RAW_DROP = { x: -9.6, z: -18.6 }, RAW_MAX = 15e6;      // the raw pile that big: the excavator rests, the bot runs the loader
   const SLOW = 1.15;                               // real work vs the game's minimum time per load
   const PICKUP = { 1: 0.4, 2: 0.4, 3: 1.0, 4: 1.1, 5: 1.4 };
   const PLANS = {
@@ -159,6 +182,14 @@
       "excavator.breaker", "bulk.extension", "feeder.fine", "pickaxe.head", "prospectkit"],
   };
   PLANS.E9 = PLANS.D9.slice();
+  // Prompt 10: the phase-9 orders with the working mine's machines (C10: right after the excavator)
+  const P10 = ["loader", "conveyor.fast", "trommel.fast", "washplant", "autominer", "washplant.recovery"];
+  const after = (plan, id, add) => { const i = plan.indexOf(id); return [...plan.slice(0, i + 1), ...add, ...plan.slice(i + 1)]; };
+  PLANS.A10 = after(PLANS.A9, "excavator.breaker", P10);
+  PLANS.B10 = after(PLANS.B9, "excavator.breaker", P10);
+  PLANS.C10 = after(PLANS.D9.filter((id) => id !== "excavator.breaker"), "excavator", [...P10, "excavator.breaker"]);
+  PLANS.D10 = after(PLANS.D9, "excavator.breaker", P10);
+  PLANS.E10 = after(PLANS.C9, "excavator.breaker", P10);
 
   function rng(seed) {
     let a = seed >>> 0;
@@ -196,12 +227,25 @@
       this.home = opts.strategy === "E9" ? CAMP_FARM : MOUND;
       // where it digs: A9 / D9 the mountain (the contract's way, a player's natural one); B9 / C9 wherever the
       // ground pays (pits into the buried channels too) until a machine waits for the contract; E9 the camp
-      this.floorRule = { A9: "always", D9: "always", B9: "locked", C9: "locked" }[opts.strategy] || null;
+      this.floorRule = { A9: "always", D9: "always", B9: "locked", C9: "locked", A10: "always", C10: "always", D10: "always", B10: "locked", E10: "locked" }[opts.strategy] || null;
       this.floorMin = this.floorRule === "always" ? 0.1 : null;
-      this.waitPolicy = { A9: 0, B9: 60, C9: Infinity, D9: 60, E9: 60 }[opts.strategy] ?? 60;
+      this.waitPolicy = { A9: 0, B9: 60, C9: Infinity, D9: 60, E9: 60, A10: 0, B10: 60, C10: 60, D10: 60, E10: Infinity }[opts.strategy] ?? 60;
+      this.mech9 = /^[A-E](9|10)$/.test(this.strategy);              // the phase-9 / Prompt-10 families
+      this.obj = this.strategy === "A9" || this.strategy === "A10";   // objective-first
+      this.prosp = this.strategy === "B9" || this.strategy === "B10"; // the prospector's surveys
+      this.p10 = { ldr: false, feeds: 0, feedMl: 0, rawMl: 0, rawDumps: 0, tailClears: 0, tailMl: 0, overClears: 0, overMl: 0, conc: 0, concMl: 0, sessions: 0, ldrS: 0, minerMoves: 0, minerStuck: 0 };
       this.win = { n: 0, hard: 0 }; this.good = null; this.side = this.r() < 0.5 ? -1 : 1; this.returns = 0;
       this.bought = {};
       this.ev = []; this.lastMat = null; this.lastMatT = -99; this.bowlLoads = 0;
+      // Prompt 10: every nugget that reaches the pouch (its value in cents) - dug and picked up, or washed / picked out
+      this.nugCents = [];
+      const E = G.economyObj ? G.economyObj() : null, Bn = this;
+      if (E && !E._benchNug) {
+        E._benchNug = true;
+        const rec = E.recover.bind(E), col = E.collect.bind(E);
+        E.recover = (fine, finds = []) => { for (const f of finds) if (f && f.cls === 5 && f.ug > 0) Bn.nugCents.push(Math.max(1, Math.round(f.ug / 100))); return rec(fine, finds); };
+        E.collect = (id) => { const it = col(id); if (it && it.cls === 5) Bn.nugCents.push(it.cents); return it; };
+      }
       // a fixed kit (method comparison): owned from the start, nothing else is bought
       if (opts.kit) {
         const tools = G.toolDefs().map((d) => d.id);
@@ -298,6 +342,18 @@
         excWaitS: this.p9.waited };
     },
 
+    // Prompt 10: the piles, the loader, the wash plant (litres, waiting) at a checkpoint
+    _mineSnap() {
+      const m = G.mine(), w = m.wash, l = (v) => Math.round((v || 0) / 1000);
+      return { rawL: l(m.piles.raw), tailOutL: l(m.piles.tailOut), tailZoneL: l(m.piles.tailings), overL: l(m.piles.oversize), spoilPileL: l(m.piles.spoil),
+        ldrFeedL: l(this.p10.feedMl), ldrTailL: l(this.p10.tailMl), rawInL: l(this.p10.rawMl), washL: w ? l(w.stats.processedMl) : 0, washRunS: w ? Math.round(w.stats.runS) : 0,
+        washBlockedS: w ? Math.round(w.stats.blockedS) : 0, ldrS: Math.round(this.p10.ldrS),
+        minerL: m.miner ? l(m.miner.stats.dugMl) : 0, minerWaitS: m.miner ? Math.round(m.miner.stats.waitS) : 0, minerRunS: m.miner ? Math.round(m.miner.stats.runS) : 0,
+        dbg: (() => { const pl = G.plant(); return { water: pl.sluice ? pl.sluice.running : null, cv: pl.conveyor ? pl.conveyor.status.key : null, fd: pl.feeder ? pl.feeder.status : null, intake: pl.conveyor ? pl.conveyor.intakeMl : null,
+          bulk: pl.bulk ? pl.bulk.ml : null, box: pl.sluice ? pl.sluice.hopperMl : null, state: this.state, inCab: this.p9.inCab, idle: this.p9.idleUntil || 0, tr: m.trommelWhy,
+          ex: (() => { const e = G.exc(), o = G.procObj().excavator; return e ? { ml: e.ml, task: o && o.task ? o.task.kind || 1 : null, stand: this.p9.stand ? [+this.p9.stand.x.toFixed(1), +this.p9.stand.z.toFixed(1)] : null, scoops: this.p9.scoops, bans: (this.p9.bans || []).length } : null; })() }; })() };
+    },
+
     _check() {
       for (const c of CHECK) {
         if (this.money[c] != null || this.t < c) continue;
@@ -305,7 +361,7 @@
         this.money[c] = this.cents;
         const ct = G.contract();
         this.snap[c] = { cash: e.cashCents, pouch: e.pouchCents, earned: e.sold.totalCashCents, owned: G.tools().owned.slice(), upgrades: (G.tools().saved.upgrades || []).slice(), equipment: G.proc().owned.slice(), kg: Math.round(this.kg),
-          pct: +ct.pct.toFixed(3), m3: +ct.removedM3.toFixed(2), t: +(ct.removedKg / 1000).toFixed(2), excMl: this.p9.excMl, spoilMl: this.p9.spoilMl, ...this._flows() };
+          pct: +ct.pct.toFixed(3), m3: +ct.removedM3.toFixed(2), t: +(ct.removedKg / 1000).toFixed(2), excMl: this.p9.excMl, spoilMl: this.p9.spoilMl, ...this._flows(), ...this._mineSnap() };
       }
     },
 
@@ -320,7 +376,7 @@
         const want = this.plan.map((id) => items.find((i) => i.id === id)).find((it) => it && P9.includes(it.id) && this.bought[it.id] == null);
         this.floorMin = want && want.state === "locked" && want.needs.some((n) => n.contract && !n.met) && this.plan.indexOf(want.id) <= this.plan.findIndex((id) => this.bought[id] == null) + 2 ? 0.1 : null;
       }
-      if (!this.strategy.endsWith("9") || this.strategy === "A9") return first;
+      if (!this.mech9 || this.obj) return first;
       // phase 9: a machine the contract has not unlocked yet - buy what comes after it in the meantime
       for (const id of this.plan) {
         if (this.bought[id] != null) continue;
@@ -400,7 +456,13 @@
         this.p9.conv = !!(G.plant().conveyor && G.plant().conveyor.state === "ready");
         this.p9.trom = !!(G.plant().trommel && G.plant().trommel.state === "ready");
         if (G.exc() && !this.p9.exc) { this.p9.exc = true; this.p9.stand = null; dt += 6; }
-        if (this.bought.prospectkit != null && this.p9.surveyT < 0 && this.strategy === "B9") this.p9.surveyT = this.t + dt;
+        // Prompt 10: over to the sluice and build the wash plant (its crate west of it); the loader by the raw pile
+        const mn = G.mine();
+        if (mn.wash && !mn.wash.installed) { G.procInstallWash(); dt += 20 + 3.4; }
+        if (mn.loader && !this.p10.ldr) { this.p10.ldr = true; dt += 4; }
+        // the hillside miner: walk to its corner, set it down at the flank by the intake, switch it on
+        if (mn.miner && !mn.miner.placed) { if (G.minerSetup()) this.p10.minerMoves++; dt += 45; }
+        if (this.bought.prospectkit != null && this.p9.surveyT < 0 && this.prosp) this.p9.surveyT = this.t + dt;
       }
       dt += d / TRIP + 1.5;                                     // back to the spot, find it again
       entry.cash = G.economy().cashCents;
@@ -513,7 +575,25 @@
       dt += 1.5 + 1.0 + w.t * SLOW + 2.0;
       G.procWater(true);
       this.cleanouts++;
+      // Prompt 10: on the way, the trommel's nugget trap (a big nugget too big for the screen waits there)
+      const tp = G.takeTrap ? G.takeTrap() : 0;
+      if (tp) { this.p10.trap = (this.p10.trap || 0) + tp; dt += 2 * 9 / WALK + 2.0; }
       dt += 6 / WALK + this._panAll();                          // to the trough, pan the heavy concentrate
+      dt += this._concRounds();
+      return dt;
+    },
+
+    // Prompt 10: the wash plant's concentrate tub: into the bucket, carried to the trough, panned (a few rounds)
+    _concRounds() {
+      let dt = 0;
+      for (let k = 0; k < 8; k++) {
+        const m = G.mine();
+        if (!m.wash || !(m.wash.concMl > 0)) break;
+        let ml = G.concToWash();
+        if (ml <= 0) { G.procBucketToWash(); dt += 2 + this._panAll(); ml = G.concToWash(); if (ml <= 0) break; }
+        this.p10.conc++; this.p10.concMl += ml;
+        dt += 2 * 7 / WALK + 3.0 + this._panAll();               // tub -> trough (and back), scoop it in, pan it
+      }
       return dt;
     },
 
@@ -535,6 +615,7 @@
       }
       this.t += dt; this.mechTime += dt; this._tick(); dt = 0;
       if (G.proc().sluice && G.proc().sluice.loadMl >= 240000) dt += this._cleanout();
+      if (G.proc().sluice && G.proc().sluice.state === "ready") this._clearTail(PLATFORM);
       // what did not fit (the bulk hopper full): to the wash place, by hand
       const left = G.proc().barrow.batch.volumeMl;
       if (left > 1500) {
@@ -573,6 +654,7 @@
         if (!G.proc().sluice.running) { G.procWater(true); dt += 1.5; }
         this.t += dt; this.mechTime += dt; this._tick(); dt = 0;
         if (G.proc().sluice.loadMl >= 240000) dt += this._cleanout();
+        this._clearTail(HOPPER_SPOT);
         // what did not fit: to the wash place, by hand
         const left = G.proc().barrow.batch.volumeMl;
         if (left > 1500) dt += this._push(Math.hypot(WASH_SPOT.x - HOPPER_SPOT.x, WASH_SPOT.z - HOPPER_SPOT.z), left * 1.4 / 1000) + 2.0;
@@ -605,6 +687,7 @@
       if (!G.proc().sluice.running) { G.procWater(true); dt += 1.5; }
       this.t += dt; this.procTime += dt; this._tick(); dt = 0;
       if (G.proc().sluice.loadMl >= 240000) dt += this._cleanout();
+      this._clearTail(HOPPER_FEED);
       if (G.proc().sluice.tray.volumeMl > 0) dt += this._panAll();
       this.t += dt; this.procTime += dt; this.procRounds++; this._tick();
       this.bucketMl = 0;
@@ -699,30 +782,140 @@
     _serviceSluice(from) {
       const sl = G.proc().sluice, pl = G.plant();
       if (!sl || sl.state !== "ready") return 0;
+      this._clearTail(from);
       const cap = (pl.sluice ? pl.sluice.riffleL : 240) * 1000;
-      if (!(sl.loadMl >= cap || sl.tray.volumeMl > 0)) return 0;
+      const mw = G.mine().wash;
+      if (!(sl.loadMl >= cap || sl.tray.volumeMl > 0 || (mw && mw.concMl > 0))) return 0;
       const d = Math.hypot(SLUICE_SERVICE.x - from.x, SLUICE_SERVICE.z - from.z);
       let dt = d / WALK + 1.0;
       this.t += dt; this._tick(); dt = 0;
       if (G.proc().sluice.loadMl >= cap) dt += this._cleanout();
       if (G.proc().sluice.tray.volumeMl > 0) dt += this._panAll();
+      dt += this._concRounds();
       dt += d / WALK + 1.0;
       this.t += dt; this.mechTime += dt; this._tick();
       if (!G.proc().sluice.running) G.procWater(true);
       return dt;
     },
 
+    // the tailings outlet: cleared before it backs the sluice / the plant up (the loader's session does it once owned)
+    _clearTail(from) {
+      const m = G.mine(), tail = m.piles.tailOut || 0, wash = !!(m.wash && m.wash.installed);
+      if (!(tail >= (wash ? 5.0e6 : 4.4e6) || m.outletBlocked || !!(m.wash && m.wash.blocked))) return 0;
+      if (this.p10.ldr) return this._p10Work();
+      const t0 = this.t, goal = Math.max(0.8e6, tail - 3.0e6);
+      this.p10.tailClears++;
+      if (this.p9.exc) {
+        // the excavator drives over, scoops the outlet onto the zone, drives back to its stand
+        const ex = G.exc(), d = ex ? Math.hypot(ex.x - TAIL_AT.x, ex.z - TAIL_AT.z) : 15;
+        if (!this.p9.inCab) { G.excEnter(); this.p9.inCab = true; this.t += 3; }
+        this.t += d / EXC.drive + 2; this._tick();
+        for (let k = 0; k < 120 && (G.mine().piles.tailOut || 0) > goal; k++) {
+          const ml = G.pileMove("tailOut", "pile:tailings", 45000, "excavator");
+          if (ml <= 0) break;
+          this.p10.tailMl += ml; this.t += EXC.scoop + EXC.dump + EXC.swing; if (k % 6 === 5) this._tick();
+        }
+        this.t += d / EXC.drive + 2; this._tick();
+        this.p9.stand = null;
+      } else if (this.bought.wheelbarrow != null) {
+        // by hand: walk over, shovel into the barrow, push it onto the zone, tip it, back
+        const dz = Math.hypot(TAIL_ZONE.x - TAIL_AT.x, TAIL_ZONE.z - TAIL_AT.z);
+        if (G.proc().barrow && G.proc().barrow.pushing) G.procAct("barrow-park");
+        this.t += Math.hypot(TAIL_AT.x - from.x, TAIL_AT.z - from.z) / WALK + 4; this._tick();
+        for (let k = 0; k < 60 && (G.mine().piles.tailOut || 0) > goal; k++) {
+          const ml = G.pileMove("tailOut", "pile:tailings", 85000, "barrow");
+          if (ml <= 0) break;
+          this.p10.tailMl += ml;
+          this.t += (ml / 2000) * 0.95 + 2.0 + this._push(dz, ml * 1.6 / 1000) + 3.0 + this._push(dz, 0); this._tick();
+        }
+        this.t += Math.hypot(TAIL_AT.x - from.x, TAIL_AT.z - from.z) / WALK + 2;
+        this.bw = null;
+      } else return 0;
+      this.mechTime += this.t - t0;
+      this._tick();
+      return this.t - t0;
+    },
+
+    // ---------------- Prompt 10: the loader's sessions (feed the intake, clear the outlet, move the oversize)
+    _intakeRoom() { const cv = G.plant().conveyor; return cv && cv.state === "ready" ? cv.capMl - cv.intakeMl : 0; },
+    _p10Work(force = false) {
+      if (!this.p10.ldr) return 0;
+      // the hillside miner: its section done / only hard rock left -> set it down elsewhere (the walk, the setting up)
+      const mm = G.mine().miner;
+      if (mm && mm.placed && (mm.status === "exhausted" || mm.status === "rock")) {
+        if (G.minerSetup()) { this.p10.minerMoves++; this.t += 40; this._tick(); }
+        else this.p10.minerStuck++;
+      } else if (mm && mm.placed && !mm.on) G.procObj().autominer.setOn(true);
+      const m = G.mine(), cv = G.plant().conveyor, cap = cv ? cv.capMl : 0;
+      const raw = m.piles.raw || 0, tail = m.piles.tailOut || 0, over = m.piles.oversize || 0;
+      const tailLim = m.wash && m.wash.installed ? 4.0e6 : 3.6e6;
+      const needFeed = cap > 0 && this._intakeRoom() >= 0.55 * cap && raw >= 100000;
+      const needTail = tail >= tailLim || m.outletBlocked || !!(m.wash && m.wash.blocked);
+      const needOver = over >= 2.5e6 || m.trommelWhy === "pile";
+      if (!needFeed && !needTail && !needOver && !force) return 0;
+      if (this.p9.inCab) { G.excExit(); this.p9.inCab = false; }
+      if (G.proc().barrow && G.proc().barrow.pushing) G.procAct("barrow-park");
+      const t0 = this.t;
+      this.t += LDR.swap; this._tick();
+      this.p10.sessions++;
+      if (needTail) {
+        this.p10.tailClears++;
+        for (let k = 0; k < 40 && (G.mine().piles.tailOut || 0) > 0.5e6; k++) { const ml = G.ldrMove("tailOut", "pile:tailings", 260000); if (ml <= 0) break; this.p10.tailMl += ml; this.t += LDR.tail; this._tick(); }
+      }
+      if (needOver) {
+        this.p10.overClears++;
+        for (let k = 0; k < 30 && (G.mine().piles.oversize || 0) > 0.4e6; k++) { const ml = G.ldrMove("oversize", "pile:spoil", 260000); if (ml <= 0) break; this.p10.overMl += ml; this.t += LDR.over; this._tick(); }
+      }
+      // the intake: loads while it takes one (the plant drains it meanwhile)
+      for (let k = 0; k < 6; k++) {
+        if (this._intakeRoom() < 0.3 * cap || (G.mine().piles.raw || 0) < 1000) break;
+        const ml = G.ldrMove("raw", "intake", 260000);
+        if (ml <= 0) break;
+        this.p10.feeds++; this.p10.feedMl += ml;
+        this.t += LDR.feed; this._tick();
+      }
+      this.t += LDR.swap; this._tick();
+      this.p10.ldrS += this.t - t0;
+      this.mechTime += this.t - t0;
+      return this.t - t0;
+    },
+
+    // the operator's turn (the raw pile big): the loader keeps the intake fed, the bot does the chores, sells, waits
+    _operate() {
+      const P = this.p9;
+      if (P.inCab) { if (G.exc().ml > 0) this._excRaw(P.stand || { x: G.exc().x, z: G.exc().z }); G.excExit(); P.inCab = false; P.stand = null; }
+      const dt = this._p10Work();
+      if (dt <= 0) { this.t += 30; this._tick(); }
+      if ((this._opT = (this._opT || 0) + 1) % 8 === 0) {
+        const at = { x: INTAKE_DUMP.x, z: INTAKE_DUMP.z };
+        this._serviceSluice(at);
+        this._check();
+        this._maybeTrip(at);
+      }
+      this.p10.opS = (this.p10.opS || 0) + (dt > 0 ? 0 : 30);
+    },
+
+    // the excavator's bucket onto the raw pile (drives over when the stand is far)
+    _excRaw(st) {
+      const P = this.p9, ml = G.exc().ml, d = Math.max(0, Math.hypot(st.x - RAW_DROP.x, st.z - RAW_DROP.z) - (2.8 + EXC.reach));
+      const got = G.excDumpPile("raw");
+      if (got > 0) { this.p10.rawMl += got; this.p10.rawDumps++; }
+      this.t += EXC.dump + EXC.swing + (2 * d) / EXC.drive;
+      void ml; void P;
+    },
+
     // the oversize pile near the chute: away to the spoil heap (the excavator, else the barrow)
     _clearOversize() {
       const pl = G.plant();
-      if (!pl.trommel || pl.trommel.overMl < 5.5e6 || !pl.spoil) return;
+      // (Prompt 10: the oversize stacker drops it at the strip's south end; a full pile there stops the trommel)
+      if (!pl.trommel || !pl.spoil || !(pl.trommel.overMl >= 3.0e6 || G.mine().trommelWhy === "pile")) return;
       this.p9.overClears++;
-      const dPile = Math.hypot(-22.95 - SPOIL.x, -4.15 - SPOIL.z);
+      const dPile = Math.hypot(-22.72 - SPOIL.x, -8.35 - SPOIL.z);
       let left = 2.5e6;
       if (this.p9.exc) {
         while (left > 0) { const r = G.excScoopOversize(); if (!r || !r.ok) break; left -= r.ml; G.excDumpForce("spoil"); this.t += EXC.scoop + EXC.dump + (2 * dPile) / EXC.drive; this._tick(); }
       } else if (this.bought.wheelbarrow != null) {
-        G.procBarrowPlace(-21.6, -4.0, Math.PI / 2);
+        G.procBarrowPlace(-21.9, -10.6, 0);
         while (left > 0) {
           const ml = G.procAct("oversize-barrow").ml || 0;
           if (ml <= 0) break;
@@ -737,13 +930,13 @@
     // a barrow load: into the mine intake at the mountain's foot (short) - full: bulk hopper / spoil (A9) / wash place
     _intakeCycle(p0) {
       const kg = p0.barrow.massG / 1000, vol = p0.barrow.batch.volumeMl, pl = G.plant();
-      const room = 240000 - pl.conveyor.intakeMl;
+      const room = pl.conveyor.capMl - pl.conveyor.intakeMl;
       if (room < vol - 5000) {
-        if (this.strategy === "A9" && pl.spoil) return this._spoilCycle(p0);
+        if (this.obj && pl.spoil) return this._spoilCycle(p0);
         if (p0.bulk && p0.bulk.state === "ready" && pl.bulk.cap - pl.bulk.ml > vol) return this._bulkCycle(p0);
         // everything full: wait at the intake a moment (the belt drains it), chores meanwhile
         this.t += 20; this.p9.waited += 20; this._tick();
-        if (240000 - G.plant().conveyor.intakeMl < vol - 5000) return this._bulkCycle(p0);
+        if (G.plant().conveyor.capMl - G.plant().conveyor.intakeMl < vol - 5000) return this._bulkCycle(p0);
       }
       let dt = 2.0 + this._push(Math.hypot(INTAKE_DUMP.x - this.x, INTAKE_DUMP.z - this.z), kg);
       this.t += dt; this.mechTime += dt; this._tick(); dt = 0;
@@ -752,7 +945,7 @@
       if (!G.proc().sluice.running) G.procWater(true);
       this.t += dt; this.mechTime += dt; this._tick(); dt = 0;
       this._serviceSluice(INTAKE_DUMP);
-      this._clearOversize();
+      if (this.p10.ldr) this._p10Work(); else this._clearOversize();
       this.mechRounds++;
       this.bucketMl = 0;
       this._check();
@@ -786,9 +979,15 @@
     // the excavator: one turn of work (a scoop and, when the bucket is loaded, a dump)
     _excStep() {
       const P = this.p9;
+      // Prompt 10: a big raw pile - the plant has its work for hours: the excavator rests, the bot runs the loader (objective-first
+      // A10 digs on onto the spoil heap instead - the mountain is its goal)
+      if (this.p10.ldr && !this.obj && (G.mine().piles.raw || 0) >= RAW_MAX) return this._operate();
       if (!P.inCab) { if (G.proc().barrow && G.proc().barrow.pushing) G.procAct("barrow-park"); G.excEnter(); P.inCab = true; this.t += 3; }
       if (!P.stand) {
-        const st = G.excFindStand(7.5 + Math.min(6, P.standTries * 0.8));
+        P.bans = (P.bans || []).filter((b) => b.until > this.t);
+        // with the loader: a stand at the mountain's south flank first (it dumps onto the raw pile right there)
+        let st = this.p10.ldr ? G.excFindStand(7.5 + Math.min(6, P.standTries * 0.8), RAW_DROP.x, RAW_DROP.z + 6.5, P.bans) : null;
+        if (!st || st.score <= 0.5) st = G.excFindStand(7.5 + Math.min(6, P.standTries * 0.8), -14.35, -9.35, P.bans);
         P.standTries++;
         if (!st || st.score <= 0.5) {
           this.t += 20; this._tick();
@@ -810,7 +1009,8 @@
       const ex = G.exc();
       // dump first when loaded
       if (ex.ml >= 28000) return this._excDump(ex);
-      const list = G.excTargets(6, -0.9, this.floorMin != null ? this.floorMin : -Infinity);
+      const bad = P.badPts || (P.badPts = new Map());
+      const list = G.excTargets(6, -0.9, this.floorMin != null ? this.floorMin : -Infinity).filter((q) => !((bad.get(`${Math.round(q.x * 2)},${Math.round(q.z * 2)}`) || 0) > this.t));
       let tg = list.find((q) => !q.stone);
       if (!tg && list.length && this.bought["excavator.breaker"] != null) {
         // rock in the way: the breaker cracks it (swap, three blows, swap back), the bucket takes the rubble next
@@ -820,10 +1020,26 @@
         this.t += 2 * EXC.swap + 3 * EXC.blow + 1; this._tick();
         return;
       }
-      if (!tg) { P.stand = null; if (ex.ml > 0) this._excDump(G.exc()); return; }
+      if (!tg) {
+        // nothing in reach here: this stand is done for an hour (the next one elsewhere)
+        (P.bans || (P.bans = [])).push({ x: P.stand ? P.stand.x : ex.x, z: P.stand ? P.stand.z : ex.z, until: this.t + 3600 });
+        P.stand = null; this.t += 2;
+        if (ex.ml > 0) this._excDump(G.exc());
+        return;
+      }
       const r = G.excScoopAt(tg.x, tg.z);
       this.t += EXC.scoop + Math.abs(tg.a) / EXC.swing * 0.5;
-      if (!r || !r.ok) { P.blocks++; if (P.blocks % 4 === 0) { P.stand = null; P.standTries += 3; } this._tick(); return; }
+      if (!r || !r.ok) {
+        P.blocks++;
+        // a point that does not give: left alone for an hour; six in a row: this stand is done for an hour
+        bad.set(`${Math.round(tg.x * 2)},${Math.round(tg.z * 2)}`, this.t + 3600);
+        const why = !r ? "none" : `${r.kind || "?"}:${r.material != null ? r.material : "?"}${r.cemented ? ":c" : ""}`;
+        P.failWhy = P.failWhy || {}; P.failWhy[why] = (P.failWhy[why] || 0) + 1;
+        if ((P.failRun = (P.failRun || 0) + 1) >= 6) { (P.bans || (P.bans = [])).push({ x: P.stand ? P.stand.x : ex.x, z: P.stand ? P.stand.z : ex.z, until: this.t + 3600 }); P.stand = null; P.failRun = 0; P.standTries += 3; }
+        else if (P.blocks % 4 === 0) { P.stand = null; P.standTries += 3; }
+        this._tick(); return;
+      }
+      P.failRun = 0;
       P.scoops++; P.excMl += r.ml; this.kg += r.kg;
       this._tick();
       this._check();
@@ -832,8 +1048,27 @@
     // the bucket into the intake (it drives back when the stand is far); full: spoil / wait by strategy
     _excDump(ex) {
       const P = this.p9, st = P.stand || { x: ex.x, z: ex.z }, dI = Math.hypot(st.x - INTAKE.x, st.z - INTAKE.z);
-      let pl = G.plant(), room = pl.conveyor ? 240000 - pl.conveyor.intakeMl : 0, waited = 0;
-      while (room < ex.ml && waited < Math.min(600, this.waitPolicy)) { this.t += 15; waited += 15; this._tick(); pl = G.plant(); room = 240000 - pl.conveyor.intakeMl; }
+      let pl = G.plant(), room = pl.conveyor ? pl.conveyor.capMl - pl.conveyor.intakeMl : 0, waited = 0;
+      // Prompt 10: with the loader nothing waits - into the intake while it takes the bucket and is no further than
+      // the raw pile, else onto the raw pile (the loader feeds it from there)
+      if (this.p10.ldr && (G.mine().piles.raw || 0) < RAW_MAX) {
+        const dR = Math.hypot(st.x - RAW_DROP.x, st.z - RAW_DROP.z), costI = Math.max(0, dI - EXC.reach), costR = Math.max(0, dR - (2.8 + EXC.reach));
+        if (room >= ex.ml && costI <= costR + 2) {
+          const r = G.excDumpForce("intake");
+          this.t += EXC.dump + 2 * Math.max(0, Math.PI / 2 - EXC.overlap) / EXC.swing + (2 * costI) / EXC.drive;
+          if (r && r.ok) P.intakeDumps++;
+        } else this._excRaw(st);
+        this._tick();
+        if ((this._choreT = (this._choreT || 0) + 1) % 6 === 0) {
+          G.excExit(); P.inCab = false;
+          this._serviceSluice(st);
+          this._p10Work();
+          this._check();
+          this._maybeTrip(st);
+        }
+        return;
+      }
+      while (room < ex.ml && waited < Math.min(600, this.waitPolicy)) { this.t += 15; waited += 15; this._tick(); pl = G.plant(); room = pl.conveyor.capMl - pl.conveyor.intakeMl; }
       P.waited += waited;
       if (room >= Math.min(ex.ml, 20000)) {
         const r = G.excDumpForce("intake");
@@ -928,8 +1163,27 @@
           continue;
         }
         this._tick();
+        // a watchdog (Prompt 10): half an hour without a scoop, a load, a dig or a barrow round - the machine work is reset
+        // (stands, bans, bad points) and the bot works by hand for a quarter of an hour; counted in the result
+        if (this.mech9 && this.t - (this._wdT || 0) >= 1800) {
+          const sig = `${this.p9.scoops}|${Math.round(this.p10.feedMl)}|${this.digs}|${this.mechRounds}|${this.p10.tailClears}`;
+          if (sig === this._wdSig) {
+            const P = this.p9;
+            this.p10.watchdog = (this.p10.watchdog || 0) + 1;
+            P.stand = null; P.bans = []; if (P.badPts) P.badPts.clear(); P.failRun = 0; P.standTries = 0;
+            if (P.inCab) { G.excExit(); P.inCab = false; }
+            P.idleUntil = this.t + 900; this.state = "walk"; this.walked = 0; this.bw = null; this.bk = null;
+          }
+          this._wdSig = sig; this._wdT = this.t;
+        }
         // phase 9: a prospector's survey once the kit is there; the excavator does the digging once it is there
         if (this.p9.surveyT >= 0 && this.t >= this.p9.surveyT) { this._survey(); continue; }
+        // Prompt 10: the loader's work and the plant's chores on the clock - whatever the excavator does (or cannot do)
+        if (this.p10.ldr && this.t - (this._p10T || 0) >= 120) {
+          this._p10T = this.t;
+          this._p10Work();
+          if (this.t - (this._chore10T || 0) >= 900) { this._chore10T = this.t; this._serviceSluice({ x: this.x, z: this.z }); this._check(); this._maybeTrip(); }
+        }
         if (this.p9.exc && this.t >= (this.p9.idleUntil || 0)) { this._excStep(); continue; }
         if (this.mechOn) this._ensureBarrow();
         else if (this.procOn) this._ensureBucket();
@@ -1020,7 +1274,9 @@
         containersUg: G.proc().inContainersUg,
         firstSale: this.firstSaleT != null ? +this.firstSaleT.toFixed(1) : null,
         p9: { ...this.p9, samples: this.p9.samples.slice(0, 20), stand: null, plant: G.plant(), exc: G.exc() ? G.exc().stats : null, contract: (() => { const c = G.contract(); return { pct: c.pct, m3: c.removedM3, t: c.removedKg / 1000 }; })() },
+        p10: { ...this.p10, mine: G.mine() },
         removedM3: e.stats.volumeMl / 1e6,
+        nugCents: this.nugCents, goldFoundUg: e.stats.goldFoundUg, bigNuggets: e.stats.bigNuggets || null,
         cash: e.cashCents, earned: e.sold.totalCashCents, spent: e.shop.spentCents, sales: e.sold.sales, largestSale: e.sold.largestSaleCents,
       };
     },
