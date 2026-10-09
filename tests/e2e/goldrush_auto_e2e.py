@@ -445,16 +445,22 @@ def polish(A, shots):
     ok("RIFFLES dark sand builds up behind the bars with the load and fine gold shows as a few specks (no glitter carpet); after the clean out the mat is clean and the tray shows black sand with gold",
        fresh_r["heavy"] == 0 and fresh_r["specks"] == 0 and loaded["heavy"] > 0.7 and 10 <= loaded["specks"] <= 40 and cleaned["heavy"] == 0 and cleaned["specks"] == 0 and tray_specks > 0,
        f"heavy {fresh_r['heavy']} -> {loaded['heavy']:.2f} -> {cleaned['heavy']}, specks {loaded['specks']} -> {cleaned['specks']}, tray {tray_specks}")
-    # tailings grow, 300 l vs 10 m3
+    # tailings grow, 300 l vs 10 m3 (Prompt 10: on the outlet pile - a real heap at the sluice's end, its surface
+    # is ground you walk on / stop at)
+    TAIL = """async (v) => { const d = await import('/games/goldrush/goldrush-devactions.js'), mt = await import('/games/goldrush/goldrush-material.js');
+      const pr = window.__goldrush.procObj(), P = pr.piles.get('tailOut');
+      pr.devSetPile('tailOut', d.devBatch('gravel', Math.round(v * 1e6), mt.STAGE.TAILINGS), v < 1 ? 0.5 : v < 5 ? 1.0 : 1.6);
+      let cells = 0, top = 0; for (const h of P.h) { if (h > 0.03) cells++; top = Math.max(top, h); }
+      const pk = P.peak(); return { ml: P.volumeMl, area: cells * 0.0625, top, ground: pr.world.groundAt(pk.x, pk.z) }; }"""
     shapes = {}
     for m3 in (0.3, 3.0, 10.0):
-        G(A, f"(v) => {{ const s = {GR}.procObj().sluice; s.tailMl = Math.round(v * 1e6); s._fill(); }}", m3)
-        shapes[m3] = sl()["hs"]
+        shapes[m3] = G(A, TAIL, m3)
         look(A, shots, {0.3: "12_tailings_low", 3.0: "12b_tailings_mid", 10.0: "13_tailings_high"}[m3], {"x": -13.8, "y": 3.6, "z": 1.6, "tx": -17.3, "ty": 0.3, "tz": -2.4}, 0)
-    cols = G(A, f"() => {GR}.procObj().world.colliders.includes({GR}.procObj().sluice.heapCollider)")
-    vol = lambda s: 0.603 * s[0] * s[1] * s[2]
     ok("TAILINGS the heap grows visibly: 300 l is a small pile, 3 m3 a heap, 10 m3 a big fan (bigger and higher still) - its volume follows the tailings; once high it is in the way",
-       shapes[0.3][1] > 0.3 and shapes[3.0][0] > shapes[0.3][0] * 1.8 and shapes[10.0][1] > shapes[3.0][1] * 1.2 and abs(vol(shapes[3.0]) - 3.0) < 0.3 and cols, json.dumps({k: [round(x, 2) for x in v] for k, v in shapes.items()}))
+       shapes[0.3]["top"] > 0.05 and shapes[3.0]["area"] > shapes[0.3]["area"] * 1.8 and shapes[10.0]["top"] > shapes[3.0]["top"] * 1.2
+       and all(abs(s["ml"] - m * 1e6) < 1000 for m, s in shapes.items()) and shapes[10.0]["ground"] > 0.3,
+       json.dumps({k: {"m2": round(v["area"], 1), "top": round(v["top"], 2), "ml": v["ml"]} for k, v in shapes.items()}))
+    G(A, f"() => {GR}.procObj().devSetPile('tailOut', null)")
     # wet ground
     wet = G(A, f"() => {GR}.procObj()._wet.map((m) => [m.userData.which, m.userData.puddle, m.visible])")
     G(A, f"() => {GR}.setQuality('low')")

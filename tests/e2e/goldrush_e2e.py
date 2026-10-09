@@ -31,6 +31,8 @@ RESULTS = []
 GPU_ARGS = ["--use-angle=d3d11", "--enable-gpu", "--ignore-gpu-blocklist", "--js-flags=--expose-gc"]
 # the save version the game writes now (goldrush-save.js) - the suites compare against it, not a number of their phase
 CURRENT_SAVE = int(__import__("re").search(r"export const SAVE_VERSION = (\d+)", (Path(__file__).resolve().parents[2] / "static" / "games" / "goldrush" / "goldrush-save.js").read_text(encoding="utf-8")).group(1))
+# ... and the geology version (3: GoldRush 9.1's calibration, 4: Prompt 10's rare big nuggets)
+CURRENT_GEOLOGY = int(__import__("re").search(r"export const GEOLOGY_VERSION = (\d+)", (Path(__file__).resolve().parents[2] / "static" / "games" / "goldrush" / "goldrush-resources.js").read_text(encoding="utf-8")).group(1))
 NOISE = ("favicon", "WebSocket connection", 'Viewport argument key "interactive-widget"')
 
 # a browser without WebGL: every webgl/webgl2 context request fails

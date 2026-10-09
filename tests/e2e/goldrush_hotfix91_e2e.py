@@ -28,7 +28,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, os.path.dirname(__file__))
-from goldrush_e2e import GPU_ARGS, client, errors, gr_open, gr_ready, gr_pause, gr_close  # noqa: E402
+from goldrush_e2e import GPU_ARGS, client, errors, gr_open, gr_ready, gr_pause, gr_close, CURRENT_GEOLOGY  # noqa: E402
 from goldrush_tools_e2e import seeded  # noqa: E402
 import goldrush_quality_e2e as Q  # noqa: E402
 from goldrush_mechanized_e2e import grant, ledger, reload  # noqa: E402
@@ -95,7 +95,7 @@ def geology(A):
         fresh(A, seed)
         rows.append(G(A, ZONES))
     doc = G(A, f"() => {{ {GR}.save(); return JSON.parse(localStorage.getItem(grKey())); }}")
-    ok("GEO a new mine records geology 3 (the 9.1 calibration)", doc.get("geology", {}).get("version") == 3, str(doc.get("geology")))
+    ok("GEO a new mine records the current geology (3: the 9.1 calibration, 4 since Prompt 10's big nuggets)", doc.get("geology", {}).get("version") == CURRENT_GEOLOGY >= 3, str(doc.get("geology")))
     m = lambda k: sum(r.get(k, 0) for r in rows) / len(rows)
     claim = m("claim")
     ok("GEO the mountain is ordinary ground: upper 0.85-1.15 x the neutral claim", 0.85 <= m("upper") / claim <= 1.15, f"{m('upper') / claim:.2f}")
@@ -118,7 +118,7 @@ def geology(A):
     after = G(A, f"() => {{ const g = {GR}; return {{ h: g.hashes(), bucket: g.procObj().bucket.batch.goldUg, ml: g.procObj().bucket.batch.volumeMl, notice: document.querySelector('.gr-notice') ? document.querySelector('.gr-notice').textContent : '' }}; }}")
     doc = G(A, f"() => {{ {GR}.save(); return JSON.parse(localStorage.getItem(grKey())); }}")
     ok("GEO a geology-2 mine follows geology 3: used slices stay used, the bucket keeps exactly its gold, no notice",
-       after["h"]["slices"] == before["h"]["slices"] and after["bucket"] == before["bucket"] and after["ml"] == before["ml"] and doc["geology"].get("version") == 3
+       after["h"]["slices"] == before["h"]["slices"] and after["bucket"] == before["bucket"] and after["ml"] == before["ml"] and doc["geology"].get("version") == CURRENT_GEOLOGY
        and "neu vermessen" not in after["notice"], f"{doc['geology']} notice {after['notice'][:60]!r}")
     # the camp's fill: told once when you dig into it
     fresh(A, 4242)

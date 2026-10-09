@@ -510,7 +510,8 @@ def sluice(A, shots):
     G(A, f"() => {GR}.walk(0.1, 0, 0)")                   # a frame: the heap is drawn
     lok, L, p = ledger_ok(A)
     ok("S7 gold conservation: hopper + riffles + tray + everything else + recovered + tailings == what went in, to the µg", lok, json.dumps({k: L[k] for k in ("inUg", "recoveredUg", "tailUg")}))
-    ok("S8 tailings conservation: mass in == containers + tailings (to the gram); the heap grows at the outlet", L["inG"] == p["inContainersG"] + L["tailG"] and p["sluice"]["heap"] and p["sluice"]["tailMl"] > 2000, f"heap {p['sluice']['tailMl']} ml")
+    out = G(A, f"() => {GR}.procObj().piles.get('tailOut').volumeMl")             # (Prompt 10: the outlet pile)
+    ok("S8 tailings conservation: mass in == containers + tailings (to the gram); the heap grows at the outlet", L["inG"] == p["inContainersG"] + L["tailG"] and out > 2000 and p["sluice"]["tailMl"] > 2000, f"heap {p['sluice']['tailMl']} ml, outlet pile {out} ml")
     G(A, f"() => {GR}.pose({{ x: -17.2, z: 0.0, yaw: 0.75, pitch: -0.42 }})")
     time.sleep(0.6)
     shot(A, shots, "sluice_running")
@@ -777,12 +778,19 @@ def mobile(browser, base, user, shots):
     vw = M.viewport_size
     cx, cy = vw["width"] / 2, vw["height"] / 2
     t0 = time.time()
-    while proc(M)["work"] == "clean" and time.time() - t0 < 40:
+    phase = lambda: G(M, f"() => {GR}.workState().phase")
+    while proc(M)["work"] == "clean" and phase() == "gesture" and time.time() - t0 < 40:
         drag(cdp, [(cx + (90 if k % 2 else -90), cy) for k in range(24)], 0.03)
+    # (Prompt 10, human QA F: the cleaned mat's result waits - 'FERTIG' ends it)
+    wait_for(lambda: phase() == "result", 4)
+    time.sleep(0.3)
+    labels.append(M.inner_text(".gr-ctx-btn") if M.is_visible(".gr-ctx-btn") else "")
+    M.tap(".gr-ctx-btn")
+    wait_for(lambda: proc(M)["work"] is None, 3)
     p = proc(M)
     shot(M, shots, "mobile_sluice")
     ok("S19 phone: one big context button for everything - GREIFEN, AUSKIPPEN, ABSTELLEN, WASSER AN, REINIGEN; a finger brushes the mat out; the dig button rests while the hands are on the barrow",
-       pushing and running and labels[:2] == ["GREIFEN", "AUSKIPPEN"] and labels[2] == "ABSTELLEN" and labels[3] == "WASSER AN" and labels[4] == "REINIGEN"
+       pushing and running and labels[:2] == ["GREIFEN", "AUSKIPPEN"] and labels[2] == "ABSTELLEN" and labels[3] == "WASSER AN" and labels[4] == "REINIGEN" and labels[5] == "FERTIG"
        and p["work"] is None and p["sluice"]["tray"]["volumeMl"] > 0 and busy_push and not busy_parked, f"{labels} busy {busy_push}/{busy_parked} tray {p['sluice']['tray']['volumeMl']}")
     errs = errors(M)
     ok("phone part ran without page errors", not errs, str(errs[:3]))

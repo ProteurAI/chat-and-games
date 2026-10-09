@@ -48,7 +48,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, os.path.dirname(__file__))
-from goldrush_e2e import GPU_ARGS, client, errors, gr_open, gr_ready, gr_pause, gr_close, wait_for  # noqa: E402
+from goldrush_e2e import GPU_ARGS, client, errors, gr_open, gr_ready, gr_pause, gr_close, wait_for, CURRENT_SAVE, CURRENT_GEOLOGY  # noqa: E402
 from goldrush_tools_e2e import seeded  # noqa: E402
 import goldrush_quality_e2e as Q  # noqa: E402
 from kopfkicker_e2e import login, start_server  # noqa: E402
@@ -167,7 +167,7 @@ def geology(A):
         rows.append(G(A, ZONE_JS))
     doc = G(A, f"() => {{ {GR}.save(); return JSON.parse(localStorage.getItem(grKey())); }}")
     # (GoldRush 9.1: geology 3 - the recalibration; goldrush_hotfix91_e2e.py)
-    ok("GEO a new mine records its geology (explicit version, 3 since GoldRush 9.1)", doc.get("geology", {}).get("version") == 3 and doc["saveVersion"] == 8, str(doc.get("geology")))
+    ok("GEO a new mine records its geology (explicit version: 3 since GoldRush 9.1, 4 since Prompt 10)", doc.get("geology", {}).get("version") == CURRENT_GEOLOGY and doc["saveVersion"] == CURRENT_SAVE, str(doc.get("geology")))
     ok("GEO 2-4 paleochannels per seed, some under the mountain", all(2 <= r["channels"] <= 4 for r in rows) and sum(1 for r in rows if r["under"] > 0) >= 3, str([(r["channels"], r["under"]) for r in rows]))
     m = lambda k: sum(r.get(k, 0) for r in rows) / len(rows)
     claim = m("claim")
@@ -426,7 +426,8 @@ def trommel(A):
     G(A, f"() => {GR}.procBarrowPlace(-21.6, -4.0, Math.PI / 2)")
     r = G(A, f"() => {GR}.procAct('oversize-barrow')")
     p2 = G(A, f"() => {GR}.plant()")
-    ok("TRM the oversize is recoverable: shovelled into the barrow, exactly", r["ok"] and r["ml"] == min(over, 85000) and p2["trommel"]["overMl"] == over - r["ml"], f"{r} from {over}")
+    # (Prompt 10: the oversize is a real pile - a load is cut from its top, not the whole buffer at once)
+    ok("TRM the oversize is recoverable: shovelled into the barrow, exactly", r["ok"] and 0.5 * min(over, 85000) <= r["ml"] <= min(over, 85000) and p2["trommel"]["overMl"] == over - r["ml"], f"{r} from {over}")
     # blocked by a full bulk hopper, on again
     G(A, """async () => { const m = await import('/games/goldrush/goldrush-devactions.js'); const pr = window.__goldrush.procObj(); pr.devSetIntake(m.devBatch('paydirt', 200000)); pr.devSetBulk(m.devBatch('paydirt', pr.bulk.capacityMl)); }""")
     frames(A, 70)                                             # (the trommel's feed box fills first, then the belt stops)
@@ -573,7 +574,7 @@ FINDS_JS = r"""async () => {
   const { MaterialBatch } = await import('/games/goldrush/goldrush-material.js');
   const pr = window.__goldrush.procObj(), seen = new Set(), keys = new Map();
   const SKIP = new Set(['ctx', 'scene', 'world', 'economy', 'terrain', 'mining', 'rocks', 'assets', 'hands', 'game', 'player', 'audio', 'model', 'group',
-    'pm', 'rig', 'root', 'THREE', 'camera', 'renderer', 'input', 'hud', 'stations', 'parts', 'colliders', 'collider', 'loads', 'geom', 'lumps']);
+    'pm', 'rig', 'root', 'THREE', 'camera', 'renderer', 'input', 'hud', 'stations', 'parts', 'colliders', 'collider', 'loads', 'geom', 'lumps', 'trap']);
   let n = 0, batches = 0;
   const walk = (o, depth) => {
     if (!o || typeof o !== 'object' || seen.has(o) || depth > 7) return;
@@ -584,6 +585,8 @@ FINDS_JS = r"""async () => {
       for (const f of o.finds) { n++; keys.set(f.key, (keys.get(f.key) || 0) + 1); }
       return;
     }
+    // (Prompt 10: the trommel's nugget trap holds whole pieces, no batch)
+    if (Array.isArray(o.trap)) for (const f of o.trap) { n++; keys.set(f.key, (keys.get(f.key) || 0) + 1); }
     if (Array.isArray(o)) { if (o.length < 5000) for (const v of o) walk(v, depth + 1); return; }
     for (const k of Object.keys(o)) if (!SKIP.has(k)) walk(o[k], depth + 1);
   };
@@ -677,7 +680,7 @@ def save(A):
     G(A, f"() => {GR}.flagAt(-5, -14)")
     doc = G(A, f"() => {{ {GR}.save(); return JSON.parse(localStorage.getItem(grKey())); }}")
     pr = doc["processing"]
-    ok("SAV v8: geology, prospect, conveyor, trommel, spoil, excavator in the document", doc["saveVersion"] == 8 and doc["geology"]["version"] == 3 and doc["prospect"]["flags"] and all(pr.get(k) for k in ("conveyor", "trommel", "spoil", "excavator")), str(list(pr.keys())))
+    ok("SAV v8+: geology, prospect, conveyor, trommel, spoil, excavator in the document", doc["saveVersion"] == CURRENT_SAVE and doc["geology"]["version"] == CURRENT_GEOLOGY and doc["prospect"]["flags"] and all(pr.get(k) for k in ("conveyor", "trommel", "spoil", "excavator")), str(list(pr.keys())))
     # a new mine: nothing of it
     G(A, f"() => {GR}.setPaused(false)")
     gr_pause(A)

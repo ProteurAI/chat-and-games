@@ -524,10 +524,15 @@ def flow(A, shots):
     work = proc(A)["work"]
     shot(A, shots, "classifier_shake")
     t0 = time.time()
-    while proc(A)["work"] == "sieve" and time.time() - t0 < 15:
+    phase = lambda: G(A, f"() => {GR}.workState().phase")
+    while proc(A)["work"] == "sieve" and phase() == "gesture" and time.time() - t0 < 15:
         for k in range(6):
             A.mouse.move(683 + (60 if k % 2 else -60), 384)
             time.sleep(0.03)
+    # (Prompt 10, human QA F: the sieve's result waits for [E], then the camera is yours again)
+    wait_for(lambda: phase() == "result", 4)
+    A.keyboard.press("KeyE")
+    wait_for(lambda: proc(A)["work"] is None, 3)
     sieved = proc(A)["tub"]["volumeMl"]
     # pan: E, circle the mouse until the gold shows, E to collect
     G(A, f"() => {GR}.pose({{ x: {PAN_SPOT[0]}, z: {PAN_SPOT[1]}, yaw: {PAN_SPOT[2]}, pitch: -0.5 }})")
@@ -662,10 +667,18 @@ def mobile(browser, base, user, shots):
             time.sleep(0.3)
             shake = [(cx + (60 if k % 2 else -60), cy) for k in range(40)]
             t0 = time.time()
-            while proc(M)["work"] == "sieve" and time.time() - t0 < 15:
+            phase = lambda: G(M, f"() => {GR}.workState().phase")
+            while proc(M)["work"] == "sieve" and phase() == "gesture" and time.time() - t0 < 15:
                 drag(cdp, shake, 0.02)
-            ok("42 phone: 'SIEBEN' + a finger going left / right shakes the screen until it is sieved", lab_sieve == "SIEBEN" and proc(M)["work"] is None and proc(M)["tub"]["volumeMl"] > 0,
-               f"{lab_sieve} tub {proc(M)['tub']['volumeMl']} ml")
+            # (Prompt 10, human QA F: the result waits - 'FERTIG' ends it)
+            wait_for(lambda: phase() == "result", 4)
+            time.sleep(0.3)
+            lab_done = M.inner_text(".gr-ctx-btn") if M.is_visible(".gr-ctx-btn") else None
+            M.tap(".gr-ctx-btn")
+            wait_for(lambda: proc(M)["work"] is None, 3)
+            ok("42 phone: 'SIEBEN' + a finger going left / right shakes the screen until it is sieved, 'FERTIG' ends the result", lab_sieve == "SIEBEN" and lab_done == "FERTIG" and proc(M)["work"] is None and proc(M)["tub"]["volumeMl"] > 0,
+               f"{lab_sieve}/{lab_done} tub {proc(M)['tub']['volumeMl']} ml")
+            time.sleep(0.35)                                       # (the look is muted for 0,2 s after the work: no jump)
             # 43: afterwards the fingers walk / look again (nothing stuck in work mode)
             yaw2 = G(M, f"() => {GR}.state().yaw")
             drag(cdp, [(vw["width"] * 0.75, vw["height"] * 0.35 + 0)] + [(vw["width"] * 0.75 + k * 15, vw["height"] * 0.35) for k in range(1, 9)], 0.02)
