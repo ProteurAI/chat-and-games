@@ -41,6 +41,10 @@
             exactly once in the ledger, through a save / reload, taken out at the trap -> the pouch, "Großer Goldfund",
             the sting; a EUR 8 one through the screen into the wash plant's riffles -> cleaned out; the pan / the sieve
             keep any size; dug from the ground: the tier's sound and line, held up longer; the statistics by tier
+  p1001     GoldRush 10.0.1: the sluice's throughput stages II / III bought in the shop (32 -> 45 -> 60 l/min measured, the
+            feeder doses the same - never below the box), kept by a reload; the small hillside miner ("Kleiner
+            Schürfkopf"): ~30 l/min of real cuts into the intake, the ledger exact, hard rock stops it, nothing while
+            paused, kept by a reload, bought big later the same machine grows
   dev       every Prompt-10 developer command (preset, places, fills, tip targets, result states, upgrades, jump, nuggets)
   perf      the working mine in view under 250 draw calls, ~60 fps; objects / heap flat over a working run; the
             phone (loader cab controls)
@@ -1003,6 +1007,84 @@ def nuggets(A):
 
 
 # ======================================================================
+# P1001 - GoldRush 10.0.1: sluice stages, the small hillside miner
+# ======================================================================
+
+FLOW = """(sec) => { const pr = window.__goldrush.procObj(), sl = pr.sluice, B = pr._batch('raw'); B.volumeMl = pr.bulk.capacityMl - pr.bulk.volumeMl;
+  B.comp = [Math.round(B.volumeMl * 0.9), Math.round(B.volumeMl * 0.45), Math.round(B.volumeMl * 0.4), Math.round(B.volumeMl * 0.1)]; B.fineUg = Math.round(B.volumeMl * 0.4);
+  pr._devIn(B); pr.bulk.buffer.put(B); pr.devFeederMode('auto'); pr.devConveyorMode('stop'); sl.setWater(true); pr.devSetPile('tailOut', null);
+  for (let t = 0; t < 20; t++) pr.tickSim(1);
+  const p0 = sl.stats.processedMl; for (let t = 0; t < sec; t++) pr.tickSim(1);
+  return { lpm: +((sl.stats.processedMl - p0) / 1000 / (sec / 60)).toFixed(1), sluice: sl.rateLpm, feeder: pr.feeder.rateLpm }; }"""
+MINI = "() => { const am = window.__goldrush.procObj().autominer; return am ? { small: am.small, bite: am.M.biteMl, placed: am.placed, x: +am.x.toFixed(3), z: +am.z.toFixed(3), on: am.on, status: am.status, stats: { ...am.stats }, ml: am.volumeMl, label: am.label } : null; }"
+
+
+def patch1001(A):
+    fresh(A)
+    paused(A)
+    plant_up(A)
+    grant(A, ["sluice.highflow"])
+    G(A, f"() => {GR}.setCash(500000)")
+    r0 = G(A, FLOW, 60)
+    b2 = G(A, f"() => {GR}.buy('sluice.flow2')")
+    r2 = G(A, FLOW, 60)
+    b3 = G(A, f"() => {GR}.buy('sluice.flow3')")
+    r3 = G(A, FLOW, 60)
+    ok("P1001 shop: 'Rinnen-Durchsatz II · 32 → 45 l/min' (EUR 450) and III '45 → 60' (EUR 750) bought; the box measured 32 -> 45 -> 60 l/min",
+       b2.get("ok") and b3.get("ok") and 30 <= r0["lpm"] <= 33 and 43 <= r2["lpm"] <= 46 and 57 <= r3["lpm"] <= 61, f"{r0} | {r2} | {r3} | {b2} {b3}")
+    ok("P1001 the feeder doses what the box takes at every stage (never below it)", r0["feeder"] >= r0["sluice"] == 32 and r2["feeder"] >= r2["sluice"] == 45 and r3["feeder"] >= r3["sluice"] == 60,
+       f"feeder {r0['feeder']}/{r2['feeder']}/{r3['feeder']} sluice {r0['sluice']}/{r2['sluice']}/{r3['sluice']}")
+    good, det = exact(A)
+    ok("P1001 the sluice stages: the ledger exact", good, det)
+    reload(A)
+    paused(A)
+    rr = G(A, "() => { const pr = window.__goldrush.procObj(); return { up: [...window.__goldrush.tools().saved.upgrades].filter((u) => u.startsWith('sluice.')), sluice: pr.sluice.flowMax, feeder: pr.feeder.rateLpm }; }")
+    ok("P1001 save / reload: the stages kept (the box 60, the feeder 60)", "sluice.flow3" in rr["up"] and "sluice.flow2" in rr["up"] and rr["sluice"] == 60 and rr["feeder"] == 60, json.dumps(rr))
+    # ---- the small hillside miner
+    fresh(A)
+    paused(A)
+    plant_up(A)
+    G(A, f"() => {GR}.procGrant('minerhead')")
+    sp = G(A, "() => { const am = window.__goldrush.procObj().autominer, sp = am.findSpot('intake'); if (!sp) return null; const r = am.place(sp.x, sp.z, sp.heading); am.setOn(true); return { ok: r.ok, recv: am.recv ? am.recv.kind : null, m3: am.survey().m3 }; }")
+    m0 = G(A, MINI)
+    s0 = G(A, "() => { const pr = window.__goldrush.procObj(), e = window.__goldrush.economyObj(); return { inUg: pr.ledger.inUg, mountainG: e.stats.mountainG, intake: pr.conveyor.stats ? pr.conveyor.stats.inMl || 0 : 0, intakeNow: pr.conveyor.volumeMl }; }")
+    G(A, "() => { const pr = window.__goldrush.procObj(); pr.devConveyorMode('stop'); for (let t = 0; t < 300; t++) pr.tickSim(1); }")
+    m1 = G(A, MINI)
+    s1 = G(A, "() => { const pr = window.__goldrush.procObj(), e = window.__goldrush.economyObj(), am = pr.autominer; return { inUg: pr.ledger.inUg, mountainG: e.stats.mountainG, intakeNow: pr.conveyor.volumeMl, m3: am.survey().m3 }; }")
+    lpm = (m1["stats"]["dugMl"] - m0["stats"]["dugMl"]) / 1000 / 5
+    ok("P1001 the small miner ('Schürfkopf', 3-l bites) set up at the intake cuts the real mountain at 20-35 l/min",
+       sp and sp["ok"] and sp["recv"] == "intake" and m0["small"] and m0["bite"] == 3000 and m0["label"] == "Schürfkopf" and 20 <= lpm <= 35 and s1["m3"] < sp["m3"],
+       f"{sp} | {lpm:.1f} l/min | section {sp and sp['m3']:.2f} -> {s1['m3']:.2f} m3 | cuts {m1['stats']['cuts']}")
+    good, det = exact(A)
+    ok("P1001 its batches: gold from the ground, the mountain contract, everything into the intake hopper; the ledger exact",
+       s1["inUg"] > s0["inUg"] and s1["mountainG"] > s0["mountainG"] and m1["stats"]["intakeMl"] > 0 and s1["intakeNow"] > s0["intakeNow"] and good,
+       f"gold in +{s1['inUg'] - s0['inUg']} ug, mountain +{(s1['mountainG'] - s0['mountainG']) / 1000:.0f} kg, intake +{(s1['intakeNow'] - s0['intakeNow']) / 1000:.0f} l (out {m1['stats']['intakeMl'] / 1000:.0f} l) | {det}")
+    # nothing while paused (no offline work)
+    G(A, f"() => {GR}.setPaused(true)")
+    d0 = G(A, MINI)["stats"]["dugMl"]
+    time.sleep(2)
+    d1 = G(A, MINI)["stats"]["dugMl"]
+    reload(A)
+    paused(A)
+    m2 = G(A, MINI)
+    ok("P1001 nothing while paused or closed; save / reload keeps the small head (placed, its stand, its counters)",
+       d1 == d0 and m2 and m2["small"] and m2["placed"] and abs(m2["x"] - m1["x"]) < 1e-3 and m2["stats"]["dugMl"] == m1["stats"]["dugMl"], f"{d0} -> {d1} | {m2}")
+    # hard rock stops it
+    rock = G(A, """() => { const g = window.__goldrush, pr = g.procObj(), am = pr.autominer, t = g.terrain(), A = am.M.area;
+      am.constructor.samples(am.x, am.z, am.heading, A, (x, z) => { const i = Math.round((x - t.x0) / t.cell), j = Math.round((z - t.z0) / t.cell);
+        for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const k = (j + dj) * t.vps + (i + di), h = t.height[k]; if (h <= am.y + A.floor + 0.06) continue; t.stoneTop[k] = h + 0.5; t.stoneBot[k] = Math.max(am.y + A.floor - 0.2, h - 3); t.rubble[k] = 0; } });
+      t._refresh(0, t.vps - 1, 0, t.vps - 1); t.revision++; am.setOn(true);
+      const d0 = am.stats.dugMl; for (let k = 0; k < 40 && am.status !== 'rock'; k++) am.cutNow(); return { status: am.status, dug: am.stats.dugMl - d0 }; }""")
+    ok("P1001 hard rock in its section: the head is blocked (HARTGESTEIN), nothing dug", rock["status"] == "rock", json.dumps(rock))
+    # bought big later: the same machine grows (its counters stay)
+    G(A, f"() => {GR}.procGrant('autominer')")
+    m3 = G(A, MINI)
+    good, det = exact(A)
+    ok("P1001 the full hillside miner bought later: the same machine grows (8-l bites, counters kept); the ledger exact",
+       m3 and not m3["small"] and m3["bite"] == 8000 and m3["stats"]["cuts"] >= m2["stats"]["cuts"] and m3["label"] == "Abbaugerät" and good, f"{m3} | {det}")
+
+
+# ======================================================================
 # DEV - every Prompt-10 developer command
 # ======================================================================
 
@@ -1298,7 +1380,7 @@ def main():
             browser = getattr(p, engine).launch(args=GPU_ARGS if engine == "chromium" else [])
             ctx, A = client(browser, base, user, dict(viewport={"width": 1366, "height": 768}), extra_init=[seeded()])
             for part, fn in (("barrow", barrow), ("tailings", tailings), ("upgrades", upgrades), ("jump", jump), ("work", work), ("prospect", prospect),
-                             ("piles", piles), ("loader", loader), ("plant", plant), ("wash", wash), ("chain", chain), ("save", save), ("area", area), ("miner", miner), ("nuggets", nuggets), ("dev", devtools)):
+                             ("piles", piles), ("loader", loader), ("plant", plant), ("wash", wash), ("chain", chain), ("save", save), ("area", area), ("miner", miner), ("nuggets", nuggets), ("p1001", patch1001), ("dev", devtools)):
                 if not want(part):
                     continue
                 try:

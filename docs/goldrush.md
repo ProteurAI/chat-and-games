@@ -1263,6 +1263,24 @@ absichtlich früh, E10 spät, A10 steckt das Geld zuerst in den Berg.
 * Der Produktionspfad der Entwicklertools (nur echte UI, keine Test-Hooks)
   läuft in `tests/e2e/goldrush_dev_e2e.py`.
 
+## GoldRush 10.0.1 – Zwischenstufen (Not-Patch)
+
+Kleine Fortschritte zwischen den großen Maschinen, ohne neue Architektur:
+
+* **Rinnen-Durchsatz II / III** (Upgrades der Hochleistungsrinne, `sluice.flow2` /
+  `sluice.flow3`): gleichmäßig dosiert 32 → 45 → 60 l/min, € 450 / € 750. Der
+  Dosierer gibt immer genau das auf, was die Rinne nimmt (`sluiceFlowMax`); er
+  bremst sie nie. 60 l/min passen zu Förderband (64) und Trommel (60). Ohne
+  Dosierer bleibt es bei 20 l/min; mit der Waschanlage gelten deren Rinnen.
+* **Kleiner Schürfkopf** (`minerhead`, € 750, ab Förderband und 0,9 %
+  Bergauftrag): dieselbe `AutoMiner`-Maschine in klein (`MINER_SMALL`: 1,6 m
+  breiter, niedrigerer Abschnitt, 3-l-Bisse, 30-l-Band). Gemessen ~30 l/min
+  echter Abbau in den Aufgabetrichter, Erde / Lehm / Kies / Geröll, Hartgestein
+  blockiert, nichts offline. Wird später das Bergseiten-Abbaugerät gekauft,
+  wächst dieselbe Maschine (Standort und Zähler bleiben).
+* Speicherstand v9 unverändert (Upgrades und `owned` wie bisher).
+* Tests: `goldrush_workingmine_e2e.py --only p1001`.
+
 ## Entwicklertools (QA-Modus, Prompt 5.5)
 
 - **Zugang nur serverseitig:** Umgebungsvariable `GOLDRUSH_DEV_CODE`
