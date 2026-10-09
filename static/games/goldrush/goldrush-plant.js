@@ -23,24 +23,44 @@
 //   SPOIL      the spoil heap NW of the mountain (comes with the excavator): where
 //              waste goes - the overburden you do not want to wash. It is
 //              booked like tailings (gold included - nothing vanishes).
+//   Prompt 10: NUGGET TRAP - a nugget too big for the screen's holes (goldrush-material.js SCREEN_CATCH_UG,
+//   from ~ EUR 10) rides to the drum's end and drops into a small trap under the chute (plantmodels TRAP):
+//   it waits there, whole, in the ledger and the save, until you take it out ([E]) - never onto the pile.
+//   Prompt 10: the oversize pile and the spoil heap are real stockpiles
+//   (goldrush-stockpile.js: a height field that settles, its material kept
+//   layer by layer) - the trommel drops its oversize onto the OVERSIZE pile
+//   (it waits once the pile reaches the chute), the spoil heap is the SPOIL
+//   pile; a save of phase 9 brings both over (nothing booked twice).
 //
 // Everything runs only while the game runs (frames, or the simulation hook);
 // the processing ledger (goldrush-processing.js) counts every holder here.
 
 import { MaterialBuffer, Belt, transfer, volumeOf, roomOf, putInto } from "./goldrush-transfer.js";
 import { MaterialBatch, STAGE, trommelSplit } from "./goldrush-material.js";
-import { INTAKE, INTAKE_POST, INTAKE_SPOT, BELT, TROMMEL, OVERSIZE, SPOIL, SPOIL_SIGN, GENERATOR, HEAP_K, beltGeom } from "./goldrush-plantmodels.js";
+import { INTAKE, INTAKE_EXT, INTAKE_POST, INTAKE_SPOT, BELT, TROMMEL, OVERSIZE, OVER_BELT, OVER_DROP, overBeltGeom, SPOIL, SPOIL_SIGN, GENERATOR, HEAP_K, beltGeom, TRAP } from "./goldrush-plantmodels.js";
+import { FIND } from "./goldrush-resources.js";
+import { findSize } from "./goldrush-loot.js";
+import { centsForMass } from "./goldrush-economy.js";
 import { BULK_AT } from "./goldrush-automation.js";
-import { mergeStatic } from "./goldrush-merge.js";
+import { mergeStatic, unmerge } from "./goldrush-merge.js";
 
 export const INTAKE_ML = 240000;
 export const BELT_CELLS = 24;
 export const BELT_CELL_ML = 900;
 export const BELT_SPEED = 0.42;                      // m/s -> ~64 l/min
 export const TROMMEL_LPM = 60;
+// Prompt 10: the plant upgrades (goldrush-shop.js) - the belt: a stronger drive, faster and a fuller load per metre
+// (~137 l/min), the intake raised to 420 l; the trommel: a second drive and spray bar (120 l/min)
+export const BELT_FAST = { speed: 0.62, cellMl: 1300 };
+export const INTAKE_EXT_ML = 420000;
+export const TROMMEL_FAST_LPM = 120;
 export const TROMMEL_STEP_ML = 1000;
 export const TROMMEL_FEED_ML = 30000;                // the feed box and what tumbles in the drum
-export const OVERSIZE_MAX_ML = 7000000;              // the pile (north along the fence) reaches the chute at ~7 m3: the trommel waits
+export const OVERSIZE_MAX_ML = 7000000;              // phase 9's pile reached the chute at ~7 m3 (Prompt 10: the real pile's height decides)
+export const CHUTE_H = 1.25;                          // m: (phase 9) the oversize pile up to the chute's end -> the trommel waited
+// Prompt 10: the oversize stacker - the pile under its head up to OVER_H stops it (then the trommel waits)
+export const OVER_H = 1.65;
+const OVER_SLOTS = 10, OVER_CELL_ML = 1200, OVER_SPEED = 0.55, OVER_IN_ML = 4000;
 export const CONVEYOR_KIT = { x: -15.95, z: -11.45 };
 export const TROMMEL_KIT = { x: -17.7, z: -4.75 };
 const BUILD_S = 3.2;
@@ -104,7 +124,32 @@ export class Conveyor {
     this.time = 0;
     this.running = false;
     this._build();
+    this.applyUpgrades();
   }
+
+  // Prompt 10: the conveyor upgrade - a faster belt carrying more per metre, the raised intake (you see both)
+  applyUpgrades() {
+    const ups = this.ctx.upgrades ? this.ctx.upgrades() : null, fast = !!(ups && ups.has("conveyor.fast"));
+    this.fast = fast;
+    this.belt.speed = fast ? BELT_FAST.speed : BELT_SPEED;
+    this.belt.cellMl = fast ? BELT_FAST.cellMl : BELT_CELL_ML;
+    this.intake.capacityMl = fast ? INTAKE_EXT_ML : INTAKE_ML;
+    const iu = this.intakeModel.userData, cu = this.model.userData, on = this.installed || this.build >= 0;
+    iu.ext.visible = cu.up.visible = fast && on;
+    // built: the upgrade's parts are baked with the machine's own (per material - no extra draws); bought later: re-baked
+    if (this._merged && this._mergedFast !== fast) { this._unmergeAll(); this._mergeStatic(); }
+    this._fillSig = null;
+  }
+
+  _unmergeAll() {
+    const iu = this.intakeModel.userData, cu = this.model.userData;
+    for (const m of this._merged) { if (m.parent) m.parent.remove(m); m.geometry.dispose(); }
+    for (const p of [...iu.parts, ...iu.extParts, ...cu.parts, ...cu.upParts, ...this.gen.userData.parts]) p.visible = true;
+    this._merged = null;
+  }
+
+  // the intake's rim (where a load is tipped over): higher with the extension
+  get rimY() { return INTAKE.rimY + (this.fast ? INTAKE_EXT.h : 0); }
 
   _build() {
     const THREE = this.THREE, pm = this.pm, G = this.geom;
@@ -222,25 +267,28 @@ export class Conveyor {
     const cols = this.world.colliders;
     for (const c of this.colliders) { const i = cols.indexOf(c); if (on && i < 0) cols.push(c); if (!on && i >= 0) cols.splice(i, 1); }
     if (this.installed && !this._merged) this._mergeStatic();
+    if (this.intakeModel.userData.ext) this.applyUpgrades();
     this._fillSig = null;
   }
 
   // built: frames, idlers, legs baked per material (the belt, pulleys, lumps, fills stay apart)
   _mergeStatic() {
-    const iu = this.intakeModel.userData, cu = this.model.userData;
+    const iu = this.intakeModel.userData, cu = this.model.userData, ups = this.ctx.upgrades ? this.ctx.upgrades() : null, fast = !!(ups && ups.has("conveyor.fast"));
     const inc = cu.inc, incParts = cu.parts.filter((p) => p.parent === inc), outer = cu.parts.filter((p) => p.parent !== inc);
+    iu.ext.visible = cu.up.visible = fast;
     this._merged = [
-      ...mergeStatic(this.THREE, this.intakeModel, iu.parts),
-      ...mergeStatic(this.THREE, inc, incParts),
+      ...mergeStatic(this.THREE, this.intakeModel, fast ? [...iu.parts, ...iu.extParts] : iu.parts),
+      ...mergeStatic(this.THREE, inc, fast ? [...incParts, ...cu.upParts] : incParts),
       ...mergeStatic(this.THREE, this.model, outer),
       ...mergeStatic(this.THREE, this.gen, this.gen.userData.parts),
     ];
+    this._mergedFast = fast;
     if (this.ctx.warm) this.ctx.warm();
   }
 
   // the intake's level and surface (the top layers' materials), the gauge
   _fill() {
-    const u = this.intakeModel.userData, v = this.intake.volumeMl, frac = Math.min(1, v / INTAKE_ML);
+    const u = this.intakeModel.userData, v = this.intake.volumeMl, frac = Math.min(1, v / this.intake.capacityMl);
     u.pointer.position.y = INTAKE.outletY + 0.03 + frac * (INTAKE.depth - 0.06);
     const sig = `${this.intake.layers.length}:${Math.round(v / 8000)}`;
     if (sig === this._fillSig) return;
@@ -248,10 +296,12 @@ export class Conveyor {
     u.fill.visible = v > 300 && (this.installed || this.build >= 0);
     if (!u.fill.visible) return;
     // level in the frustum (square): V(h) = h/3 (b^2 + s^2 + b s), s = b + (t - b) h / d
-    const I = INTAKE, want = v / 1e6;
+    const I = INTAKE, want = v / 1e6 * (INTAKE_ML / 1e6 > 0 ? 0.3147 / (INTAKE_ML / 1e6) : 1);   // (the 240 l fill the funnel)
+    const vFun = (I.depth / 3) * (I.bottom * I.bottom + I.top * I.top + I.bottom * I.top);
     let lo = 0, hi = I.depth;
     for (let i = 0; i < 20; i++) { const h = (lo + hi) / 2, s = I.bottom + (I.top - I.bottom) * (h / I.depth); if ((h / 3) * (I.bottom * I.bottom + s * s + I.bottom * s) < want) lo = h; else hi = h; }
-    const h = (lo + hi) / 2, side = I.bottom + (I.top - I.bottom) * (h / I.depth);
+    let h = (lo + hi) / 2, side = I.bottom + (I.top - I.bottom) * (h / I.depth);
+    if (want > vFun) { h = I.depth + Math.min(INTAKE_EXT.h, (want - vFun) / ((I.top + 0.06) ** 2)); side = I.top + 0.06 * Math.min(1, (h - I.depth) / INTAKE_EXT.h); }   // up into the extension
     u.fill.position.y = I.outletY + h;
     u.fill.scale.set(side * 0.97, 1, side * 0.97);
     const geo = u.fill.geometry, col = geo.attributes.color, pos = geo.attributes.position, top = this.intake.top(3), sh = top.map((l) => { const m = l.massG || 1; return [l.comp[0] / m, l.comp[1] / m, l.comp[2] / m, l.comp[3] / m]; });
@@ -317,7 +367,7 @@ export class Conveyor {
     }
     const u = this.model.userData, st = this.status();
     // the belt you see runs up and coasts down (~1 s): the drive's start, the rollers' inertia
-    this.visV = (this.visV || 0) + ((this.belt.running ? BELT_SPEED : 0) - (this.visV || 0)) * Math.min(1, dt * (this.belt.running ? 1.8 : 2.6));
+    this.visV = (this.visV || 0) + ((this.belt.running ? this.belt.speed : 0) - (this.visV || 0)) * Math.min(1, dt * (this.belt.running ? 1.8 : 2.6));
     if (this.visV > 0.002) {
       this.pm.beltMap.offset.x = (this.pm.beltMap.offset.x - (dt * this.visV) / 0.5) % 1;
       u.head.rotation.y += dt * (this.visV / 0.15);
@@ -367,22 +417,65 @@ export class Trommel {
     const s = saved || {};
     this.state = s.state === "ready" ? "ready" : "delivered";
     this.feed = new MaterialBuffer({ capacityMl: TROMMEL_FEED_ML, stage: STAGE.RAW, layers: s.feed && s.feed.layers });
-    this.oversize = new MaterialBuffer({ capacityMl: OVERSIZE_MAX_ML, stage: STAGE.RAW, layers: s.oversize && s.oversize.layers });
+    // Prompt 10: the oversize lies on the OVERSIZE stockpile; a phase-9 save's oversize buffer moves onto it once
+    this._none = new MaterialBuffer({ capacityMl: 0, stage: STAGE.RAW });
+    const legacy = s.oversize && Array.isArray(s.oversize.layers) ? new MaterialBuffer({ capacityMl: 1e12, stage: STAGE.RAW, layers: s.oversize.layers }) : null;
+    const pile = ctx.pile ? ctx.pile() : null;
+    if (legacy && pile) for (const l of legacy.layers.splice(0)) pile.restore(l, OVER_DROP.x, OVER_DROP.z, 0.9);
+    // the stacker: what the chute drops on it (a few litres), the belt, what its head throws onto the pile (same step)
+    this.overIn = new MaterialBuffer({ capacityMl: OVER_IN_ML, stage: STAGE.RAW, layers: s.overIn && s.overIn.layers });
+    this._overBin = new MaterialBuffer({ capacityMl: 1e12, stage: STAGE.RAW });
+    const og = overBeltGeom();
+    this.overBelt = new Belt({ from: () => this.overIn, to: () => (this.pileAtHead ? null : this._overBin), slots: OVER_SLOTS, cellLen: og.len / OVER_SLOTS, cellMl: OVER_CELL_ML, speed: OVER_SPEED, saved: s.overBelt });
     this.acc = Number.isFinite(s.acc) ? Math.max(0, Math.min(TROMMEL_STEP_ML, s.acc)) : 0;
+    // Prompt 10: the nugget trap - the pieces too big for the screen, whole (each its own key), until taken out
+    this.trap = Array.isArray(s.trap) ? s.trap.filter((f) => f && f.cls === FIND.NUGGET && int(f.ug) > 0).map((f) => ({ cls: FIND.NUGGET, ug: int(f.ug), key: String(f.key || "") })) : [];
     const st = s.stats || {};
     this.stats = { inMl: int(st.inMl), underMl: int(st.underMl), overMl: int(st.overMl), underUg: int(st.underUg), overUg: int(st.overUg), runS: int(st.runS), recoveredMl: int(st.recoveredMl),
-      blockedS: int(st.blockedS), starvedS: int(st.starvedS) };
+      blockedS: int(st.blockedS), starvedS: int(st.starvedS), trapped: int(st.trapped) };
     this.build = -1;
     this.time = 0;
     this.running = false;
     this.why = null;
     this.flowK = 0;
     this._build();
+    this.applyUpgrades();
+  }
+
+  // Prompt 10: the trommel upgrade - a second drive and spray bar: twice the litres a minute (you see / hear it)
+  applyUpgrades() {
+    const ups = this.ctx.upgrades ? this.ctx.upgrades() : null, fast = !!(ups && ups.has("trommel.fast"));
+    this.fast = fast;
+    this.lpm = fast ? TROMMEL_FAST_LPM : TROMMEL_LPM;
+    const u = this.model.userData, on = this.installed || this.build >= 0;
+    u.up.visible = fast && on;
+    if (this._merged && this._mergedFast !== fast) {           // bought later: re-baked with the frame (no extra draws)
+      for (const m of this._merged) { if (m.parent) m.parent.remove(m); m.geometry.dispose(); }
+      const su = this.stacker.userData;
+      unmerge({ remove() {} }, [], [...u.parts, ...u.rotorParts, ...u.upParts, ...su.parts]);
+      this._merged = null;
+      this._mergeT();
+    }
+  }
+
+  // built: frame, drum, stacker baked per material (the upgrade's drive / spray bar with the frame)
+  _mergeT() {
+    const u = this.model.userData, keep = new Set([u.lamp]), ups = this.ctx.upgrades ? this.ctx.upgrades() : null, fast = !!(ups && ups.has("trommel.fast"));
+    u.up.visible = fast;
+    this._merged = [...mergeStatic(this.THREE, this.model, [...u.parts.filter((p) => !keep.has(p) && p.parent === this.model), ...(fast ? u.upParts : [])]),
+      ...mergeStatic(this.THREE, u.ax, u.parts.filter((p) => p.parent === u.ax)),
+      ...mergeStatic(this.THREE, u.rotor, u.rotorParts)];
+    const su = this.stacker.userData;
+    this._merged.push(...mergeStatic(this.THREE, su.inc, su.parts.filter((p) => p.parent === su.inc)), ...mergeStatic(this.THREE, this.stacker, su.parts.filter((p) => p.parent === this.stacker)));
+    this._mergedFast = fast;
+    if (this.ctx.warm) this.ctx.warm();
   }
 
   _build() {
     const THREE = this.THREE, pm = this.pm;
     this.model = pm.trommel();
+    this.stacker = pm.overBelt();
+    this.scene.add(this.stacker);
     this.pile = pm.oversizePile();
     this.kit = pm.trommelKit();
     this.wet = pm.wetPatch();
@@ -392,7 +485,14 @@ export class Trommel {
     this.kit.rotation.y = 0.3;
     for (const o of [this.model, this.pile, this.kit]) this.scene.add(o);
     const u = this.model.userData;
-    this.parts = [...u.parts, ...u.rotorParts];
+    this.parts = [...u.parts, ...u.rotorParts, ...this.stacker.userData.parts];
+    // the stacker's legs (you walk under its belt at the tail, not through its posts)
+    const og = overBeltGeom(), c = Math.cos(og.yaw), sn = Math.sin(og.yaw);
+    this.stackerColliders = [0.25, og.horiz - 0.2].flatMap((sx) => [-1, 1].map((zz) => {
+      const lz = zz * (OVER_BELT.width / 2 + 0.1);
+      return { type: "circle", x: OVER_BELT.tail.x + c * sx + sn * lz, z: OVER_BELT.tail.z - sn * sx + c * lz, r: 0.08 };
+    }));
+    this.stackerColliders.push({ type: "circle", x: TRAP.x, z: TRAP.z, r: 0.2 });          // (Prompt 10: the nugget trap at chest height)
     this.pileCollider = { type: "box", x: OVERSIZE.x, z: OVERSIZE.z, hw: 0, hd: 0, rot: 0 };
     this._v = new THREE.Vector3(); this._q = new THREE.Quaternion(); this._s = new THREE.Vector3(); this._m = new THREE.Matrix4(); this._c = [0, 0, 0];
     this._drops = Array.from({ length: 36 }, () => ({ t: -1, x: 0, y: 0, z: 0, v: 0 }));
@@ -400,7 +500,13 @@ export class Trommel {
   }
 
   get installed() { return this.state === "ready"; }
+  get pileRef() { return this.ctx.pile ? this.ctx.pile() : null; }
+  // the oversize: the pile's material (Prompt 10)
+  get oversize() { const p = this.pileRef; return p ? p.buffer : this._none; }
   get overMl() { return this.oversize.volumeMl; }
+  // Prompt 10: the pile under the stacker's head reaches up to it -> the stacker stops; its feed full -> the trommel waits
+  get pileAtHead() { const p = this.pileRef; return !p || p.thickAt(OVER_DROP.x, OVER_DROP.z) >= OVER_H || p.room < 4000; }
+  get pileAtChute() { return this.overIn.room < TROMMEL_STEP_ML; }
 
   _under() { const bk = this.ctx.bulk(); return bk && bk.installed ? bk.buffer : null; }
 
@@ -422,26 +528,40 @@ export class Trommel {
     this.why = null;
     if (!run) { this.acc = 0; return 0; }
     this.stats.runS += dt;
-    this.acc += (TROMMEL_LPM * 1000 / 60) * dt;
+    this.acc += (this.lpm * 1000 / 60) * dt;
     let done = 0;
     while (this.acc >= TROMMEL_STEP_ML) {
       if (this.feed.volumeMl <= 0) { this.why = "starved"; break; }
       const under = this._under();
       if (!under || roomOf(under) < TROMMEL_STEP_ML) { this.why = "blocked"; break; }
-      if (this.oversize.room < TROMMEL_STEP_ML) { this.why = "pile"; break; }
+      if (this.pileAtChute) { this.why = "pile"; break; }
       const part = this.feed.take(TROMMEL_STEP_ML, this.ctx.nextId(), TROMMEL_STEP_ML);
       const vol = part.volumeMl;
-      const { under: u, over: o } = trommelSplit(part, [this.ctx.nextId(), this.ctx.nextId()]);
+      const { under: u, over: o, caught } = trommelSplit(part, [this.ctx.nextId(), this.ctx.nextId()]);
+      if (caught.length) {                                       // (Prompt 10: too big for the holes -> the trap)
+        for (const f of caught) this.trap.push(f);
+        this.stats.trapped += caught.length;
+        this._trapSig = null;
+        if (this.ctx.onTrap) this.ctx.onTrap(caught);
+      }
       this.stats.underMl += u.volumeMl; this.stats.underUg += u.goldUg;
       this.stats.overMl += o.volumeMl; this.stats.overUg += o.goldUg;
       putInto(under, u);
-      if (!o.empty) this.oversize.put(o);
+      // the oversize slides down the chute onto the stacker (Prompt 10: it carries it to the strip's south end)
+      if (!o.empty) putInto(this.overIn, o);
       const bk = this.ctx.bulk();
       if (bk) bk.stats.inMl += u.volumeMl;
       this.acc -= TROMMEL_STEP_ML;
       done += vol;
     }
     if (this.why) this.acc = Math.min(this.acc, TROMMEL_STEP_ML);
+    // the stacker runs with the drum; its head throws onto the pile, a little apart every time (stones roll on)
+    this.overBelt.on = run;
+    this.overBelt.step(dt, this.ctx.nextId);
+    if (this._overBin.volumeMl > 0 || this._overBin.goldUg > 0) {
+      const j = this._j = ((this._j || 0) + 1) % 997, a = j * 2.39996, rr = 0.1 + 0.35 * ((j * 0.618) % 1);
+      this.pileRef.dumpFrom(this._overBin, Infinity, OVER_DROP.x + Math.cos(a) * rr * 0.5, OVER_DROP.z - 0.15 + Math.sin(a) * rr, 0.4);
+    }
     this._fed = done > 0 ? 1.5 : Math.max(0, (this._fed || 0) - dt);
     if (this.why === "blocked" || this.why === "pile") this.stats.blockedS += dt;
     else if (this.why === "starved" && this.feed.volumeMl <= 0) this.stats.starvedS += dt;
@@ -453,20 +573,31 @@ export class Trommel {
     if (!this.installed) return { key: "off", text: "noch nicht aufgebaut", lamp: "off" };
     if (!this.running) return { key: "off", text: "steht (läuft mit dem Förderband)", lamp: "off" };
     if (this.why === "blocked") return { key: "blocked", text: "wartet – der Vorratstrichter ist voll", lamp: "wait" };
-    if (this.why === "pile") return { key: "blocked", text: "wartet – der Überkornhaufen reicht bis an die Rutsche", lamp: "wait" };
+    if (this.why === "pile") return { key: "blocked", text: "wartet – der Überkornhaufen reicht bis an den Kopf des Überkornbands", lamp: "wait" };
     if (this.why === "starved" && this.feed.volumeMl <= 0) return { key: "starved", text: "dreht leer – nichts im Aufgabekasten", lamp: "wait" };
-    return { key: "moving", text: `siebt · ${TROMMEL_LPM} l/min`, lamp: "on" };
+    return { key: "moving", text: `siebt · ${this.lpm} l/min`, lamp: "on" };
   }
 
-  // recovering the oversize: up to maxMl into a holder (a barrow, the excavator's bucket) -> ml
+  // recovering the oversize: up to maxMl into a holder (a barrow, the excavator's bucket) - off the top of the
+  // pile (the loader takes it with its bucket from the pile itself) -> ml
   takeOversize(holder, maxMl = Infinity) {
-    const ml = transfer(this.oversize, holder, maxMl, this.ctx.nextId());
-    if (ml > 0) { this.stats.recoveredMl += ml; this._pileSig = null; }
+    const p = this.pileRef;
+    if (!p || p.volumeMl <= 0) return 0;
+    const pk = p.peak(), want = Math.min(maxMl, roomOf(holder));
+    const got = p.cut(pk.x - 0.6, pk.z, 1, 0, 0.55, 1.2, pk.y - 0.45, want);
+    if (got.volumeMl <= 0) return 0;
+    const ml = got.volumeMl;
+    putInto(holder, got);
+    this.stats.recoveredMl += ml;
     return ml;
   }
 
-  goldUg() { return this.feed.goldUg + this.oversize.goldUg; }
-  massG() { return this.feed.massG + this.oversize.massG; }
+  // the ledger: the feed box, the stacker, the nugget trap (the pile counts as a stockpile)
+  goldUg() { return this.feed.goldUg + this.overIn.goldUg + this.overBelt.goldUg + this._overBin.goldUg + this.trapUg; }
+  get trapUg() { let u = 0; for (const f of this.trap) u += f.ug; return u; }
+  // Prompt 10: take the trap's pieces out (the caller books them into the pouch in the same call)
+  takeTrap() { const out = this.trap; this.trap = []; this._trapSig = null; return out; }
+  massG() { return this.feed.massG + this.overIn.massG + this.overBelt.massG + this._overBin.massG; }
 
   // ---- visuals
 
@@ -474,36 +605,12 @@ export class Trommel {
     const on = this.installed || this.build >= 0;
     this.kit.visible = this.state === "delivered" && this.build < 0;
     this.model.visible = on;
-    if (this.installed && !this._merged) {
-      const u = this.model.userData, keep = new Set([u.lamp]);
-      this._merged = [...mergeStatic(this.THREE, this.model, u.parts.filter((p) => !keep.has(p) && p.parent === this.model)),
-        ...mergeStatic(this.THREE, u.ax, u.parts.filter((p) => p.parent === u.ax)),
-        ...mergeStatic(this.THREE, u.rotor, u.rotorParts)];
-      if (this.ctx.warm) this.ctx.warm();
-    }
-    this._pileSig = null;
-    this._pile();
-  }
-
-  // the oversize pile: grows from the chute's foot; a collider once it is in the way
-  _pile() {
-    const v = this.oversize.volumeMl, sig = Math.round(v / 20000);
-    if (sig === this._pileSig) return;
-    this._pileSig = sig;
-    this.pile.visible = v > 3000;
-    const cols = this.world.colliders, pc = this.pileCollider, i = cols.indexOf(pc);
-    if (!this.pile.visible) { if (i >= 0) cols.splice(i, 1); return; }
-    // round up to r 1.05, then higher (1.3 m), then it grows north along the fence (the control post is
-    // south of it; the ramp east of it) - an elongated pile, V = K r rz h - and at last higher again, up to the chute
-    const m3v = v / 1e6;
-    let r = Math.cbrt(m3v / (HEAP_K * 0.55)), h = 0.55 * r, rz;
-    if (r > 1.05) { r = 1.05; h = m3v / (HEAP_K * r * r); }
-    rz = r;
-    if (h > 1.3) { h = 1.3; rz = Math.min(3.5, m3v / (HEAP_K * r * h)); if (rz >= 3.5) h = m3v / (HEAP_K * r * rz); }
-    this.pile.scale.set(r, h, rz);
-    this.pile.position.z = OVERSIZE.z - (rz - r);
-    if (h > 0.35) { pc.x = OVERSIZE.x; pc.z = this.pile.position.z; pc.hw = r * 0.7; pc.hd = rz * 0.75; if (i < 0) cols.push(pc); }
-    else if (i >= 0) cols.splice(i, 1);
+    this.stacker.visible = on;
+    const cols = this.world.colliders;
+    for (const c of this.stackerColliders) { const i = cols.indexOf(c); if (on && i < 0) cols.push(c); if (!on && i >= 0) cols.splice(i, 1); }
+    this.pile.visible = false;                       // (the phase-9 cone: the real pile draws itself)
+    if (this.installed && !this._merged) this._mergeT();
+    if (this.model.userData.up) this.applyUpgrades();
   }
 
   update(dt, near, onSound) {
@@ -518,7 +625,8 @@ export class Trommel {
     const st = this.status(), turning = this.installed && this.running && st.key !== "blocked";
     const feeding = turning && ((this._fed || 0) > 0 || this.feed.volumeMl > 500);
     this.flowK += ((feeding ? 1 : 0) - this.flowK) * Math.min(1, dt * 3);
-    this.spinV = (this.spinV || 0) + ((turning ? 2.1 : 0) - (this.spinV || 0)) * Math.min(1, dt * (turning ? 1.2 : 0.8));   // ~20 rpm, run up / out
+    const spin = this.fast ? 2.7 : 2.1;                       // ~20 rpm (upgraded ~26), run up / out
+    this.spinV = (this.spinV || 0) + ((turning ? spin : 0) - (this.spinV || 0)) * Math.min(1, dt * (turning ? 1.2 : 0.8));
     if (this.spinV > 0.002) u.rotor.rotation.x += dt * this.spinV;
     u.ax.position.y = TROMMEL.feedY + (this.spinV > 0.3 ? (0.0012 + 0.0018 * this.flowK) * Math.sin(this.time * 61) * (this.spinV / 2.1) : 0);
     this.pm.A.setLamp({ userData: { lamp: u.lamp } }, st.lamp);
@@ -558,7 +666,37 @@ export class Trommel {
       }
       ov.instanceMatrix.needsUpdate = true; ov.instanceColor.needsUpdate = true;
     }
-    this._pile();
+    // the stacker: stones riding up it (from its cells), the stream off its head onto the pile
+    const su = this.stacker.userData, ob = this.overBelt, sl = su.lumps;
+    let nl = 0;
+    for (let i = 0; i < ob.slots && nl < 24; i++) {
+      const c = ob.cells[i];
+      if (!c || c.volumeMl < 60) continue;
+      const k = c.volumeMl >= 500 ? 2 + (c.volumeMl >= 1000 ? 1 : 0) : 1, x0 = ob.cellAt(i), col = tint(c, this._c);
+      for (let j = 0; j < k && nl < 24; j++) {
+        const h = fract(Math.sin((c.id + j * 13) * 12.9898) * 43758.5453), h2 = fract(h * 7.31), sz = 0.03 + 0.03 * h;
+        this._q.setFromAxisAngle(this._v.set(0, 1, 0), h * 6.28);
+        this._m.compose(this._v.set(x0 + (h2 - 0.5) * ob.cellLen * 0.7, 0.02 + sz * 0.5, (j % 2 ? 1 : -1) * (0.03 + 0.08 * h2)), this._q, this._s.set(sz * 1.3, sz * 0.8, sz));
+        sl.setMatrixAt(nl, this._m);
+        const d = 0.62 + 0.15 * h2;
+        sl.instanceColor.setXYZ(nl, col[0] * d, col[1] * d, col[2] * d);
+        nl++;
+      }
+    }
+    if (nl || sl.count) { sl.count = nl; sl.instanceMatrix.needsUpdate = true; sl.instanceColor.needsUpdate = true; }
+    su.fall.visible = this.installed && ob.running && !!ob.cells[ob.slots - 1];
+    if (su.fall.visible) su.fall.scale.y = 0.38 + 0.05 * Math.sin(this.time * 33);
+    // Prompt 10: the nugget trap's piece - the biggest one in it, at its size; a slow, faint warm gleam
+    const tn = u.trapNugget;
+    if (tn) {
+      const sig = this.installed ? this.trap.length : 0;
+      if (sig !== this._trapSig) {
+        this._trapSig = sig;
+        tn.visible = sig > 0;
+        if (sig) { const ug = Math.max(...this.trap.map((f) => f.ug)), r = findSize(FIND.NUGGET, centsForMass(ug), 0.5); tn.scale.set(r, r, r); tn.position.y = TRAP.y - TRAP.h / 2 + 0.012 + r * 0.6; }
+      }
+      if (tn.visible) { tn.material.emissiveIntensity = 0.18 + 0.16 * Math.sin(this.time * 1.7); tn.rotation.y = 0.6; }
+    }
     // the ground under it gets wet with the hours it has run (and stays so)
     const wk = this.installed ? Math.min(1, this.stats.runS / 120) : 0;
     this.wet.visible = wk > 0.02;
@@ -591,15 +729,19 @@ export class Trommel {
   }
 
   serialize() {
-    return { state: this.build >= 0 ? "ready" : this.state, feed: this.feed.serialize(), oversize: this.oversize.serialize(), acc: Math.round(this.acc),
+    return { state: this.build >= 0 ? "ready" : this.state, feed: this.feed.serialize(), acc: Math.round(this.acc), overIn: this.overIn.serialize(), overBelt: this.overBelt.serialize(),
+      trap: this.trap.map((f) => ({ cls: f.cls, ug: f.ug, key: f.key })),
       stats: { ...this.stats, runS: Math.round(this.stats.runS), blockedS: Math.round(this.stats.blockedS), starvedS: Math.round(this.stats.starvedS) } };
   }
 
   dispose() {
     const i = this.world.colliders.indexOf(this.pileCollider);
     if (i >= 0) this.world.colliders.splice(i, 1);
-    for (const o of [this.model, this.pile, this.kit, this.wet]) this.scene.remove(o);
+    for (const c of this.stackerColliders) { const k = this.world.colliders.indexOf(c); if (k >= 0) this.world.colliders.splice(k, 1); }
+    for (const o of [this.model, this.pile, this.kit, this.wet, this.stacker]) this.scene.remove(o);
     for (const m of this._merged || []) m.geometry.dispose();
+    const tn = this.model.userData.trapNugget;
+    if (tn) { tn.geometry.dispose(); tn.material.dispose(); }
   }
 }
 
@@ -607,60 +749,70 @@ export class Trommel {
 // SPOIL HEAP: where the waste goes (booked like tailings)
 // =====================================================================================
 export class SpoilHeap {
-  /** @param saved doc.processing.spoil (v8) or null; ctx { ledger } */
+  /**
+   * Prompt 10: the SPOIL stockpile behind phase 9's interface (dump / dumpFrom / over / radius / ml).
+   * @param saved doc.processing.spoil: phase 9 { ml, g, ug, loads } (brought onto the pile once, its tailings
+   *              booking kept) or v9 { v: 9, loads }; ctx { ledger, pile() }
+   */
   constructor(THREE, scene, world, pm, saved, ctx, signTex) {
     this.scene = scene;
     this.world = world;
     this.ctx = ctx;
     const s = saved || {};
-    this.ml = int(s.ml); this.g = int(s.g); this.ug = int(s.ug); this.loads = int(s.loads);
-    this.model = pm.spoilHeap();
+    this.loads0 = int(s.loads);
+    const pile = this.pile;
+    if (s.v !== 9 && int(s.ml) > 0 && pile) {
+      // phase 9 kept totals only: one layer of that volume / mass / gold (already booked as tailings)
+      const b = new MaterialBatch({ stage: STAGE.TAILINGS, source: "spoil" });
+      b.volumeMl = int(s.ml); b.comp = [int(s.g), 0, 0, 0]; b.fineUg = int(s.ug);
+      pile.restore(b, SPOIL.x, SPOIL.z, 1.4);
+    }
+    this.model = pile ? pile.load.surface : pm.spoilHeap();
     this.sign = pm.spoilSign(signTex);
-    scene.add(this.model, this.sign);
-    this.collider = { type: "box", x: SPOIL.x, z: SPOIL.z, hw: 0, hd: 0, rot: 0 };
+    scene.add(this.sign);
     this.signCollider = { type: "circle", x: SPOIL_SIGN.x, z: SPOIL_SIGN.z, r: 0.12 };
     world.colliders.push(this.signCollider);
-    this._fit();
   }
 
-  get radius() { return Math.max(1.2, heapSize(this.ml, 3.2, 0.55, 4.2).r); }
+  get pile() { return this.ctx.pile ? this.ctx.pile() : null; }
+  get ml() { const p = this.pile; return p ? p.volumeMl : 0; }
+  get g() { const p = this.pile; return p ? p.buffer.massG : 0; }
+  get ug() { const p = this.pile; return p ? p.buffer.goldUg : 0; }
+  get loads() { const p = this.pile; return this.loads0 + (p ? p.stats.dumps : 0); }
+  get radius() { const p = this.pile; return p ? Math.max(1.2, p.radius) : 1.2; }
 
-  // waste in: everything in it leaves the containers for good (tailings in the ledger)
-  dump(batch) {
-    if (!batch || batch.empty) return 0;
-    const L = this.ctx.ledger, v = batch.volumeMl;
-    L.tailUg += batch.goldUg; L.tailG += batch.massG; L.tailMl += batch.volumeMl;
-    this.ml += batch.volumeMl; this.g += batch.massG; this.ug += batch.goldUg; this.loads++;
-    batch.volumeMl = 0; batch.comp = [0, 0, 0, 0]; batch.fineUg = 0; batch.finds = [];
-    this._fit();
-    return v;
+  // where the next load lands: a little apart every time (a broad heap, not a cone)
+  _spot() {
+    const j = this._j = ((this._j || 0) + 1) % 997, a = j * 2.39996, r = 0.4 + 1.6 * ((j * 0.618) % 1);
+    return { x: SPOIL.x + Math.cos(a) * r, z: SPOIL.z + Math.sin(a) * r * 0.8 };
+  }
+
+  // waste in: everything in it leaves the containers for good (booked as tailings by the pile)
+  dump(batch, at = null) {
+    const p = this.pile;
+    if (!p || !batch || batch.empty) return 0;
+    const q = at || this._spot();
+    return p.dump(batch, q.x, q.z, 0.6);
   }
 
   // a holder's content (up to maxMl) onto the heap -> ml
-  dumpFrom(holder, maxMl = Infinity) {
-    const tmp = { batch: new MaterialBatch({ stage: STAGE.TAILINGS }), capacityMl: maxMl };
-    transfer(holder, tmp, maxMl, 0);
-    return this.dump(tmp.batch);
+  dumpFrom(holder, maxMl = Infinity, at = null) {
+    const p = this.pile;
+    if (!p) return 0;
+    const q = at || this._spot();
+    return p.dumpFrom(holder, maxMl, q.x, q.z, 0.6);
   }
 
   // is (x, z) over the heap (where a load can be tipped)?
   over(x, z, margin = 0.6) { return Math.hypot(x - SPOIL.x, z - SPOIL.z) <= this.radius + margin; }
 
-  _fit() {
-    const { r, h } = heapSize(this.ml, 3.2, 0.55, 4.2);
-    this.model.visible = this.ml > 5000;
-    this.model.scale.set(r, h, r);
-    const cols = this.world.colliders, i = cols.indexOf(this.collider);
-    if (h > 0.4) { this.collider.hw = this.collider.hd = r * 0.62; if (i < 0) cols.push(this.collider); }
-    else if (i >= 0) cols.splice(i, 1);
-  }
-
-  serialize() { return { ml: this.ml, g: this.g, ug: this.ug, loads: this.loads }; }
+  serialize() { return { v: 9, loads: this.loads }; }
 
   dispose() {
-    for (const c of [this.collider, this.signCollider]) { const i = this.world.colliders.indexOf(c); if (i >= 0) this.world.colliders.splice(i, 1); }
-    this.scene.remove(this.model, this.sign);
+    const i = this.world.colliders.indexOf(this.signCollider);
+    if (i >= 0) this.world.colliders.splice(i, 1);
+    this.scene.remove(this.sign);
   }
 }
 
-export { INTAKE, INTAKE_POST, INTAKE_SPOT, BELT, TROMMEL, OVERSIZE, SPOIL, BULK_AT, volumeOf, lit, m3 };
+export { INTAKE, INTAKE_POST, INTAKE_SPOT, BELT, TROMMEL, OVERSIZE, SPOIL, BULK_AT, TRAP, volumeOf, lit, m3 };

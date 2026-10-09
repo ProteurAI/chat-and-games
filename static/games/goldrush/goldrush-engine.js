@@ -9,7 +9,7 @@
 import * as THREE from "../../vendor/three/three.module.min.js";
 import { AssetManager } from "./goldrush-assets.js";
 import { GoldRushAudio } from "./goldrush-audio.js";
-import { Economy, formatEuro, formatMass } from "./goldrush-economy.js";
+import { Economy, centsForMass, formatEuro, formatMass } from "./goldrush-economy.js";
 import { FirstPersonHands } from "./goldrush-hand.js";
 import { GoldRushHud } from "./goldrush-hud.js";
 import { GoldRushInput } from "./goldrush-input.js";
@@ -17,7 +17,7 @@ import { LootSystem } from "./goldrush-loot.js";
 import { MAT, MATERIALS } from "./goldrush-materials.js";
 import { MiningSystem } from "./goldrush-mining.js";
 import { QUALITY, QUALITY_LEVELS, applyRendererQuality, createRenderer, guessQuality, isMobileDevice } from "./goldrush-renderer.js";
-import { FIND, FIND_IDS, GEOLOGY_VERSION, VOXEL_H } from "./goldrush-resources.js";
+import { FIND, FIND_IDS, GEOLOGY_VERSION, VOXEL_H, jackpotTier } from "./goldrush-resources.js";
 import { RockSystem } from "./goldrush-rocks.js";
 import { DEFAULT_SETTINGS, SAVE_VERSION } from "./goldrush-save.js";
 import { SHOP_ITEMS, itemStatus, shopItem } from "./goldrush-shop.js";
@@ -25,13 +25,17 @@ import { STATIONS, Stations } from "./goldrush-stations.js";
 import { ProcessingSystem } from "./goldrush-processing.js";
 import { BULK_AT } from "./goldrush-automation.js";
 import { BULK } from "./goldrush-automodels.js";
-import { INTAKE, TROMMEL, OVERSIZE, SPOIL, m3 } from "./goldrush-plant.js";
+import { INTAKE, TROMMEL, OVERSIZE, SPOIL, TRAP, m3 } from "./goldrush-plant.js";
 import { EXC_DEF, EXC_HOME, BUCKET_ML as EXC_BUCKET_ML } from "./goldrush-excavator.js";
+import { BUCKET_ML as LDR_BUCKET_ML } from "./goldrush-loader.js";
+import { m3Text } from "./goldrush-stockpile.js";
 import { SLICE_ORIGIN_Y } from "./goldrush-terrain.js";
 import { TOOL_DEFS, TOOL_ORDER, ToolController, cycleSeconds, effectiveDef, toolEfficiency } from "./goldrush-tools.js";
 import { DigEffects } from "./goldrush-vfx.js";
 import { clampLook } from "./goldrush-wheelbarrow-controller.js";
-import { GoldRushWorld, SPAWN, SUN_DIR } from "./goldrush-world.js";
+import { GoldRushWorld, SPAWN, SUN_DIR, MOUND_CENTER } from "./goldrush-world.js";
+import { MINER } from "./goldrush-autominer.js";
+import { AutoMinerRig } from "./goldrush-autominermodel.js";
 import { MountainContract } from "./goldrush-contract.js";
 import { BAGS, MAX_FLAGS, ProspectSystem, SAMPLE_DEF } from "./goldrush-prospect.js";
 
@@ -40,6 +44,7 @@ export { SPAWN } from "./goldrush-world.js";
 export { WASH } from "./goldrush-processing.js";
 export { GRIPS, TOOL_KEYS } from "./goldrush-hand.js";
 export { STATIONS } from "./goldrush-stations.js";
+export { JUMP };
 
 // the tool table as plain data (debug panel, tests, benchmark) - with the
 // upgrades the player owns applied, and the shop price of each tool
@@ -64,6 +69,11 @@ const SEE = 5;                                    // m: the crosshair reads the 
 const FOV = 70;                                   // vertical, for the usual 16:9 / 16:10 screens
 const HFOV_MIN = Math.tan((50 * Math.PI) / 360);  // phones upright: still enough view to the sides
 const HFOV_MAX = Math.tan((106 * Math.PI) / 360); // phones sideways: no fish-eye
+// Prompt 10 (human QA): the jump - about 38 cm, a quick dip before it (anticipation), your momentum carries
+// on with little control in the air, a heavier fall, the landing dips the view and slows you; a moment's rest
+// after it (no bunny hopping)
+const JUMP = { h: 0.38, g: 9.81, fallK: 1.35, prep: 0.06, airCtl: 1.4, cool: 0.32, landKeep: 0.78, dipMax: 0.075, dipS: 0.24 };
+JUMP.v0 = Math.sqrt(2 * JUMP.g * JUMP.h);
 const WALK_SLOPE = Math.tan((38 * Math.PI) / 180);    // steeper: you scramble (slower) ...
 const MAX_SLOPE = Math.tan((68 * Math.PI) / 180);     // ... steeper still: you can't (stone walls)
 const AUTOSAVE_MS = 10000;
@@ -122,6 +132,7 @@ export class GoldRushGame {
     this.player = {
       x: doc.player.x, z: doc.player.z, yaw: doc.player.yaw, pitch: doc.player.pitch,
       y: 0, vx: 0, vz: 0, bob: 0, kick: 0,
+      air: false, vy: 0, prep: 0, cool: 0, dip: 0, dipT: 1, dipA: 0, jumps: 0, lands: 0,   // Prompt 10: the jump
     };
     this.systemReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     this.reducedMotion = this.systemReducedMotion || !!this.settings.reducedMotion;
@@ -235,11 +246,14 @@ export class GoldRushGame {
       mining: () => this.mining, rocks: () => this.rocks, assets: this.assets,
     });
     this.processing.excEvent = (kind, r) => this._excEvent(kind, r);
+    this.processing.loaderEvent = (kind, r) => this._ldrEvent(kind, r);
     // phase 9: the mountain contract - measured on the ground itself (goldrush-contract.js), shown on the camp's board
     this.contract = new MountainContract(this.terrain, this.economy);
     this.stations.paintContract(this.contract.view());
     // phase 6: the sluice's water (near it), a barrow load landing in the hopper
     this.processing.onSound = (kind) => this.audio.play(kind, { dist: 2.5, strength: 0.7 });
+    this.processing.onSoundAt = (kind, o) => this.audio.play(kind, o);          // Prompt 10: a machine's sound at its distance
+    this.processing.onTrap = (finds) => this._trapped(finds);                    // Prompt 10: a big nugget in the trommel's trap
     this.processing.onDumped = (ml, where) => this._dumped(ml, where);
     const ring = new THREE.RingGeometry(0.88, 1, 48);
     this.reticle = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({
@@ -301,7 +315,8 @@ export class GoldRushGame {
     this.loot.warmup(false);
     progress(0.97, "Erster Blick in die Mine …");
     await step();
-    if (this.processing.excavator && this.processing.excavator.inCab) this.enterCab(true);
+    if (this.processing.loader && this.processing.loader.inCab) this.enterCab(true, "loader");
+    else if (this.processing.excavator && this.processing.excavator.inCab) this.enterCab(true);
     this.render();
     this.ready = true;
     progress(1, "Bereit");
@@ -349,6 +364,12 @@ export class GoldRushGame {
     // E: use the station in front of you
     this.on(window, "keydown", (e) => {
       if (this.paused || this.uiOpen || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+      // Prompt 10: placing the hillside miner - R turns it, E stops placing (the click sets it down)
+      if (this.placing) {
+        if (e.code === "KeyR") { e.preventDefault(); this.placing.rot = (this.placing.rot + Math.PI / 8) % (Math.PI * 2); this.placing.at = null; }
+        else if (e.code === "KeyE") { e.preventDefault(); this._placeEnd(false); }
+        return;
+      }
       // phase 9: in the excavator's cab - E out, Q dump, T change the attachment (at its stand)
       if (this.cab) {
         if (e.code === "KeyE") { e.preventDefault(); this.exitCab(); }
@@ -453,11 +474,15 @@ export class GoldRushGame {
     const s = this.station;
     if (!s) return false;
     if (s.kind === "cab") { this.exitCab(); return true; }        // the phone's AUSSTEIGEN (the desktop's E goes straight to exitCab)
+    if (s.kind === "info") return false;                           // (Prompt 10: a pile's name and volume - nothing to do)
+    if (s.kind === "place") { this._placeEnd(false); return true; }  // (Prompt 10: the phone's ABBRECHEN while placing the miner)
     if (s.kind !== "process") return this.openStation(s.id);
     if (s.disabled) { this.hud.tip(`proc-${s.id}`, s.action, 4); return false; }
     const r = this.processing.act(s.id, this.player);
     if (!r.ok) return false;
-    if (r.kind === "enter") { this.enterCab(); return true; }
+    if (r.kind === "enter") { this.enterCab(false, r.machine); return true; }
+    if (r.kind === "place") { this._placeStart(r.what, r.moving); return true; }
+    if (r.kind === "gate" || r.kind === "mode" || r.kind === "water") this.hands.reachOut();      // (Prompt 10: the hand to the lever / the valve)
     if (r.kind === "pick") this.audio.play("swap", { dist: 0.3 });
     else if (r.kind === "drop") {
       this.audio.play(s.id === "barrow-park" ? "shopOpen" : "bucket", { dist: 0.5, strength: 0.8 });
@@ -473,11 +498,13 @@ export class GoldRushGame {
     else if (r.kind === "feed") { this.audio.play("sluice_feed", { dist: 0.8 }); this._fedEffect(s.id); }
     else if (r.kind === "build") {
       this.audio.play("purchase", { dist: 1 });
-      const name = { bulk: "Vorratstrichter", feeder: "Dosierer", conveyor: "Aufgabetrichter und Förderband", trommel: "Trommelsieb" }[r.what] || "Waschrinne";
+      const name = { bulk: "Vorratstrichter", feeder: "Dosierer", conveyor: "Aufgabetrichter und Förderband", trommel: "Trommelsieb", washplant: "Waschanlage" }[r.what] || "Waschrinne";
       this.hud.message(name, r.what === "feeder" ? "wird montiert …" : "wird aufgebaut …");
       if (r.what === "conveyor") this.hud.tip("conveyor-built", "Grab direkt in den Aufgabetrichter oder kipp die Schubkarre hinein – das Band bringt alles in den Vorratstrichter. Am Pfosten: AUTO läuft mit dem Wasser der Rinne.", 40);
       if (r.what === "trommel") this.hud.tip("trommel-built", "Die Trommel siebt alles, was das Band bringt: das Feine in den Vorratstrichter, Steine und Klumpen auf den Überkornhaufen am Zaun.", 40);
+      if (r.what === "washplant") this.hud.tip("washplant-built", "Der Dosierer füllt jetzt den Verteilerkasten, drei Rinnen waschen zugleich. Reinigen (Wasser aus) bringt das Konzentrat in die Wanne an der Anlage – mit dem Eimer abholen, am Waschtrog auswaschen.", 40);
     }
+    else if (r.kind === "conc") { this.audio.play("bucket_fill", { dist: 0.5 }); this.hud.message("Konzentrat im Eimer", `${(r.ml / 1000).toFixed(1).replace(".", ",")} l Schwerkonzentrat – am Waschtrog abstellen und auswaschen${r.left > 0 ? ` · ${(r.left / 1000).toFixed(1).replace(".", ",")} l noch in der Wanne` : ""}`); }
     else if (r.kind === "gate") { this.audio.play("gate_open", { dist: 0.8 }); this.hud.message("Schieber offen", "Es rutscht in den Trichter der Rinne – er schließt, wenn der voll ist."); }
     else if (r.kind === "mode" && r.what === "conveyor") {
       this.audio.play("swap", { dist: 0.4 });
@@ -485,6 +512,18 @@ export class GoldRushGame {
       this.hud.message("Förderband", t[r.mode]);
     }
     else if (r.kind === "load") { this.audio.play("shovel_gravel", { dist: 0.8 }); this.hud.message("Überkorn aufgeladen", `${(r.ml / 1000).toFixed(0)} l in der Schubkarre`); }
+    else if (r.kind === "trap") {
+      this.hands.reachOut();
+      this.hud.collected(r.got.cents, FIND.NUGGET);
+      if (!this._bigFind(r.got.bestUg)) this.hud.nugget(r.got.cents, false);
+      this.dirty = true;
+    }
+    else if (r.kind === "mode" && r.what === "autominer") {
+      this.audio.play(r.on ? "miner_motor" : "miner_stop", { dist: 1.2, strength: 0.9 });
+      this.hud.message("Abbaugerät", r.on ? "läuft – baut seinen Abschnitt ab und gibt aufs Band" : "aus – das Band hält, was darauf liegt");
+      if (r.on) this.hud.tip("miner-on", "Das Abbaugerät arbeitet allein, solange GoldRush läuft – nicht in der Pause, nicht offline. Ist der Austrag voll, wartet es und läuft von selbst wieder an.", 30);
+    }
+    else if (r.kind === "minerStatus") this.hud.message("Abbaugerät", r.status === "rock" ? "Hartgestein – der Abbaukopf ist blockiert. Den Fels mit Spitzhacke oder Hammer brechen – oder das Gerät versetzen." : "Abbaubereich erschöpft – das Gerät versetzen.");
     else if (r.kind === "mode") {
       this.audio.play("swap", { dist: 0.4 });
       const t = { auto: "AUTO – läuft, solange das Wasser der Rinne an ist", on: "AN – läuft, bis der Vorrat leer oder der Rinnen-Trichter voll ist", stop: "AUS" };
@@ -552,15 +591,21 @@ export class GoldRushGame {
   _leaveWork() {
     this.processing.stopWork();
     this.input.allLook = false;
+    this.input.discardLook(0.2);                 // no camera jump: what the mouse still moves is not a look
+    this._workClick = true;                      // (a click still held does not dig right away)
+    this._workQueued = false;                    // (an E / click pressed while it settled belonged to this work)
     this.ui.root.classList.remove("gr-working");
     this.hud.work(null);
     this._stationSig = null;
   }
 
-  // E while working: take the gold out of the pan (when it shows), else stop for now
+  // E while working: take the gold out of the pan (when it shows), end a sieve / mat result, else stop for now
   _workAction() {
     const pr = this.processing;
+    // the pan (the reference): the gold shows - E takes it at once; the sieve / the mat: their motion still runs
+    // out - E counts as soon as the result shows (never swallowed)
     if (pr.work === "pan" && pr.panDone) { this._collectPan(); return; }
+    if (pr.workPhase === "settle") { this._workQueued = true; return; }
     this._leaveWork();
   }
 
@@ -573,15 +618,17 @@ export class GoldRushGame {
       const L = ProspectSystem.line(r.sample);
       this.hud.message(`Probe ${r.sample.n} · ${L.grade}`, `${L.gold} aus ${L.amount} · ${L.where}`);
       if (r.cents > 0) this.hud.collected(r.cents, FIND.FINE);
-      this.audio.play(r.pieces ? "tiny" : "flake", { dist: 0.3, strength: 0.6 });
+      if (!this._bigFind(r.bestUg)) this.audio.play(r.pieces ? "tiny" : "flake", { dist: 0.3, strength: 0.6 });
       this.dirty = true;
       this.save("pan");
       return;
     }
     if (r.cents > 0) {
       this.hud.collected(r.cents, FIND.FINE);
-      this.hud.message("Gold gewaschen", `${formatMass(r.ug)} · ≈ ${formatEuro(r.cents)}${r.pieces ? ` · ${r.pieces} ${r.pieces === 1 ? "Stück" : "Stücke"}` : ""}`);
-      this.audio.play(r.pieces ? "tiny" : "flake", { dist: 0.3 });
+      if (!this._bigFind(r.bestUg)) {
+        this.hud.message("Gold gewaschen", `${formatMass(r.ug)} · ≈ ${formatEuro(r.cents)}${r.pieces ? ` · ${r.pieces} ${r.pieces === 1 ? "Stück" : "Stücke"}` : ""}`);
+        this.audio.play(r.pieces ? "tiny" : "flake", { dist: 0.3 });
+      }
     } else this.hud.tip("pan-empty", `Diesmal blieb kein Gold in der ${r.tool === "bowl" ? "Schale" : "Pfanne"}.`, 3);
     // the first wash with the wooden bowl: what a gold pan would do better (once)
     if (r.tool === "bowl" && !this._bowlTip) { this._bowlTip = true; this.hud.tip("bowl-first", "Mit einer Goldpfanne (Ausrüstung) bleibt deutlich mehr Feingold liegen – und es geht schneller.", 6); }
@@ -961,6 +1008,13 @@ export class GoldRushGame {
       v.text = ex.breaker ? "Hammer" : `${fmt(ex.volumeMl / 1000)}/${Math.round(EXC_BUCKET_ML / 1000)} l${ex.volumeMl > 0 ? ` · ${Math.round(ex.massG() / 1000)} kg` : ""}`;
       v.active = !!ex.inCab; v.full = ex.room < 2000; v.aria = `Baggerlöffel ${fmt(ex.volumeMl / 1000)} Liter`;
     } else row.scoop = null;
+    // Prompt 10: the wheel loader's bucket (while you sit in it, or when it holds something)
+    const ld = pr.loader;
+    if (ld && (ld.inCab || ld.volumeMl > 0)) {
+      const v = row.loader || (row.loader = {});
+      v.text = `${fmt(ld.volumeMl / 1000)}/${Math.round(LDR_BUCKET_ML / 1000)} l${ld.volumeMl > 0 ? ` · ${Math.round(ld.massG() / 1000)} kg` : ""}`;
+      v.active = !!ld.inCab; v.full = ld.room < 4000; v.aria = `Radladerschaufel ${fmt(ld.volumeMl / 1000)} Liter`;
+    } else row.loader = null;
     // phase 9: sample bags waiting to be panned
     const pg = pr.prospect;
     if (pg && pg.count > 0) {
@@ -1024,7 +1078,8 @@ export class GoldRushGame {
     if (this._release && (this._release.t -= dt) <= 0) { this._shovelRelease(this._release); this._release = null; }
     const p = this.player, input = this.input, world = this.world;
     const look = input.takeLook();
-    if (this.cab) { this._cabUpdate(dt, look); return; }
+    const jumpReq = input.takeJump();           // taken here: a press in a machine / at work is gone, not kept for later
+    if (this.cab) { if (this.cab.kind === "loader") this._loaderUpdate(dt, look); else this._cabUpdate(dt, look); return; }
     if (this.processing.work) { this._workUpdate(dt, look); return; }
     const pr = this.processing, bw = pr.pushing ? pr.barrow : null;
     p.yaw -= look.x;
@@ -1049,14 +1104,18 @@ export class GoldRushGame {
     const speed = (input.sprint && !bw ? SPRINT : WALK) * this.processing.speedFactor();
     const sin = Math.sin(p.yaw), cos = Math.cos(p.yaw);
     const tx = (-sin * my + cos * mx) * speed, tz = (-cos * my - sin * mx) * speed;
-    const a = Math.min(1, dt * 10);
+    const a = Math.min(1, dt * (p.air ? JUMP.airCtl : 10));           // in the air: your momentum, little control
     if (!bw) { p.vx += (tx - p.vx) * a; p.vz += (tz - p.vz) * a; }
     const g0 = world.groundAt(p.x, p.z);
+    if (jumpReq) this._jumpPress(g0, bw);
     // steep ground: walking up to 38°, scrambling (slower) up to 68° - so you
     // always get out of your own pit - never up a stone wall
+    const feet = p.air ? p.y - EYE : null;
     const tryAxis = (sx, sz) => {
       const d = Math.hypot(sx, sz);
       if (d < 1e-6) return true;
+      // in the air: ground higher than your feet stops you (you land on what you cleared)
+      if (feet != null) { if (world.groundAt(p.x + sx, p.z + sz) > feet + 0.02) return false; p.x += sx; p.z += sz; return true; }
       const rise = world.groundAt(p.x + sx, p.z + sz) - g0;
       const s = rise / d;
       if (rise > 0 && s > MAX_SLOPE) return false;
@@ -1074,8 +1133,14 @@ export class GoldRushGame {
       this._keepOffWalls();
     }
     const ground = world.groundAt(p.x, p.z) + EYE;
-    p.y += (ground - p.y) * Math.min(1, dt * (ground < p.y - 0.4 ? 20 : 12));
-    if (p.y < ground - 0.25) p.y = ground - 0.25;             // never sink into ground that rose under you
+    if (p.prep > 0 && (p.prep -= dt) <= 0) this._jumpOff();
+    if (p.air) this._airborne(dt, ground);
+    else {
+      p.y += (ground - p.y) * Math.min(1, dt * (ground < p.y - 0.4 ? 20 : 12));
+      if (p.y < ground - 0.25) p.y = ground - 0.25;             // never sink into ground that rose under you
+    }
+    if (p.cool > 0) p.cool -= dt;
+    this._dipUpdate(dt);
 
     const moving = Math.hypot(p.vx, p.vz);
     if (moving > 0.3) p.bob += dt * moving * 2.1; else p.bob *= Math.exp(-dt * 6);
@@ -1083,6 +1148,8 @@ export class GoldRushGame {
 
     this._updateCamera(dt);
     this._aim();
+    // Prompt 10: placing the hillside miner - the crosshair picks its spot, the tools rest
+    if (this.placing) { this._placeUpdate(dt); this.tools.tick(dt, false); this._phaseHooks(); return; }
     // the tool: actions while dig is held and the crosshair is on the ground
     // (not while you carry the bucket - your hand is on its bail)
     const carrying = this.processing.carrying || this.processing.pushing;
@@ -1104,7 +1171,9 @@ export class GoldRushGame {
   // ------------------------------------------------------------ the excavator's cab (phase 9)
 
   // get in: the view from the cab, the hands at the controls (not drawn), the tracks under W A S D
-  enterCab(restoring = false) {
+  // (Prompt 10: machine "loader" - the wheel loader's seat)
+  enterCab(restoring = false, machine = "excavator") {
+    if (machine === "loader") return this._enterLoader(restoring);
     const ex = this.processing.excavator;
     if (!ex || this.processing.work || this.processing.carrying || this.processing.pushing) return false;
     this.tools.cancel();
@@ -1127,12 +1196,38 @@ export class GoldRushGame {
     return true;
   }
 
+  // Prompt 10: into the wheel loader's seat - looking ahead over the bucket
+  _enterLoader(restoring) {
+    const ld = this.processing.loader;
+    if (!ld || this.processing.work || this.processing.carrying || this.processing.pushing) return false;
+    this.tools.cancel();
+    this._sampleArm = false;
+    this.input.releaseAll();
+    this.cab = ld;
+    ld.inCab = true;
+    const p = this.player;
+    p.yaw = restoring ? p.yaw : ld.heading - Math.PI / 2;
+    p.pitch = restoring ? Math.max(-1.0, Math.min(0.45, p.pitch)) : -0.2;
+    this._ldrDig = this._ldrAlt = false;
+    this.reticle.visible = false;
+    ld.rig.setFirstPerson(true);
+    this.ui.root.classList.add("gr-cab");
+    this.ui.setCab && this.ui.setCab(true, false, "loader");
+    this.audio.play("exc_start", { dist: 0.4 });
+    if (!restoring) this.hud.tip("cab-loader", this.touch ? "Stick: fahren und lenken · ziehen: umsehen · SCHAUFEL: absenken / anheben · KIPPEN · AUSSTEIGEN" : "W / S fahren · A / D lenken · Maus: umsehen · Linksklick: Schaufel absenken / anheben · in den Haufen fahren: füllen · Rechtsklick / Q: am Trichter kippen · E: aussteigen", 30);
+    this._stationSig = null;
+    this.dirty = true;
+    return true;
+  }
+
   exitCab() {
     const ex = this.cab;
     if (!ex) return false;
     this.cab = null;
     ex.inCab = false;
-    ex.v = ex.w = 0;
+    ex.v = 0;
+    if (ex.w != null) ex.w = 0;
+    if (ex.kind === "loader") this.processing.loaderInput = null;
     ex.rig.setFirstPerson(false);
     const spot = ex.exitSpot(), p = this.player;
     p.x = spot.x; p.z = spot.z; p.vx = p.vz = 0;
@@ -1191,6 +1286,32 @@ export class GoldRushGame {
     }
     const load = ex.volumeMl, tgt = this._cabTgt || (this._cabTgt = {});
     tgt.recv = null; tgt.hit = null; tgt.ok = false; tgt.act = null; tgt.state = "idle"; tgt.text = "";
+    // Prompt 10: a stockpile under the crosshair (its surface, or the bare ground of its site): tip onto it
+    // with a load, scoop from it with an empty bucket
+    const piles = this.processing.piles;
+    const ph = piles ? piles.raycast(ox, oy, oz, dx, dy, dz, hit ? hit.distance + 0.05 : 12) : null;
+    let pileAt = null;
+    if (ph && (!best || ph.distance < bestT)) pileAt = { pile: ph.pile, at: { x: ph.x, y: ph.y, z: ph.z }, surface: true };
+    else if (!best && hit && hit.boulder == null && piles) { const p0 = piles.at(hit.x, hit.z, 0); if (p0 && (p0.id === "raw" || p0.id === "spoil")) pileAt = { pile: p0, at: { x: hit.x, y: hit.y, z: hit.z }, surface: false }; }
+    if (pileAt && !ex.breaker) {
+      const P = pileAt.pile, reach = ex.reachable(ex.rel(pileAt.at), "dump"), name = P.def.name;
+      if (load > 0) {
+        if (!reach) { tgt.text = `${name} – näher heranfahren`; tgt.state = "far"; }
+        else if (P.room <= 200) { tgt.text = `${name} ist voll`; tgt.state = "hard"; }
+        else { tgt.ok = true; tgt.act = "dump"; tgt.state = "dig"; tgt.recv = { kind: "pile", id: P.id, label: name, at: pileAt.at }; tgt.text = `${this.touch ? "KIPPEN" : "[Rechtsklick / Q]"}: auf den Haufen ${P.def.label} · ${m3Text(P.volumeMl)}`; }
+        this.ui.setCrosshair(tgt.state);
+        this.reticle.visible = false;
+        return tgt;
+      }
+      if (pileAt.surface) {
+        const sreach = ex.reachable(ex.rel(pileAt.at));
+        if (!sreach) { tgt.text = `${P.def.label} ${m3Text(P.volumeMl)} – näher heranfahren`; tgt.state = "far"; }
+        else { tgt.ok = true; tgt.act = "scoop"; tgt.state = "dig"; tgt.recv = { kind: "pile", id: P.id, source: true, at: pileAt.at }; tgt.text = `${this.touch ? "SCHAUFELN" : "[Klick]"}: vom Haufen nehmen · ${P.def.label} ${m3Text(P.volumeMl)}`; }
+        this.ui.setCrosshair(tgt.state);
+        this.reticle.visible = false;
+        return tgt;
+      }
+    }
     if (best) {
       tgt.recv = best;
       const reach = ex.reachable(ex.rel(best.at), "dump");
@@ -1256,9 +1377,9 @@ export class GoldRushGame {
     const dump = input.altHeld || this._cabDump;
     this._cabDump = false;
     if (!ex.busy && tgt.ok) {
-      if (input.digHeld && tgt.act === "scoop") ex.startScoop(tgt.recv ? { kind: "oversize", at: tgt.recv.at } : { kind: "ground", hit: { ...tgt.hit, normal: tgt.hit.normal ? { ...tgt.hit.normal } : null } });
+      if (input.digHeld && tgt.act === "scoop") ex.startScoop(tgt.recv ? (tgt.recv.kind === "pile" ? { kind: "pile", id: tgt.recv.id, at: tgt.recv.at } : { kind: "oversize", at: tgt.recv.at }) : { kind: "ground", hit: { ...tgt.hit, normal: tgt.hit.normal ? { ...tgt.hit.normal } : null } });
       else if (input.digHeld && tgt.act === "break") ex.startBreak({ hit: { ...tgt.hit } });
-      else if (dump && tgt.act === "dump") ex.startDump({ kind: tgt.recv.kind, at: { ...tgt.recv.at } });
+      else if (dump && tgt.act === "dump") ex.startDump({ kind: tgt.recv.kind, id: tgt.recv.id, at: { ...tgt.recv.at } });
     } else if (!ex.busy && dump && ex.volumeMl > 0 && !(tgt.recv && !tgt.recv.source)) this.hud.tip("dump-where", "Zum Abkippen auf den Aufgabetrichter, eine Schubkarre, den Vorratstrichter oder die Abraumhalde zielen.", 6);
     // the cab's quiet HUD: the bucket in the material row, what the crosshair is on below
     const busy = ex.task ? { scoop: "gräbt …", dump: "kippt …", break: "hämmert …", swap: "wechselt das Anbaugerät …" }[ex.task.kind] : "";
@@ -1272,6 +1393,144 @@ export class GoldRushGame {
     if (ex.swinging && (this._swT = (this._swT || 0) - dt) <= 0) { this._swT = 0.6; this.audio.play("exc_hydraulic", { dist: 0.9, strength: 0.45 }); }
     this.tools.blocked = true;
     this.tools.tick(dt, false);
+  }
+
+  // Prompt 10: a stroke into a stockpile - loose material, it gives easily: into the bucket / barrow / intake
+  _pileContact(hit, def) {
+    const P = hit.pile, ml = Math.round(((def.kernel && def.kernel.vol) || 0.0012) * 1e6 * 1.25);
+    const dir = this._toolDir(), pan = this._pan(hit), dist = hit.distance;
+    const r = this.processing.collectFromPile(P, hit, { x: dir.x, z: dir.z }, ml, this.player);
+    const comp = P.buffer.comp(this._pc || (this._pc = [0, 0, 0, 0]));
+    let mat = 0; for (let m = 1; m < 4; m++) if (comp[m] > comp[mat]) mat = m;
+    if (r.ml > 0) {
+      this.tools.react("ok", mat);
+      this.hands.contact("ok", mat, r.ml / 1000 * 1.5);
+      this.effects.impact(hit, mat, def.id, dir, 0.6);
+      this.audio.play((DIG_SOUND[def.id] || DIG_SOUND.hand)[mat] || "hand_dirt", { pan, dist, strength: 0.8 });
+      if (def.id === "shovel") this._release = { t: 0.3, mat, into: r.into, kg: r.ml / 600 };
+      this.lastStroke = { tool: def.id, kind: "pile", pile: P.id, ml: r.ml, into: r.into, massKg: 0, finds: 0, cents: 0 };
+    } else {
+      this.tools.react("air");
+      this.hands.contact("ok", mat, 0.2);
+      this.hud.tip(`pile-${r.noRoom || "none"}`, r.noRoom === "full" ? "Eimer / Schubkarre ist voll." : `${P.def.label}: erst einen Eimer oder die Schubkarre daneben abstellen – dann hineinschaufeln.`, 6);
+      this.lastStroke = { tool: def.id, kind: "pile", pile: P.id, ml: 0, massKg: 0, finds: 0, cents: 0 };
+    }
+    this.dirty = true;
+  }
+
+  // ------------------------------------------------------------ the wheel loader (Prompt 10)
+
+  // what lies in front of its bucket: a receiver to pour into (the intake, a stockpile site), the pile it digs
+  _loaderAim() {
+    const ld = this.cab, pr = this.processing, tgt = this._ldrTgt || (this._ldrTgt = {});
+    tgt.recv = null; tgt.text = ""; tgt.state = "idle";
+    const lip = ld.rig.lipWorld(this._lipV || (this._lipV = new THREE.Vector3())), fh = ld.frontHeading, dx = Math.cos(fh), dz = -Math.sin(fh);
+    const ax = lip.x + dx * 0.45, az = lip.z + dz * 0.45;
+    // the same receiver table as the barrow's (goldrush-processing.js receivers): the hoppers it can reach over,
+    // the stockpile sites; the small sluice hopper and the deck-mounted bulk hopper are not for a 260-l bucket
+    for (const R of pr.receivers()) {
+      if (R.small || R.deck) continue;
+      if (R.pile) {
+        if (!R.pile.inside(ax, az, 0.2)) continue;
+        const y = Math.max(this.world.groundBelowAt(ax, az), R.pile.heightAt(ax, az));
+        tgt.recv = { kind: "pile", pile: R.pile, label: R.label, top: Number.isFinite(y) ? y : this.world.groundBelowAt(ax, az), fill: m3Text(R.pile.volumeMl), room: R.room, R };
+        break;
+      }
+      if (Math.hypot(ax - R.at.x, az - R.at.z) < (R.loaderReach || 1.3)) { tgt.recv = { kind: R.id, label: R.label, top: R.top, holder: R.holder, fill: R.fill, room: R.room, R }; break; }
+    }
+    // the outlet / oversize piles: not to tip onto, but to dig from - so the bucket's mouth knows them too
+    if (!tgt.recv && pr.piles) { const P = pr.piles.at(ax, az, 0.2); if (P && P.volumeMl > 0) tgt.recv = { kind: "pile", pile: P, label: P.def.name, top: Math.max(this.world.groundBelowAt(ax, az), P.heightAt(ax, az)), fill: m3Text(P.volumeMl), room: P.dumpable ? P.room : 0 }; }
+    const R = tgt.recv, load = ld.volumeMl, kbd = !this.touch;
+    if (ld.dumping) { tgt.text = `kippt … ${R ? R.label : ""}`; tgt.state = "dig"; }
+    else if (ld.wall) { tgt.text = "Gewachsener Boden – der Radlader gräbt keinen Berg. Das macht der Bagger; der Lader nimmt vom Haufen."; tgt.state = "hard"; }
+    else if (ld.mode === "dig") {
+      if (ld.room < 4000) { tgt.text = "Schaufel voll"; tgt.state = "hard"; }
+      else if (ld.face > 0) { tgt.text = `In den Haufen schieben – die Schaufel füllt sich · ${Math.round(load / 1000)} / ${Math.round(LDR_BUCKET_ML / 1000)} l`; tgt.state = "dig"; }
+      else tgt.text = R && R.kind === "pile" && R.pile.volumeMl > 0 ? `Weiter in den Haufen ${R.pile.def.label} fahren` : `Schaufel unten · in einen Haufen fahren · ${kbd ? "Linksklick" : "SCHAUFEL"}: anheben`;
+    } else if (R && load > 0) {
+      if (R.kind === "pile" && !R.pile.dumpable) { tgt.text = `${R.pile.def.label} ${R.fill} – hier wird nur aufgenommen. Kippen: Aufgabetrichter, Rohhaufen, Tailings-Zone oder Abraumhalde`; tgt.state = "hard"; }
+      else if (R.room <= 200) { tgt.text = `${R.label} ist voll (${R.fill})`; tgt.state = "hard"; }
+      else { tgt.text = `${kbd ? "[Rechtsklick / Q]" : "KIPPEN"}: ${R.R ? R.R.into : `auf den Haufen ${R.pile.def.label}`} · ${R.fill}`; tgt.state = "dig"; tgt.ok = true; }
+    } else if (R && R.kind === "pile" && R.pile.volumeMl > 0) tgt.text = `${R.pile.def.label} ${R.fill} · ${kbd ? "Linksklick" : "SCHAUFEL"}: Schaufel absenken, dann hineinfahren`;
+    else tgt.text = load > 0 ? `Schaufel ${Math.round(load / 1000)} l – zum Aufgabetrichter oder auf einen Haufen fahren` : `${kbd ? "Linksklick" : "SCHAUFEL"}: Schaufel absenken – Rohmaterial holt der Lader vom Haufen am Bagger`;
+    return tgt;
+  }
+
+  _loaderUpdate(dt, look) {
+    const ld = this.cab, p = this.player, input = this.input, pr = this.processing;
+    // the view: around the seat within limits of the machine's heading (you turn with the rear frame)
+    p.yaw -= look.x;
+    p.pitch = Math.max(-1.0, Math.min(0.45, p.pitch - look.y));
+    const ahead = ld.heading - Math.PI / 2, rel = Math.max(-1.95, Math.min(1.95, Math.atan2(Math.sin(p.yaw - ahead), Math.cos(p.yaw - ahead))));
+    p.yaw = ahead + rel;
+    const h0 = ld.heading;
+    const r = ld.drive(dt, input.move.y, input.move.x);
+    p.yaw += ld.heading - h0;
+    const li = pr.loaderInput = this._ldrIn || (this._ldrIn = { fwd: 0 });
+    li.fwd = input.move.y;
+    if (r.blocked && (this._bumpT = (this._bumpT || 0) - dt) <= 0) { this._bumpT = 0.8; this.audio.play("barrow_bump", { dist: 1.2, strength: 0.9 }); }
+    const eye = ld.eye(this._eyeV || (this._eyeV = new THREE.Vector3()));
+    p.x = eye.x; p.z = eye.z; p.y = eye.y; p.vx = p.vz = 0;
+    const cam = this.camera;
+    cam.position.copy(eye);
+    cam.rotation.y = p.yaw;
+    cam.rotation.x = p.pitch;
+    const tgt = this._loaderAim();
+    // [Linksklick] / SCHAUFEL: the bucket down / up (on the press); [Rechtsklick / Q] / KIPPEN: pour into what is in front
+    const dig = input.digHeld, alt = input.altHeld || this._cabDump;
+    this._cabDump = false;
+    if (dig && !this._ldrDig && !ld.busy) {
+      const m = ld.toggleDig();
+      this.audio.play("exc_hydraulic", { dist: 0.7, strength: 0.6 });
+      if (m === "dig" && ld.stats.takes === 0) this.hud.tip("ldr-first", "Schaufel unten: jetzt langsam in den Rohhaufen fahren – je kräftiger du schiebst, desto schneller füllt sie sich. Voll hebt sie sich von selbst.", 10);
+    }
+    if (alt && !this._ldrAlt && !ld.busy) {
+      if (tgt.recv && ld.volumeMl > 0 && tgt.recv.room > 200) { ld.startDump(tgt.recv); this.audio.play("exc_hydraulic", { dist: 0.7, strength: 0.7 }); }
+      else if (ld.volumeMl > 0) this.hud.tip("ldr-where", "Zum Kippen mit der Schaufel an den Aufgabetrichter fahren – oder über einen Haufen.", 5);
+    }
+    this._ldrDig = dig; this._ldrAlt = alt;
+    this.hud.work(tgt.text);
+    this.ui.setCrosshair(tgt.state === "dig" ? "dig" : tgt.state === "hard" ? "hard" : "idle");
+    this.reticle.visible = false;
+    // sounds: the diesel (it works harder pushing, lifting, climbing), the tyres on gravel, the hydraulics
+    const work = (ld.pushing ? 1 : 0) + (ld.armsMoving ? 0.6 : 0) + Math.min(1, Math.abs(ld.v) / 2.5);
+    this._dieselT = (this._dieselT || 0) - dt;
+    if (this._dieselT <= 0) { this._dieselT = 0.74; this.audio.play("ldr_engine", { dist: 0.6, strength: Math.min(1, 0.45 + 0.4 * work) }); }
+    this._tyreT = (this._tyreT || 0) - dt * Math.min(2.2, Math.abs(ld.v));
+    if (this._tyreT <= 0 && Math.abs(ld.v) > 0.3) { this._tyreT = 0.6; this.audio.play("ldr_tyres", { dist: 1.0, strength: Math.min(1, 0.4 + Math.abs(ld.v) * 0.2 + ld.loadFrac * 0.2) }); }
+    if (ld.armsMoving && (this._hydT = (this._hydT || 0) - dt) <= 0) { this._hydT = 0.55; this.audio.play("exc_hydraulic", { dist: 0.8, strength: 0.5 }); }
+    this.tools.blocked = true;
+    this.tools.tick(dt, false);
+  }
+
+  // the loader's moments: material taken from a pile, the bucket full, a pour, the edge against a bank
+  _ldrEvent(kind, r) {
+    const ld = this.processing.loader;
+    if (!ld) return;
+    const near = !!this.cab || Math.hypot(this.player.x - ld.x, this.player.z - ld.z) < 16;
+    const dist = this.cab ? 1.4 : Math.max(1.5, Math.hypot(this.player.x - ld.x, this.player.z - ld.z));
+    if (kind === "take") {
+      if (near && (this._scrapeT = (this._scrapeT || 0) - 1) <= 0) { this._scrapeT = 10; this.audio.play("ldr_bucket", { dist, strength: 0.7 }); }
+    } else if (kind === "filled") {
+      if (near) this.audio.play("exc_scoop", { dist, strength: 0.9 });
+      this.hud.tip("ldr-full", `Schaufel voll – ${Math.round(r.ml / 1000)} l. Zum Aufgabetrichter fahren und kippen (Rechtsklick / Q).`, 8);
+    } else if (kind === "pour") {
+      if (near && (this._pourT = (this._pourT || 0) - 1) <= 0) { this._pourT = 6; this.audio.play("exc_dump", { dist, strength: Math.min(1, 0.4 + r.ml / 60000) }); }
+      if (this.effects && r.ml > 4000) { const at = ld.rig.lipWorld(this._lipV2 || (this._lipV2 = new THREE.Vector3())); this.effects.spill(at.x, at.y - 0.25, at.z, MATERIALS[0], 1.4); }
+    } else if (kind === "poured") {
+      this._pourT = 0;
+      // the whole bucket at once (its pour ran in steps): what went in, where
+      if (r.ml > 0 && r.kind === "intake" && this.processing.conveyor) {
+        const cv = this.processing.conveyor;
+        cv.stats.loads++;
+        this.audio.play("sluice_feed", { dist, strength: 0.9 });
+        if (this.cab) this.hud.message("Ausgekippt", `${Math.round(r.ml / 1000)} l im Aufgabetrichter (${Math.round(cv.volumeMl / 1000)} / ${Math.round(cv.capacityMl / 1000)} l)`);
+      }
+      if (r.full && r.rest > 1000 && this.cab) this.hud.tip("ldr-rest", `Voll – ${Math.round(r.rest / 1000)} l bleiben in der Schaufel.`, 5);
+    } else if (kind === "wall") {
+      if ((this._wallT = (this._wallT || 0) - 1) <= 0) { this._wallT = 40; if (near) this.audio.play("stone_scrape", { dist, strength: 0.8 }); }
+    }
+    this.dirty = true;
   }
 
   // the excavator's moments (from its animation): the cut, the tip, a blow, the attachment changed
@@ -1326,29 +1585,41 @@ export class GoldRushGame {
     this.ui.setCrosshair("idle");
     this.tools.blocked = true;
     this.tools.tick(dt, false);
+    // the mouse belongs to the tool while it works (the gesture); settling / the result: to nothing (no look,
+    // no tool) until E / a click ends it - Prompt 10, human QA: no camera jump after sieving
     const ev = pr.input(look.x, look.y, dt);
     if (ev === "pan-ready") { this.audio.play("flake", { dist: 0.3, strength: 0.7 }); this._haptic(10); }
     else if (ev && ev.kind === "cleaned") {
       this.audio.play("sluice_cleanout", { dist: 0.5 });
-      this.hud.message("Riffelmatte gereinigt", `${(ev.heavyMl / 1000).toFixed(1).replace(".", ",")} l Schwerkonzentrat in der Schale am Waschtrog${ev.nuggets ? ` · ${ev.nuggets} Nugget${ev.nuggets > 1 ? "s" : ""} herausgepickt` : ""}`);
+      this.hud.message(ev.tub ? "Matten gereinigt" : "Riffelmatte gereinigt", `${(ev.heavyMl / 1000).toFixed(1).replace(".", ",")} l Schwerkonzentrat ${ev.tub ? "in der Konzentratwanne an der Anlage" : "in der Schale am Waschtrog"}${ev.nuggets ? ` · ${ev.nuggets} Nugget${ev.nuggets > 1 ? "s" : ""} herausgepickt` : ""}`);
       if (ev.cents) this.hud.collected(ev.cents, FIND.NUGGET);
-      this._leaveWork();
+      this._bigFind(ev.bestUg);
       this.dirty = true;
-      return;
     } else if (ev && ev.kind === "sieved") {
       this.audio.play("dump", { dist: 0.4, strength: 0.8 });
       const n = ev.retained.pieces;
       this.hud.message("Gesiebt", `${(ev.underMl / 1000).toFixed(1).replace(".", ",")} l Konzentrat in der Wanne${n ? ` · ${n} Nugget herausgepickt` : ""}`);
       if (ev.retained.cents) this.hud.collected(ev.retained.cents, FIND.NUGGET);
-      this._leaveWork();
+      this._bigFind(ev.retained.bestUg);
       this.dirty = true;
+    }
+    // click / tap on the result: collect the pan / end the sieve or the mat (while it still settles: as soon as it shows)
+    const click = this.input.digHeld;
+    if (click && !this._workClick && pr.workPhase === "settle" && pr.work !== "pan") this._workQueued = true;
+    if (this._workQueued && pr.workPhase === "result") { this._workQueued = false; this._workClick = click; this._workAction(); return; }
+    if ((pr.workPhase === "result" || (pr.work === "pan" && pr.panDone)) && click && !this._workClick) {
+      this._workClick = click;
+      if (pr.work === "pan") this._collectPan(); else this._leaveWork();
       return;
     }
-    // click / tap when the gold shows: collect
-    const click = this.input.digHeld;
-    if (pr.work === "pan" && pr.panDone && click && !this._workClick) { this._workClick = click; this._collectPan(); return; }
     this._workClick = click;
-    const touch = this.touch;
+    const touch = this.touch, confirm = touch ? "FERTIG tippen" : "[E] / Klick: fertig";
+    if (pr.workPhase !== "gesture" && pr.work !== "pan") {
+      const r = pr.workResult || {};
+      if (pr.work === "sieve") this.hud.work(`Gesiebt · ${((r.underMl || 0) / 1000).toFixed(1).replace(".", ",")} l Konzentrat in der Wanne${pr.workPhase === "result" ? ` – ${confirm}` : ""}`);
+      else this.hud.work(`${r.tub ? "Matten gereinigt · Schwerkonzentrat in der Wanne" : "Riffelmatte gereinigt · Schwerkonzentrat in der Schale"}${pr.workPhase === "result" ? ` – ${confirm}` : ""}`);
+      return;
+    }
     if (pr.work === "pan") {
       const n = pr.washName(true);
       this.hud.work(pr.panDone ? (touch ? `Gold liegt in der ${n} – EINSAMMELN tippen` : `Gold liegt in der ${n} – Klick oder [E]: einsammeln`)
@@ -1389,12 +1660,17 @@ export class GoldRushGame {
   // which station is in front of the player (prompt / mobile button), the objective line
   _stationTick(dt) {
     const pr = this.processing;
+    this._minerWatch();
     let s = null;
     if (this.cab) s = { id: "exc-exit", action: "Aussteigen", short: "AUSSTEIGEN", kind: "cab" };
+    else if (this.placing) s = { id: "place-cancel", action: "Aufstellen abbrechen", short: "ABBRECHEN", kind: "place" };
     else if (!this.uiOpen && !pr.work) {
       const pi = pr.interaction(this.player);
       if (pi) s = { ...pi, kind: "process" };
       else { const st = this.stations.near(this.player.x, this.player.z, this.player.yaw); if (st) s = { ...st, kind: "station" }; }
+      // Prompt 10: a stockpile in view - what it is and how much (contextual, no gold value)
+      const ps = this.pileSeen;
+      if (!s && ps && ps.volumeMl > 2000) s = { id: "pile-info", action: `${ps.def.label} ${m3Text(ps.volumeMl)}`, short: "", disabled: true, kind: "info" };
     }
     if (pr.work) s = pr.work === "pan" && pr.panDone ? { id: "pan-collect", action: "Gold einsammeln", short: "EINSAMMELN", kind: "work" } : { id: "work-stop", action: "", short: "FERTIG", kind: "work" };
     const sig = s ? `${s.kind}:${s.id}:${s.action}` : "";
@@ -1456,6 +1732,7 @@ export class GoldRushGame {
     if (Number.isFinite(yaw)) p.yaw = yaw;
     if (Number.isFinite(pitch)) p.pitch = Math.max(-1.45, Math.min(1.45, pitch));
     p.vx = p.vz = 0; p.bob = 0; p.kick = 0;
+    p.air = false; p.vy = 0; p.prep = 0; p.dip = 0; p.dipT = 1;              // (Prompt 10: never mid-jump after a teleport)
     for (let i = 0; i < 4; i++) { this.world.collide(p, RADIUS); this._keepOffWalls(); }
     this.world.collide(p, RADIUS);
     p.y = this.world.groundAt(p.x, p.z) + EYE;
@@ -1503,12 +1780,67 @@ export class GoldRushGame {
     }
   }
 
+  // ------------------------------------------------------------ the jump (Prompt 10, human QA)
+  // Space: only from the ground (feet on it, not sliding down a drop), never twice in the air, not again
+  // straight after a landing; never with the barrow in your hands (the engine's machine / work branches never
+  // get here). A short dip first (anticipation), then the push-off.
+  _jumpPress(g0, bw) {
+    const p = this.player;
+    if (bw) { this.hud.tip("jump-barrow", "Mit der Schubkarre in den Händen wird nicht gesprungen.", 4); return; }
+    const grounded = !p.air && p.prep <= 0 && Math.abs(p.y - (g0 + EYE)) < 0.16;   // (walking down a slope the eye trails a little)
+    if (!grounded || p.cool > 0) return;
+    p.prep = this.reducedMotion ? 0.001 : JUMP.prep;
+    this._dipStart(0.03, JUMP.prep * 2.2);
+  }
+
+  _jumpOff() {
+    const p = this.player;
+    p.prep = 0;
+    if (this.processing.pushing || this.cab || this.processing.work) return;
+    p.air = true;
+    p.vy = JUMP.v0;
+    p.jumps++;
+    p.apex = p.jumpFrom = p.y;
+    this.audio.play("jump", { dist: 0.3, strength: 0.6 + 0.4 * Math.min(1, Math.hypot(p.vx, p.vz) / SPRINT) });
+    if (this.hands && !this.reducedMotion) this.hands.sway.y = Math.max(-0.03, this.hands.sway.y - 0.018);   // the arms lag below
+  }
+
+  _airborne(dt, ground) {
+    const p = this.player;
+    p.vy -= JUMP.g * (p.vy > 0 ? 1 : JUMP.fallK) * dt;
+    p.y += p.vy * dt;
+    if (p.y > p.apex) p.apex = p.y;
+    if (p.y > ground || p.vy > 0) return;
+    // the landing: feet on the ground, the knees give (the view dips and comes back), the step costs you some speed
+    const impact = -p.vy;
+    p.y = ground;
+    p.air = false;
+    p.vy = 0;
+    p.cool = JUMP.cool;
+    p.lands++;
+    p.lastJump = { height: +(p.apex - (p.jumpFrom != null ? p.jumpFrom : p.apex)).toFixed(3), impact: +impact.toFixed(2) };
+    p.vx *= JUMP.landKeep; p.vz *= JUMP.landKeep;
+    this._dipStart(Math.min(JUMP.dipMax, 0.016 * impact), JUMP.dipS);
+    this.audio.play("land", { dist: 0.25, strength: Math.min(1, 0.35 + impact / 5) });
+    if (this.hands && !this.reducedMotion) this.hands.sway.y = Math.max(-0.03, this.hands.sway.y - Math.min(0.03, 0.007 * impact));
+    if (impact > 3.5) this._haptic(12);
+  }
+
+  _dipStart(a, s) { const p = this.player; if (this.reducedMotion) return; p.dipA = a; p.dipT = 0; p.dipS = s; }
+  _dipUpdate(dt) {
+    const p = this.player;
+    if (p.dipT >= 1) { p.dip = 0; return; }
+    p.dipT = Math.min(1, p.dipT + dt / (p.dipS || 0.2));
+    const t = p.dipT;                                                 // down fast, up slower (a knee, not a spring)
+    p.dip = p.dipA * (t < 0.3 ? Math.sin((t / 0.3) * Math.PI / 2) : Math.cos(((t - 0.3) / 0.7) * Math.PI / 2) ** 2);
+  }
+
   _updateCamera() {
     const p = this.player, cam = this.camera;
     const bobOn = this.settings.headBob && !this.reducedMotion;
-    const amp = bobOn ? Math.min(1, Math.hypot(p.vx, p.vz) / WALK) : 0;
+    const amp = bobOn && !p.air ? Math.min(1, Math.hypot(p.vx, p.vz) / WALK) : 0;
     const by = Math.sin(p.bob * 2) * 0.022 * amp, bx = Math.cos(p.bob) * 0.012 * amp;
-    cam.position.set(p.x + Math.cos(p.yaw) * bx, p.y + by, p.z - Math.sin(p.yaw) * bx);
+    cam.position.set(p.x + Math.cos(p.yaw) * bx, p.y + by - (p.dip || 0), p.z - Math.sin(p.yaw) * bx);
     cam.rotation.y = p.yaw;
     cam.rotation.x = p.pitch - (this.reducedMotion ? 0 : p.kick);
   }
@@ -1526,6 +1858,19 @@ export class GoldRushGame {
     let state = "idle";
     this.target = null;
     const def = this.tools.def;
+    // Prompt 10: a stockpile's surface in front of the ground - the hand / the shovel take from it (into the
+    // bucket / barrow / intake next to you; with nothing to catch it, nothing happens)
+    const piles = this.processing.piles, ph = piles ? piles.raycast(ox, oy, oz, dx, dy, dz, hit ? hit.distance : SEE) : null;
+    this.pileSeen = ph && ph.distance < 9 ? ph.pile : null;
+    if (ph && ph.distance <= (def.reach || 2.4)) {
+      this.target = { x: ph.x, y: ph.y, z: ph.z, distance: ph.distance, normal: { x: 0, y: 1, z: 0 }, pile: ph.pile, diggable: true, boulder: null };
+      this.farTarget = null;
+      state = "dig";
+      this.aimState = state;
+      this.reticle.visible = false;
+      this.ui.setCrosshair && this.ui.setCrosshair(state);
+      return;
+    }
     if (hit && hit.diggable) {
       const why = this.mining.check(hit, def, p);
       hit.material = this.mining.materialAtHit(hit);
@@ -1603,6 +1948,7 @@ export class GoldRushGame {
       this.audio.play("air");
       return;
     }
+    if (hit.pile) { this._pileContact(hit, def); return; }
     const r = this.mining.action(hit, def, this.player, this.camera.position);
     this.economy.recordAction(r, def.id);
     const pan = this._pan(hit), dist = hit.distance;
@@ -1677,8 +2023,11 @@ export class GoldRushGame {
       if (disc.firstNugget) for (const it of disc.items) if (it.cls === FIND.NUGGET) { it.first = true; break; }
       this.loot.spawn(disc.items, hit);
       const best = disc.best;
-      this.audio.play(best === FIND.NUGGET ? "nugget" : best === FIND.TINY ? "tiny" : best === FIND.FLAKE ? "flake" : "dust", { pan, dist });
-      if (best === FIND.NUGGET) this._haptic([14, 50, 24]);
+      // (a big nugget: its tier's sound now, its line when it reaches the hand - Prompt 10)
+      if (!this._bigFind(disc.bestUg, { toast: false, pan, dist })) {
+        this.audio.play(best === FIND.NUGGET ? "nugget" : best === FIND.TINY ? "tiny" : best === FIND.FLAKE ? "flake" : "dust", { pan, dist });
+        if (best === FIND.NUGGET) this._haptic([14, 50, 24]);
+      }
     }
     this.lastStroke = this._strokeInfo(def, r, disc);
     this.lastStroke.intoBucket = routed.intoMl > 0;
@@ -1768,7 +2117,7 @@ export class GoldRushGame {
     const it = f && f.id != null ? this.economy.collect(f.id) : null;
     if (!it) return;                                     // already in the pouch (never twice)
     this.hud.collected(it.cents, it.cls);
-    if (it.cls === FIND.NUGGET) this.hud.nugget(it.cents, !!(f && f.first));
+    if (it.cls === FIND.NUGGET) this.hud.nugget(it.cents, !!(f && f.first), jackpotTier(it.massUg));
     this.dirty = true;
     if (item.silent) return;
     if (it.cls >= FIND.FLAKE) {
@@ -1780,7 +2129,29 @@ export class GoldRushGame {
 
   _nuggetInHand(item) {
     this.audio.play("pickup", { dist: 0.2 });
-    this.hands.inspect(this.loot.nuggetLook(item), INSPECT_S, () => this.loot.finish(item));
+    const tq = jackpotTier(item.find ? item.find.massUg || 0 : 0);              // (a big one: held up a little longer)
+    this.hands.inspect(this.loot.nuggetLook(item), INSPECT_S * (tq >= 2 ? 1.8 : tq >= 0 ? 1.35 : 1), () => this.loot.finish(item));
+  }
+
+  // Prompt 10: the moment of a big nugget by its tier (JACKPOT) - EUR 5-12 a fuller ring, EUR 12-30 its own short
+  // sound, from EUR 30 a short sting and "Großer Goldfund – EUR …" - wherever it comes out: the ground (the sound at
+  // the dig, the line in the hand), the pan, the sieve, the mats, the trommel's trap. -> true when it was one
+  _bigFind(ug, { toast = true, pan = 0, dist = 0.3 } = {}) {
+    const tier = ug > 0 ? jackpotTier(ug) : -1;
+    if (tier < 0) return false;
+    this.audio.play(tier >= 2 ? "nugget_jackpot" : tier === 1 ? "nugget_rare" : "nugget_big", { pan, dist });
+    this._haptic(tier >= 2 ? [20, 60, 30, 60, 40] : [16, 50, 28]);
+    if (toast) this.hud.nugget(centsForMass(ug), false, tier);
+    this.lastBigFind = { ug, tier, cents: centsForMass(ug) };
+    return true;
+  }
+
+  // Prompt 10: a nugget too big for the trommel's screen dropped into its trap (it waits there - goldrush-plant.js)
+  _trapped(finds) {
+    const p = this.player, d = Math.hypot(p.x - TRAP.x, p.z - TRAP.z);
+    this.audio.play("nugget_trap", { dist: Math.min(8, 0.6 + d / 3) });
+    this.hud.message("Nuggetfalle an der Trommel", `${finds.length > 1 ? `${finds.length} große Nuggets` : "Ein großer Nugget"} – zu groß fürs Sieb. Er liegt in der Falle unter dem Trommelende: dort herausnehmen.`);
+    this.dirty = true;
   }
 
   // everything still flying / lying around is booked now
@@ -2005,8 +2376,98 @@ export class GoldRushGame {
 
   // ------------------------------------------------------------ teardown
 
+  // ------------------------------------------------------------ placing the hillside miner (Prompt 10)
+
+  // the ghost follows the crosshair on the ground at the mountain's foot, facing the mountain (R turns it on);
+  // green = it may stand there (its section, its belt's receiver), red = why not
+  _placeStart(what, moving) {
+    const am = this.processing.autominer;
+    if (!am || this.placing) return;
+    const ghost = new AutoMinerRig(THREE, { ghost: true, geos: am.rig.geos }), A = MINER.area;
+    const areaGeo = new THREE.BoxGeometry(A.far - A.near, A.up, A.w);
+    areaGeo.translate((A.near + A.far) / 2, A.up / 2 + A.floor, 0);
+    const areaMat = new THREE.MeshBasicMaterial({ color: 0x5ee07a, transparent: true, opacity: 0.12, depthWrite: false });
+    const area = new THREE.Mesh(areaGeo, areaMat);
+    ghost.root.add(area);
+    ghost.root.visible = false;
+    this.world.scene.add(ghost.root);
+    this.placing = { what, moving: !!moving, ghost, area, areaMat, rot: 0, ok: false, click: this.input.digHeld, at: null, res: null };
+    this.audio.play("swap", { dist: 0.4 });
+    this.hud.tip("miner-place", this.touch ? "Auf den Boden am Fuß der Bergflanke zielen – grün: Grabknopf zum Aufstellen, ABBRECHEN zum Abbrechen" : "Auf den Boden am Fuß der Bergflanke zielen – grün: [Klick] aufstellen · [R] drehen · [E] abbrechen", 20);
+  }
+
+  _placeUpdate() {
+    const P = this.placing, am = this.processing.autominer;
+    if (!am) { this._placeEnd(false); return; }
+    const p = this.player, cam = this.camera, cp = Math.cos(p.pitch);
+    const dx = -Math.sin(p.yaw) * cp, dy = Math.sin(p.pitch), dz = -Math.cos(p.yaw) * cp;
+    let hit = this.terrain.raycast(cam.position.x, cam.position.y, cam.position.z, dx, dy, dz, 24);
+    if (!hit && dy < -0.02) { const t = -cam.position.y / dy; if (t < 24) hit = { x: cam.position.x + dx * t, z: cam.position.z + dz * t }; }
+    let r = null;
+    if (hit) {
+      const x = Math.round(hit.x * 10) / 10, z = Math.round(hit.z * 10) / 10;
+      const h = Math.atan2(-(MOUND_CENTER.z - z), MOUND_CENTER.x - x) + P.rot;
+      if (!P.at || P.at.x !== x || P.at.z !== z || P.at.h !== h) { P.at = { x, z, h }; P.res = am.check(x, z, h); }
+      r = P.res;
+      const G = P.ghost.root;
+      G.visible = true;
+      G.position.set(x, r.y != null ? r.y : this.world.groundAt(x, z), z);
+      G.rotation.set(0, h, 0);
+      P.ghost.setGhostOk(r.ok);
+      P.areaMat.color.setHex(r.ok ? 0x5ee07a : 0xe0503c);
+    } else { P.ghost.root.visible = false; P.at = null; }
+    P.ok = !!(r && r.ok);
+    const hint = !r ? "Auf den Boden am Fuß der Bergflanke zielen"
+      : r.ok ? `Hier aufstellen: ${r.m3.toFixed(1).replace(".", ",")} m³ Berg im Abschnitt · Austrag ${r.recv.kind === "intake" ? "in den Aufgabetrichter" : "auf den Rohhaufen"}`
+        : `Hier nicht: ${r.reason}`;
+    this.hud.work(`${hint} · ${this.touch ? "Grabknopf: aufstellen" : "[Klick] aufstellen · [R] drehen · [E] abbrechen"}`);
+    const click = this.input.digHeld;
+    if (click && !P.click) {
+      if (P.ok) { this._placeEnd(true); return; }
+      this.audio.play("barrow_bump", { dist: 0.5, strength: 0.5 });
+      this.hud.tip("miner-bad", `Hier nicht: ${r ? r.reason : "kein Boden unter dem Fadenkreuz"}`, 4);
+    }
+    P.click = click;
+  }
+
+  // place: set it down where the ghost is (valid); else: it stays where it was
+  _placeEnd(place) {
+    const P = this.placing;
+    if (!P) return;
+    this.placing = null;
+    this.world.scene.remove(P.ghost.root);
+    P.ghost.dispose(); P.area.geometry.dispose(); P.areaMat.dispose();
+    this.hud.work("");
+    const am = this.processing.autominer;
+    if (!am) return;
+    if (place && P.at) {
+      const r = am.place(P.at.x, P.at.z, P.at.h);
+      if (r.ok) {
+        this.audio.play("exc_dump", { dist: 1.8, strength: 0.6 });
+        this.hud.message("Abbaugerät steht", `${r.m3.toFixed(1).replace(".", ",")} m³ Berg im Abschnitt · Austrag ${r.recv.kind === "intake" ? "in den Aufgabetrichter" : "auf den Rohhaufen"} – am Bedienpult (links am Gerät) [E] starten.`);
+        this.dirty = true;
+        return;
+      }
+    }
+    if (am.status === "placing") am.status = am.placed ? "stopped" : "parked";
+  }
+
+  // the miner stopped by itself (its section empty / only hard rock left): said once
+  _minerWatch() {
+    const am = this.processing.autominer;
+    if (!am) return;
+    if (am._seen !== am.status) {
+      if ((am.status === "exhausted" || am.status === "rock") && am._seen === "running") {
+        this.audio.play("miner_stop", { dist: 2, strength: 0.8 });
+        this.hud.message("Abbaugerät steht", am.status === "rock" ? "Hartgestein – der Abbaukopf ist blockiert. Fels brechen (Spitzhacke / Hammer) oder versetzen." : "Abbaubereich erschöpft – am Bedienpult [E]: versetzen.");
+      }
+      am._seen = am.status;
+    }
+  }
+
   dispose() {
     if (this.disposed) return;
+    if (this.placing) this._placeEnd(false);
     if (this.ready) this.flushLoot();
     this.save("exit");
     this.disposed = true;

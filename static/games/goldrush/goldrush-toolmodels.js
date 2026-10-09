@@ -174,6 +174,7 @@ export class ToolModels {
     head.position.z = HEAD_Z;
     head.rotation.x = LIFT;
     shovel.add(head);
+    this.shovelHead = head;
     const bladeMesh = new THREE.Mesh(blade, this.steel);
     bladeMesh.position.z = -0.63 - HEAD_Z;
     head.add(bladeMesh);
@@ -278,7 +279,11 @@ export class ToolModels {
   applyUpgrades(ups) {
     const has = (id) => ups && ups.has(id);
     this.bladeRim.visible = has("shovel.blade");
-    this.shovelWood.color.setHex(has("shovel.handle") ? 0xf4e6c8 : 0xd8c0a0);       // pale ash vs. the old hickory
+    this.shovelWood.color.setHex(has("shovel.pro") ? 0xd08a2c : has("shovel.handle") ? 0xf4e6c8 : 0xd8c0a0);       // fibreglass / pale ash / the old hickory
+    this.shovelWood.roughness = has("shovel.pro") ? 0.38 : 0.8;
+    // Prompt 10: the bigger blade - wider and longer (the load on it grows with it)
+    const w = has("shovel.wide") ? 1.14 : 1;
+    if (this.shovelHead) this.shovelHead.scale.set(w, 1, has("shovel.wide") ? 1.12 : 1);
     this.pointMat.color.setHex(has("pickaxe.tip") ? 0xc9ced6 : 0x8a8c8f);
     this.pointMat.roughness = has("pickaxe.tip") ? 0.22 : 0.45;
     this.pickTip.scale.setScalar(has("pickaxe.tip") ? 1.5 : 1);

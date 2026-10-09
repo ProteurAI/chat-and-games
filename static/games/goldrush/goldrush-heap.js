@@ -37,10 +37,14 @@ export const LOOSE_MAT = [
 ];
 
 // the blended colour of a composition (masses per MAT) -> [r, g, b]
+const LOOSE_DENS = [1.3, 1.6, 1.75, 2.6];                     // g / ml loose (dirt, compact clods, gravel, stone)
 export function looseColor(comp, out = [0, 0, 0]) {
   const m = (comp[0] + comp[1] + comp[2] + comp[3]) || 1;
   out[0] = out[1] = out[2] = 0;
-  for (let k = 0; k < 4; k++) for (let c = 0; c < 3; c++) out[c] += (LOOSE_MAT[k].rgb[c] * (comp[k] || 0)) / m;
+  // (by volume: a stone weighs twice a crumb of soil, it does not cover twice the surface)
+  let vs = 0;
+  for (let k = 0; k < 4; k++) vs += (comp[k] || 0) / LOOSE_DENS[k];
+  for (let k = 0; k < 4; k++) for (let c = 0; c < 3; c++) out[c] += (LOOSE_MAT[k].rgb[c] * ((comp[k] || 0) / LOOSE_DENS[k])) / (vs || m);
   if (!(comp[0] + comp[1] + comp[2] + comp[3])) out.splice(0, 3, ...LOOSE_MAT[0].rgb);
   return out;
 }

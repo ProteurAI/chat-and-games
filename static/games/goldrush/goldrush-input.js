@@ -22,6 +22,7 @@ export class GoldRushInput {
     this.move = { x: 0, y: 0 };          // strafe (+right), forward (+ahead), -1..1
     this.look = { x: 0, y: 0 };          // accumulated radians since the last take()
     this.digHeld = false;
+    this.jumpPressed = false;            // Prompt 10: Space - one jump per press (the engine takes it, see takeJump)
     this.altHeld = false;                // phase 9: the right button (locked) / the phone's second action - the excavator's dump
     this.sprint = false;
     this.locked = false;
@@ -59,6 +60,7 @@ export class GoldRushInput {
       this._mx = e.clientX;
       this._my = e.clientY;
       if (!this.enabled) return;
+      if (this._muteUntil && performance.now() < this._muteUntil) return;      // a moment after a tool gesture: no look
       if (this.locked) {
         this.look.x += e.movementX * LOOK_MOUSE;
         this.look.y += e.movementY * LOOK_MOUSE;
@@ -118,6 +120,7 @@ export class GoldRushInput {
   releaseAll() {
     this.keys.clear();
     this.digHeld = false;
+    this.jumpPressed = false;
     this.altHeld = false;
     this.dragLook = false;
     this.sprint = false;
@@ -134,6 +137,28 @@ export class GoldRushInput {
     return l;
   }
 
+  // Prompt 10 (human QA): back from a tool gesture to looking round - what the mouse / finger moved so far is
+  // dropped, and for a moment (muteS) new movement is too: the camera never jumps after sieving or panning
+  // Prompt 10: the jump press, once (whatever happens with it - a press while you cannot jump is gone, never kept)
+  takeJump() {
+    const j = this.jumpPressed;
+    this.jumpPressed = false;
+    return j;
+  }
+
+  // tests: a mouse movement as the locked pointer makes it (the same mute after a gesture)
+  feedMouse(dx, dy) {
+    if (!this.enabled || (this._muteUntil && performance.now() < this._muteUntil)) return false;
+    this.look.x += dx * LOOK_MOUSE;
+    this.look.y += dy * LOOK_MOUSE;
+    return true;
+  }
+
+  discardLook(muteS = 0) {
+    this.look.x = this.look.y = 0;
+    this._muteUntil = muteS > 0 ? performance.now() + muteS * 1000 : 0;
+  }
+
   _key(e, down) {
     if (!this.enabled) return;
     const t = e.target;
@@ -146,7 +171,7 @@ export class GoldRushInput {
     if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Space"].includes(k)) {
       if (down) this.keys.add(k); else this.keys.delete(k);
       this.sprint = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
-      if (k === "Space") this.digHeld = down && this.locked;      // keyboard dig while locked
+      if (k === "Space" && down && !e.repeat) this.jumpPressed = true;     // Prompt 10: a jump (held keys do not repeat it)
       e.preventDefault();
       this._fromKeys();
     }
@@ -185,8 +210,10 @@ export class GoldRushInput {
     const r = this.root.getBoundingClientRect();
     const x = e.clientX - r.left, y = e.clientY - r.top;
     if (p.role === "look") {
-      this.look.x += (x - p.x) * LOOK_TOUCH;
-      this.look.y += (y - p.y) * LOOK_TOUCH;
+      if (!(this._muteUntil && performance.now() < this._muteUntil)) {
+        this.look.x += (x - p.x) * LOOK_TOUCH;
+        this.look.y += (y - p.y) * LOOK_TOUCH;
+      }
     } else if (p.role === "stick") {
       let dx = x - p.x0, dy = y - p.y0;
       const d = Math.hypot(dx, dy);

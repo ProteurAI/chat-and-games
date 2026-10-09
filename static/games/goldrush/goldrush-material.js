@@ -275,6 +275,9 @@ export function sluiceSplit(batch, capture, heavyShare, ids = [0, 0]) {
  * Exact: under + over == input (volume, every material, fine gold, pieces).
  */
 export const TROMMEL_TUNING = { over: [0.05, 0.14, 0.42, 0.92], clay: 0.6, loose: 1.1 };
+// Prompt 10: the screen's 40-mm holes - a nugget drawn larger (goldrush-loot.js findSize: from ~ EUR 10) does not
+// pass; it rides to the drum's end and drops into the nugget trap (goldrush-plant.js), never onto the oversize pile
+export const SCREEN_CATCH_UG = 100000;
 
 export function trommelSplit(batch, ids = [0, 0]) {
   const T = TROMMEL_TUNING;
@@ -295,8 +298,10 @@ export function trommelSplit(batch, ids = [0, 0]) {
   const clay = total > 0 ? over.comp[1] / total : 0;
   over.fineUg = Math.floor(batch.fineUg * Math.min(0.2, T.clay * clay));
   under.fineUg = batch.fineUg - over.fineUg;
-  under.finds = batch.finds.slice();
+  // every piece goes through the holes but a nugget too big for them (Prompt 10: it is caught, whole)
+  const caught = [];
+  for (const f of batch.finds) (f.cls === FIND.NUGGET && f.ug >= SCREEN_CATCH_UG ? caught : under.finds).push(f);
   under.history = [...batch.history, { op: "trommel", inG: total, overG }].slice(-6);
   batch.volumeMl = 0; batch.comp = [0, 0, 0, 0]; batch.fineUg = 0; batch.finds = [];
-  return { under, over };
+  return { under, over, caught };
 }

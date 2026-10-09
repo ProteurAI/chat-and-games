@@ -191,6 +191,7 @@ button.gr-tool { border: none; font-family: inherit; cursor: default; }
 .gr-toast-text b { font-size: var(--text-sm); }
 .gr-toast-value { font-size: var(--text-sm); font-weight: var(--font-bold); color: var(--accent-text); font-variant-numeric: tabular-nums; }
 .gr-toast.is-first { padding: 10px 18px 10px 12px; box-shadow: var(--shadow-lg), 0 0 0 2px rgba(233, 181, 74, 0.6); }
+.gr-toast.is-big { box-shadow: var(--shadow-lg), 0 0 0 2px rgba(233, 181, 74, 0.85), 0 0 22px rgba(233, 181, 74, 0.28); }
 .gr-toast.is-on { animation: gr-toast 0.35s var(--ease-emphasized); }
 @keyframes gr-toast { from { opacity: 0; transform: translate(-50%, -8px) scale(0.96); } }
 .gr-reduced .gr-toast.is-on { animation: gr-fade-in 0.2s linear; }

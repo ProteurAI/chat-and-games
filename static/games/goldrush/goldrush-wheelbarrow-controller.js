@@ -37,7 +37,9 @@ export const PUSH = {
   handsY: 0.96,        // m: ... this high above the ground you stand on (handles at the hip, the tray tilted ~24 deg)
   lookMax: 0.72,       // rad: and no further (a quick flick springs back to here) ...
   lookHard: 0.84,      // rad: ... and never, not even for a frame, further than this
-  reverse: 0.55,       // m/s backing up (at most)
+  reverseK: 0.6,       // backing up: this share of the forward top speed (Prompt 10, human QA: 0.55 m/s flat was unusable) ...
+  reverseMax: 2.0,     // m/s ... and never more than this
+  reverseAccel: 0.85,  // the pull-away backwards: this share of pushing's
   takeS: 0.34,         // s: reach + lift
   parkS: 0.36,         // s: lower + let go
 };
@@ -60,6 +62,7 @@ export const HANDLING = {
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const smooth = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+const NO_MUL = { accel: 1, drag: 1, rough: 1 };
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
 export class PushController {
@@ -121,18 +124,19 @@ export class PushController {
     const r = bw.roughness();
     this.rough += (r - this.rough) * (1 - Math.exp(-dt * 6));
     // what you ask for: a speed and a turn
-    const vmax = bw.walkSpeed * bw.speedFactor(grade) * (1 - H.rough * this.rough);
+    const hm = bw.handlingMul || NO_MUL;           // Prompt 10: the barrow's upgrades (bearings, tyre)
+    const vmax = bw.walkSpeed * bw.speedFactor(grade) * (1 - H.rough * this.rough * hm.rough);
     const fwd = clamp(input.fwd || 0, -1, 1), turn = clamp(input.turn || 0, -1, 1);
-    const target = fwd >= 0 ? fwd * vmax : fwd * Math.min(PUSH.reverse, vmax * 0.6);
-    // pushing / braking: a full barrow gets going slower and needs more room to stop
-    const accel = (H.accel - H.accelLoad * load) * (grade > 0 ? 1 - Math.min(0.6, grade * (0.5 + 1.3 * load)) : 1);
+    const target = fwd >= 0 ? fwd * vmax : fwd * Math.min(PUSH.reverseMax, vmax * PUSH.reverseK);
+    // pushing / braking: a full barrow gets going slower and needs more room to stop (backing up a little slower still)
+    const accel = (H.accel - H.accelLoad * load) * (grade > 0 ? 1 - Math.min(0.6, grade * (0.5 + 1.3 * load)) : 1) * (target < 0 ? PUSH.reverseAccel : 1) * hm.accel;
     const brake = H.brake - H.brakeLoad * load;
     const dv = target - this.v;
     const speeding = Math.sign(dv) === Math.sign(this.v) || Math.abs(this.v) < 0.03;
     let a = clamp(dv * 7, -(speeding ? accel : brake), speeding ? accel : brake);
     // downhill it pulls (more the heavier it is); rough ground and an uphill drag slow it
     if (grade < 0 && Math.abs(this.v) > 0.05) a += -grade * 9.81 * (0.08 + 0.26 * load) * Math.sign(this.v);
-    a -= Math.sign(this.v) * this.rough * (H.roughDrag + H.roughDragLoad * load) * Math.min(1, Math.abs(this.v) * 4);
+    a -= Math.sign(this.v) * this.rough * (H.roughDrag + H.roughDragLoad * load) * hm.drag * hm.rough * Math.min(1, Math.abs(this.v) * 4);
     this.v += a * dt;
     if (Math.abs(this.v) > vmax * 1.15) this.v = Math.sign(this.v) * vmax * 1.15;
     if (Math.abs(this.v) < 0.004 && Math.abs(target) < 0.001) this.v = 0;
@@ -237,6 +241,18 @@ export function measureHandling(load, { walkSpeed = 3.4, speedFactor } = {}) {
   ({ bw, c } = mk(0.08));
   for (let i = 0; i < 600; i++) c.step(dt, bw, { fwd: 1, turn: 0 }, bw.yaw);
   out.slope = c.v;
+  // backing up (Prompt 10): its top speed, the time to 90 % of it, a quarter turn backing with the keys
+  ({ bw, c } = mk());
+  t = 0;
+  const vb = Math.min(PUSH.reverseMax, vmax * PUSH.reverseK);
+  while (-c.v < vb * 0.9 && t < 10) { c.step(dt, bw, { fwd: -1, turn: 0 }, bw.yaw); t += dt; }
+  out.t90back = t;
+  for (let i = 0; i < 240; i++) c.step(dt, bw, { fwd: -1, turn: 0 }, bw.yaw);
+  out.vback = -c.v;
+  const yb = bw.yaw;
+  let tb = 0;
+  while (Math.abs(wrap(bw.yaw - yb)) < Math.PI / 2 && tb < 10) { c.step(dt, bw, { fwd: -1, turn: -1 }, bw.yaw); tb += dt; }
+  out.turn90back = tb;
   return out;
 }
 

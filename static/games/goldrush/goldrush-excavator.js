@@ -17,7 +17,9 @@
 //               tips (the transfer happens at the tip: as much as fits - a full
 //               hopper takes part of it, the rest stays in the bucket):
 //                 the mine intake hopper, a parked wheelbarrow, the bulk hopper,
-//                 the spoil heap (waste - booked like tailings)
+//                 the spoil heap (waste - booked like tailings), and (Prompt 10)
+//                 a stockpile - above all the RAW pile, where the wheel loader
+//                 takes it on; it scoops from a stockpile too (any pile)
 //   ROCK        intact stone stops the bucket (no cutting hard rock); the
 //               hydraulic breaker (upgrade, swapped at the excavator's stand)
 //               cracks it with the phase-8 fracture logic (terrain.strikeStone,
@@ -395,6 +397,18 @@ export class Excavator {
       this.stats.scoops++;
       return { ok: ml > 0, kind: "oversize", ml };
     }
+    // Prompt 10: a bite out of a stockpile (from the machine towards the aim point, ~30 cm deep)
+    if (target.kind === "pile") {
+      const pile = this.ctx.piles ? this.ctx.piles().get(target.id) : null;
+      if (!pile) return { ok: false, kind: "pile", ml: 0 };
+      const a = target.at, dx = a.x - this.x, dz = a.z - this.z, L = Math.hypot(dx, dz) || 1;
+      const got = pile.cut(a.x - (dx / L) * 0.45, a.z - (dz / L) * 0.45, dx / L, dz / L, 0.32, 0.9, a.y - 0.32, Math.min(room, BUCKET_ML));
+      const ml = got.volumeMl;
+      if (ml > 0) this.bucket.batch.absorb(got);
+      this._load();
+      this.stats.scoops++;
+      return { ok: ml > 0, kind: "pile", ml, pile: target.id };
+    }
     const def = this._def || (this._def = { ...EXC_DEF, kernel: { ...EXC_DEF.kernel } });
     def.kernel.vol = Math.min(EXC_DEF.kernel.vol, (room * 0.95) / 1e6);      // a heaped bucket (loosened ground can top it up a little)
     // the stroke runs towards the machine: from the slewing centre's height
@@ -419,7 +433,11 @@ export class Excavator {
     if (recv.kind === "intake") { const cv = this.ctx.conveyor(); if (cv && cv.installed) ml = cv.pourIn(b); this.stats.intakeMl += ml; }
     else if (recv.kind === "barrow") { const w = this.ctx.barrow(); if (w && !w.pushing) ml = transfer(b, w, Infinity, this.ctx.nextId()); }
     else if (recv.kind === "bulk") { const bk = this.ctx.bulk(); if (bk && bk.installed) { ml = transfer(b, bk.buffer, Infinity, this.ctx.nextId()); bk.stats.inMl += ml; if (ml > 0) bk.stats.loads++; bk._fill(); } }
-    else if (recv.kind === "spoil") { const sp = this.ctx.spoil(); if (sp) { ml = sp.dumpFrom(b); this.stats.spoilMl += ml; } }
+    else if (recv.kind === "spoil") { const sp = this.ctx.spoil(); if (sp) { ml = sp.dumpFrom(b, Infinity, recv.at ? { x: recv.at.x, z: recv.at.z } : null); this.stats.spoilMl += ml; } }
+    else if (recv.kind === "pile") {                     // Prompt 10: onto a stockpile, where the bucket is
+      const pile = this.ctx.piles ? this.ctx.piles().get(recv.id) : null;
+      if (pile) { ml = pile.dumpFrom(b, Infinity, recv.at.x, recv.at.z, 0.4); this.stats.pileMl = (this.stats.pileMl || 0) + ml; }
+    }
     if (ml > 0) this.stats.dumps++;
     this._load();
     return { ok: ml > 0, ml, rest: b.batch.volumeMl, kind: recv.kind };

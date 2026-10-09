@@ -46,6 +46,14 @@ export const SHOP_ITEMS = [
     text: "Bricht Felsbrocken und festen Stein, lockert harte Erde und Kies - dort arbeiten Hand und Schaufel danach deutlich leichter.",
     requires: { tools: ["shovel"], hard: true },
   },
+  // Prompt 10 (human QA): the shovel grows in steps you see - a bigger blade (+28 % a stroke), the reinforced
+  // edge (+10 %), at last the pro shovel: together ~+52 % over the basic one (the excavator stays a big jump)
+  {
+    id: "shovel.wide", kind: "upgrade", tool: "shovel", label: "Großes Schaufelblatt", price: 1600,
+    text: "Ein breiteres, längeres Blatt: gut ein Viertel mehr Erde pro Stich – etwas schwerer, holt minimal langsamer aus.",
+    effect: { volMul: 1.28, strikeMul: 1.05, followMul: 1.04 },
+    requires: { tools: ["shovel"] },
+  },
   {
     id: "shovel.blade", kind: "upgrade", tool: "shovel", label: "Verstärktes Schaufelblatt", price: 1900,
     text: "Ein aufgenieteter Stahlrand: etwa 10 % mehr Erde pro Stich, beißt besser in Kies und harte Erde.",
@@ -57,6 +65,12 @@ export const SHOP_ITEMS = [
     text: "Leichter in der Hand: Ausholen, Kippen und Zurückziehen gehen schneller - etwa 7 % mehr Stiche pro Minute.",
     effect: { strikeMul: 0.98, followMul: 0.9 },                       // cycle 1,08 s -> ~1,01 s
     requires: { tools: ["shovel"] },
+  },
+  {
+    id: "shovel.pro", kind: "upgrade", tool: "shovel", label: "Profi-Schaufel", price: 9000,
+    text: "Glasfaserstiel, gehärtetes Blatt: noch einmal etwas mehr pro Stich und ruhiger in der Hand. Mit großem Blatt und Kante rund die Hälfte mehr als die einfache Schaufel.",
+    effect: { volMul: 1.06, strikeMul: 0.96, effMul: [1, 1.03, 1.03, 1] },
+    requires: { tools: ["shovel"], upgrades: ["shovel.wide", "shovel.blade", "shovel.handle"] },
   },
   {
     id: "pickaxe.tip", kind: "upgrade", tool: "pickaxe", label: "Gehärtete Spitze", price: 2400,
@@ -98,9 +112,34 @@ export const SHOP_ITEMS = [
     requires: { equipment: ["bucket"] },
   },
   {
+    id: "bucket.xl", kind: "upgrade", tool: "bucket", label: "Zinkeimer", price: 7000,
+    text: "Ein verzinkter 19-Liter-Eimer mit Holzgriff: noch weniger Wege – voll ein ordentliches Gewicht.",
+    effect: { capacityMul: 1.9 },
+    requires: { equipment: ["bucket"], upgrades: ["bucket.large"] },
+  },
+  {
     id: "wheelbarrow", kind: "equipment", label: "Schubkarre", price: 30000,
     text: "Fasst rund 85 Liter. Stell sie neben dich und grab hinein, dann schieb sie zum Waschplatz – oder später zum Trichter der Waschrinne und kipp sie aus. Voll ist sie spürbar schwer, bergauf erst recht.",
     requires: { equipment: ["bucket"] },
+  },
+  // Prompt 10 (human QA): the barrow in steps - it rolls easier, takes bumps better, at last carries more
+  {
+    id: "barrow.bearings", kind: "upgrade", tool: "wheelbarrow", label: "Kugellager & Gummigriffe", price: 9000,
+    text: "Ein Rad auf Kugellagern, gummierte Griffe: rollt leichter an, verliert auf Kies weniger Schwung.",
+    effect: { accelMul: 1.15, dragMul: 0.65 },
+    requires: { equipment: ["wheelbarrow"] },
+  },
+  {
+    id: "barrow.wheel", kind: "upgrade", tool: "wheelbarrow", label: "Breiter Luftreifen", price: 14000,
+    text: "Ein breiter, weicher Luftreifen: Kanten, Grabspuren und Kies schütteln die volle Karre deutlich weniger.",
+    effect: { roughMul: 0.5 },
+    requires: { equipment: ["wheelbarrow"] },
+  },
+  {
+    id: "barrow.tray", kind: "upgrade", tool: "wheelbarrow", label: "Aufsatzbretter", price: 26000,
+    text: "Bretter rund um die Mulde: fasst 110 statt 85 Liter – voll ist sie entsprechend schwerer.",
+    effect: { capacityMul: 1.3 },
+    requires: { equipment: ["wheelbarrow"], upgrades: ["barrow.wheel"] },
   },
   {
     id: "sluice", kind: "equipment", label: "Waschrinne", price: 48000,
@@ -168,6 +207,38 @@ export const SHOP_ITEMS = [
     text: "Ein Anbauhammer für den Bagger (am Bagger gegen den Löffel tauschen): bricht festen Fels und Felsbrocken in Geröll, das der Löffel dann aufnimmt.",
     requires: { equipment: ["excavator"], mountainPct: 2.0 },
   },
+  // Prompt 10 - the working mine: logistics and processing. The excavator digs onto the raw stockpile, the
+  // loader carries it to the plant; the plant grows to keep up (prices / gates: the A10-E10 benchmark)
+  {
+    id: "loader", kind: "equipment", label: "Kompakt-Radlader", price: 280000,
+    text: "Ein knickgelenkter Radlader mit einer Schaufel von gut 250 Litern: holt das Rohmaterial vom Haufen, den der Bagger aufschüttet, und kippt es in den Aufgabetrichter – oder räumt Überkorn und Tailings weg. Er gräbt keinen gewachsenen Berg; das bleibt die Arbeit des Baggers.",
+    requires: { equipment: ["excavator"], mountainPct: 2.3 },
+  },
+  {
+    id: "conveyor.fast", kind: "upgrade", tool: "conveyor", label: "Förderband-Ausbau", price: 160000,
+    text: "Ein zweiter, stärkerer Antrieb am Kopf, Leitbleche an der Aufgabe und ein Aufsatz für den Trichter: das Band läuft schneller und trägt mehr – gut 130 statt 64 Liter pro Minute, der Trichter fasst 420 statt 240 Liter (eine volle Laderschaufel passt hinein).",
+    requires: { equipment: ["conveyor", "loader"] },
+  },
+  {
+    id: "autominer", kind: "equipment", label: "Bergseiten-Abbaugerät", price: 300000,
+    text: "Eine kleine Raupen-Abbaueinheit mit Hydraulikarm und Schneidkopf: an den Fuß der Bergflanke gestellt, baut sie dort selbst ab – ein Stück von gut zweieinhalb Metern Breite – und gibt das Material über ihr Band in den Aufgabetrichter oder auf den Rohhaufen. Hartgestein schafft sie nicht. Ist ihr Abschnitt leer, muss sie versetzt werden.",
+    requires: { equipment: ["excavator", "conveyor"], mountainPct: 3.0 },
+  },
+  {
+    id: "washplant", kind: "equipment", label: "Waschanlage", price: 320000,
+    text: "Ein Verteilerkasten über den Köpfen von drei breiten Rinnen – die Hochleistungsrinne wird die erste davon: der Dosierer gibt bis zu 120 Liter pro Minute auf, gut drei Viertel des Feingolds bleiben in den Riffeln. Beim Reinigen landet das Konzentrat in einer Wanne an der Anlage – mit dem Eimer abholen, am Waschtrog auswaschen.",
+    requires: { equipment: ["trommel", "loader"], upgrades: ["sluice.highflow"] },
+  },
+  {
+    id: "washplant.recovery", kind: "upgrade", tool: "washplant", label: "Streckmetall-Riffel & Moosmatten", price: 950000,
+    text: "Streckmetall über dichten Moosmatten in allen drei Rinnen: hält mehr vom feinen Gold – gut 84 statt 77 Prozent.",
+    requires: { equipment: ["washplant"], mountainPct: 8.0 },
+  },
+  {
+    id: "trommel.fast", kind: "upgrade", tool: "trommel", label: "Trommel-Ausbau", price: 180000,
+    text: "Ein zweiter Antrieb und ein zweiter Sprühbalken: die Trommel dreht schneller und wäscht doppelt so viel – 120 statt 60 Liter pro Minute.",
+    requires: { equipment: ["trommel", "loader"] },
+  },
 ];
 
 export const shopItem = (id) => SHOP_ITEMS.find((i) => i.id === id) || null;
@@ -175,7 +246,8 @@ export const upgradesFor = (tool) => SHOP_ITEMS.filter((i) => i.kind === "upgrad
 export const EQUIPMENT = SHOP_ITEMS.filter((i) => i.kind === "equipment").map((i) => i.id);
 const NEED_TEXT = { shovel: "Schaufel besitzen", pickaxe: "Spitzhacke besitzen", bucket: "Eimer besitzen", pan: "Goldpfanne besitzen", classifier: "Sieb besitzen",
   wheelbarrow: "Schubkarre besitzen", sluice: "Waschrinne besitzen", bulkhopper: "Vorratstrichter besitzen", feeder: "Dosierer besitzen",
-  prospectkit: "Probenset besitzen", conveyor: "Förderband besitzen", trommel: "Trommelsieb besitzen", excavator: "Kompaktbagger besitzen" };
+  prospectkit: "Probenset besitzen", conveyor: "Förderband besitzen", trommel: "Trommelsieb besitzen", excavator: "Kompaktbagger besitzen", loader: "Radlader besitzen",
+  washplant: "Waschanlage besitzen" };
 const pct = (v) => v.toFixed(v < 10 ? 2 : 1).replace(".", ",").replace(/,?0+$/, "").replace(/,$/, "");
 
 /**
@@ -191,6 +263,7 @@ export function itemStatus(item, state) {
   const r = item.requires || {};
   for (const t of r.tools || []) needs.push({ text: NEED_TEXT[t], met: state.owned.has(t) });
   for (const t of r.equipment || []) needs.push({ text: NEED_TEXT[t], met: eq.has(t) });
+  for (const u of r.upgrades || []) { const it = SHOP_ITEMS.find((i) => i.id === u); needs.push({ text: `${it ? it.label : u} besitzen`, met: state.upgrades.has(u) }); }
   if (r.hard) needs.push({ text: "auf Stein oder einen Felsbrocken gestoßen", met: !!state.hardSeen });
   if (r.mountainPct) {
     const now = state.mountainPct || 0;

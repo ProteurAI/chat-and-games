@@ -21,6 +21,7 @@
 
 import { MaterialBatch, STAGE } from "./goldrush-material.js";
 import { transfer } from "./goldrush-transfer.js";
+import { mergeStatic } from "./goldrush-merge.js";
 import { BARROW } from "./goldrush-mechmodels.js";
 import { PushController, PUSH } from "./goldrush-wheelbarrow-controller.js";
 
@@ -54,6 +55,11 @@ export class Wheelbarrow {
     this.pushing = false;                       // a reload finds it parked where it was
     this.group = models.wheelbarrow();
     scene.add(this.group);
+    // (Prompt 10: fewer draw calls - the frame's rims, handles, grips, legs and the wheel's hub and spokes baked
+    // per material; the tray, the tyre, the load and the sideboards stay apart)
+    const u = this.group.userData, keep = new Set([u.tray, u.tyre, u.fill, u.boards, u.wheel]);
+    this._merged = [...mergeStatic(THREE, u.wheel, u.wheel.children.filter((c) => c.isMesh && c !== u.tyre)),
+      ...mergeStatic(THREE, this.group, this.group.children.filter((c) => c.isMesh && !c.isInstancedMesh && !keep.has(c) && !c.userData.noMerge && !(u.load && (c === u.load.surface || c === u.load.lumps))))];
     this.collider = { type: "circle", x: 0, z: 0, r: TRAY_R };
     this.dump = null;                           // { t, target, onPeak, moved }
     this.theta = 0;
@@ -66,6 +72,18 @@ export class Wheelbarrow {
     this._standY = null;                        // the ground you stand on while holding it
     this.park();
     this.ctl.mode = "parked";
+  }
+
+  // Prompt 10: the barrow's upgrades (goldrush-shop.js): bearings (it rolls easier), the pneumatic tyre (bumps
+  // cost less), sideboards (110 l) - real numbers in the controller, and you see them
+  applyUpgrades(ups) {
+    const has = (id) => ups && ups.has(id);
+    this.capacityMl = Math.round(BARROW_ML * (has("barrow.tray") ? 1.3 : 1));
+    this.handlingMul = { accel: has("barrow.bearings") ? 1.15 : 1, drag: has("barrow.bearings") ? 0.65 : 1, rough: has("barrow.wheel") ? 0.5 : 1 };
+    const u = this.group.userData;
+    if (u.tyre) u.tyre.scale.set(1, 1, has("barrow.wheel") ? 1.75 : 1);
+    if (u.boards) u.boards.visible = has("barrow.tray");
+    if (u.tyreMat) u.tyreMat.color.setHex(has("barrow.wheel") ? 0x1c1c1c : 0x2b2826);
   }
 
   get massKg() { return this.batch.massG / 1000; }
@@ -295,6 +313,7 @@ export class Wheelbarrow {
     const i = this.world.colliders.indexOf(this.collider);
     if (i >= 0) this.world.colliders.splice(i, 1);
     scene.remove(this.group);
+    for (const m of this._merged || []) m.geometry.dispose();
   }
 }
 

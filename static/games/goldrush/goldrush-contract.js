@@ -36,6 +36,9 @@ export const CONTRACT_STEPS = [
   { pct: 1.1, item: "trommel", label: "Trommelsieb" },
   { pct: 1.45, item: "excavator", label: "Kompaktbagger" },
   { pct: 2.0, item: "excavator.breaker", label: "Hydraulikhammer" },
+  { pct: 2.3, item: "loader", label: "Radlader" },                         // Prompt 10: the working mine
+  { pct: 3.0, item: "autominer", label: "Abbaugerät" },
+  { pct: 8.0, item: "washplant.recovery", label: "Recovery-Ausbau" },
 ];
 
 const pctText = (v) => `${v.toFixed(v < 10 ? 2 : 1).replace(".", ",")} %`;

@@ -9,6 +9,7 @@
 // pan's inside: flat bottom r = 0.11 m, walls flaring to 0.19 m at 6 cm.
 
 import { mulberry32, noise2 } from "./goldrush-noise.js";
+import { lumpGeometry } from "./goldrush-loot.js";
 import { GridLoad, bucketShape, SCREEN } from "./goldrush-heap.js";
 
 export const BUCKET = { r0: 0.112, r1: 0.14, h: 0.27, fillMax: 0.214 };       // 10 l at the fill line
@@ -220,6 +221,8 @@ export class ProcessModels {
     this.pebbleGeo = geo(new THREE.IcosahedronGeometry(1, 0));
     this.flakeGeo = geo(new THREE.IcosahedronGeometry(1, 0));
     this.flakeGeo.scale(1, 0.32, 0.8);
+    // Prompt 10: a nugget in the pan - the world's lump (goldrush-loot.js), not a faceted flake
+    this.nuggetGeo = geo(lumpGeometry(THREE, 33, { w: 18, h: 12, amp: 0.3, freq: 1.6, sx: 1.12, sy: 0.64, sz: 0.86 }));
   }
 
   // ---- a bucket (world or hand): group + its fill surface
@@ -304,7 +307,8 @@ export class ProcessModels {
     flakes.count = 0;
     flakes.frustumCulled = false;
     g.add(flakes);
-    g.userData = { body, riffles, mud, water, sand, pebbles, flakes };
+    const nuggets = this._panNuggets(g);
+    g.userData = { body, riffles, mud, water, sand, pebbles, flakes, nuggets };
     return g;
   }
 
@@ -339,8 +343,19 @@ export class ProcessModels {
     flakes.count = 0;
     flakes.frustumCulled = false;
     g.add(flakes);
-    g.userData = { body, riffles, mud, water, sand, pebbles, flakes, bowl: true };
+    const nuggets = this._panNuggets(g);
+    g.userData = { body, riffles, mud, water, sand, pebbles, flakes, nuggets, bowl: true };
     return g;
+  }
+
+  // the nuggets left in a pan / a bowl (Prompt 10): their own lumps, shown only while there are any
+  _panNuggets(g) {
+    const m = new this.THREE.InstancedMesh(this.nuggetGeo, this.goldMat, 6);
+    m.count = 0;
+    m.visible = false;
+    m.frustumCulled = false;
+    g.add(m);
+    return m;
   }
 
   // ---- the wash place: trough with water fed from the tank, a sign; the

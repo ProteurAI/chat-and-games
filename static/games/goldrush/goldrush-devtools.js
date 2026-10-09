@@ -28,6 +28,7 @@ import "./goldrush-devcommands7a.js";
 import "./goldrush-devcommands7b.js";
 import "./goldrush-devcommands8.js";
 import "./goldrush-devcommands9.js";
+import "./goldrush-devcommands10.js";
 
 const DEV_ERROR = actions.DEV_ERROR;
 

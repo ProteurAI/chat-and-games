@@ -527,6 +527,23 @@ export class FirstPersonHands {
 
   pickupPulse() { this.grab = 1; }
 
+  // Prompt 10 (first-person polish): the right hand lets go of the tool for a moment and reaches out - a lever,
+  // a valve, a slide gate: out, the fingers close on it, back (the tool hangs in the left hand meanwhile)
+  reachOut(dur = 0.6) {
+    if (this.inspecting || this.reducedMotion) return false;
+    this.reaching = { t: 0, dur };
+    this._reachFrom = clonePose(this.right.pose);
+    return true;
+  }
+
+  _reachPose() {
+    const R = this.reaching, u = R.t / R.dur, out = this._reachOut || (this._reachOut = clonePose(POSE.reach));
+    if (u < 0.4) lerpPose(this._reachFrom, POSE.reach, ease(u / 0.4), out);
+    else if (u < 0.62) { lerpPose(POSE.reach, POSE.contact, ease((u - 0.4) / 0.22), out); out.c = POSE.reach.c + (0.95 - POSE.reach.c) * ease((u - 0.4) / 0.22); }
+    else { lerpPose(POSE.contact, POSE.rest, ease((u - 0.62) / 0.38), out); out.c = 0.95 + (POSE.rest.c - 0.95) * ease((u - 0.62) / 0.38); }
+    return out;
+  }
+
   // the blow is held for a moment where the tool meets hard ground (phase 8: the pick on rock)
   hitStop(s) { if (!this.reducedMotion) this._stop = Math.max(this._stop || 0, s); }
 
@@ -550,6 +567,7 @@ export class FirstPersonHands {
       this.inspecting.t += dt;
       if (this.inspecting.t >= this.inspecting.dur) this.endInspect();
     }
+    if (this.reaching && (this.reaching.t += dt) >= this.reaching.dur) this.reaching = null;
     if (view.tool !== this.tool) this._showTool(view.tool);
     this.state = view.state;
     this.phase = view.phase;
@@ -629,6 +647,7 @@ export class FirstPersonHands {
     }
     let inspectPose = null;
     if (this.inspecting) inspectPose = this._inspectPose(dt);
+    else if (this.reaching) inspectPose = this._reachPose();
     const low = this.portrait ? -0.05 : 0;             // upright phones: hands rest lower, rise for a stroke
     for (const g of [this.right, this.left]) {
       let pose;
@@ -664,7 +683,7 @@ export class FirstPersonHands {
   _updateTool(dt, view, extra) {
     const id = this.tool, keys = TOOL_KEYS[id], rm = this.reducedMotion;
     const pose = this._toolPose;
-    const inspecting = !!this.inspecting;
+    const inspecting = !!this.inspecting || !!this.reaching;
     const sig = `${view.state}:${view.phase}:${view.cycle}`;
     if (sig !== this._phaseSig) { this._phaseSig = sig; this._toolFrom = clonePose(pose); }
     if (this._stop > 0) {
@@ -717,7 +736,7 @@ export class FirstPersonHands {
     for (const grip of GRIPS[id]) {
       const g = grip.side === 1 ? this.right : this.left;
       if (grip.side === 1 && inspecting) {
-        const ip = this._inspectPose(dt);
+        const ip = this.inspecting ? this._inspectPose(dt) : this._reachPose();
         g.pose.p = [...ip.p]; g.pose.r = [...ip.r]; g.pose.c = ip.c;
         g.apply(ip, this.aspectK, extra);
         continue;
@@ -846,7 +865,7 @@ export class FirstPersonHands {
     const tmp = this._pa.clone(), tgt = this._pa.clone();
     for (const grip of GRIPS[this.tool]) {
       if (grip.freeAtRest && this._freeW < 0.999) continue;
-      if (grip.side === 1 && this.inspecting) continue;
+      if (grip.side === 1 && (this.inspecting || this.reaching)) continue;
       const g = grip.side === 1 ? this.right : this.left;
       g.root.updateMatrix();
       tmp.set(HANDLE_IN_GLOVE[0], HANDLE_IN_GLOVE[1], HANDLE_IN_GLOVE[2]).applyMatrix4(g.root.matrix);

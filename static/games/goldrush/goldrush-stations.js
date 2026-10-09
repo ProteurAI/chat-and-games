@@ -301,10 +301,9 @@ export class Stations {
     g.font = "24px Georgia, serif";
     let y = 356;
     g.fillText("Freigaben nach Fortschritt:", 42, y); y += 34;
-    for (const s of v.steps) {
-      g.fillText(`${s.met ? "✓" : "–"}  ${s.label} ab ${s.pctText}`, 60, y);
-      y += 32;
-    }
+    // (Prompt 10: six steps - two columns)
+    const rows = Math.ceil(v.steps.length / 2);
+    v.steps.forEach((s, i) => g.fillText(`${s.met ? "✓" : "–"}  ${s.label} ab ${s.pctText}`, i < rows ? 60 : 410, y + (i % rows) * 32));
     this.boardTex.needsUpdate = true;
     return true;
   }

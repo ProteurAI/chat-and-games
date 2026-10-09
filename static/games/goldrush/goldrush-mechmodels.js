@@ -181,9 +181,13 @@ export class MechModels {
     // the wheel (tyre, hub, spokes) on its axle
     const wheel = new THREE.Group();
     wheel.position.set(0, B.wheelR, 0);
-    const tyre = new THREE.Mesh(this._geo(new THREE.TorusGeometry(B.wheelR - 0.035, 0.035, 8, 22)), this.rubber);
+    const tyreMat = this.rubber.clone();                                 // (its own: the pneumatic upgrade darkens it)
+    this.mats && this.mats.push(tyreMat);
+    const tyre = new THREE.Mesh(this._geo(new THREE.TorusGeometry(B.wheelR - 0.035, 0.035, 8, 22)), tyreMat);
     tyre.rotation.y = Math.PI / 2; tyre.castShadow = true;
     wheel.add(tyre);
+    g.userData.tyre = tyre;
+    g.userData.tyreMat = tyreMat;
     const hub = this._mesh(this.cyl, this.galvDark, 0.035, 0.09, 0.035, 0, 0, 0, wheel);
     hub.rotation.z = Math.PI / 2;
     for (let i = 0; i < 6; i++) {
@@ -211,6 +215,15 @@ export class MechModels {
     g.userData.tray = tray;
     // rim
     for (const s of [-1, 1]) this._mesh(this.cyl, this.galvDark, 0.012, trayLen + 0.08, 0.012, s * B.trayW / 2, B.floorY + B.trayD, zc - 0.03, g).rotation.x = Math.PI / 2;
+    // Prompt 10 (upgrade "Aufsatzbretter"): boards round the tray's top - hidden until bought
+    const boards = new THREE.Group();
+    const bh = 0.1, by = B.floorY + B.trayD + bh / 2 - 0.01;
+    for (const s of [-1, 1]) this._mesh(this.box, this.darkWood, 0.022, bh, trayLen + 0.06, s * (B.trayW / 2 + 0.005), by, zc - 0.03, boards);
+    this._mesh(this.box, this.darkWood, B.trayW + 0.03, bh, 0.022, 0, by, B.trayZ1 + 0.01, boards);
+    this._mesh(this.box, this.darkWood, B.trayW * 0.9, bh * 0.7, 0.022, 0, by - 0.01, B.trayZ0 - 0.07, boards);
+    boards.visible = false;
+    g.add(boards);
+    g.userData.boards = boards;
     // handles + frame: from the axle back to the grips
     for (const s of [-1, 1]) {
       const a = new THREE.Vector3(s * 0.12, B.wheelR, 0), b = new THREE.Vector3(s * B.gripX, B.gripY, B.grip);

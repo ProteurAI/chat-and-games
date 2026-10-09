@@ -42,14 +42,17 @@ const ICONS = {
   conveyor: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.5L19 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="4.6" cy="18.6" r="1.6" stroke="currentColor" stroke-width="1.4" fill="none"/><circle cx="19.2" cy="9.4" r="1.6" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M7 15.3l1-2M11 13l1-2M15 10.6l1-2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M2 6h5l-1.5 3h-2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" fill="none"/></svg>`,
   trommel: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5l15 3v5l-15-3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" fill="none"/><ellipse cx="4" cy="11" rx="1.3" ry="2.5" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M8 9.5v4.5M12 10.3v4.5M16 11.1v4.5" stroke="currentColor" stroke-width="1" opacity=".7"/><path d="M6 17.5l1 2.5M10 18l.5 2.5M20 17l1.5 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`,
   excavator: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="16.5" width="11" height="3.4" rx="1.7" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M4 16.5v-4h6.5l1.2 4M6 12.5V9h3.4l1.1 3.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" fill="none"/><path d="M10.8 11.5l5.2-6.3 4 5.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M20 10.8c1.4.9 1.5 3.2 0 4.2l-2.6-2.3z" fill="currentColor"/></svg>`,
+  autominer: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="16.6" width="12" height="3.3" rx="1.6" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M3.5 16.6v-3.6h8.5v3.6M5 13V10.2h3.2V13" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" fill="none"/><path d="M11.5 12.2l4.3-4.4 2.4 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="19" cy="12.4" r="2.4" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M19 9.4v-.9M21.6 10.6l.7-.5M21.8 13.6l.8.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`,
+  loader: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="17.5" r="2.6" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="15" cy="17.5" r="2.6" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M3 15V8.5h4.5L9 12h6l1.5 3" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" fill="none"/><path d="M14 12l4.5-3.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M18 6.5h3.5l-.6 5.5h-3.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" fill="none"/></svg>`,
 };
 
 // what the dig button says per tool
 const ACTION = { hand: "GRABEN", shovel: "SCHAUFELN", pickaxe: "HACKEN" };
 const CLASS_LABEL = { traceGold: "Goldstaub", fineGold: "Feiner Goldstaub", goldFlake: "Goldflitter", tinyGoldPiece: "Kleine Goldstücke", smallNugget: "Nuggets", washedGold: "Waschgold (Feingold)" };
 const SHOP_GROUPS = [["tool", null, "Werkzeug"], ["upgrade", "shovel", "Für die Schaufel"], ["upgrade", "pickaxe", "Für die Spitzhacke"],
-  ["equipment", null, "Verarbeitung & Transport"], ["upgrade", "bucket", "Für den Eimer"], ["upgrade", "pan", "Für die Goldpfanne"], ["upgrade", "sluice", "Für die Waschrinne"],
-  ["upgrade", "bulkhopper", "Für den Vorratstrichter"], ["upgrade", "feeder", "Für den Dosierer"], ["upgrade", "excavator", "Für den Bagger"]];
+  ["equipment", null, "Verarbeitung & Transport"], ["upgrade", "bucket", "Für den Eimer"], ["upgrade", "wheelbarrow", "Für die Schubkarre"], ["upgrade", "pan", "Für die Goldpfanne"], ["upgrade", "sluice", "Für die Waschrinne"],
+  ["upgrade", "bulkhopper", "Für den Vorratstrichter"], ["upgrade", "feeder", "Für den Dosierer"], ["upgrade", "excavator", "Für den Bagger"],
+  ["upgrade", "conveyor", "Für das Förderband"], ["upgrade", "trommel", "Für die Trommel"], ["upgrade", "washplant", "Für die Waschanlage"]];
 // where a bought piece of equipment is now (the claim, not an inventory)
 const EQUIP_WHERE = { bucket: "Steht vor dem Schuppen – stell ihn neben dich und grab hinein.", pan: "Liegt am Waschplatz beim Wassertank.", classifier: "Steht am Waschplatz über der Wanne.",
   wheelbarrow: "Steht neben dem Schuppen – an den Griffen greifen [E] und losschieben.", sluice: "Die Bretter liegen beim Wassertank – dort [E]: Waschrinne aufbauen.",
@@ -57,7 +60,10 @@ const EQUIP_WHERE = { bucket: "Steht vor dem Schuppen – stell ihn neben dich u
   prospectkit: "Beutel, Fähnchen und Notizbuch hast du dabei: [R] Probe nehmen · [F] Fähnchen · [N] Notizbuch.",
   conveyor: "Die Teile liegen am Westfuß des Bergs – dort [E]: Aufgabetrichter und Förderband aufbauen.",
   trommel: "Die Trommel liegt neben dem Vorratstrichter – an der Schalttafel [E]: Trommelsieb aufbauen.",
-  excavator: "Der Bagger steht am Westfuß des Bergs neben dem Aufgabetrichter – [E] einsteigen." };
+  excavator: "Der Bagger steht am Westfuß des Bergs neben dem Aufgabetrichter – [E] einsteigen.",
+  loader: "Der Radlader steht beim Rohhaufen hinter dem Aufgabetrichter – [E] einsteigen.",
+  washplant: "Kiste und Bleche liegen westlich der Waschrinne – dort [E]: Waschanlage aufbauen.",
+  autominer: "Steht in der Nordwest-Ecke des Claims – dort [E]: aufstellen, an den Fuß der Bergflanke vor den Aufgabetrichter oder den Rohhaufen." };
 
 const fmtMoney = (v) => `€ ${v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const TOOL_NAME = { hand: "Hand", shovel: "Schaufel", pickaxe: "Spitzhacke", bucket: "Eimer", pan: "Goldpfanne", classifier: "Sieb", wheelbarrow: "Schubkarre", sluice: "Waschrinne", bulkhopper: "Vorratstrichter", feeder: "Dosierer",
@@ -132,7 +138,7 @@ class GoldRushShell {
           </span>
         </div>
         <div class="gr-crosshair" aria-hidden="true"><span></span></div>
-        <div class="gr-hint">WASD bewegen · Maus umsehen · Linksklick halten: graben · 1 2 3 Werkzeug · E: Eimer, Waschplatz, Camp · Esc: Pause</div>
+        <div class="gr-hint">WASD bewegen · Maus umsehen · Linksklick halten: graben · 1 2 3 Werkzeug · E: Eimer, Waschplatz, Camp · Leertaste: springen · Esc: Pause</div>
         <div class="gr-notice" role="status" hidden></div>
       </div>
       <div class="gr-stick" aria-hidden="true"><div class="gr-stick-knob"></div></div>
@@ -192,7 +198,7 @@ class GoldRushShell {
           <div class="gr-card-title">Pausiert</div>
           <p class="gr-card-text" data-role="pause-text">Klicke, um weiterzugraben.</p>
           <p class="gr-card-text gr-contract-line" data-role="pause-contract" hidden></p>
-          <div class="gr-keys"><span><b>WASD</b> bewegen</span><span><b>Maus</b> umsehen</span><span><b>Linksklick</b> graben</span><span><b>1 2 3</b> Werkzeug</span><span><b>E</b> Eimer · Waschplatz · Goldankauf · Ausrüstung</span><span><b>R F N</b> Probe · Fähnchen · Notizbuch</span><span><b>Shift</b> schneller</span><span><b>Esc</b> Pause</span></div>
+          <div class="gr-keys"><span><b>WASD</b> bewegen</span><span><b>Maus</b> umsehen</span><span><b>Linksklick</b> graben</span><span><b>1 2 3</b> Werkzeug</span><span><b>E</b> Eimer · Waschplatz · Goldankauf · Ausrüstung</span><span><b>R F N</b> Probe · Fähnchen · Notizbuch</span><span><b>Shift</b> schneller</span><span><b>Leertaste</b> springen</span><span><b>Esc</b> Pause</span></div>
           <div class="gr-actions">
             <button type="button" class="primary-btn primary-btn--lg" data-act="resume">Weiterspielen</button>
             <button type="button" class="ghost-btn" data-act="settings">Einstellungen</button>
@@ -528,9 +534,10 @@ class GoldRushShell {
       onQuality: () => this._syncSettings(),
       onTool: (st) => this._renderTools(st),
       // phase 9: in the excavator's cab - the dig button scoops (or hammers), KIPPEN dumps
-      setCab: (on, breaker) => {
+      setCab: (on, breaker, kind = "excavator") => {
         el.altBtn.hidden = !(on && this.touch);
-        if (on) { el.digIco.innerHTML = ICONS.excavator; el.digLabel.textContent = breaker ? "HAMMER" : "SCHAUFELN"; el.digBtn.setAttribute("aria-label", breaker ? "Hammern" : "Schaufeln (Bagger)"); el.digBtn.classList.remove("is-busy"); }
+        if (on && kind === "loader") { el.digIco.innerHTML = ICONS.loader; el.digLabel.textContent = "SCHAUFEL"; el.digBtn.setAttribute("aria-label", "Schaufel absenken / anheben (Radlader)"); el.digBtn.classList.remove("is-busy"); }
+        else if (on) { el.digIco.innerHTML = ICONS.excavator; el.digLabel.textContent = breaker ? "HAMMER" : "SCHAUFELN"; el.digBtn.setAttribute("aria-label", breaker ? "Hammern" : "Schaufeln (Bagger)"); el.digBtn.classList.remove("is-busy"); }
         else if (this.game) this._renderTools(this.game.toolState());
       },
     };
@@ -1090,6 +1097,7 @@ class GoldRushShell {
         headBob: g.settings.headBob, reducedMotion: g.reducedMotion, touch: this.touch,
       }),
       info: () => g.info(),
+      programNames: () => g.renderer.info.programs.map((q) => `${q.name}#${q.id}:${(q.cacheKey || '').slice(0, 40)}…${(q.cacheKey || '').slice(-60)}`),          // (which shaders exist - the warm-up / leak checks)
       pose: ({ x, z, yaw, pitch }) => {
         const p = g.player;
         if (x != null) p.x = x;
@@ -1156,6 +1164,12 @@ class GoldRushShell {
       // phase 6: the sluice runs for `s` seconds of game time (no frames drawn)
       procTick: (sec) => g.processing.tickSim(sec),
       procObj: () => g.processing,
+      // Prompt 10: the hillside miner and the placement mode
+      miner: () => { const am = g.processing.autominer; return am ? { placed: am.placed, x: am.x, z: am.z, y: am.y, heading: am.heading, on: am.on, status: am.status, ml: am.volumeMl, ug: am.goldUg(), stats: { ...am.stats }, recv: am.recv ? am.recv.kind : null, task: am.task ? am.task.phase : null } : null; },
+      placing: () => (g.placing ? { ok: g.placing.ok, at: g.placing.at, reason: g.placing.res ? g.placing.res.reason : null, visible: g.placing.ghost.root.visible } : null),
+      placingObj: () => g.placing,
+      placingRot: () => (g.placing ? g.placing.rot : null),
+      input: () => g.input,
       // phase 8: the barrow's push state, the arms as drawn, a column's stone state, authored models
       barrowState: () => (g.processing.barrow ? g.processing.barrow.state() : null),
       armReport: () => g.hands.armReport(),
@@ -1217,14 +1231,18 @@ class GoldRushShell {
         const pr = g.processing;
         let ev = null, t = 0;
         pr.simWork = true;
-        while (pr.work && t < seconds - 1e-9) { const dt = Math.min(step, seconds - t); ev = pr.input(dt * 2.2, dt * 1.1, dt) || ev; t += dt; if (pr.update) pr.update(dt); if (pr.panDone) break; }
+        while (pr.work && t < seconds - 1e-9) { const dt = Math.min(step, seconds - t); ev = pr.input(dt * 2.2, dt * 1.1, dt) || ev; t += dt; if (pr.update) pr.update(dt); if (pr.panDone || pr.workPhase !== "gesture") break; }
         pr.simWork = false;
-        const out = { ev: ev && typeof ev === "object" ? { ...ev } : ev, t, progress: pr.work === "sieve" ? pr.sieve.progress : pr.pan.progress, done: pr.panDone, work: pr.work };
-        if (!pr.work) g._leaveWork();
+        const out = { ev: ev && typeof ev === "object" ? { ...ev } : ev, t, progress: pr.work === "sieve" ? pr.sieve.progress : pr.pan.progress, done: pr.panDone, work: pr.work, phase: pr.workPhase };
+        // (the hook confirms a sieve / mat result right away - as E would; the pan waits for procCollect)
+        if (!pr.work || (pr.work !== "pan" && pr.workPhase !== "gesture")) g._leaveWork();
         return out;
       },
       procCollect: () => { const r = g.processing.finishPan(); g._leaveWork(); return r; },
       procStop: () => { g._leaveWork(); return true; },
+      // Prompt 10: the work's phase (gesture / settle / result) and a real-time step of it (frames, input as the mouse would)
+      workState: () => ({ work: g.processing.work, phase: g.processing.workPhase, result: g.processing.workResult ? { kind: g.processing.workResult.kind } : null, allLook: g.input.allLook }),
+      mouseLook: (dx, dy) => g.input.feedMouse(dx, dy),
       useStation: () => g.useStation(),
       // visual QA: the world seen from anywhere (no hands; the next frame puts the camera back on the player)
       camLook: ({ x, y, z, tx, ty, tz, fov }) => {
@@ -1284,6 +1302,9 @@ class GoldRushShell {
       rockStats: () => ({ ...g.rocks.stats, rubble: g.rocks.rubble.count }),
       volume: () => ({ delta: g.terrain.volumeDelta(), pile: g.terrain.pileVolume() }),
       lastStroke: () => g.lastStroke,
+      // Prompt 10: the jump (a press as the Space key makes it; its state)
+      jump: () => { g.input.jumpPressed = true; return true; },
+      jumpState: () => { const p = g.player; return { air: p.air, prep: p.prep, vy: p.vy, y: p.y, ground: g.world.groundAt(p.x, p.z) + 1.62, cool: p.cool, jumps: p.jumps, lands: p.lands, last: p.lastJump || null, dip: p.dip, camY: g.camera.position.y, vx: p.vx, vz: p.vz }; },
       // one full transaction at the crosshair with the tool in the hands (or opts.tool), no animation
       act: (opts = {}) => g.strokeAtCrosshair(opts),
       // what a later shop will do: the tool becomes really yours (saved as owned)
@@ -1322,6 +1343,8 @@ class GoldRushShell {
         return disc.cents;
       },
       handPose: (pose) => { g.hands.debugPose = pose; g.hands.update(0, { camera: g.camera, sunDir: g.world.sun.position.clone().normalize(), sunVisible: true, walk: 0, bob: 0 }); g.render(); },
+      soundsHeard: () => (g.audio.heard || []).slice(),                    // (Prompt 10: the big nuggets' sounds by tier)
+      lastNugget: () => ({ hud: g.hud.lastNugget || null, big: g.lastBigFind || null, loot: g.loot.lastTier ?? null }),
       lootLook: () => { const m = g.loot.goldMat; return { metalness: m.metalness, roughness: m.roughness, envMap: !!m.envMap, color: m.color.getHexString(), shine: g.loot.shine, pointLights: g.world.scene.children.filter((o) => o.isPointLight).length }; },
       hudState: () => {
         const q = (sel) => this.root.querySelector(sel);
@@ -1413,6 +1436,17 @@ class GoldRushShell {
       boardSig: () => g.stations._boardSig,
       // the plant (intake + belt, trommel, spoil heap)
       procInstallPlant: () => { const pr = g.processing; const c = pr.devInstallConveyor(); const t = pr.trommel ? pr.devInstallTrommel() : null; g._stationSig = null; return { conveyor: c, trommel: t }; },
+      procInstallWash: () => { const ok = g.processing.devInstallWashplant(); g._stationSig = null; return ok; },
+      // Prompt 10 (benchmark / tests): the hillside miner set down at the best stand (the intake first), switched on
+      minerSetup: () => {
+        const am = g.processing.autominer;
+        if (!am) return null;
+        am.setOn(false);
+        const sp = am.findSpot("intake") || am.findSpot(null);
+        if (!sp || !am.place(sp.x, sp.z, sp.heading).ok) return null;
+        am.setOn(true);
+        return { ...sp, status: am.status };
+      },
       procConveyorMode: (m) => g.processing.devConveyorMode(m),
       exc: () => {
         const ex = g.processing.excavator;
@@ -1429,6 +1463,7 @@ class GoldRushShell {
       dev9: async (id, arg) => {
         const reg = await import("./goldrush-devregistry.js");
         await import("./goldrush-devcommands9.js");
+        await import("./goldrush-devcommands10.js");
         const c = reg.devRegistry.get(id);
         if (!c) return { ok: false, error: "unknown" };
         const ctx = { game: g, shell: this, saves: this.saves, tools: null, actions: null, state: {} };
@@ -1483,15 +1518,17 @@ class GoldRushShell {
         return out.slice(0, n);
       },
       // a stand for the excavator near the intake: flat, free, facing the mountain, with the most ground to dig in reach
-      excFindStand: (maxD = 7.5) => {
+      // (Prompt 10: round another centre too - the raw pile; stands that kept failing are left out)
+      excFindStand: (maxD = 7.5, cx = -14.35, cz = -9.35, ban = null) => {
         const ex = g.processing.excavator, t = g.terrain, mc = t.moundCenter, cols = g.world.colliders;
         if (!ex) return null;
         const x0 = ex.x, z0 = ex.z, h0 = ex.heading;
         let best = null;
         const span = Math.max(7.5, maxD);
-        for (let x = -14.5; x <= -14.35 + span; x += 0.5) for (let z = -9.35 - span; z <= -9.35 + span; z += 0.5) {
-          const dI = Math.hypot(x + 14.35, z + 9.35);
+        for (let x = Math.max(-23.5, cx - (cx === -14.35 ? 0.15 : span)); x <= cx + span; x += 0.5) for (let z = cz - span; z <= cz + span; z += 0.5) {
+          const dI = Math.hypot(x - cx, z - cz);
           if (dI < 2.6 || dI > maxD) continue;
+          if (ban && ban.some((b) => Math.hypot(b.x - x, b.z - z) < 1.2)) continue;
           const hd = Math.atan2(-(mc.z - z), mc.x - x);
           const c = Math.cos(hd), s = Math.sin(hd), hs = [[0.8, 0.62], [0.8, -0.62], [-0.8, 0.62], [-0.8, -0.62]].map(([a, b]) => g.world.groundAt(x + c * a + s * b, z - s * a + c * b));
           if (Math.max(...hs) - Math.min(...hs) > 0.42) continue;
@@ -1517,6 +1554,20 @@ class GoldRushShell {
       // a dump / an oversize scoop wherever the receiver is (the bot pays the drive there and back)
       excDumpForce: (kind) => { const ex = g.processing.excavator; if (!ex || ex.task || ex.volumeMl <= 0) return null; return ex._tip({ kind }); },
       excScoopOversize: () => { const ex = g.processing.excavator; if (!ex || ex.task || ex.breaker) return null; return ex._cut({ kind: "oversize" }); },
+      // Prompt 10 (benchmark): the excavator onto a pile, the loader's loads, the concentrate to the wash place, the chain's numbers
+      excDumpPile: (id) => g.processing.benchExcToPile(id),
+      ldrMove: (from, to, ml) => g.processing.benchLoaderMove(from, to, ml),
+      pileMove: (from, to, ml, by) => g.processing.benchLoaderMove(from, to, ml, by),
+      concToWash: () => g.processing.benchConcToWash(),
+      takeTrap: () => g.processing.benchTrap(),                              // (Prompt 10: the trommel's nugget trap emptied)
+      mine: () => {
+        const pr = g.processing, wp = pr.washplant, ld = pr.loader, piles = {};
+        for (const P of pr.piles.list()) piles[P.id] = P.volumeMl;
+        return { piles, loader: ld ? { ml: ld.volumeMl, stats: { ...ld.stats } } : null,
+          wash: wp ? { installed: wp.installed, rate: wp.rateLpm, blocked: !!wp.blocked, load: wp.maxRiffleLoad(), concMl: wp.conc.batch.volumeMl, stats: { ...wp.stats } } : null,
+          outletBlocked: !!(pr.sluice && pr.sluice.blockedOut), overBelt: pr.trommel ? pr.trommel.overBelt.volumeMl : 0, trommelWhy: pr.trommel ? pr.trommel.why : null,
+          miner: pr.autominer ? { placed: pr.autominer.placed, on: pr.autominer.on, status: pr.autominer.status, recv: pr.autominer.recv ? pr.autominer.recv.kind : null, stats: { ...pr.autominer.stats } } : null };
+      },
       excAttach: (kind) => { const ex = g.processing.excavator; if (!ex || ex.task || ex.volumeMl > 0) return false; ex.attachment = kind === "breaker" ? "breaker" : "bucket"; ex.rig.setAttachment(ex.attachment); ex.standSync(); return true; },
       // hold a button for one frame, then let the machine work for `sec` (frames, like walk)
       excPress: (button, sec = 3, fwd = 0, turn = 0) => {
@@ -1534,7 +1585,7 @@ class GoldRushShell {
       plant: () => {
         const pr = g.processing, cv = pr.conveyor, tr = pr.trommel, sp = pr.spoil, bk = pr.bulk, sl = pr.sluice;
         return {
-          conveyor: cv ? { state: cv.state, mode: cv.mode, status: cv.status(), intakeMl: cv.intake.volumeMl, intakeUg: cv.intake.goldUg, beltMl: cv.belt.volumeMl, beltUg: cv.belt.goldUg, beltState: cv.belt.state, phase: cv.belt.phase,
+          conveyor: cv ? { state: cv.state, mode: cv.mode, status: cv.status(), intakeMl: cv.intake.volumeMl, capMl: cv.capacityMl, intakeUg: cv.intake.goldUg, beltMl: cv.belt.volumeMl, beltUg: cv.belt.goldUg, beltState: cv.belt.state, phase: cv.belt.phase,
             cells: cv.belt.cells.map((c) => (c ? c.volumeMl : 0)), rateLpm: cv.belt.rateLpm, stats: { ...cv.stats }, lumps: cv.model.userData.lumps.count } : null,
           trommel: tr ? { state: tr.state, status: tr.status(), feedMl: tr.feed.volumeMl, overMl: tr.oversize.volumeMl, overUg: tr.oversize.goldUg, overG: tr.oversize.massG, stats: { ...tr.stats }, pileScale: tr.pile.visible ? [tr.pile.scale.x, tr.pile.scale.y, tr.pile.scale.z] : null } : null,
           spoil: sp ? sp.serialize() : null,

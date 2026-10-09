@@ -41,6 +41,10 @@ const LEVEL = {
   // phase 8: the barrow in your hands, hard rock that answers the pick
   barrow_take: 14, barrow_roll: 12, barrow_bump: 13, stone_scrape: 12, rock_chip: 11, rock_fracture: 12,
   barrow_load: 12,                                 // phase 9: a full barrow groaning (wood, steel) as it gets going / stops
+  jump: 12, land: 15,                              // Prompt 10: boots pushing off / landing on gravel
+  ldr_engine: 8, ldr_tyres: 11, washplant_run: 11, ldr_bucket: 12,   // Prompt 10: the wheel loader, the wash plant
+  miner_motor: 9, miner_hit: 12, miner_cut: 10, miner_stop: 10,        // Prompt 10: the hillside miner (power pack, the drum's picks, cutting)
+  nugget_big: 15, nugget_rare: 13, nugget_jackpot: 11, nugget_trap: 12,   // Prompt 10: the big nuggets by tier, the trommel's trap
   // phase 9: the plant (belt, trommel) and the excavator (diesel, tracks, hydraulics, bucket, breaker)
   conveyor_run: 9, trommel_run: 9, trommel_idle: 8, exc_engine: 8, exc_tracks: 10, exc_hydraulic: 9, exc_scoop: 13, exc_dump: 11, exc_blow: 11, exc_start: 10, exc_stop: 10,
 };
@@ -137,10 +141,13 @@ export class GoldRushAudio {
   //       | feeder_run | gate_open
   //       | barrow_take | barrow_roll | barrow_bump | stone_scrape | rock_chip | rock_fracture
   //       | conveyor_run | trommel_run | trommel_idle | exc_engine | exc_tracks | exc_hydraulic | exc_scoop | exc_dump | exc_blow | exc_start | exc_stop
+  //       | miner_motor | miner_hit | miner_cut | miner_stop
   //       | dirt | compact | gravel | stone | air | dust | flake | tiny | nugget | pickup
   //       | shovel | dump | pick | pickStone | crack | break | swing | swap
   //       | scale | sell | shopOpen | purchase | insufficient
   play(kind, { pan = 0, dist = 1.5, strength = 1 } = {}) {
+    (this.heard || (this.heard = [])).push(kind);                // the last sounds asked for (tests; also without a context)
+    if (this.heard.length > 24) this.heard.shift();
     if (!this.ready) return;
     const t = this.ctx.currentTime + 0.005, out = this._out(pan, dist, LEVEL[kind] || 1), s = strength;
     switch (kind) {
@@ -181,6 +188,30 @@ export class GoldRushAudio {
         this._noise(out, t, 0.03, { type: "lowpass", f: 900, q: 0.8, gain: 0.12, attack: 0.002 });
         this._ting(out, t + 0.01, rv(1150, 1300), 0.1, 0.36, [1, 2.4, 3.9, 6.1]);
         for (let i = 0; i < 3; i++) this._tone(out, t + 0.06 + i * rv(0.05, 0.08), rv(2600, 4200), 0.45, 0.018);
+        break;
+      // Prompt 10: the big nuggets - EUR 5-12 the nugget's ring a little fuller, EUR 12-30 a short warm two-note bell,
+      // from EUR 30 a short rising sting (four bell notes over a low warm body) - no coins, no fanfare
+      case "nugget_big":
+        this._noise(out, t, 0.035, { type: "lowpass", f: 800, q: 0.8, gain: 0.15, attack: 0.002 });
+        this._ting(out, t + 0.01, rv(1050, 1150), 0.13, 0.5, [1, 2.4, 3.9, 6.1]);
+        this._ting(out, t + 0.12, rv(1550, 1700), 0.07, 0.42, [1, 2.4, 3.9]);
+        for (let i = 0; i < 4; i++) this._tone(out, t + 0.08 + i * rv(0.05, 0.08), rv(2600, 4600), 0.5, 0.02);
+        break;
+      case "nugget_rare":
+        this._noise(out, t, 0.04, { type: "lowpass", f: 700, q: 0.8, gain: 0.16, attack: 0.002 });
+        this._ting(out, t + 0.02, 880, 0.12, 0.75, [1, 2, 3, 4.2]);
+        this._ting(out, t + 0.2, 1318.5, 0.12, 0.95, [1, 2, 3, 4.2]);
+        for (let i = 0; i < 5; i++) this._tone(out, t + 0.15 + i * rv(0.06, 0.09), rv(3000, 5200), 0.55, 0.016);
+        break;
+      case "nugget_jackpot":
+        this._noise(out, t, 0.05, { type: "lowpass", f: 600, q: 0.8, gain: 0.18, attack: 0.002 });
+        this._tone(out, t, 220, 1.2, 0.06, { type: "triangle" });
+        [659.3, 830.6, 987.8, 1318.5].forEach((f, i) => this._ting(out, t + 0.04 + i * 0.13, f, i === 3 ? 0.13 : 0.1, i === 3 ? 1.35 : 0.8, [1, 2, 3, 4.2]));
+        for (let i = 0; i < 7; i++) this._tone(out, t + 0.5 + i * rv(0.07, 0.11), rv(3200, 6000), 0.6, 0.014);
+        break;
+      case "nugget_trap":                              // a heavy piece dropping into the trommel's steel trap
+        this._tone(out, t, rv(150, 175), 0.09, 0.2 * s, { to: 110 });
+        this._ting(out, t + 0.005, rv(950, 1100), 0.08 * s, 0.35, [1, 2.31, 3.87]);
         break;
       case "pickup":
         this._noise(out, t, 0.02, { f: rv(2600, 3400), q: 2, gain: 0.06, attack: 0.002 });
@@ -348,6 +379,17 @@ export class GoldRushAudio {
         this._tone(out, t + rv(0.02, 0.1), rv(190, 240), rv(0.18, 0.28), 0.03 * s, { to: rv(150, 180), attack: 0.05 });
         if (Math.random() < 0.6) this._tone(out, t + rv(0.1, 0.25), rv(420, 520), rv(0.1, 0.16), 0.016 * s, { to: rv(380, 450), attack: 0.03 });
         break;
+      case "jump":                                     // the boots push off: a short scuff of gravel, clothes rustling
+        this._noise(out, t, 0.07, { type: "bandpass", f: rv(900, 1300), q: 0.9, gain: 0.1 * s, attack: 0.004 });
+        this._grains(out, t + 0.01, 3 + Math.floor(Math.random() * 3), 0.06, 1400, 3200, 2.5, 0.012 * s, 0.03 * s);
+        this._noise(out, t + 0.03, 0.12, { type: "highpass", f: rv(2500, 3200), q: 0.5, gain: 0.025 * s, attack: 0.02 });
+        break;
+      case "land":                                     // both boots onto the ground: a dull thump, gravel crunching, a few stones rolling
+        this._tone(out, t, rv(70, 90), 0.09, 0.22 * s, { to: 48 });
+        this._noise(out, t, 0.09, { type: "lowpass", f: rv(500, 700), q: 0.8, gain: 0.18 * s, attack: 0.002 });
+        this._noise(out, t + 0.012, 0.16, { type: "bandpass", f: rv(1100, 1600), q: 0.8, gain: 0.07 * s, attack: 0.004 });
+        this._grains(out, t + 0.03, 4 + Math.floor(Math.random() * 4 * s), 0.25, 1200, 3000, 2.2, 0.012 * s, 0.035 * s);
+        break;
       case "barrow_bump":                              // the wheel against something: a dull knock, the load shifting
         this._tone(out, t, rv(80, 100), 0.1, 0.2 * s, { to: 55 });
         this._noise(out, t, 0.08, { type: "lowpass", f: rv(450, 650), q: 0.8, gain: 0.16 * s, attack: 0.002 });
@@ -391,6 +433,27 @@ export class GoldRushAudio {
         for (let i = 0; i < 9; i++) this._noise(out, t + i * 0.083, 0.06, { type: "lowpass", f: rv(160, 220) + 120 * s, q: 1.2, gain: (0.07 + 0.07 * s) * (i % 2 ? 0.7 : 1), attack: 0.006 });
         this._tone(out, t, rv(44, 48) + 10 * s, 0.75, 0.06 * s, { attack: 0.08 });
         break;
+      case "ldr_engine":                               // the loader's diesel: smoother, deeper than the excavator's, a turbo whistling up under load
+        for (let i = 0; i < 12; i++) this._noise(out, t + i * 0.062, 0.05, { type: "lowpass", f: rv(120, 160) + 90 * s, q: 0.9, gain: (0.055 + 0.06 * s) * (i % 4 ? 0.75 : 1), attack: 0.008 });
+        this._tone(out, t, rv(36, 40) + 8 * s, 0.78, 0.07 * s, { attack: 0.1 });
+        if (s > 0.6) this._tone(out, t + 0.05, rv(1900, 2100) + 500 * (s - 0.6), 0.6, 0.006 * (s - 0.5), { to: rv(2300, 2500), attack: 0.2 });
+        break;
+      case "ldr_tyres":                                // big lugged tyres on gravel: a deep crunch, stones popping out of the tread
+        this._noise(out, t, rv(0.45, 0.6), { type: "lowpass", f: rv(300, 420), q: 0.7, gain: 0.11 * s, attack: 0.08 });
+        this._noise(out, t + 0.05, 0.35, { type: "bandpass", f: rv(1300, 1700), q: 0.8, gain: 0.025 * s, attack: 0.06 });
+        this._grains(out, t + 0.06, 5 + Math.floor(Math.random() * 4), 0.45, 700, 1800, 2, 0.02 * s, 0.045 * s);
+        break;
+      case "ldr_bucket":                               // the bucket's edge into a pile: steel on stones, the load sliding in
+        this._noise(out, t, 0.12, { type: "bandpass", f: rv(700, 900), q: 1.1, gain: 0.12 * s, attack: 0.004 });
+        this._grains(out, t + 0.02, 7, 0.3, 900, 2600, 2.4, 0.02 * s, 0.05 * s);
+        this._tone(out, t, rv(210, 240), 0.12, 0.03 * s, { to: 160 });
+        break;
+      case "washplant_run":                            // three lanes of water: a broad rush, the box splashing, gravel rattling down
+        this._noise(out, t, rv(0.9, 1.1), { type: "lowpass", f: rv(1300, 1700), q: 0.5, gain: 0.12 * s, attack: 0.25 });
+        this._noise(out, t + 0.05, 0.8, { type: "bandpass", f: rv(420, 560), q: 0.6, gain: 0.06 * s, attack: 0.2 });
+        this._noise(out, t + 0.1, 0.6, { f: rv(2600, 3200), q: 1, gain: 0.03 * s, attack: 0.15 });
+        this._grains(out, t + 0.1, 6, 0.8, 1500, 3200, 2.5, 0.008 * s, 0.02 * s);
+        break;
       case "exc_tracks":                               // rubber tracks: a soft rolling crunch, the idlers squeaking now and then
         this._noise(out, t, rv(0.45, 0.6), { type: "bandpass", f: rv(500, 700), q: 0.7, gain: 0.07 * s, attack: 0.08 });
         this._grains(out, t + 0.04, 8, 0.5, 900, 2200, 2, 0.015 * s, 0.035 * s);
@@ -421,6 +484,26 @@ export class GoldRushAudio {
       case "exc_start":                                // the diesel catching: starter whirr, then the first knocks
         this._tone(out, t, 210, 0.45, 0.04 * s, { to: 260, attack: 0.04 });
         for (let i = 0; i < 6; i++) this._noise(out, t + 0.45 + i * rv(0.09, 0.12), 0.07, { type: "lowpass", f: rv(180, 260), q: 1.2, gain: 0.14 * s, attack: 0.005 });
+        break;
+      case "miner_motor":                              // the power pack: an electric-hydraulic hum winding up, the pump's whine on top
+        this._tone(out, t, rv(95, 105), 0.9, 0.05 * s, { to: rv(118, 126), attack: 0.15 });
+        this._tone(out, t + 0.1, rv(470, 500), 0.8, 0.012 * s, { to: rv(560, 600), attack: 0.2 });
+        this._noise(out, t, 0.9, { type: "lowpass", f: rv(240, 300), q: 0.8, gain: 0.06 * s, attack: 0.2 });
+        break;
+      case "miner_hit":                                // the drum's picks meeting the face: a hard bite, grit spraying
+        this._noise(out, t, 0.05, { f: rv(1800, 2400), q: 2.5, gain: 0.08 * s, attack: 0.001 });
+        this._noise(out, t, rv(0.16, 0.22), { f: rv(360, 480), q: 0.8, gain: 0.2 * s, attack: 0.004 });
+        this._tone(out, t, rv(70, 82), 0.14, 0.12 * s, { to: 48 });
+        this._grains(out, t + 0.03, 10, 0.22, 1100, 3000, 2.2, 0.025 * s, 0.07 * s);
+        break;
+      case "miner_cut":                                // the rotary cutter grinding: pick strikes in a fast rattle, the load breaking off
+        for (let i = 0; i < 9; i++) this._noise(out, t + i * 0.068, 0.04, { f: rv(600, 900), q: 1.4, gain: (0.05 + 0.03 * s) * (i % 3 ? 0.7 : 1), attack: 0.002 });
+        this._noise(out, t, 0.62, { type: "lowpass", f: rv(180, 240), q: 0.7, gain: 0.08 * s, attack: 0.05 });
+        this._grains(out, t + 0.05, 8 + Math.floor(Math.random() * 5), 0.55, 900, 2600, 2, 0.015 * s, 0.05 * s);
+        break;
+      case "miner_stop":                               // power off: the hum winding down, a hydraulic sigh
+        this._tone(out, t, rv(118, 124), 0.7, 0.045 * s, { to: 60, attack: 0.02 });
+        this._noise(out, t + 0.15, 0.45, { f: rv(2400, 2900), q: 1.5, gain: 0.025 * s, attack: 0.05 });
         break;
       case "exc_stop":                                 // engine off: a last knock, a hydraulic sigh
         this._noise(out, t, 0.12, { type: "lowpass", f: 200, q: 1, gain: 0.12 * s, attack: 0.005 });

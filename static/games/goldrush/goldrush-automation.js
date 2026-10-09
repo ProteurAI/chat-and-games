@@ -35,6 +35,7 @@ export const BULK_EXT_ML = 540000;
 export const FEEDER_LPM = 12;                  // an even feed: the sluice takes 12 instead of 10 l/min (surges would overload it)
 export const FEEDER_FINE_LPM = 14;             // fine-dosing gate (upgrade): 14 l/min, the most the sluice takes
 export const FEEDER_HIGHFLOW_LPM = 32;         // phase 9: the high-flow sluice comes with a wider outlet - it doses what that box takes
+export const FEEDER_PLANT_LPM = 120;           // Prompt 10: the wash plant's distribution box takes three lanes' worth
 export const GATE_LPM = 40;                    // the slide gate by hand: gravity, fast
 export const TRAY_ML = 2500;                   // what lies on the vibrating tray
 // the loading ramp runs north -> south up to the platform at the hopper's north rim
@@ -338,7 +339,8 @@ export class Feeder {
   get rateLpm() { return this.outLink.rateLpm; }
 
   applyUpgrades() {
-    const ups = this.ctx.upgrades(), r = ups.has("sluice.highflow") ? FEEDER_HIGHFLOW_LPM : ups.has("feeder.fine") ? FEEDER_FINE_LPM : FEEDER_LPM;
+    const ups = this.ctx.upgrades(), wp = this.ctx.washplant ? this.ctx.washplant() : null;
+    const r = wp && wp.installed ? FEEDER_PLANT_LPM : ups.has("sluice.highflow") ? FEEDER_HIGHFLOW_LPM : ups.has("feeder.fine") ? FEEDER_FINE_LPM : FEEDER_LPM;
     this.inLink.rateLpm = this.outLink.rateLpm = r;
   }
 
@@ -401,6 +403,12 @@ export class Feeder {
     this.model.visible = on;
     const bulk = this.ctx.bulk();
     if (bulk) bulk.feeder = this.installed ? this : null;
+    // (Prompt 10: fewer draw calls - mounted, its bolts, housing and frame are baked per material)
+    if (this.installed && !this._merged) {
+      const u = this.model.userData;
+      this._merged = mergeStatic(this.THREE, this.model, u.parts.filter((p) => p !== u.motor));
+      if (this.ctx.warm) this.ctx.warm();
+    }
   }
 
   update(dt, onSound, near) {
@@ -433,6 +441,7 @@ export class Feeder {
   dispose(scene) {
     if (this.model.parent) this.model.parent.remove(this.model);
     scene.remove(this.kit);
+    for (const m of this._merged || []) m.geometry.dispose();
     const bulk = this.ctx.bulk();
     if (bulk && bulk.feeder === this) bulk.feeder = null;
   }

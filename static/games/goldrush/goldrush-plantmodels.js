@@ -21,17 +21,34 @@
 //   SPOIL     the spoil heap NW of the mountain (the excavator's waste dump)
 
 import { mulberry32, noise2 } from "./goldrush-noise.js";
+import { lumpGeometry as nuggetLump } from "./goldrush-loot.js";        // (Prompt 10: the trap's nugget - the world's lump)
 import { BULK_AT } from "./goldrush-automation.js";
 import { BULK } from "./goldrush-automodels.js";
 
 export const INTAKE = { x: -14.35, z: -9.35, top: 1.3, bottom: 0.34, outletY: 0.72, depth: 0.42 };
 INTAKE.rimY = INTAKE.outletY + INTAKE.depth;
+export const INTAKE_EXT = { h: 0.2 };                                     // Prompt 10: the intake's extension ring (upgrade)
 export const INTAKE_POST = { x: -15.05, z: -10.25 };                    // the plant's control post (NW of the intake)
 export const INTAKE_SPOT = { x: -15.05, z: -10.95, yaw: Math.PI };      // stand here, facing it (south)
 export const BELT = { tail: { x: INTAKE.x, z: INTAKE.z, y: 0.52 }, head: { x: -19.98, z: -3.78, y: 3.66 }, width: 0.5, legs: [0.36, 0.7, 0.93] };
 export const TROMMEL = { feedX: -19.95, endX: -21.55, z: BULK_AT.z, r: 0.36, feedY: 2.82, endY: 2.7 };
 TROMMEL.len = TROMMEL.feedX - TROMMEL.endX;
-export const OVERSIZE = { x: -22.95, z: -4.15 };
+export const OVERSIZE = { x: -22.95, z: -4.15 };                         // where the trommel's chute ends
+// Prompt 10: the nugget trap - a slot in the oversize chute's floor a little below the drum's end, a drop pipe, a small
+// steel box at chest height (its long sides grates): what is too big for the screen and heavy drops in, stones slide on
+const _o0 = [TROMMEL.len + 0.05, TROMMEL.endY - TROMMEL.r + 0.02, 0], _o1 = [-(OVERSIZE.x + 0.45 - TROMMEL.feedX), 1.98, -(OVERSIZE.z + 0.2 - TROMMEL.z)];
+export const TRAP = { q: 0.14, y: 1.5, w: 0.3, d: 0.26, h: 0.2 };
+TRAP.local = [0, 1, 2].map((a) => _o0[a] + (_o1[a] - _o0[a]) * TRAP.q);           // the slot (the trommel's frame)
+TRAP.x = TROMMEL.feedX - TRAP.local[0];
+TRAP.z = TROMMEL.z - TRAP.local[2];
+// Prompt 10: the oversize stacker - a short belt from under the chute's end south along the fence; its head drops the
+// stones at the strip's south end, where the loader comes in from the open ground (Zone B's west side)
+export const OVER_BELT = { tail: { x: -22.6, z: -4.1, y: 1.6 }, head: { x: -22.72, z: -7.95, y: 2.12 }, width: 0.4 };
+export const OVER_DROP = { x: -22.72, z: -8.35 };
+export function overBeltGeom() {
+  const t = OVER_BELT.tail, h = OVER_BELT.head, dx = h.x - t.x, dz = h.z - t.z, horiz = Math.hypot(dx, dz), rise = h.y - t.y;
+  return { horiz, rise, len: Math.hypot(horiz, rise), yaw: Math.atan2(-dz, dx), pitch: Math.atan2(rise, horiz) };
+}
 export const SPOIL = { x: -18.5, z: -15.5 };
 export const SPOIL_SIGN = { x: -15.55, z: -13.2 };
 export const GENERATOR = { x: -16.25, z: -10.55 };                       // the belt's power (a small diesel set), cabled to the post
@@ -218,7 +235,23 @@ export class PlantModels {
     const gauge = M._mesh(M.plane, this.A.gaugeMat, 0.12, 1, 0.34, -0.38, I.outletY + 0.2, half + 0.075, g, false);
     gauge.rotation.set(Math.PI / 2, 0, 0);
     const pointer = M._mesh(M.box, this.A.red, 0.16, 0.022, 0.03, -0.38, I.outletY + 0.04, half + 0.09, g);
-    g.userData = { parts, fill, pointer, rimY };
+    // Prompt 10 (upgrade "conveyor.fast"): a raised, flared extension on the rim (240 -> 420 l), its own wear strip
+    const ext = new THREE.Group(), extParts = [], eh = INTAKE_EXT.h, flare = 0.06;
+    for (const s of [-1, 1]) {
+      const a = M._mesh(M.box, M.galv, I.top + 0.1 + flare, eh, 0.03, 0, rimY + eh / 2, s * (half + 0.03 + flare / 2), ext);
+      a.rotation.x = s * 0.2;
+      const b = M._mesh(M.box, M.galv, 0.03, eh, I.top + 0.1 + flare, s * (half + 0.03 + flare / 2), rimY + eh / 2, 0, ext);
+      b.rotation.z = -s * 0.2;
+      extParts.push(a, b);
+      extParts.push(M._mesh(M.box, M.galvDark, I.top + 0.2 + flare, 0.04, 0.05, 0, rimY + eh, s * (half + 0.06 + flare), ext));
+      extParts.push(M._mesh(M.box, M.galvDark, 0.05, 0.04, I.top + 0.2 + flare, s * (half + 0.06 + flare), rimY + eh, 0, ext));
+      for (const t of [-1, 1]) extParts.push(M._mesh(M.box, M.galvDark, 0.04, eh, 0.04, s * (half + 0.04), rimY + eh / 2, t * (half + 0.04), ext));
+    }
+    extParts.push(M._mesh(M.box, this.yellow, I.top + 0.24 + flare, 0.05, 0.05, 0, rimY + eh + 0.03, -(half + 0.08 + flare), ext));
+    extParts.push(M._mesh(M.box, this.yellow, 0.05, 0.05, I.top + 0.24 + flare, -(half + 0.08 + flare), rimY + eh + 0.03, 0, ext));
+    ext.visible = false;
+    g.add(ext);
+    g.userData = { parts, fill, pointer, rimY, ext, extParts };
     return g;
   }
 
@@ -257,7 +290,20 @@ export class PlantModels {
     parts.push(motor, M._mesh(M.box, this.green, 0.24, 0.22, 0.14, L - 0.12, -0.16, w / 2 + 0.13, inc));
     parts.push(M._mesh(M.box, this.yellow, 0.34, 0.26, 0.03, L - 0.05, -0.14, -(w / 2 + 0.11), inc));
     for (let i = 0; i < 5; i++) parts.push(M._mesh(M.box, M.galvDark, 0.02, 0.012, w + 0.12, L - 0.12 + i * 0.05, 0.19 - Math.abs(i - 2) * 0.03, 0, inc));   // the head hood
-    // skirts at the loading point (tail) and the drip plate
+    // Prompt 10 (upgrade "conveyor.fast"): a second, bigger drive on the head's north side (motor, gearbox, a
+    // V-belt guard) and steel skirt boards along the loading run - hidden until bought
+    const up = new THREE.Group(), upParts = [];
+    inc.add(up);
+    const m2 = M._mesh(M.cyl, this.yellow, 0.15, 0.42, 0.15, L - 0.2, -0.2, -(w / 2 + 0.44), up);
+    m2.rotation.x = Math.PI / 2;
+    upParts.push(m2, M._mesh(M.box, this.green, 0.32, 0.3, 0.2, L - 0.2, -0.2, -(w / 2 + 0.17), up));
+    upParts.push(M._mesh(M.box, this.yellow, 0.5, 0.36, 0.035, L - 0.32, -0.18, -(w / 2 + 0.66), up));
+    for (const x of [L - 0.55, L - 0.05]) upParts.push(M._mesh(M.box, M.galvDark, 0.05, 0.42, 0.05, x, -0.36, -(w / 2 + 0.44), up));
+    for (const s of [-1, 1]) {
+      upParts.push(M._mesh(M.box, M.galv, L * 0.38, 0.13, 0.025, L * 0.19 + 0.15, 0.07, s * (w / 2 - 0.02), up));
+      for (let x = 0.3; x < L * 0.38; x += 0.6) upParts.push(M._mesh(M.box, M.galvDark, 0.03, 0.18, 0.03, x, 0.04, s * (w / 2 + 0.01), up));
+    }
+    up.visible = false;
     // legs: two posts each, a cross beam, a diagonal - in the yaw frame (x along the run, y up)
     for (const s of B.legs) {
       const x = s * G.horiz, top = B.tail.y + s * G.rise - 0.2 - 0.04 / Math.cos(G.pitch);
@@ -278,7 +324,52 @@ export class PlantModels {
     lumps.castShadow = true;
     lumps.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(96 * 3).fill(1), 3);
     inc.add(lumps);
-    g.userData = { inc, belt, ret, tail, head, parts, lumps, bed, len: L, geom: G };
+    g.userData = { inc, belt, ret, tail, head, parts, lumps, bed, len: L, geom: G, up, upParts };
+    return g;
+  }
+
+  // ---- Prompt 10: the oversize stacker (world space): stringers, idlers, the belt, two pulleys, a small drive at the head,
+  // two pairs of legs, a hood over the head; stones riding on it (instanced, from the belt's cells - goldrush-plant.js)
+  overBelt() {
+    const THREE = this.THREE, M = this.M, B = OVER_BELT, G = overBeltGeom(), w = B.width, L = G.len, g = new THREE.Group();
+    g.name = "goldrush-overbelt";
+    g.position.set(B.tail.x, 0, B.tail.z);
+    g.rotation.y = G.yaw;
+    const inc = new THREE.Group();
+    inc.position.set(0, B.tail.y, 0);
+    inc.rotation.z = G.pitch;
+    g.add(inc);
+    const parts = [];
+    for (const s of [-1, 1]) parts.push(M._mesh(M.box, M.galvDark, L + 0.2, 0.11, 0.04, L / 2, -0.1, s * (w / 2 + 0.05), inc));
+    for (let x = 0.3; x < L - 0.15; x += 0.6) { const r = M._mesh(M.cyl, M.galv, 0.04, w + 0.04, 0.04, x, -0.045, 0, inc); r.rotation.x = Math.PI / 2; parts.push(r); }
+    for (const s of [-1, 1]) parts.push(M._mesh(M.box, M.galv, L * 0.4, 0.12, 0.02, L * 0.2 + 0.05, 0.06, s * (w / 2 - 0.02), inc));     // skirts at the loading end
+    const belt = M._mesh(M.plane, this.belt, L, 1, w, L / 2, 0, 0, inc, false);
+    belt.receiveShadow = true;
+    const ret = M._mesh(M.plane, this.belt, L, 1, w, L / 2, -0.2, 0, inc, false);
+    ret.rotation.x = Math.PI;
+    parts.push(belt, ret);                                           // (one draw: the stones ride on the carry side)
+    for (const x of [0, L]) { const p = M._mesh(M.cyl, M.galvDark, 0.1, w + 0.06, 0.1, x, -0.1, 0, inc); p.rotation.x = Math.PI / 2; parts.push(p); }
+    const motor = M._mesh(M.cyl, this.green, 0.08, 0.26, 0.08, L - 0.1, -0.13, w / 2 + 0.28, inc);
+    motor.rotation.x = Math.PI / 2;
+    parts.push(motor, M._mesh(M.box, this.yellow, 0.24, 0.2, 0.025, L - 0.04, -0.1, -(w / 2 + 0.09), inc));
+    for (let i = 0; i < 4; i++) parts.push(M._mesh(M.box, M.galvDark, 0.02, 0.012, w + 0.1, L - 0.1 + i * 0.05, 0.15 - Math.abs(i - 1.5) * 0.03, 0, inc));
+    for (const sx of [0.25, G.horiz - 0.2]) {
+      const top = B.tail.y + (sx / G.horiz) * G.rise - 0.16;
+      for (const zz of [-1, 1]) parts.push(M._mesh(M.box, this.yellow, 0.07, top, 0.07, sx, top / 2, zz * (w / 2 + 0.1), g));
+      parts.push(M._mesh(M.box, this.yellow, 0.05, 0.05, w + 0.28, sx, top - 0.03, 0, g));
+      parts.push(this._bar(this.yellow, [sx, 0.25, -(w / 2 + 0.1)], [sx, top - 0.08, w / 2 + 0.1], 0.04, 0.04, g));
+    }
+    const lumps = new THREE.InstancedMesh(this.lump, this.lumpMat, 24);
+    lumps.count = 0;
+    lumps.frustumCulled = false;
+    lumps.castShadow = true;
+    lumps.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(24 * 3).fill(1), 3);
+    inc.add(lumps);
+    // the stones dropping off the head (a short stream)
+    const fall = M._mesh(M.box, this.mud, 0.18, 0.4, 0.05, L + 0.12, -0.3, 0, inc, false);
+    fall.rotation.z = -G.pitch;
+    fall.visible = false;
+    g.userData = { inc, parts, lumps, fall, len: L, geom: G };
     return g;
   }
 
@@ -342,6 +433,23 @@ export class PlantModels {
     for (const s of [-1, 1]) parts.push(this._bar(M.galvDark, [o0[0], o0[1] + 0.08, o0[2] + s * 0.2], [o1[0], o1[1] + 0.08, o1[2] + s * 0.2], 0.02, 0.14, g));
     const chutePost = M._mesh(M.box, this.yellow, 0.07, 1.98, 0.07, o1[0] - 0.05, 0.99, o1[2], g);
     parts.push(chutePost);
+    // Prompt 10: the nugget trap under the chute (TRAP): the drop pipe, the box (floor, lid, ends), grates on its long sides
+    const [tx, ty, tz] = TRAP.local, Y = TRAP.y, hw = TRAP.w / 2, hd = TRAP.d / 2, hh = TRAP.h / 2;
+    parts.push(M._mesh(M.box, M.galvDark, 0.07, ty - (Y + hh), 0.07, tx, (ty + Y + hh) / 2, tz, g));
+    parts.push(M._mesh(M.box, M.galv, TRAP.w + 0.02, 0.02, TRAP.d, tx, Y - hh, tz, g), M._mesh(M.box, M.galv, TRAP.w + 0.02, 0.02, TRAP.d, tx, Y + hh, tz, g));
+    for (const s of [-1, 1]) {
+      parts.push(M._mesh(M.box, M.galv, 0.02, TRAP.h, TRAP.d, tx + s * hw, Y, tz, g));
+      parts.push(M._mesh(M.box, this.yellow, TRAP.w, 0.025, 0.02, tx, Y + hh - 0.02, tz + s * hd, g), M._mesh(M.box, this.yellow, TRAP.w, 0.025, 0.02, tx, Y - hh + 0.02, tz + s * hd, g));
+      for (let b = -2; b <= 2; b++) parts.push(M._mesh(M.box, M.galvDark, 0.012, TRAP.h - 0.03, 0.012, tx + b * (TRAP.w / 6), Y, tz + s * hd, g));
+    }
+    parts.push(M._mesh(M.box, M.galvDark, 0.04, Y - hh, 0.04, tx, (Y - hh) / 2, tz, g));          // its post
+    // the nugget in it (shown while it holds one; not merged - goldrush-plant.js sizes it to the piece's value)
+    const tg = nuggetLump(THREE, 35, { w: 18, h: 12, amp: 0.3, freq: 1.6, sx: 1.15, sy: 0.62, sz: 0.9 });
+    const trapNugget = new THREE.Mesh(tg, new THREE.MeshStandardMaterial({ color: 0xe0ac38, metalness: 0.55, roughness: 0.32, emissive: 0x6a4200, emissiveIntensity: 0 }));
+    trapNugget.name = "goldrush-trap-nugget";
+    trapNugget.position.set(tx, Y - hh + 0.03, tz);
+    trapNugget.visible = false;
+    g.add(trapNugget);
     // the spray manifold over the drum, nozzles, and the supply pipe from the tank (world points -> local)
     const lp = (wx, wy, wz) => [-(wx - T.feedX), wy, -(wz - T.z)];
     const top = T.feedY + r + 0.16;
@@ -353,6 +461,18 @@ export class PlantModels {
     const motor = M._mesh(M.cyl, this.green, 0.1, 0.3, 0.1, 0.35, beamY + 0.16, half - 0.05, g);
     motor.rotation.z = Math.PI / 2;
     parts.push(motor, M._mesh(M.box, this.yellow, 0.36, 0.42, 0.04, 0.12, T.feedY - 0.05, half - 0.2, g));
+    // Prompt 10 (upgrade "trommel.fast"): a second, stronger drive on the south side (motor, gearbox, chain guard)
+    // and a second spray bar with its nozzles - more water, more throughput; hidden until bought
+    const up = new THREE.Group(), upParts = [];
+    g.add(up);
+    const m2 = M._mesh(M.cyl, this.yellow, 0.13, 0.36, 0.13, 0.38, beamY + 0.2, -(half - 0.08), up);
+    m2.rotation.z = Math.PI / 2;
+    upParts.push(m2, M._mesh(M.box, this.green, 0.24, 0.26, 0.2, 0.08, beamY + 0.2, -(half - 0.08), up));
+    upParts.push(M._mesh(M.box, this.yellow, 0.4, 0.5, 0.04, 0.12, T.feedY - 0.02, -(half - 0.22), up));
+    upParts.push(this._bar(M.galvDark, [0.1, top - 0.01, 0.12], [L - 0.1, top - 0.01 - (L - 0.2) * Math.tan(slope), 0.12], 0.025, 0, up, true));
+    for (let i = 0; i < 6; i++) { const x = 0.3 + i * ((L - 0.4) / 5); upParts.push(this._bar(M.galvDark, [x, top - x * Math.tan(slope) - 0.01, 0.12], [x, top - x * Math.tan(slope) - 0.12, 0.12], 0.012, 0, up, true)); }
+    upParts.push(this._bar(M.galvDark, [0.1, top - 0.01, 0.12], [0.1, top - 0.01, -0.12], 0.025, 0, up, true));
+    up.visible = false;
     // a status lamp on the frame's south-east post
     const lamp = M._mesh(this.A.sphere, this.A.lampOff, 0.035, 0.035, 0.035, lx[0], beamY + 0.12, -half - 0.04, g);
     // moving bits: lumps tumbling in the drum, spray, the undersize curtain, oversize sliding down the chute
@@ -373,7 +493,7 @@ export class PlantModels {
     over.count = 0; over.frustumCulled = false;
     over.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(8 * 3).fill(1), 3);
     g.add(over);
-    g.userData = { ax, rotor, rotorParts, parts, lamp, tumble, drops, curtain, feedFall, over, chute: [o0, o1], slope, top };
+    g.userData = { ax, rotor, rotorParts, parts, lamp, tumble, drops, curtain, feedFall, over, chute: [o0, o1], slope, top, up, upParts, trapNugget };
     return g;
   }
 

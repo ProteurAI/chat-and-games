@@ -68,9 +68,15 @@
 // the camp's fill - goldrush-resources.js), prospecting (sample bags, the
 // notebook, survey flags), the mountain contract, the mine intake hopper,
 // conveyor, trommel with its oversize pile, the spoil heap and the compact
-// excavator (all optional fields - absent = not there yet).
-// Older documents are upgraded on load step by step (1 -> 2 -> ... -> 8)
-// and written back as 8. A new mine owns only the hand and has € 0,00.
+// excavator (all optional fields - absent = not there yet); 9 = the working
+// mine (Prompt 10): the stockpiles (raw pay dirt, oversize, the tailings
+// outlet and zone, spoil - each its layered material and its shape), the
+// wheel loader (its bucket, arms, task), the wash plant (lanes, distribution
+// box, concentrate tub), the oversize stacker, the plant upgrades. A v8
+// document's oversize / spoil totals move onto their piles on load (nothing
+// booked twice - goldrush-plant.js); everything else of Prompt 10 starts empty.
+// Older documents are upgraded on load step by step (1 -> 2 -> ... -> 9)
+// and written back as 9. A new mine owns only the hand and has € 0,00.
 //
 // GEOLOGY: the ground's content is a pure function of the seed (never saved);
 // doc.geology.version says which geology the mine is on. A document from
@@ -80,7 +86,7 @@
 // riding in slid material keeps exactly the gold it holds ({ version: 2,
 // from: 1 } - shown once, then `noted`).
 
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 const PREFIX = "goldrush.save";
 const LEGACY_KEY = "goldrush.save";
 const LEGACY_BACKUP_KEY = "goldrush.save.backup";
@@ -169,6 +175,16 @@ export function validate(doc) {
     if (pr && pr.excavator != null && (typeof pr.excavator !== "object" || !finite(pr.excavator.x) || !finite(pr.excavator.z))) return "Baggerdaten ungültig";
     if (pr && pr.conveyor != null && typeof pr.conveyor !== "object") return "Förderbanddaten ungültig";
   }
+  if (doc.saveVersion >= 9 && doc.processing != null) {
+    const pr = doc.processing;
+    if (pr.piles != null) {
+      if (typeof pr.piles !== "object" || (pr.piles.piles != null && typeof pr.piles.piles !== "object")) return "Haufendaten ungültig";
+      for (const v of Object.values(pr.piles.piles || {})) if (!v || typeof v !== "object" || (v.h != null && typeof v.h !== "string") || (v.buffer != null && !Array.isArray(v.buffer.layers))) return "Haufendaten ungültig";
+    }
+    if (pr.loader != null && (typeof pr.loader !== "object" || !finite(pr.loader.x) || !finite(pr.loader.z))) return "Radladerdaten ungültig";
+    if (pr.autominer != null && (typeof pr.autominer !== "object" || !finite(pr.autominer.x) || !finite(pr.autominer.z))) return "Abbaugerätdaten ungültig";
+    if (pr.washplant != null && (typeof pr.washplant !== "object" || (pr.washplant.lanes != null && !Array.isArray(pr.washplant.lanes)))) return "Waschanlagendaten ungültig";
+  }
   return null;
 }
 
@@ -251,6 +267,11 @@ export function migrate(doc) {
     // phase 9: dug in geology 1 - the untouched ground follows geology 2 from now on (used-up
     // slices stay used up, every batch keeps its gold); no machines of phase 9 yet
     doc = { ...doc, saveVersion: 8, geology: { version: 2, from: 1 }, migratedFrom: doc.migratedFrom || 7 };
+  }
+  if (doc.saveVersion === 8) {
+    // Prompt 10: no stockpiles, loader or wash plant yet - the oversize buffer and the spoil totals move onto
+    // their piles when the plant loads (goldrush-plant.js); every batch keeps its gold
+    doc = { ...doc, saveVersion: 9, migratedFrom: doc.migratedFrom || 8 };
   }
   return doc;
 }

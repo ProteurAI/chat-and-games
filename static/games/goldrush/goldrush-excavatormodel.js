@@ -66,14 +66,16 @@ function treadTex(THREE) {
 
 // the tracks' imprints on the ground (cosmetic, not saved): a fixed pool, the oldest reused; one dug away goes
 export class TrackMarks {
-  constructor(THREE, scene, n = 200) {
+  // opts (Prompt 10, the loader's tyres): size [along, across] (m), tex (a CanvasTexture of its own), name
+  constructor(THREE, scene, n = 200, { size = [0.36, 0.3], tex = null, name = "goldrush-track-marks" } = {}) {
     this.n = n; this.next = 0; this.used = 0;
-    this.tex = treadTex(THREE);
+    this.size = size;
+    this.tex = tex || treadTex(THREE);
     this.mat = new THREE.MeshStandardMaterial({ map: this.tex, color: 0x5b4634, roughness: 1, transparent: true, opacity: 0.6, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     this.geo = new THREE.PlaneGeometry(1, 1);
     this.geo.rotateX(-Math.PI / 2);
     this.mesh = new THREE.InstancedMesh(this.geo, this.mat, n);
-    this.mesh.name = "goldrush-track-marks";
+    this.mesh.name = name;
     this.mesh.count = 0; this.mesh.visible = false; this.mesh.frustumCulled = false; this.mesh.renderOrder = 1;
     scene.add(this.mesh);
     this.scene = scene;
@@ -90,7 +92,7 @@ export class TrackMarks {
     this.used = Math.min(this.n, this.used + 1);
     this.pos[i * 3] = x; this.pos[i * 3 + 1] = y; this.pos[i * 3 + 2] = z; this.gone[i] = 0;
     this._q.setFromAxisAngle(this._v.set(0, 1, 0), heading);
-    this._m.compose(this._v.set(x, y + 0.012, z), this._q, this._s.set(0.36, 1, 0.3));
+    this._m.compose(this._v.set(x, y + 0.012, z), this._q, this._s.set(this.size[0], 1, this.size[1]));
     this.mesh.setMatrixAt(i, this._m);
     this.mesh.count = this.used;
     this.mesh.visible = true;
@@ -298,6 +300,8 @@ export class ExcavatorRig {
     keep(mergeStatic(THREE, this.stick, collect(this.stick, new Set([this.tool]))));
     keep(mergeStatic(THREE, this.bucket, collect(this.bucket, new Set(), fill)));
     keep(mergeStatic(THREE, this.breakerBody, collect(this.breakerBody, new Set())));
+    // (Prompt 10) no shadow from the cab's inside or the thin rams - a shadow-pass draw each for nothing you would notice
+    for (const o of [this.cabInterior, ...this.rams.map((r) => r.g)]) if (o) o.traverse((m) => { if (m.isMesh) m.castShadow = false; });
   }
 
   // a web segment in the x-y plane of `parent` from a to b (width w at a, w2 at b), the boom's thickness
