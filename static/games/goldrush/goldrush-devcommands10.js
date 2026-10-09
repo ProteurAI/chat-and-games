@@ -417,7 +417,7 @@ reg({ id: "p10.minerRock", category: "material", group: MINE, label: "Hartgestei
     if (!minerAt(g, false)) return fail(DEV_ERROR);
     const am = pr.autominer, A = MINER.area;
     let n = 0;
-    am.constructor.samples(am.x, am.z, am.heading, (x, z) => {
+    am.constructor.samples(am.x, am.z, am.heading, am.M.area, (x, z) => {
       const i = Math.round((x - t.x0) / t.cell), j = Math.round((z - t.z0) / t.cell);
       for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
         const k = (j + dj) * t.vps + (i + di), h = t.height[k];

@@ -2383,7 +2383,7 @@ export class GoldRushGame {
   _placeStart(what, moving) {
     const am = this.processing.autominer;
     if (!am || this.placing) return;
-    const ghost = new AutoMinerRig(THREE, { ghost: true, geos: am.rig.geos }), A = MINER.area;
+    const ghost = new AutoMinerRig(THREE, { ghost: true, geos: am.rig.geos }), A = am.M ? am.M.area : MINER.area;
     const areaGeo = new THREE.BoxGeometry(A.far - A.near, A.up, A.w);
     areaGeo.translate((A.near + A.far) / 2, A.up / 2 + A.floor, 0);
     const areaMat = new THREE.MeshBasicMaterial({ color: 0x5ee07a, transparent: true, opacity: 0.12, depthWrite: false });

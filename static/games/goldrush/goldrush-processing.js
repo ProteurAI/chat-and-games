@@ -83,7 +83,7 @@ export const WASH = {
   barrowDrop: { x: -15.2, z: 9.2, yaw: -Math.PI / 2 },     // ... a bought wheelbarrow next to it
   feedZone: { x: -16.0, z: 3.4, r: 3.1 },                  // a barrow parked here feeds screen and pan
 };
-export const EQUIP = ["bucket", "pan", "classifier", "wheelbarrow", "sluice", "bulkhopper", "feeder", "prospectkit", "conveyor", "trommel", "excavator", "loader", "washplant", "autominer"];
+export const EQUIP = ["bucket", "pan", "classifier", "wheelbarrow", "sluice", "bulkhopper", "feeder", "prospectkit", "conveyor", "trommel", "excavator", "loader", "washplant", "autominer", "minerhead"];
 const INTAKE_REACH = 2.6;          // m: standing this close to the intake hopper, what you dig goes into it
 const BARROW_REACH = 2.6;        // m: a parked barrow this close (its tray) catches what you dig
 const HOPPER_AT = { x: SLUICE_AT.x - 0.27, z: SLUICE_AT.z };
@@ -201,7 +201,7 @@ export class ProcessingSystem {
     if (this.conveyor) this.conveyor._sync();
     this.spoil = this.owned.has("excavator") || this.owned.has("trommel") ? this._newSpoil(s.spoil) : null;       // the waste dump: with the trommel (oversize) or the excavator
     this.excavator = this.owned.has("excavator") ? this._newExcavator(s.excavator) : null;
-    this.autominer = this.owned.has("autominer") ? this._newMiner(s.autominer) : null;       // Prompt 10: the automatic hillside miner
+    this.autominer = this.owned.has("autominer") || this.owned.has("minerhead") ? this._newMiner(s.autominer) : null;       // Prompt 10: the automatic hillside miner (10.0.1: or its small head)
     this.loader = this.owned.has("loader") ? this._newLoader(s.loader) : null;
     this._spoilBin = new MaterialBuffer({ capacityMl: 1e12 });          // a barrow tipped onto the heap passes through here (same frame)
     // Prompt 10: the wash plant around the sluice (three lanes, the distribution box, the concentrate tub)
@@ -344,7 +344,7 @@ export class ProcessingSystem {
     return new AutoMiner(this.THREE, this.scene, this.world, saved, {
       ledger: this.ledger, nextId: () => this.nextBatch++, mining: () => c.mining(), terrain: () => c.terrain, rocks: () => c.rocks(), economy: () => this.economy,
       conveyor: () => this.conveyor, piles: () => this.piles, effects: () => this.effects || null, sound: (k, o) => { if (this.onSoundAt) this.onSoundAt(k, o); },
-      warm: () => { this.warmPending = true; },
+      warm: () => { this.warmPending = true; }, small: !this.owned.has("autominer"),
     });
   }
 
@@ -608,12 +608,14 @@ export class ProcessingSystem {
     if (id === "excavator" && !this.spoil) this.spoil = this._newSpoil(null);
     if (id === "excavator" && !this.excavator) this.excavator = this._newExcavator(null);                       // parked by the intake, ready
     if (id === "loader" && !this.loader) this.loader = this._newLoader(null);                                   // parked north of the raw pile, ready
-    if (id === "autominer" && !this.autominer) this.autominer = this._newMiner(null);                           // parked in the north-west corner, to be set up
+    // parked in the north-west corner, to be set up (10.0.1: the small head first; bought big later, the same machine grows)
+    if ((id === "autominer" || id === "minerhead") && !this.autominer) this.autominer = this._newMiner(null);
+    else if (id === "autominer" && this.autominer) this.autominer.setSmall(false);
     if (id === "washplant") {
       if (!this.sluice) { this.owned.delete(id); return false; }
       this.washplant = this._newWashplant(null);                                                               // delivered: a crate and sheets west of the sluice
     }
-    if (["wheelbarrow", "sluice", "bulkhopper", "feeder", "prospectkit", "conveyor", "trommel", "excavator", "loader", "washplant", "autominer"].includes(id)) this.warmPending = true;
+    if (["wheelbarrow", "sluice", "bulkhopper", "feeder", "prospectkit", "conveyor", "trommel", "excavator", "loader", "washplant", "autominer", "minerhead"].includes(id)) this.warmPending = true;
     this._sync();
     return true;
   }
@@ -841,11 +843,11 @@ export class ProcessingSystem {
     const am = this.autominer;
     if (am && am.status !== "placing" && Math.hypot(am.x - p.x, am.z - p.z) < 3.6) {
       const F = am._frame(), pan = F.at(AM.panel[0], AM.panel[1] - 0.4), rear = F.at(-1.85, 0);
-      if (!am.placed) { if (facing(am.x, am.z) > 0.3) return { id: "miner-place", action: "Abbaugerät aufstellen – Platz an der Bergflanke wählen", short: "AUFSTELLEN" }; }
+      if (!am.placed) { if (facing(am.x, am.z) > 0.3) return { id: "miner-place", action: `${am.label} aufstellen – Platz an der Bergflanke wählen`, short: "AUFSTELLEN" }; }
       else if (near(pan, 1.35) && facing(am.x, am.z) > 0.1) {
-        if (am.status === "exhausted" || am.status === "rock") return { id: "miner-move", action: `${MINER_STATUS[am.status]} – Abbaugerät versetzen`, short: "VERSETZEN" };
-        return am.on ? { id: "miner-off", action: `Abbaugerät anhalten (${am.statusText()})`, short: "AUS" } : { id: "miner-on", action: `Abbaugerät starten${am.volumeMl > 0 ? ` (Band ${Math.round(am.volumeMl / 1000)} l)` : ""}`, short: "START" };
-      } else if (!am.on && near(rear, 1.7) && facing(am.x, am.z) > 0.2) return { id: "miner-move", action: "Abbaugerät versetzen", short: "VERSETZEN" };
+        if (am.status === "exhausted" || am.status === "rock") return { id: "miner-move", action: `${MINER_STATUS[am.status]} – ${am.label} versetzen`, short: "VERSETZEN" };
+        return am.on ? { id: "miner-off", action: `${am.label} anhalten (${am.statusText()})`, short: "AUS" } : { id: "miner-on", action: `${am.label} starten${am.volumeMl > 0 ? ` (Band ${Math.round(am.volumeMl / 1000)} l)` : ""}`, short: "START" };
+      } else if (!am.on && near(rear, 1.7) && facing(am.x, am.z) > 0.2) return { id: "miner-move", action: `${am.label} versetzen`, short: "VERSETZEN" };
     }
     // 3w - Prompt 10: the wash plant's delivery - build it
     const wpk = this.washplant;

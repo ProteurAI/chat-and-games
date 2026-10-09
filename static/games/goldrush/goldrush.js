@@ -46,6 +46,8 @@ const ICONS = {
   loader: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="17.5" r="2.6" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="15" cy="17.5" r="2.6" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M3 15V8.5h4.5L9 12h6l1.5 3" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" fill="none"/><path d="M14 12l4.5-3.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M18 6.5h3.5l-.6 5.5h-3.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" fill="none"/></svg>`,
 };
 
+ICONS.minerhead = ICONS.autominer;                 // (10.0.1: the small hillside miner)
+
 // what the dig button says per tool
 const ACTION = { hand: "GRABEN", shovel: "SCHAUFELN", pickaxe: "HACKEN" };
 const CLASS_LABEL = { traceGold: "Goldstaub", fineGold: "Feiner Goldstaub", goldFlake: "Goldflitter", tinyGoldPiece: "Kleine Goldstücke", smallNugget: "Nuggets", washedGold: "Waschgold (Feingold)" };
@@ -63,7 +65,8 @@ const EQUIP_WHERE = { bucket: "Steht vor dem Schuppen – stell ihn neben dich u
   excavator: "Der Bagger steht am Westfuß des Bergs neben dem Aufgabetrichter – [E] einsteigen.",
   loader: "Der Radlader steht beim Rohhaufen hinter dem Aufgabetrichter – [E] einsteigen.",
   washplant: "Kiste und Bleche liegen westlich der Waschrinne – dort [E]: Waschanlage aufbauen.",
-  autominer: "Steht in der Nordwest-Ecke des Claims – dort [E]: aufstellen, an den Fuß der Bergflanke vor den Aufgabetrichter oder den Rohhaufen." };
+  autominer: "Steht in der Nordwest-Ecke des Claims – dort [E]: aufstellen, an den Fuß der Bergflanke vor den Aufgabetrichter oder den Rohhaufen.",
+  minerhead: "Steht in der Nordwest-Ecke des Claims – dort [E]: aufstellen, an den Fuß der Bergflanke vor den Aufgabetrichter." };
 
 const fmtMoney = (v) => `€ ${v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const TOOL_NAME = { hand: "Hand", shovel: "Schaufel", pickaxe: "Spitzhacke", bucket: "Eimer", pan: "Goldpfanne", classifier: "Sieb", wheelbarrow: "Schubkarre", sluice: "Waschrinne", bulkhopper: "Vorratstrichter", feeder: "Dosierer",

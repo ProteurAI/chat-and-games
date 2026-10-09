@@ -230,9 +230,15 @@ export const SHOP_ITEMS = [
     text: "Ein zweiter, stärkerer Antrieb am Kopf, Leitbleche an der Aufgabe und ein Aufsatz für den Trichter: das Band läuft schneller und trägt mehr – gut 130 statt 64 Liter pro Minute, der Trichter fasst 420 statt 240 Liter (eine volle Laderschaufel passt hinein).",
     requires: { equipment: ["conveyor", "loader"] },
   },
+  // GoldRush 10.0.1: the hillside miner's small version - early, slow, but it works alone
+  {
+    id: "minerhead", kind: "equipment", label: "Kleiner Schürfkopf", price: 75000,
+    text: "Die kleine Ausführung des Abbaugeräts: an den Fuß der Bergflanke vor den Aufgabetrichter gestellt, schürft er langsam, aber ganz allein ein schmales Stück ab – gut 30 Liter pro Minute – und gibt es über sein Band in den Trichter. Erde, Lehm, Kies und Geröll; Hartgestein nicht. Später lässt er sich zum Bergseiten-Abbaugerät ausbauen.",
+    requires: { equipment: ["conveyor"], mountainPct: 0.9 },
+  },
   {
     id: "autominer", kind: "equipment", label: "Bergseiten-Abbaugerät", price: 300000,
-    text: "Eine kleine Raupen-Abbaueinheit mit Hydraulikarm und Schneidkopf: an den Fuß der Bergflanke gestellt, baut sie dort selbst ab – ein Stück von gut zweieinhalb Metern Breite – und gibt das Material über ihr Band in den Aufgabetrichter oder auf den Rohhaufen. Hartgestein schafft sie nicht. Ist ihr Abschnitt leer, muss sie versetzt werden.",
+    text: "Eine kleine Raupen-Abbaueinheit mit Hydraulikarm und Schneidkopf: an den Fuß der Bergflanke gestellt, baut sie dort selbst ab – ein Stück von gut zweieinhalb Metern Breite – und gibt das Material über ihr Band in den Aufgabetrichter oder auf den Rohhaufen. Hartgestein schafft sie nicht. Ist ihr Abschnitt leer, muss sie versetzt werden. Ein kleiner Schürfkopf wird dabei zu ihr ausgebaut.",
     requires: { equipment: ["excavator", "conveyor"], mountainPct: 3.0 },
   },
   {

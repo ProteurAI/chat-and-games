@@ -65,6 +65,11 @@ export const MINER_DEF = {
   kernel: { type: "scoop", a: 0.3, b: 0.24, vol: MINER.biteMl / 1e6, tMax: 0.26, edge: 0.4, tilt: 0.3, settleMargin: 1.2 },
   rockDamage: 0,
 };
+// GoldRush 10.0.1: the small head ("Kleiner Schürfkopf") - the same machine with a narrower, lower section, small
+// bites and a shorter belt: ~30 l/min instead of ~80 (slow, but on its own)
+export const MINER_SMALL = { ...MINER, area: { w: 1.6, near: 1.4, far: 2.7, up: 1.5, floor: 0.05 }, biteMl: 3000, bufMl: 30000, outLpm: 90,
+  phase: { ...MINER.phase, cut: 3.4 }, minM3: 0.4 };
+export const MINER_SMALL_DEF = { ...MINER_DEF, kernel: { ...MINER_DEF.kernel, a: 0.22, b: 0.18, vol: MINER_SMALL.biteMl / 1e6 } };
 export const MINER_HOME = { x: -20.2, z: -24.6, heading: 0 };        // delivered: parked in the claim's north-west corner (nothing else stands there)
 export const STATUS = {
   parked: "nicht aufgestellt", stopped: "aus", running: "läuft", waiting: "wartet – Austrag voll",
@@ -86,6 +91,7 @@ export class AutoMiner {
     this.scene = scene;
     this.world = world;
     this.ctx = ctx;
+    this._size(!!ctx.small);
     const s = saved || {};
     this.placed = !!s.placed;
     this.x = Number.isFinite(s.x) ? s.x : MINER_HOME.x;
@@ -93,7 +99,7 @@ export class AutoMiner {
     this.heading = Number.isFinite(s.heading) ? s.heading : MINER_HOME.heading;
     this.on = !!s.on && this.placed;
     this.status = this.placed ? (STATUS[s.status] && s.status !== "placing" ? s.status : this.on ? "running" : "stopped") : "parked";
-    this.buffer = new MaterialBuffer({ capacityMl: MINER.bufMl, stage: STAGE.RAW, layers: s.buffer && s.buffer.layers });
+    this.buffer = new MaterialBuffer({ capacityMl: this.M.bufMl, stage: STAGE.RAW, layers: s.buffer && s.buffer.layers });
     const st = s.stats || {};
     this.stats = { cuts: int(st.cuts), dugMl: int(st.dugMl), outMl: int(st.outMl), intakeMl: int(st.intakeMl), pileMl: int(st.pileMl), runS: int(st.runS), waitS: int(st.waitS), blocked: int(st.blocked), moves: int(st.moves), mountainG: int(st.mountainG) };
     this.budgetMl = int(s.budgetMl);    // what this stand may take (its section's volume when it was set down, x slump)
@@ -107,7 +113,7 @@ export class AutoMiner {
     scene.add(this.root);
     this.pose = { slew: 0, boom: -0.35, stick: -0.6, ext: AM.stickL[0], spin: 0, outSlew: 0, outLuff: 0.45 };
     this.rest = { ...this.pose };
-    this.colliders = MINER.foot.map(() => ({ type: "circle", x: 0, z: 0, r: MINER.footR }));
+    this.colliders = this.M.foot.map(() => ({ type: "circle", x: 0, z: 0, r: this.M.footR }));
     for (const c of this.colliders) world.colliders.push(c);
     this._v = new THREE.Vector3(); this._w = new THREE.Vector3();
     this.recv = null;
@@ -118,10 +124,21 @@ export class AutoMiner {
     this._load();
   }
 
+  // 10.0.1: small (the "Kleiner Schürfkopf") or the full machine - its section, bites, belt; bought big later it grows
+  _size(small) {
+    this.small = small;
+    this.M = small ? MINER_SMALL : MINER;
+    this.DEF = small ? MINER_SMALL_DEF : MINER_DEF;
+    if (this.buffer) this.buffer.capacityMl = this.M.bufMl;
+    if (this.rig) this.rig.drum.scale.setScalar(small ? 0.72 : 1);
+  }
+  setSmall(small) { this._size(!!small); this._load && this._load(); return true; }
+  get label() { return this.small ? "Schürfkopf" : "Abbaugerät"; }
+
   get volumeMl() { return this.buffer.volumeMl; }
   goldUg() { return this.buffer.goldUg; }
   massG() { return this.buffer.massG; }
-  get fill() { return this.buffer.volumeMl / MINER.bufMl; }
+  get fill() { return this.buffer.volumeMl / this.M.bufMl; }
   get running() { return this.on && this.placed; }
   static get outReach() { return OUT_REACH; }
 
@@ -142,14 +159,15 @@ export class AutoMiner {
     this.root.rotation.z = clamp(Math.atan2(gf - gb, 2.0), -0.3, 0.3);
     this.root.rotation.x = clamp(-Math.atan2(gl - gr, 1.4), -0.3, 0.3);
     this.root.updateMatrixWorld(true);
-    MINER.foot.forEach(([ax, az], i) => { const p = F.at(ax, az); this.colliders[i].x = p.x; this.colliders[i].z = p.z; });
+    this.M.foot.forEach(([ax, az], i) => { const p = F.at(ax, az); this.colliders[i].x = p.x; this.colliders[i].z = p.z; });
     const t = this.ctx.terrain && this.ctx.terrain();
     this._rev = t ? t.revision : 0;
   }
 
   // the section's sample points (world x / z) for a stand
-  static samples(x, z, h, fn) {
-    const A = MINER.area, c = Math.cos(h), s = Math.sin(h);
+  static samples(x, z, h, a, fn) {
+    if (typeof a === "function") { fn = a; a = MINER.area; }                  // (the full machine's section by default)
+    const A = a, c = Math.cos(h), s = Math.sin(h);
     for (let ax = A.near; ax <= A.far + 1e-6; ax += 0.3) for (let az = -A.w / 2; az <= A.w / 2 + 1e-6; az += 0.26) fn(x + c * ax + s * az, z - s * ax + c * az, ax, az);
   }
 
@@ -157,9 +175,9 @@ export class AutoMiner {
   // (its own stand: never more than its budget - what slides in from the face above does not make it endless)
   survey(x = this.x, z = this.z, h = this.heading, y = this.y) {
     const own = x === this.x && z === this.z && h === this.heading && this.placed && this.budgetMl > 0;
-    const t = this.ctx.terrain(), A = MINER.area, floor = y + A.floor, top = y + A.up, out = { m3: 0, stoneM3: 0, inArea: 0, n: 0, best: null };
+    const t = this.ctx.terrain(), A = this.M.area, floor = y + A.floor, top = y + A.up, out = { m3: 0, stoneM3: 0, inArea: 0, n: 0, best: null };
     const cellA = 0.3 * 0.26;
-    AutoMiner.samples(x, z, h, (px, pz, ax, az) => {
+    AutoMiner.samples(x, z, h, this.M.area, (px, pz, ax, az) => {
       out.n++;
       if (!t.inDigArea(px, pz)) return;
       out.inArea++;
@@ -177,7 +195,7 @@ export class AutoMiner {
     if (own) {
       const left = Math.max(0, this.budgetMl - this.placeDug) / 1e6;
       out.m3 = Math.min(out.m3, left);
-      if (left * 1e6 < MINER.biteMl * 0.5) { out.best = null; out.spent = true; }
+      if (left * 1e6 < this.M.biteMl * 0.5) { out.best = null; out.spent = true; }
     }
     return out;
   }
@@ -189,7 +207,7 @@ export class AutoMiner {
 
   // where the rear belt would put its load: the intake (the conveyor) or the RAW pile, within reach
   _receiver(x, z, h, y) {
-    const F = this._frame(x, z, h), piv = F.at(AM.outPivot[0], 0), back = h + Math.PI, O = MINER.out;
+    const F = this._frame(x, z, h), piv = F.at(AM.outPivot[0], 0), back = h + Math.PI, O = this.M.out;
     const reach = (px, pz) => {
       const dx = px - piv.x, dz = pz - piv.z, d = Math.hypot(dx, dz);
       if (d < OUT_REACH - O.inside || d > OUT_REACH + O.beyond) return null;           // the tip over the hopper's mouth
@@ -229,9 +247,9 @@ export class AutoMiner {
     for (const c of mine) { const i = cols.indexOf(c); if (i >= 0) cols.splice(i, 1); }
     let blocked = false;
     try {
-      for (const [ax, az] of MINER.foot) {
+      for (const [ax, az] of this.M.foot) {
         const p = F.at(ax, az), q = { x: p.x, z: p.z };
-        w.collide(q, MINER.footR);
+        w.collide(q, this.M.footR);
         if (Math.hypot(q.x - p.x, q.z - p.z) > 0.02) { blocked = true; break; }
       }
     } finally { for (const c of mine) cols.push(c); }
@@ -243,12 +261,12 @@ export class AutoMiner {
     }
     const y = (pts[0].g + pts[1].g + pts[2].g + pts[3].g) / 4;
     const pitch = ((pts[0].g + pts[1].g) - (pts[2].g + pts[3].g)) / 2 / 2.3, roll = ((pts[0].g + pts[2].g) - (pts[1].g + pts[3].g)) / 2 / 1.5;
-    if (Math.abs(pitch) > MINER.maxGrade || Math.abs(roll) > MINER.maxGrade) return no("zu steil", { y });
-    for (const p of pts) if (Math.abs(p.g - (y + pitch * p.ax + roll * -p.az)) > MINER.maxBump) return no("zu uneben", { y });
+    if (Math.abs(pitch) > this.M.maxGrade || Math.abs(roll) > this.M.maxGrade) return no("zu steil", { y });
+    for (const p of pts) if (Math.abs(p.g - (y + pitch * p.ax + roll * -p.az)) > this.M.maxBump) return no("zu uneben", { y });
     // its section: mountain in it, nothing standing in it
     const sv = this.survey(x, z, h, y);
-    if (sv.inArea < sv.n * 0.5 || sv.m3 + sv.stoneM3 < MINER.minM3) return no("kein Berg im Arbeitsbereich", { y, m3: sv.m3 });
-    if (sv.m3 < MINER.minM3) return no("nur Fels im Arbeitsbereich", { y, m3: sv.m3, stoneM3: sv.stoneM3 });
+    if (sv.inArea < sv.n * 0.5 || sv.m3 + sv.stoneM3 < this.M.minM3) return no("kein Berg im Arbeitsbereich", { y, m3: sv.m3 });
+    if (sv.m3 < this.M.minM3) return no("nur Fels im Arbeitsbereich", { y, m3: sv.m3, stoneM3: sv.stoneM3 });
     for (const [ax, az] of [[2.2, 0], [2.2, -1.0], [2.2, 1.0], [3.4, 0]]) {
       const p = F.at(ax, az), q = { x: p.x, z: p.z };
       w.collide(q, 0.3);
@@ -257,7 +275,7 @@ export class AutoMiner {
     // somewhere to put it
     const recv = this._receiver(x, z, h, y);
     if (!recv) return no("kein Anschluss – Aufgabetrichter oder Rohhaufen gut 3 m hinter dem Gerät", { y, m3: sv.m3 });
-    if (t && !t.inDigArea(F.at(MINER.area.near, 0).x, F.at(MINER.area.near, 0).z) && sv.inArea < sv.n * 0.7) return no("kein Berg im Arbeitsbereich", { y });
+    if (t && !t.inDigArea(F.at(this.M.area.near, 0).x, F.at(this.M.area.near, 0).z) && sv.inArea < sv.n * 0.7) return no("kein Berg im Arbeitsbereich", { y });
     return { ok: true, reason: "", y, m3: sv.m3, stoneM3: sv.stoneM3, recv };
   }
 
@@ -285,7 +303,7 @@ export class AutoMiner {
     if (!r.ok) return r;
     this.task = null;
     this.x = x; this.z = z; this.heading = h;
-    this.budgetMl = Math.round(r.m3 * MINER.slump * 1e6);
+    this.budgetMl = Math.round(r.m3 * this.M.slump * 1e6);
     this.placeDug = 0;
     this.placed = true;
     this.on = false;
@@ -315,7 +333,7 @@ export class AutoMiner {
   statusText() {
     const s = STATUS[this.status] || this.status, ml = Math.round(this.buffer.volumeMl / 1000);
     const done = this.budgetMl > 0 ? ` · Abschnitt ${Math.min(100, Math.round((this.placeDug / this.budgetMl) * 100))} %` : "";
-    return this.status === "running" || this.status === "waiting" ? `${s} · Band ${ml}/${MINER.bufMl / 1000} l · ${this.recv ? this.recv.label : "kein Anschluss"}${done}` : s + done;
+    return this.status === "running" || this.status === "waiting" ? `${s} · Band ${ml}/${this.M.bufMl / 1000} l · ${this.recv ? this.recv.label : "kein Anschluss"}${done}` : s + done;
   }
 
   setOn(on) {
@@ -343,14 +361,14 @@ export class AutoMiner {
     this.stats.runS += dt;
     if (!this.task) {
       // room for another bite? (the head slows down as the belt fills, then waits)
-      if (this.buffer.room < MINER.biteMl * 1.35) { this.status = "waiting"; this.stats.waitS += dt; this._pose(dt, this.rest, 2); return; }
+      if (this.buffer.room < this.M.biteMl * 1.35) { this.status = "waiting"; this.stats.waitS += dt; this._pose(dt, this.rest, 2); return; }
       const sv = this.survey();
       if (!sv.best) { this.on = false; this.status = this._why(sv); this.task = null; this._sound("miner_stop", player); return; }
       this.status = "running";
       const hit = { x: sv.best.x, y: sv.best.y, z: sv.best.z, normal: t.getNormalAt(sv.best.x, sv.best.z), distance: 0, diggable: true, boulder: null };
-      const mat = this.ctx.mining().materialAtHit(hit), m = this.ctx.mining(), eff = Math.max(0.3, m.efficiencyAtHit(hit, MINER_DEF) || MINER_DEF.materialEfficiency[mat] || 0.6);
+      const mat = this.ctx.mining().materialAtHit(hit), m = this.ctx.mining(), eff = Math.max(0.3, m.efficiencyAtHit(hit, this.DEF) || this.DEF.materialEfficiency[mat] || 0.6);
       const slow = 1 + 1.6 * Math.max(0, this.fill - 0.5);           // backpressure: slower as the belt fills
-      const P = MINER.phase;
+      const P = this.M.phase;
       this.task = { phase: "reach", t: 0, hit, key: sv.best.key, mat, eff, slow, dur: { reach: P.reach * slow, contact: P.contact, cut: (P.cut / eff) * slow, follow: P.follow, drop: P.drop, back: P.back * slow }, cut: null, from: { ...this.pose } };
       this._sound("miner_motor", player, 0.7);
     }
@@ -409,7 +427,7 @@ export class AutoMiner {
   _cut(T) {
     const m = this.ctx.mining(), L = this.ctx.ledger;
     const eye = this._w.set(this.x, this.y + AM.boomPivot[1] + 0.7, this.z);
-    const r = m.action(T.hit, MINER_DEF, null, eye);
+    const r = m.action(T.hit, this.DEF, null, eye);
     if (this.ctx.economy) this.ctx.economy().recordAction(r, "autominer");
     if (!r.ok || r.blocked || r.kind !== "dig") { this.stats.blocked++; return { ok: false, ml: 0, material: r.material }; }
     const dig = batchFromDig(r, "autominer", this.ctx.nextId());
@@ -427,7 +445,7 @@ export class AutoMiner {
   _discharge(dt) {
     const R = this.recv;
     if (!R || this.buffer.volumeMl <= 0) { this.outAcc = 0; this._outRun = false; return; }
-    this.outAcc += (MINER.outLpm * 1000 / 60) * dt;
+    this.outAcc += (this.M.outLpm * 1000 / 60) * dt;
     if (this.outAcc < 500) return;
     const want = Math.min(Math.floor(this.outAcc), this.buffer.volumeMl);
     let ml = 0;
@@ -488,7 +506,7 @@ export class AutoMiner {
     const R = this.recv;
     // working: towards its receiver at the belt's tilt; parked / moved: straight back, a little lower (transport)
     let slew = 0, luff = 0.1;
-    if (R && this.placed) { slew = R.off || 0; luff = MINER.out.luff; }
+    if (R && this.placed) { slew = R.off || 0; luff = this.M.out.luff; }
     const f = 1 - Math.exp(-(dt || 1) * 2.5);
     this.pose.outSlew += (slew - this.pose.outSlew) * f;
     this.pose.outLuff += (luff - this.pose.outLuff) * f;
@@ -528,7 +546,7 @@ export class AutoMiner {
 
   /** one bite at once (no animation): -> the cut's result (null: no room / nothing to take) */
   cutNow() {
-    if (!this.placed || this.buffer.room < MINER.biteMl * 1.35) return null;
+    if (!this.placed || this.buffer.room < this.M.biteMl * 1.35) return null;
     const sv = this.survey();
     if (!sv.best) { this.on = false; this.status = this._why(sv); return null; }
     const t = this.ctx.terrain(), hit = { x: sv.best.x, y: sv.best.y, z: sv.best.z, normal: t.getNormalAt(sv.best.x, sv.best.z), distance: 0, diggable: true, boulder: null };
@@ -546,11 +564,11 @@ export class AutoMiner {
     this.stats.runS += sec;
     for (let s = 0; s < sec; s++) this._discharge(1);
     while (this._simT > 0) {
-      if (this.buffer.room < MINER.biteMl * 1.35) { this.stats.waitS += this._simT; this._simT = 0; this.status = "waiting"; break; }
+      if (this.buffer.room < this.M.biteMl * 1.35) { this.stats.waitS += this._simT; this._simT = 0; this.status = "waiting"; break; }
       const sv = this.survey();
       if (!sv.best) { this.on = false; this.status = this._why(sv); this._simT = 0; break; }
       const t = this.ctx.terrain(), hit = { x: sv.best.x, y: sv.best.y, z: sv.best.z, normal: t.getNormalAt(sv.best.x, sv.best.z), distance: 0, diggable: true, boulder: null };
-      const m = this.ctx.mining(), mat = m.materialAtHit(hit), eff = Math.max(0.3, m.efficiencyAtHit(hit, MINER_DEF) || 0.6), P = MINER.phase;
+      const m = this.ctx.mining(), mat = m.materialAtHit(hit), eff = Math.max(0.3, m.efficiencyAtHit(hit, this.DEF) || 0.6), P = this.M.phase;
       const dur = (P.reach + P.contact + P.cut / eff + P.follow + P.drop + P.back) * (1 + 1.6 * Math.max(0, this.fill - 0.5));
       if (this._simT < dur) break;
       this._simT -= dur;
