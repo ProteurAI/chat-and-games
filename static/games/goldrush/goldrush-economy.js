@@ -28,7 +28,7 @@
 // one step (never below zero); the caller grants the item in the same
 // synchronous call, so a save can never see one without the other.
 
-import { FIND } from "./goldrush-resources.js";
+import { FIND, jackpotTier } from "./goldrush-resources.js";
 
 export const GOLD_CENTS_PER_GRAM = 10000;
 const UG_PER_CENT = 1e6 / GOLD_CENTS_PER_GRAM;           // 100 µg
@@ -90,12 +90,15 @@ export class Economy {
       playTimeMs: int(st.playTimeMs),
       rockHits: int(st.rockHits),
       rocksBroken: int(st.rocksBroken),
-      byTool: { hand: tool(tl.hand), shovel: tool(tl.shovel), pickaxe: tool(tl.pickaxe), excavator: tool(tl.excavator), sample: tool(tl.sample) },
+      byTool: { hand: tool(tl.hand), shovel: tool(tl.shovel), pickaxe: tool(tl.pickaxe), excavator: tool(tl.excavator), sample: tool(tl.sample), autominer: tool(tl.autominer) },
       // phase 9: what the cuts took out of the original mountain (the contract; goldrush-contract.js)
       mountainG: int(st.mountainG),
       mountainMl: int(st.mountainMl),
       washedUg: int(st.washedUg),            // fine gold recovered by washing (all time)
       washedPieces: int(st.washedPieces),    // pieces that came out of the pan / off the screen
+      // Prompt 10: the rare big nuggets by tier (large, rare, exceptional, legendary - JACKPOT) and their worth
+      bigNuggets: [0, 1, 2, 3].map((q) => int(st.bigNuggets && st.bigNuggets[q])),
+      bigNuggetCents: int(st.bigNuggetCents),
     };
     const so = s.sold || {};
     this.sold = {
@@ -172,7 +175,7 @@ export class Economy {
   // the finds of one action are out of the ground: they become PENDING.
   // Returns what to show (items carry their id) - nothing in the pouch yet.
   discover(finds, count) {
-    const out = { cents: 0, best: FIND.NONE, nuggetCents: 0, firstNugget: false, items: [] };
+    const out = { cents: 0, best: FIND.NONE, nuggetCents: 0, firstNugget: false, items: [], bestUg: 0 };
     if (!count) return out;
     this.stats.findDigs++;
     for (let n = 0; n < count; n++) {
@@ -185,6 +188,7 @@ export class Economy {
       if (f.cls > out.best) out.best = f.cls;
       if (f.cls === FIND.NUGGET) {
         out.nuggetCents = Math.max(out.nuggetCents, cents);
+        out.bestUg = Math.max(out.bestUg, f.massUg);
         if (!this.flags.firstNuggetSeen) { this.flags.firstNuggetSeen = true; out.firstNugget = true; }
       }
     }
@@ -204,7 +208,14 @@ export class Economy {
     st.finds++;
     st.goldFoundUg += it.massUg;
     if (it.cls === FIND.NUGGET && it.cents > st.biggestNuggetCents) { st.biggestNuggetCents = it.cents; st.biggestNuggetUg = it.massUg; }
+    if (it.cls === FIND.NUGGET) this._big(it.massUg, it.cents);
     return it;
+  }
+
+  // Prompt 10: a big nugget into the pouch -> its tier's count
+  _big(ug, cents) {
+    const q = jackpotTier(ug);
+    if (q >= 0) { this.stats.bigNuggets[q]++; this.stats.bigNuggetCents += cents; }
   }
 
   /**
@@ -213,7 +224,7 @@ export class Economy {
    * -> { cents, ug, pieces }
    */
   recover(fineUg, finds = []) {
-    const out = { cents: 0, ug: 0, pieces: 0 };
+    const out = { cents: 0, ug: 0, pieces: 0, bestUg: 0 };             // (bestUg: its biggest nugget - Prompt 10's find moment)
     const st = this.stats;
     const fine = int(fineUg);
     if (fine > 0) {
@@ -231,6 +242,7 @@ export class Economy {
       st.finds++;
       st.washedPieces++;
       if (f.cls === FIND.NUGGET && c > st.biggestNuggetCents) { st.biggestNuggetCents = c; st.biggestNuggetUg = ug; }
+      if (f.cls === FIND.NUGGET) { this._big(ug, c); out.bestUg = Math.max(out.bestUg, ug); }
     }
     st.goldFoundUg += out.ug;
     return out;
@@ -335,7 +347,7 @@ export class Economy {
       sold: { ...this.sold },
       shop: { purchases: this.shop.purchases.map((q) => ({ ...q })), spentCents: this.shop.spentCents, toolPurchases: this.shop.toolPurchases, upgradePurchases: this.shop.upgradePurchases },
       milestones: { ...this.milestones },
-      stats: { ...st, massG: { ...st.massG }, byTool: { hand: { ...st.byTool.hand }, shovel: { ...st.byTool.shovel }, pickaxe: { ...st.byTool.pickaxe }, excavator: { ...st.byTool.excavator }, sample: { ...st.byTool.sample } } },
+      stats: { ...st, bigNuggets: [...st.bigNuggets], massG: { ...st.massG }, byTool: { hand: { ...st.byTool.hand }, shovel: { ...st.byTool.shovel }, pickaxe: { ...st.byTool.pickaxe }, excavator: { ...st.byTool.excavator }, sample: { ...st.byTool.sample }, autominer: { ...st.byTool.autominer } } },
       flags: { ...this.flags, streaksFound: [...this.flags.streaksFound] },
       nextId: this.nextId,
       pending: [...this.pending.values()].map((q) => ({ id: q.id, cls: q.cls, massUg: q.massUg, key: q.key })),

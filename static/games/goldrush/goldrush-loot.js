@@ -10,7 +10,7 @@
 // flush() collects all at once (exit, hidden tab). Everything is pooled -
 // no allocation per find.
 
-import { FIND } from "./goldrush-resources.js";
+import { FIND, jackpotTier } from "./goldrush-resources.js";
 import { mulberry32, noise3 } from "./goldrush-noise.js";
 
 const GRAVITY = 9.81;
@@ -26,8 +26,10 @@ const SPECKS = 32;               // fine-gold flitter in flight at most (one ins
 // small lump, only a real nugget (EUR 1-4) is a proper little nugget you hold up.
 // size: mesh radius in m (pieces are drawn a little larger than life so a 5 mm
 // flake still reads from standing height), from the cheapest to the dearest of
-// the class (by value, logarithmic) - a later, deeper layer adds bigger classes
-// here (e.g. a large nugget) without touching the rest.
+// the class (by value, logarithmic). Prompt 10: a big nugget above the class's
+// EUR 4 grows with the fourth root of its value - between the cube root of its
+// mass and what still reads as a piece of gold, not a prop: EUR 10 ~1,25x,
+// EUR 30 ~1,65x, EUR 80 ~2,1x the radius of a EUR 4 one.
 export const FIND_LOOK = {
   [FIND.TRACE]: { kind: "speck", specks: 2, size: [0.0018, 0.0026], cents: [1, 3], glint: [0.016, 0.026], glints: 2 },
   [FIND.FINE]: { kind: "speck", specks: 4, size: [0.0022, 0.0032], cents: [3, 8], glint: [0.02, 0.034], glints: 3 },
@@ -41,12 +43,13 @@ export function findSize(cls, cents, u = 0.5) {
   const L = FIND_LOOK[cls];
   if (!L) return 0;
   const [c0, c1] = L.cents, [r0, r1] = L.size;
+  if (cls === FIND.NUGGET && cents > c1) return r1 * Math.pow(Math.min(cents, 12000) / c1, 0.25) * (0.97 + 0.06 * u);
   const t = Math.max(0, Math.min(1, Math.log(Math.max(1, cents) / c0) / Math.log(c1 / c0)));
   return r0 + (r1 - r0) * Math.max(0, Math.min(1, 0.75 * t + 0.25 * u));
 }
 
-// an irregular lump: a sphere pushed in and out by noise, then squashed
-function lumpGeometry(THREE, seed, { w = 20, h = 14, amp = 0.28, freq = 1.7, sx = 1, sy = 0.7, sz = 0.85 } = {}) {
+// an irregular lump: a sphere pushed in and out by noise, then squashed (Prompt 10: also the trommel's trap and the pan)
+export function lumpGeometry(THREE, seed, { w = 20, h = 14, amp = 0.28, freq = 1.7, sx = 1, sy = 0.7, sz = 0.85 } = {}) {
   const g = new THREE.SphereGeometry(1, w, h);
   const p = g.attributes.position;
   for (let v = 0; v < p.count; v++) {
@@ -182,11 +185,11 @@ export class LootSystem {
       it.t = 0;
       it.rested = 0;
       it.wait = REST[f.cls];
-      const big = f.cls === FIND.NUGGET;
+      const big = f.cls === FIND.NUGGET, tq = big ? jackpotTier(f.massUg || 0) : -1;
       // its size follows its value (FIND_LOOK): a few-cent flake stays a flake
       it.size = findSize(f.cls, f.cents, r());
       it.x = hit.x + n.x * 0.03; it.y = hit.y + 0.03; it.z = hit.z + n.z * 0.03;
-      const up = big ? 2.3 + r() * 0.4 : f.cls === FIND.TINY ? 1.8 + r() * 0.4 : 1.5 + r() * 0.4;
+      const up = big ? (tq >= 1 ? 1.8 : 2.3) + r() * 0.4 : f.cls === FIND.TINY ? 1.8 + r() * 0.4 : 1.5 + r() * 0.4;     // (a heavy one does not fly as high)
       const out = 0.55 + r() * 0.4;
       it.vx = n.x * out + (r() - 0.5) * 0.5; it.vy = up; it.vz = n.z * out + (r() - 0.5) * 0.5;
       it.rx = r() * 6; it.ry = r() * 6; it.rz = r() * 6;
@@ -197,10 +200,13 @@ export class LootSystem {
       if (big) {
         // the nugget's moment: a warm shine on the piece (soft, big glints that
         // ride along with it) and a few sparks - no flash, no light source
-        this._glint(it.x, it.y + 0.02, it.z, 0.22, 0.7, it);
-        this._glint(it.x, it.y + 0.03, it.z, 0.13, 0.95, it);
-        for (let q = 0; q < 5; q++) this._glint(it.x + (r() - 0.5) * 0.1, it.y + r() * 0.1, it.z + (r() - 0.5) * 0.1, 0.035 + r() * 0.035, 0.35 + r() * 0.3);
+        // (Prompt 10: a big one a little more - larger, longer, a few more sparks; still no flash)
+        const k = tq >= 0 ? 1 + 0.12 * (tq + 1) : 1;
+        this._glint(it.x, it.y + 0.02, it.z, 0.22 * k, 0.7 * k, it);
+        this._glint(it.x, it.y + 0.03, it.z, 0.13 * k, 0.95 * k, it);
+        for (let q = 0; q < 5 + 2 * (tq + 1); q++) this._glint(it.x + (r() - 0.5) * 0.1 * k, it.y + r() * 0.1 * k, it.z + (r() - 0.5) * 0.1 * k, 0.035 + r() * 0.035, 0.35 + r() * 0.3);
         this.shine = 0.95;
+        this.lastTier = tq;
       } else {
         this._glint(it.x, it.y + 0.02, it.z, f.cls === FIND.TINY ? 0.042 : 0.034, 0.3);
       }

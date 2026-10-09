@@ -78,6 +78,30 @@ const MASS = {
   [FIND.TINY]: [2500, 6500, 1.6],      // 25-90 ct
   [FIND.NUGGET]: [10000, 30000, 2.2],  // 1-4 €, most of them small
 };
+// Prompt 10: very rare big nuggets above the ordinary ones (1-4 €) - real places in the ground like every find
+// (seed, position, geology; used up once), their own steep rarity per voxel scaled by the HOST - where big nuggets
+// sit: gravel, the rich stretches of a paleochannel, pockets, streaks, a little deeper; never in the camp's fill or
+// the starter faces' core; dirt rarely. Not by the gold density: a rich voxel is not a jackpot voxel. Rates per voxel at
+// host 1; `norm` calibrated with goldrush_gold_ab.py geology (20 seeds): the mountain ~0,038 large / ~0,010 rare /
+// ~0,0023 exceptional / ~0,0005 legendary per m3, the buried channels' flat about twice that - a 35-h claim
+// (110-160 m3) ~5 / ~1,3 / ~0,3 / ~0,07. Their expected gold comes off the voxel's fine gold, so the claim's budget
+// stays where it was (measured: claim EUR 1234,64 -> 1234,64 per m3, mountain 1173,09 -> 1172,97; < 0,05 % moves).
+export const JACKPOT = {
+  tiers: [            // [rate per voxel at host 1, mass µg min, span, curve]  (100 µg = 1 ct)
+    [7.8e-6, 50000, 70000, 1.6],      // large        € 5-12
+    [2.0e-6, 120000, 180000, 1.7],    // rare         € 12-30
+    [4.7e-7, 300000, 200000, 1.6],    // exceptional  € 30-50
+    [1.1e-7, 500000, 360000, 2.0],    // legendary    € 50-86
+  ],
+  mat: [0.55, 0.8, 1.8, 0],           // the host by material: dirt / compact / gravel / stone
+  base: 0.35, channel: 1.6, rich: 2.5, pocket: 1.4, streak: 1.2, vein: 0.5, deep: 0.4,
+  norm: 0.4,                          // the host's scale (its mean over the mountain is ~0,31 before it)
+};
+export const JACKPOT_LABEL = ["Großer Nugget", "Seltener Nugget", "Außergewöhnlicher Nugget", "Legendärer Nugget"];
+const JACKPOT_MEAN = JACKPOT.tiers.map(([, m0, span, c]) => m0 + span / (c + 1));
+/** the tier of a nugget by its mass (µg): -1 ordinary (<= 4 €), 0 large .. 3 legendary */
+export function jackpotTier(ug) { return ug >= 500000 ? 3 : ug >= 300000 ? 2 : ug >= 120000 ? 1 : ug > 45000 ? 0 : -1; }
+
 // fine gold per slice at gold density 1 (µg) - the bulk of the gold in the
 // ground, but only processing brings it back (see the phase-5 benchmark)
 const FINE_PER_SLICE = 6000;
@@ -96,7 +120,7 @@ const STARTER = { radius: 6.5, fade: 2.5, depth: 1.6, gMin: 0.21, gMax: 0.23 };
 export const STREAK = { count: 6, g: 0.42, redist: 0.985, cement: 0.3, flake: 1.4, pieceCap: 0.12 };
 // phase 9: the generation version of the ground's gold (saved; an older save keeps every slice it already
 // took - those never pay again - and its unmined ground follows this one). 3: GoldRush 9.1's calibration
-export const GEOLOGY_VERSION = 3;
+export const GEOLOGY_VERSION = 4;                // 4: Prompt 10's rare big nuggets (JACKPOT)
 const G_MAX = 2.6;                               // the highest gold density a slice may have (phase 9; was 1)
 // ordinary ground: neutral grade +- regional variation, by material, the upper mountain's share of it
 // (smoothly from 0.3 m to 2.2 m of original height), how much deeper ground inside a body adds
@@ -439,6 +463,7 @@ export class MaterialField {
 
   // gold per unit of material, 0..1 (only relative; the finds turn it into mass)
   goldDensityAt(x, y, z, mat, depth) {
+    this.host = 0;                                   // (Prompt 10: where big nuggets may sit - set below for ordinary ground)
     if (mat === MAT.STONE) return 0;
     const s = this.seed, k = this._column(x, z), base = k >= 0 ? this.terrain.base[k] : y + depth;
     // phase 9: the camp's fill holds a trace at most (it was brought in and packed)
@@ -463,10 +488,16 @@ export class MaterialField {
     // REDIST: a small share of the ordinary gold sits in the mineralised streaks instead
     // (a density above 1 is allowed since phase 9: the rich channel stretches and pockets keep their lead - the
     // voxels below turn it into more fine gold per slice and a higher find chance, P_FIND g^0.85 < 1 up to g ~ 3.5)
-    let g = Math.min(G_MAX, Math.max(0, ((ordinary * GEO.mf[mat] * mount * deep + GEO.vein * vein) * STREAK.redist + chG + pocket + STREAK.g * this.streakAt(x, y, z)) * GEO.scale));
+    const stA = this.streakAt(x, y, z);
+    let g = Math.min(G_MAX, Math.max(0, ((ordinary * GEO.mf[mat] * mount * deep + GEO.vein * vein) * STREAK.redist + chG + pocket + STREAK.g * stA) * GEO.scale));
     // the starter zone: same geology, but held inside a fair band
     const sw = this.starterWeight(x, y, z, y + depth);
     if (sw > 0) g += (Math.min(STARTER.gMax, Math.max(STARTER.gMin, g)) - g) * sw;
+    // Prompt 10: the host of big nuggets (its own shape - gravel, rich channel stretches, pockets, streaks, depth)
+    const J = JACKPOT, pk = this.pockets.length ? Math.min(1, pocket / 0.5) : 0;
+    const chH = ch ? ch.w * (0.4 + J.rich * ch.rich * ch.rich) : 0;
+    this.host = J.mat[mat] * (J.base + J.channel * chH + J.pocket * pk + J.streak * stA + J.vein * vein)
+      * (1 - J.deep / 2 + J.deep * smoothstep(0, 3, depth)) * Math.max(0, 1 - sw / 0.9) / J.norm;     // (none in the starter faces' core)
     return g;
   }
 
@@ -479,17 +510,38 @@ export class MaterialField {
     out.cls = FIND.NONE;
     out.massUg = 0;
     out.fineUg = 0;
+    out.jackpot = -1;
     const mat = this.materialAt(x, y, z, k);
     out.mat = mat;
     if (mat === MAT.STONE) return out;
     const g = this.goldDensityAt(x, y, z, mat, t.base[k] - y);
     out.g = g;
-    out.fineUg = Math.round(FINE_PER_SLICE * g);
-    const s = this.seed;
+    const s = this.seed, host = this.host;
     // in a streak: more pieces (above all flakes), but the nugget / tiny-piece odds
     // only of the ground around it plus a little (no nugget farm behind a pickaxe)
     const st = this.streaks && this.streaks.length ? this.streakAt(x, y, z) : 0;
     out.streak = st;
+    // Prompt 10: a big nugget here? (its own hash, its own steep odds by the host; the expected jackpot gold of a
+    // voxel comes off its fine gold - the claim's budget unchanged)
+    let jack = -1, expJ = 0;
+    if (host > 0) {
+      const hj = hash3(i, iy, j, s ^ 0x1f83d9ab);
+      let acc = 0;
+      for (let q = JACKPOT.tiers.length - 1; q >= 0; q--) {
+        const p = JACKPOT.tiers[q][0] * host;
+        expJ += p * JACKPOT_MEAN[q];
+        if (jack < 0 && hj < acc + p && hj >= acc) jack = q;
+        acc += p;
+      }
+    }
+    out.fineUg = Math.max(0, Math.round(FINE_PER_SLICE * g - expJ));
+    if (jack >= 0) {
+      const [, m0, span, curve] = JACKPOT.tiers[jack];
+      out.cls = FIND.NUGGET;
+      out.massUg = Math.round(m0 + span * Math.pow(hash3(i, iy, j, s ^ 0x5be0cd19), curve));
+      out.jackpot = jack;
+      return out;
+    }
     if (hash3(i, iy, j, s ^ 0x6a09e667) >= P_FIND * Math.pow(g, 0.85)) return out;
     const u = hash3(i, iy, j, s ^ 0x3c6ef372);
     const gp = st > 0 ? Math.min(g, Math.max(0, g - STREAK.g * st) + STREAK.pieceCap) : g;

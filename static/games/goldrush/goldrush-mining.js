@@ -308,6 +308,16 @@ export class MiningSystem {
     this.carriedCount++;
   }
 
+  // dev (Prompt 10's QA): a piece lying just under the surface here - the next cut through it takes it out like any
+  // piece that slid there (saved with them, taken once)
+  devPlant(x, z, cls, massUg, key) {
+    const t = this.terrain, i = Math.round((x - t.x0) / t.cell), j = Math.round((z - t.z0) / t.cell);
+    if (i < 1 || j < 1 || i >= t.vps - 1 || j >= t.vps - 1 || !(massUg > 0)) return false;
+    const k = j * t.vps + i;
+    this._carry(k, { cls, massUg: Math.round(massUg), key: String(key), y: t.height[k] - 0.001 });
+    return true;
+  }
+
   consumedAt(x, z) {
     const t = this.terrain;
     const i = Math.round((x - t.x0) / t.cell), j = Math.round((z - t.z0) / t.cell);
