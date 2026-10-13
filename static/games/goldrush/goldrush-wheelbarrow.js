@@ -83,7 +83,7 @@ export class Wheelbarrow {
     const u = this.group.userData;
     if (u.tyre) u.tyre.scale.set(1, 1, has("barrow.wheel") ? 1.75 : 1);
     if (u.boards) u.boards.visible = has("barrow.tray");
-    if (u.tyreMat) u.tyreMat.color.setHex(has("barrow.wheel") ? 0x1c1c1c : 0x2b2826);
+    if (u.tyreMat) u.tyreMat.color.setHex(has("barrow.wheel") ? 0x2a2a2a : 0x34302d);
   }
 
   get massKg() { return this.batch.massG / 1000; }

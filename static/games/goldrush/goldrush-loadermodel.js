@@ -145,11 +145,11 @@ export class LoaderRig {
     this.soilTex = soilTex;
     this.paint = mat(new THREE.MeshStandardMaterial({ color: 0xdfa52a, roughness: 0.46, metalness: 0.2, envMap, envMapIntensity: 0.45 }));
     this.paintWorn = mat(new THREE.MeshStandardMaterial({ color: 0xb98d3a, roughness: 0.68, metalness: 0.15, side: THREE.DoubleSide }));
-    this.dark = mat(new THREE.MeshStandardMaterial({ color: 0x2a2927, roughness: 0.6, metalness: 0.3, envMap, envMapIntensity: 0.3 }));
+    this.dark = mat(new THREE.MeshStandardMaterial({ color: 0x34322f, roughness: 0.6, metalness: 0.3, envMap, envMapIntensity: 0.3 }));
     this.steel = mat(new THREE.MeshStandardMaterial({ color: 0x5c5852, roughness: 0.5, metalness: 0.6, envMap, envMapIntensity: 0.5, side: THREE.DoubleSide }));
     this.chrome = mat(new THREE.MeshStandardMaterial({ color: 0xc8ccd0, roughness: 0.18, metalness: 0.95, envMap, envMapIntensity: 0.9 }));
     this.glass = mat(new THREE.MeshStandardMaterial({ color: 0x9fb4bb, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.26, depthWrite: false, envMap, envMapIntensity: 1 }));
-    this.seat = mat(new THREE.MeshStandardMaterial({ color: 0x1f1f22, roughness: 0.85 }));
+    this.seat = mat(new THREE.MeshStandardMaterial({ color: 0x2c2c30, roughness: 0.85 }));
     this.tyreMap = tyreTex(THREE); this.texs.push(this.tyreMap);
     this.rubber = mat(new THREE.MeshStandardMaterial({ map: this.tyreMap, roughness: 0.93 }));
     this.rim = mat(new THREE.MeshStandardMaterial({ color: 0xd4a334, roughness: 0.5, metalness: 0.3 }));

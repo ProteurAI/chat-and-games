@@ -159,7 +159,8 @@ export class ProcessModels {
     // ---- shared materials
     this.galv = mat(new THREE.MeshStandardMaterial({ color: 0x92979a, roughness: 0.5, metalness: 0.55, envMap: envMap || null, envMapIntensity: 0.55 }));
     this.galvDark = mat(new THREE.MeshStandardMaterial({ color: 0x7d8286, roughness: 0.5, metalness: 0.6, envMap: envMap || null }));
-    this.panSteel = mat(new THREE.MeshStandardMaterial({ color: 0x34373b, roughness: 0.33, metalness: 0.75, envMap: envMap || null, side: THREE.DoubleSide }));
+    // (Visual Overhaul A: a little lighter and less mirror-like - seen from above the dark gloss mirrored the zenith as navy)
+    this.panSteel = mat(new THREE.MeshStandardMaterial({ color: 0x4a4946, roughness: 0.44, metalness: 0.7, envMap: envMap || null, side: THREE.DoubleSide }));
     this.wood = mat(new THREE.MeshStandardMaterial({ map: woodTex || null, color: 0xa57c55, roughness: 0.9 }));
     this.darkWood = mat(new THREE.MeshStandardMaterial({ map: woodTex || null, color: 0x6a4c34, roughness: 0.92 }));
     this.gripWood = mat(new THREE.MeshStandardMaterial({ color: 0x8c6238, roughness: 0.7 }));

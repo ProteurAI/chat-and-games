@@ -141,11 +141,11 @@ export class ExcavatorRig {
     this._geo = geo; this._mat = mat;
     this.paint = mat(new THREE.MeshStandardMaterial({ color: 0xd99f22, roughness: 0.48, metalness: 0.2, envMap, envMapIntensity: 0.45 }));
     this.paintWorn = mat(new THREE.MeshStandardMaterial({ color: 0xb98d3a, roughness: 0.66, metalness: 0.15 }));
-    this.dark = mat(new THREE.MeshStandardMaterial({ color: 0x2a2927, roughness: 0.6, metalness: 0.3, envMap, envMapIntensity: 0.3 }));
+    this.dark = mat(new THREE.MeshStandardMaterial({ color: 0x34322f, roughness: 0.6, metalness: 0.3, envMap, envMapIntensity: 0.3 }));
     this.steel = mat(new THREE.MeshStandardMaterial({ color: 0x5c5852, roughness: 0.5, metalness: 0.6, envMap, envMapIntensity: 0.5 }));
     this.chrome = mat(new THREE.MeshStandardMaterial({ color: 0xc8ccd0, roughness: 0.18, metalness: 0.95, envMap, envMapIntensity: 0.9 }));
     this.glass = mat(new THREE.MeshStandardMaterial({ color: 0x9fb4bb, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.28, depthWrite: false, envMap, envMapIntensity: 1 }));
-    this.seat = mat(new THREE.MeshStandardMaterial({ color: 0x1f1f22, roughness: 0.85 }));
+    this.seat = mat(new THREE.MeshStandardMaterial({ color: 0x2c2c30, roughness: 0.85 }));
     this.trackMap = trackTex(THREE); this.texs.push(this.trackMap);
     this.rubber = mat(new THREE.MeshStandardMaterial({ map: this.trackMap, roughness: 0.92 }));
     this.decalMap = decalTex(THREE); this.texs.push(this.decalMap);

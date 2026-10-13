@@ -329,9 +329,10 @@ export class FirstPersonHands {
     cuff.translate(0, -0.002, 0.012);
     const rim = new THREE.TorusGeometry(0.041, 0.005, 8, 22);
     rim.translate(0, -0.002, -0.008);
-    const leather = 0xc48d55, dark = 0xa87445, canvas = 0x8a5f3a;
+    // (Visual Overhaul A albedo calibration: tan work leather ~0.25 linear - it read as bright orange under the faithful tone curve)
+    const leather = 0xa98662, dark = 0x8c6a4a, canvas = 0x7a5d42;
     this.bodyGeo = mergeParts(THREE, [
-      { g: palm, color: leather }, { g: knuckles, color: dark }, { g: back, color: 0xcf9860 }, { g: cuff, color: canvas }, { g: rim, color: 0x6e4a2c },
+      { g: palm, color: leather }, { g: knuckles, color: dark }, { g: back, color: 0xb08c68 }, { g: cuff, color: canvas }, { g: rim, color: 0x6e4a2c },
     ]);
     // the arms at their real lengths (never scaled): a canvas work sleeve, a little darker above the elbow
     this.foreGeo = new THREE.CylinderGeometry(0.04, 0.033, ARM.fore, 16, 3, true);

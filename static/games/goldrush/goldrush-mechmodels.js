@@ -133,7 +133,7 @@ export class MechModels {
     this._geo = geo; this._mat = mat; this._tex = tex;
     this.galv = mat(new THREE.MeshStandardMaterial({ color: 0x8d9295, roughness: 0.52, metalness: 0.55, envMap: envMap || null, envMapIntensity: 0.5, side: THREE.DoubleSide }));
     this.galvDark = mat(new THREE.MeshStandardMaterial({ color: 0x5e6366, roughness: 0.55, metalness: 0.5, envMap: envMap || null }));
-    this.rubber = mat(new THREE.MeshStandardMaterial({ color: 0x1f1e1d, roughness: 0.9 }));
+    this.rubber = mat(new THREE.MeshStandardMaterial({ color: 0x2e2c2a, roughness: 0.9 }));      // (VO-A: rubber ~0.03 linear, never black)
     this.wood = mat(new THREE.MeshStandardMaterial({ map: woodTex || null, color: 0xa57c55, roughness: 0.9 }));
     this.darkWood = mat(new THREE.MeshStandardMaterial({ map: woodTex || null, color: 0x6a4c34, roughness: 0.92 }));
     this.wetWood = mat(new THREE.MeshStandardMaterial({ map: woodTex || null, color: 0x5d4632, roughness: 0.6 }));

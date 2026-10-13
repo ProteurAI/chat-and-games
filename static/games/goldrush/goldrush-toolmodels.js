@@ -102,7 +102,7 @@ export class ToolModels {
     const track = (g) => { this.geos.push(g); return g; };
     this.woodTex = canvasTex(THREE, 64, 512, (c, w, h) => woodGrain(c, w, h, 41));
     this.steelTex = canvasTex(THREE, 128, 128, (c, w, h) => steelGrime(c, w, h, 43));
-    this.wood = new THREE.MeshStandardMaterial({ map: this.woodTex, color: 0xd8c0a0, roughness: 0.72, metalness: 0 });
+    this.wood = new THREE.MeshStandardMaterial({ map: this.woodTex, color: 0xbdb2a2, roughness: 0.72, metalness: 0 });   // (VO-A: a little less orange)
     this.steel = new THREE.MeshStandardMaterial({ map: this.steelTex, color: 0x8a8c8f, roughness: 0.45, metalness: 0.85, envMap: envMap || null, envMapIntensity: 0.9 });
     this.edge = new THREE.MeshStandardMaterial({ map: this.steelTex, color: 0xc9c7c2, roughness: 0.3, metalness: 0.95, envMap: envMap || null, envMapIntensity: 1.1 });
     // leather grip wrap: a strap wound round the handle (diagonal turns)
