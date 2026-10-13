@@ -105,6 +105,11 @@ const HANDLE_IN_GLOVE = [0, -0.03, -0.072];      // where a held handle runs thr
 
 // the arm (m): shoulder -> elbow, elbow -> wrist - fixed, whatever the hand holds
 export const ARM = { upper: 0.31, fore: 0.28 };
+// Visual Overhaul A, C-lite: the shovel's blade meets the ground where the stroke digs. depth: how far the tip
+// goes in past the surface (along the view ray - the world's depth clips it); turn: the most the shovel is aimed
+// round the right hand (rad); slide: the most it is pushed along / pulled back on its shaft (m) - the arms
+// stretch, they do not grow; a point further away keeps a gap (logged; the gameplay reach is unchanged)
+export const CONTACT = { depth: 0.06, turn: 0.6, slide: 0.42 };
 // where the shoulders are while the hands work in view space (tools, bucket, pan): just below
 // and behind the camera, out to the sides (the right one; mirrored for the left)
 const SHOULDER = [0.25, -0.42, 0.14];
@@ -560,8 +565,11 @@ export class FirstPersonHands {
    * Per frame: pose hands and tool from the controller's view
    * (goldrush-tools.js ToolController.view()) + lighting.
    */
-  update(dt, view, { camera, sunDir, sunVisible, walk, bob }) {
+  update(dt, view, { camera, sunDir, sunVisible, walk, bob, contact = null }) {
     const rm = this.reducedMotion;
+    this._cam = camera;
+    this._ct = contact;                    // { target, at } world points: the crosshair's / the last contact's
+    this.clipWanted = false;
     this.time += dt;
     if (this.grab > 0) this.grab = Math.max(0, this.grab - dt / 0.22);
     if (this.shake > 0) this.shake = Math.max(0, this.shake - dt);
@@ -734,6 +742,8 @@ export class FirstPersonHands {
     T.rotation.set(pose.r[0] + vp[3] + extra.rx + (rm ? 0 : shake * 2), pose.r[1] + vp[4], pose.r[2] + vp[5]);
     T.updateMatrix();
     T.updateMatrixWorld(true);
+    if (id === "shovel" && !this.debugToolPose && !inspecting) this._contactPose(view, T);
+    else { this._cw = 0; this.contactInfo = null; }
     // gloves on the grips (the right one may be away, showing a nugget)
     for (const grip of GRIPS[id]) {
       const g = grip.side === 1 ? this.right : this.left;
@@ -761,6 +771,62 @@ export class FirstPersonHands {
       } else g.applyMatrix(this._gripMatrix(grip, this._g), this.aspectK, 0.97);
       // keep the bare-hand pose in sync for a smooth hand-over later
       g.pose = clonePose(POSE.rest);
+    }
+  }
+
+  // ---- C-lite (Visual Overhaul A): the blade's tip to the ground the stroke digs - the way a digger does it: the
+  // shovel is aimed at the point (turned about the right hand on its D-grip) and pushed along its shaft the rest of
+  // the way. Weight by phase (absolute - at any frame rate the frame after the contact shows the blade on its
+  // point): it starts to aim in the windup, is on the point at contact (end of the thrust), stays a moment in the
+  // scoop, lets go as the load comes up / it bounces off / it is pulled back. The gloves follow their grips, the
+  // arms their gloves. The world's depth clips the tip in the ground (goldrush-post.js installToolClip).
+  _contactPose(view, T) {
+    const st = view.state === "action" ? view.phase : null, u = view.u || 0;
+    let w = 0;
+    if (st === "windup") w = 0.25 * ease(u);
+    else if (st === "thrust") w = 0.25 + 0.75 * easeIn(Math.min(1, u * 1.25));
+    else if (st === "scoop") w = u < 0.4 ? 1 : 1 - 0.8 * ease((u - 0.4) / 0.6);       // on the point a moment, then the load comes up
+    else if (st === "dump") w = 0.2 * (1 - ease(Math.min(1, u * 2)));
+    else if (st === "recoil") w = 1 - ease(Math.min(1, u * 1.6));
+    else if (st === "recover" && view.react === "air") w = 1 - ease(Math.min(1, u * 1.6));
+    this._cw = w;
+    const c = this._ct, p = st === "windup" || st === "thrust" ? c && c.target : c && c.at;
+    if (w < 0.002 || !p || !this._cam) { this.contactInfo = null; return; }
+    const THREE = this.THREE, cam = this._cam;
+    const v = this._cv || (this._cv = { hit: new THREE.Vector3(), tip: new THREE.Vector3(), want: new THREE.Vector3(), p: new THREE.Vector3(),
+      a: new THREE.Vector3(), b: new THREE.Vector3(), q: new THREE.Quaternion(), qf: new THREE.Quaternion(), qi: new THREE.Quaternion() });
+    cam.updateMatrixWorld();
+    const hit = v.hit.set(p.x, p.y, p.z).applyMatrix4(cam.matrixWorldInverse);
+    const want = v.want.copy(hit).addScaledVector(v.a.copy(hit).normalize(), CONTACT.depth);
+    const g = GRIPS.shovel[0], P = v.p.set(g.pos[0], g.pos[1], g.pos[2]).applyMatrix4(T.matrix);
+    const tip = this.models.shovel.localToWorld(v.tip.copy(this.models.shovel.userData.tip));
+    const need = tip.distanceTo(want);
+    const a = v.a.subVectors(tip, P), b = v.b.subVectors(want, P), la = a.length(), lb = b.length();
+    a.multiplyScalar(1 / la); b.multiplyScalar(1 / lb);
+    // aim: the smallest turn that lays the blade on the line to the point (at most CONTACT.turn), weighted
+    const full = v.qf.setFromUnitVectors(a, b), ang = 2 * Math.acos(Math.min(1, Math.abs(full.w)));
+    const k = (ang > CONTACT.turn ? CONTACT.turn / ang : 1) * w;
+    const q = v.q.slerpQuaternions(v.qi.identity(), full, k);
+    T.position.sub(P).applyQuaternion(q).add(P);
+    T.quaternion.premultiply(q);
+    // push / pull along the shaft (at most CONTACT.slide)
+    const slide = Math.max(-CONTACT.slide, Math.min(CONTACT.slide, lb - la));
+    T.position.addScaledVector(a.applyQuaternion(q), slide * w);
+    T.updateMatrix();
+    T.updateMatrixWorld(true);
+    const gap = this.models.shovel.localToWorld(v.tip.copy(this.models.shovel.userData.tip)).distanceTo(want);
+    // need: how far the keyframed tip was from the point; turn (deg) / slide (m) used; gapFull: left at full weight
+    const turned = Math.min(ang, CONTACT.turn);
+    const gapFull = Math.max(0, Math.abs(lb - la) - CONTACT.slide) + (ang > CONTACT.turn ? 2 * lb * Math.sin((ang - CONTACT.turn) / 2) : 0);
+    this.contactInfo = { phase: st, cycle: view.cycle, w: +w.toFixed(3), need: +need.toFixed(3), turnDeg: +(turned * 57.2958).toFixed(1), slide: +slide.toFixed(3),
+      gap: +gap.toFixed(3), gapFull: +gapFull.toFixed(3), hitDist: +hit.length().toFixed(3) };
+    this.clipWanted = w > 0.3 && (st === "thrust" || st === "scoop" || st === "recoil");
+    // QA log: one entry per stroke, the first frame after its contact
+    if ((st === "scoop" || st === "recoil") && this._logCycle !== view.cycle) {
+      this._logCycle = view.cycle;
+      const L = this.contactLog || (this.contactLog = []);
+      L.push(this.contactInfo);
+      if (L.length > 200) L.shift();
     }
   }
 

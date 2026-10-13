@@ -237,6 +237,8 @@ export class GoldRushGame {
     this.hands.reducedMotion = this.reducedMotion;
     this.hands.dirt = Math.min(0.6, this.economy.stats.successfulDigs / 800);
     this.hands.update(0, this.tools.view(), { camera, sunDir: SUN_VEC, sunVisible: true, walk: 0, bob: 0 });
+    // the tool can enter the ground it digs (its contact phases, HIGH / MEDIUM): clipped by the world's depth
+    installToolClip(this.hands.toolRoot, this.post.toolClip);
     this.audio = new GoldRushAudio();
     this.audio.setEnabled(this.settings.sound !== false);
     this.hud = new GoldRushHud(ui.root, ui.moneyEl, { reducedMotion: this.reducedMotion });
@@ -1006,7 +1008,10 @@ export class GoldRushGame {
     this.loot.update(dt, this.camera, this.player);
     this._sunCheck(dt);
     this.processing.update(dt, this.player);
-    this.hands.update(dt, this.tools.view(), { camera: this.camera, sunDir: SUN_VEC, sunVisible: this.sunVisible, walk: Math.min(1, Math.hypot(this.player.vx, this.player.vz) / WALK), bob: this.player.bob });
+    // (C-lite: the stroke's ground point - the crosshair's while the tool comes down, the contact's after it)
+    const ct = this._handsContact || (this._handsContact = { target: null, at: null });
+    ct.target = this.target || null; ct.at = this._contactAt || null;
+    this.hands.update(dt, this.tools.view(), { camera: this.camera, sunDir: SUN_VEC, sunVisible: this.sunVisible, walk: Math.min(1, Math.hypot(this.player.vx, this.player.vz) / WALK), bob: this.player.bob, contact: ct });
     this.hud.update(dt);
     this.stations.update(dt);
     if (this.reticle.visible) { const m = this.reticle.material; m.opacity += ((this._reticleWant || 0.2) - m.opacity) * Math.min(1, dt * 10); }
@@ -1121,6 +1126,7 @@ export class GoldRushGame {
     else world();
     this.postCalls = post.enabled ? post.calls : 0;
     if (this.hands && this.ready && !this.cab) {
+      post.toolClip.uGrClip.value = post.enabled && this.hands.clipWanted ? 1 : 0;
       r.autoClear = false;
       this.hands.render(r);
       r.autoClear = true;
@@ -2020,6 +2026,7 @@ export class GoldRushGame {
     if (this._sampleArm) { this._sampleArm = false; this._sampleContact(); return; }     // phase 9: [R] a sample
     this._aim();                                   // what is under the tool at this very moment
     const hit = this.target, def = this.tools.def;
+    this._contactAt = hit ? { x: hit.x, y: hit.y, z: hit.z } : null;     // (the blade stays on it - C-lite)
     if (!hit) {
       this.tools.react("air");
       this.hands.contact("air");
