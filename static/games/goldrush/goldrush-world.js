@@ -13,6 +13,7 @@ import { CampDressing } from "./goldrush-campdressing.js";
 import { mergeStatic } from "./goldrush-merge.js";
 import { fbm2, hash3, mulberry32, noise2, ridged2, smoothstep } from "./goldrush-noise.js";
 import { AIR, SUN_DIR, analyticEnvironment, hdriEnvironment, skyMaterial } from "./goldrush-atmos.js";
+import { EarthSystem } from "./goldrush-earthmat.js";
 
 export const CLAIM = { minX: -24, maxX: 24, minZ: -30, maxZ: 20 };      // fenced play area
 export const MOUND_CENTER = { x: 0, z: -6 };
@@ -23,6 +24,7 @@ export const MACHINE_ZONES = [
   { id: "C", x: 15.5, z: 13, w: 7, d: 5, label: "ZONE C" },
 ];
 export { SUN_DIR };                       // towards the sun: west-south-west, 22 deg up (Visual Overhaul A, goldrush-atmos.js)
+const GROUND_REF = 0xb59f7d;             // the plain's colour - the earth layers' tint is relative to it
 // image-based light: a CC0 HDRI (Poly Haven "Goegap", ASSETS.md), local - never hotlinked
 const HDRI_URL = new URL("./assets/hdri/goegap_1k.hdr", import.meta.url).href;
 
@@ -78,37 +80,6 @@ function soilDetail(ctx, size, seed) {
       ctx.beginPath();
       ctx.ellipse(x + ox, y + oy, r, r * (0.6 + rng() * 0.4), rng() * 3, 0, Math.PI * 2);
       ctx.fill();
-    }
-  }
-}
-
-// gravel detail (multiplies the vertex colours where the ground is gravel):
-// packed round pebbles, light and dark, with a little shading each
-function gravelDetail(ctx, size, seed) {
-  const rng = mulberry32(seed);
-  ctx.fillStyle = "rgb(146,140,132)";
-  ctx.fillRect(0, 0, size, size);
-  // phase 8: many small, angular stones in a narrow range of tones (7A: big round light ovals read as
-  // confetti from a distance) - a few larger ones, a shadow line under each
-  const stone = (x, y, r, rot, n) => {
-    ctx.beginPath();
-    for (let k = 0; k < n; k++) {
-      const a = rot + (k / n) * Math.PI * 2, rr = r * (0.7 + 0.45 * ((k * 7919 + Math.floor(x * 13)) % 5) / 5);
-      const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr * 0.78;
-      if (k) ctx.lineTo(px, py); else ctx.moveTo(px, py);
-    }
-    ctx.closePath();
-  };
-  for (let p = 0; p < 1500; p++) {
-    const x = rng() * size, y = rng() * size, r = 1.0 + rng() * rng() * (rng() < 0.06 ? 7 : 3.6);
-    const l = 128 + rng() * 74, warm = rng() * 14, rot = rng() * 3, n = 5 + Math.floor(rng() * 3);
-    for (const [ox, oy] of [[0, 0], [size, 0], [-size, 0], [0, size], [0, -size]]) {
-      ctx.fillStyle = "rgba(42,36,30,0.3)";                               // contact shadow
-      stone(x + ox + 0.6, y + oy + 0.8, r, rot, n); ctx.fill();
-      ctx.fillStyle = `rgb(${l + warm},${l - 2},${l - 10 - warm * 0.5})`;
-      stone(x + ox, y + oy, r, rot, n); ctx.fill();
-      ctx.fillStyle = "rgba(255,248,236,0.14)";                          // a soft sun-side light
-      stone(x + ox - r * 0.22, y + oy - r * 0.2, r * 0.5, rot, n); ctx.fill();
     }
   }
 }
@@ -282,200 +253,42 @@ export class GoldRushWorld {
     const THREE = this.THREE, a = this.assets;
     this.soilTex = a.procedural("tex:soil", () => canvasTexture(THREE, 256, (ctx, s) => soilDetail(ctx, s, this.seed + 7)));
     this.woodTex = a.procedural("tex:wood", () => canvasTexture(THREE, 256, (ctx, s) => woodPlanks(ctx, s, this.seed + 11)));
-    this.gravelTex = a.procedural("tex:gravel", () => canvasTexture(THREE, 256, (ctx, s) => gravelDetail(ctx, s, this.seed + 13)));
     this.rockTex = a.procedural("tex:rock", () => canvasTexture(THREE, 256, (ctx, s) => rockDetail(ctx, s, this.seed + 17)));
   }
 
+  // Earth B0 (Visual Overhaul A): the ground's PBR layers (goldrush-earthmat.js) - crust, loose dirt, compact clay,
+  // gravel and stone from the MaterialField at the exposed surface; the same material (its plain variant) for the
+  // ground outside the dig square, so the two meet without a seam
   _terrain() {
     const THREE = this.THREE;
-    this.terrainMaterial = this.track(new THREE.MeshStandardMaterial({
-      vertexColors: true, map: this.soilTex, bumpMap: this.soilTex, bumpScale: 1.4, roughness: 0.97, metalness: 0,
-    }));
-    // per-vertex material weights (gravel, stone) pick the detail texture:
-    // soil grain, packed pebbles or cracked rock - the pile shows what it is made of
-    const gravel = this.gravelTex, rock = this.rockTex;
-    // A world-space second sample of the soil detail (rotated, larger) breaks
-    // the tiling; soft value noise adds dry-crust / colour variation and a
-    // little roughness variation; freshly dug ground (aFresh: when) is darker
-    // and moister for soil, cleaner for gravel / broken stone, and fades back
-    // over a couple of minutes. Cheap: a few texture reads and two noises.
-    this.terrainUniforms = { uTime: { value: 0 } };
-    const uni = this.terrainUniforms;
-    // phase 7A: material borders follow world-space noise (no square carpets along the
-    // 12,5 cm grid), two samples per detail texture picked by macro noise (less tiling),
-    // worked ground gets a crumb relief (procedural bump - more on steep fresh cuts),
-    // and a mineralised streak shows quartz flecks and dark heavy-mineral streaks.
-    const bumpChunk = THREE.ShaderChunk.bumpmap_pars_fragment.replace(
-      "return vec2( dBx, dBy );",
-      "return vec2( dBx, dBy ) + grMicroD();");
-    this.terrainMaterial.onBeforeCompile = (shader) => {
-      shader.uniforms.uGravel = { value: gravel };
-      shader.uniforms.uRock = { value: rock };
-      shader.uniforms.uTime = uni.uTime;
-      shader.uniforms.uMound = { value: new THREE.Vector2(MOUND_CENTER.x, MOUND_CENTER.z) };
-      shader.vertexShader = shader.vertexShader
-        .replace("#include <common>", "#include <common>\nattribute vec4 aMat;\nattribute float aFresh;\nuniform float uTime;\nvarying vec4 vMat;\nvarying float vFresh;\nvarying float vFreshQ;\nvarying vec3 vWPos;")
-        // the fade weight (not the time stamp) is interpolated: a fresh vertex
-        // next to untouched ones (-1e5) blends out softly instead of vanishing
-        .replace("#include <uv_vertex>", "#include <uv_vertex>\nvMat = aMat;\nvFresh = aFresh > -1.0e4 ? exp(-max(0.0, uTime - aFresh) / 80.0) : 0.0;\nvFreshQ = aFresh > -1.0e4 ? exp(-max(0.0, uTime - aFresh) / 14.0) : 0.0;")
-        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;");
-      shader.fragmentShader = shader.fragmentShader
-        .replace("#include <common>", `#include <common>
-          uniform sampler2D uGravel; uniform sampler2D uRock; uniform float uTime; uniform vec2 uMound;
-          varying vec4 vMat; varying float vFresh; varying float vFreshQ; varying vec3 vWPos;
-          float grHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-          float grNoise(vec2 p) {
-            vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-            return mix(mix(grHash(i), grHash(i + vec2(1.0, 0.0)), f.x), mix(grHash(i + vec2(0.0, 1.0)), grHash(i + vec2(1.0, 1.0)), f.x), f.y) * 2.0 - 1.0;
-          }
-          // crumb relief of worked ground (m): three octaves, the finest fading with distance (no shimmer);
-          // the height also runs with y, so a steep face is not streaked
-          float grMicroH() {
-            vec2 q = vWPos.xz + vec2(vWPos.y * 0.83, -vWPos.y * 0.61);
-            float fine = clamp(1.0 - length(fwidth(q)) * 55.0, 0.0, 1.0);
-            return grNoise(q * 17.0) * 0.55 + grNoise(q * 41.0 + 1.7) * 0.3 * (0.4 + 0.6 * fine) + grNoise(q * 93.0 + 5.1) * 0.15 * fine;
-          }
-          // broken stone (phase 8): angular pieces - the distance to the nearest edge between them
-          float grVor(vec2 p, out float id) {
-            vec2 i = floor(p), f = fract(p);
-            float d1 = 8.0, d2 = 8.0; id = 0.0;
-            for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
-              vec2 g = vec2(float(x), float(y)), o = vec2(grHash(i + g), grHash(i + g + 19.7));
-              vec2 r = g + o - f;
-              float d = dot(r, r);
-              if (d < d1) { d2 = d1; d1 = d; id = grHash(i + g + 7.3); } else if (d < d2) d2 = d;
-            }
-            return sqrt(d2) - sqrt(d1);
-          }
-          vec2 grMicroD() {
-            vec3 wn = normalize(cross(dFdx(vWPos), dFdy(vWPos)));
-            float steep = 1.0 - abs(wn.y);
-            // phase 7B: all of the pile has a little grain relief (stronger on steep faces), worked ground more
-            float a = (0.0011 + 0.0026 * clamp(vMat.z, 0.0, 1.0) + 0.0018 * vFresh) * (1.0 + 1.2 * steep) * (1.0 - 0.6 * clamp(vMat.y, 0.0, 1.0));
-            a += 0.0045 * smoothstep(1.2, 1.9, vMat.w) * clamp(vMat.y, 0.0, 1.0);          // broken rock: rough
-            a += 0.0022 * clamp(vMat.y, 0.0, 1.0);                                          // solid rock: grainy
-            float m = a * grMicroH();
-            return vec2(dFdx(m), dFdy(m));
-          }`)
-        .replace("#include <bumpmap_pars_fragment>", bumpChunk)
-        .replace("#include <map_fragment>", `
-          vec2 wuv = vWPos.xz;
-          float grMacro = smoothstep(-0.35, 0.35, grNoise(wuv * 0.31 + 4.7));
-          vec3 soilT = mix(texture2D(map, vMapUv).rgb, texture2D(map, mat2(0.8, -0.6, 0.6, 0.8) * wuv * 0.137 + 0.31).rgb, 0.25 + 0.2 * grMacro);
-          vec3 gravT = mix(texture2D(uGravel, vMapUv * 1.7).rgb, texture2D(uGravel, mat2(0.6, 0.8, -0.8, 0.6) * wuv * 0.71 + 0.43).rgb, grMacro);
-          vec3 rockT = mix(texture2D(uRock, vMapUv * 0.8).rgb, texture2D(uRock, mat2(-0.5, 0.87, -0.87, -0.5) * wuv * 0.33 + 0.19).rgb, grMacro);
-          float grN1 = grNoise(wuv * 0.9), grN2 = grNoise(wuv * 3.7 + 7.1);
-          float crust = 0.95 + 0.06 * grN1 + 0.03 * grN2;
-          // material borders: the vertex weights pushed by world noise - ragged, organic edges
-          float grB = grNoise(wuv * 2.3 + 1.3) * 0.6 + grNoise(wuv * 7.9 + 3.3) * 0.4;
-          float grGW = smoothstep(0.16, 0.84, vMat.x + grB * 0.34), grRW = smoothstep(0.2, 0.8, vMat.y + grB * 0.26);
-          // phase 7B close-up: how steep it is here, gravel gathering at the foot of the pile
-          vec3 grWN = normalize(cross(dFdx(vWPos), dFdy(vWPos)));
-          float grSteep = 1.0 - abs(grWN.y);
-          float grToe = smoothstep(0.42, 0.04, vWPos.y) * (1.0 - grSteep) * smoothstep(-0.1, 0.5, grB);
-          // vMat.w is a streak on soil, the fracture state on stone (phase 8: 0..1 cracking, 2 rubble)
-          float grStone = clamp(vMat.y, 0.0, 1.0);
-          float grS = clamp(vMat.w * 2.2, 0.0, 1.0) * (1.0 - grStone);
-          grGW = max(grGW, max(grToe * 0.5, grS * 0.45));                   // the foot and a cemented streak: gravelly
-          diffuseColor.rgb *= mix(mix(soilT, gravT, grGW), rockT, grRW) * crust;
-          // phase 8, the mountain's own geology at a distance: gullies running down its flanks (darker
-          // channels with gravel in their beds, lighter spurs between), bands of firmer, redder earth on
-          // steep faces, broad patches of dry crust and damper ground - never one smooth clay blob
-          vec2 grRel = vWPos.xz - uMound;
-          float grAng = atan(grRel.y, grRel.x), grOn = smoothstep(0.25, 0.9, vWPos.y) * (1.0 - grRW);
-          float grGully = grNoise(vec2(grAng * 7.5 + grNoise(wuv * 0.21) * 0.9, vWPos.y * 0.32 + length(grRel) * 0.05));
-          float grCh = smoothstep(0.45, 0.95, 1.0 - abs(grGully)) * grOn * (0.45 + 0.55 * grSteep);
-          float grSpur = smoothstep(0.5, 1.0, abs(grGully)) * grOn * 0.8;
-          float grStratum = smoothstep(0.35, 0.85, grNoise(vec2(vWPos.y * 1.9 + grNoise(wuv * 0.37 + 2.0) * 0.7, grAng * 0.6))) * grOn * smoothstep(0.15, 0.55, grSteep);
-          float grPatch = grNoise(wuv * 0.29 + 9.3) * 0.7 + grNoise(wuv * 0.83 + 2.1) * 0.3;
-          diffuseColor.rgb *= mix(vec3(1.0), vec3(0.74, 0.7, 0.68), grCh) * (1.0 + 0.1 * grSpur);
-          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.05, 0.86, 0.74), grStratum * 0.6 * (1.0 - grGW));
-          // the dry crust bleached and greyer on the high spurs, the damper earth deeper in tone
-          float grLum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(grLum) * vec3(1.08, 1.0, 0.9), 0.22 * max(0.0, grPatch) * grOn + 0.12 * grSpur);
-          diffuseColor.rgb *= 1.0 + 0.09 * grPatch * grOn;
-          diffuseColor.rgb = mix(diffuseColor.rgb, gravT * crust * vec3(0.9, 0.88, 0.86), grCh * 0.42 * (1.0 - grGW));
-          // small stones bedded in the earth, close up (sparse; they fade out with distance, no shimmer)
-          float grClastFade = clamp(1.0 - length(fwidth(wuv)) * 9.0, 0.0, 1.0);
-          float grClast = smoothstep(0.58, 0.74, grNoise(wuv * 2.6 + 5.0)) * smoothstep(0.42, 0.62, dot(gravT, vec3(0.333))) * grClastFade * (1.0 - grRW) * (1.0 - grGW);
-          diffuseColor.rgb = mix(diffuseColor.rgb, gravT * vec3(0.95, 0.93, 0.9), grClast * 0.55);
-          // the face's own structure: faint layering, rills running down, a few fracture lines in firm ground
-          float grStrata = grNoise(vec2(vWPos.y * 9.0, (wuv.x + wuv.y) * 0.45));
-          float grRill = grNoise(vec2((wuv.x * 0.7 - wuv.y * 0.7) * 10.0, vWPos.y * 1.3));
-          float grCrack = smoothstep(0.05, 0.0, abs(grNoise(wuv * 4.1 + vWPos.y * 1.9))) * grSteep * (0.25 + 0.75 * max(grRW, clamp(vMat.z, 0.0, 1.0) * 0.6));
-          diffuseColor.rgb *= (1.0 + 0.05 * grStrata * grSteep) * (1.0 - 0.06 * max(0.0, grRill) * grSteep) * (1.0 - 0.16 * grCrack);
-          // a mineralised streak (subtle, learnable - never a marker): a coherent rust wash, dark
-          // heavy-mineral bands along the strike, a few thin quartz veinlets (warm off-white, not white)
-          vec2 sq = mat2(0.94, 0.34, -0.34, 0.94) * wuv;
-          float grRust = smoothstep(-0.4, 0.5, grNoise(sq * 0.9 + 3.1)) * grS;
-          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.12, 0.84, 0.62), grRust * 0.45);
-          float grBand = smoothstep(0.72, 1.0, sin(sq.y * 24.0 + grNoise(sq * 2.7) * 2.2)) * grS;
-          diffuseColor.rgb *= 1.0 - grBand * 0.3;
-          float grQ = smoothstep(0.045, 0.0, abs(grNoise(sq * vec2(1.3, 7.5) + vWPos.y * 2.0))) * smoothstep(0.1, 0.6, grNoise(sq * 0.7 + 9.0));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.72, 0.66, 0.57), grQ * grS * 0.42);
-          // embedded stone (phase 8): every pick hit shows - cracks run and multiply, the rock round them
-          // chipped lighter; broken, it lies there as angular rubble with dark gaps
-          // solid rock bedded in the pile: its natural joints - blocks with darker seams, faces a little
-          // lighter or darker each (rock, not a dark stain in the earth)
-          if (grStone > 0.05) {
-            vec2 jq = wuv + vec2(vWPos.y * 0.6, -vWPos.y * 0.45);
-            float jid;
-            float je = grVor(jq * 2.4 + 3.7, jid);
-            float grSolid = smoothstep(0.4, 0.8, grStone);                  // the rock itself, not the soil at its edge
-            float joint = smoothstep(0.06, 0.0, je) * grSolid;
-            diffuseColor.rgb *= (1.0 - 0.42 * joint) * mix(1.0, 0.86 + 0.26 * jid, grSolid);
-            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.08, 1.06, 1.02), grStone * 0.35 * smoothstep(0.1, 0.6, grSteep));
-          }
-          float grCrk = clamp(vMat.w, 0.0, 1.0) * grStone * (1.0 - step(1.2, vMat.w));
-          float grRub = smoothstep(1.2, 1.9, vMat.w) * grStone;
-          if (grCrk > 0.01 || grRub > 0.01) {
-            vec2 cq = wuv + vec2(vWPos.y * 0.7, -vWPos.y * 0.5);
-            float n1 = grNoise(cq * 5.3 + 11.0);
-            float c1 = smoothstep(0.05, 0.0, abs(n1)), c2 = smoothstep(0.035, 0.0, abs(grNoise(cq * 13.0 + 3.0))), c3 = smoothstep(0.03, 0.0, abs(grNoise(cq * 29.0 + 17.0)));
-            float lines = c1 * smoothstep(0.03, 0.22, grCrk) + c2 * smoothstep(0.3, 0.55, grCrk) * 0.85 + c3 * smoothstep(0.55, 0.85, grCrk) * 0.7;
-            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.16, 1.12, 1.06), grCrk * 0.4 * smoothstep(0.22, 0.0, abs(n1)));
-            diffuseColor.rgb *= 1.0 - 0.62 * clamp(lines, 0.0, 1.0) * (1.0 - grRub);
-            float pid;
-            float edge = grVor(cq * 9.0, pid);
-            float gap = smoothstep(0.09, 0.0, edge);
-            diffuseColor.rgb *= mix(1.0, (0.8 + 0.34 * pid) * (1.0 - 0.6 * gap), grRub);
-          }
-          float grFresh = vFresh;
-          // just cut (7B: limited - exposed earth, not a burnt black patch): a little darker and moist
-          // (phase 8: a touch more moisture - the brighter phase-8 light had nearly washed the fade out)
-          vec3 freshTint = mix(vec3(0.84, 0.8, 0.76), vec3(1.07, 1.05, 1.02), clamp(grGW + grRW, 0.0, 1.0));
-          diffuseColor.rgb *= mix(vec3(1.0), freshTint, grFresh);
-          float grSoil = 1.0 - clamp(grGW + grRW, 0.0, 1.0);
-          diffuseColor.rgb *= 1.0 - vFreshQ * 0.09 * grSoil;
-          float grCrumb = grNoise(wuv * 23.0) * 0.6 + grNoise(wuv * 61.0) * 0.4;
-          diffuseColor.rgb *= 1.0 - grFresh * 0.07 * max(0.0, grCrumb) + grFresh * 0.04 * min(0.0, grCrumb);
-          // worked ground keeps a little crumb shading after the fresh look is gone
-          diffuseColor.rgb *= 1.0 - clamp(vMat.z, 0.0, 1.0) * (1.0 - grFresh) * 0.05 * max(0.0, grCrumb);
-          // phase 8 review: at shovel distance the earth is granular - small clods with darker gaps between,
-          // each a shade lighter or darker, and fine grit; gone with distance (no shimmer), not on solid rock
-          float grNear = clamp(1.0 - length(fwidth(wuv)) * 22.0, 0.0, 1.0) * (1.0 - grRW);
-          if (grNear > 0.01) {
-            float cid;
-            float ce = grVor(wuv * 11.0 + vec2(1.7, -vWPos.y * 0.8), cid);
-            // (only here and there a gap shows: a continuous network read as dried-mud cracks, not loose earth)
-            float gapC = smoothstep(0.09, 0.0, ce) * smoothstep(0.0, 0.5, grNoise(wuv * 3.1 + 2.0));
-            diffuseColor.rgb *= mix(1.0, (0.92 + 0.15 * cid) * (1.0 - 0.18 * gapC), grNear * (0.6 + 0.4 * grGW));
-            diffuseColor.rgb *= 1.0 + grNear * 0.08 * (grNoise(wuv * 47.0) * 0.6 + grNoise(wuv * 113.0) * 0.4);
-          }`)
-        .replace("#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
-          roughnessFactor *= (0.93 + 0.1 * grN2) * (0.96 + 0.07 * grSteep) * (1.0 - 0.14 * grFresh - 0.16 * vFreshQ * (1.0 - clamp(grGW + grRW, 0.0, 1.0)));`);
-    };
-    this.terrainMaterial.customProgramCacheKey = () => "goldrush-terrain-v11";
+    this.timeUniform = this.timeUniform || { value: 0 };
+    this.terrainUniforms = { uTime: this.timeUniform };          // (the engine drives the clock; the sky's clouds use it)
+    const lin = (hex) => new THREE.Color(hex).toArray();
+    this.earth = new EarthSystem(THREE, { ground: lin(GROUND_REF), fill: lin(0x8d8475) });
+    this.disposables.push(this.earth);
+    this.terrainMaterial = this.earth.terrainMaterial;
     this.terrain = new DiggableTerrain(THREE, {
       seed: this.seed, center: { x: 0, z: -6 }, size: 30, cell: 0.125, chunkCells: 30,
       moundCenter: MOUND_CENTER, material: this.terrainMaterial, spawn: SPAWN,
     });
+    this.earth.attach(this.terrain);
     this.scene.add(this.terrain.group);
   }
 
+  /** the earth layers' textures (1024 / 512 px); a flat stand-in when they cannot be loaded */
+  async loadEarth(renderer, res) {
+    try { await this.earth.load(renderer, res); } catch (e) {
+      this.earthError = String((e && e.message) || e);
+      this.earth.fallback();
+    }
+  }
+
+  // Visual Overhaul A: a shader dome (goldrush-atmos.js) - dusty gradient, the sun disc where the light comes
+  // from, slow high clouds (the terrain clock drives them)
   _sky() {
     const THREE = this.THREE;
-    const sky = new THREE.Mesh(this.track(new THREE.SphereGeometry(420, 48, 24)), this.track(skyMaterial(THREE, this.terrainUniforms.uTime)));
+    this.timeUniform = this.timeUniform || { value: 0 };
+    const sky = new THREE.Mesh(this.track(new THREE.SphereGeometry(420, 48, 24)), this.track(skyMaterial(THREE, this.timeUniform)));
     sky.name = "sky";
     sky.frustumCulled = false;
     sky.renderOrder = -10;
@@ -509,7 +322,7 @@ export class GoldRushWorld {
     const t = this.terrain, hx0 = t.x0, hx1 = t.x0 + t.size, hz0 = t.z0, hz1 = t.z0 + t.size;
     const span = 240, step = 3, n = span / step;
     const pos = [], col = [], uv = [], idx = [];
-    const cA = new THREE.Color(0xb59f7d), cB = new THREE.Color(0xa38c6c), cDry = new THREE.Color(0x9f9166), cTrack = new THREE.Color(0xc1ab86);
+    const cA = new THREE.Color(GROUND_REF), cB = new THREE.Color(0xa38c6c), cDry = new THREE.Color(0x9f9166), cTrack = new THREE.Color(0xc1ab86);
     const tmp = new THREE.Color();
     const heightAt = (x, z) => {
       const dx = Math.max(CLAIM.minX - 6 - x, 0, x - CLAIM.maxX - 6), dz = Math.max(CLAIM.minZ - 6 - z, 0, z - CLAIM.maxZ - 6);
@@ -559,8 +372,9 @@ export class GoldRushWorld {
     g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
     g.setIndex(idx);
     g.computeVertexNormals();
-    const mat = this.track(new THREE.MeshStandardMaterial({ vertexColors: true, map: this.soilTex, bumpMap: this.soilTex, bumpScale: 1.0, roughness: 0.98 }));
-    const ground = new THREE.Mesh(g, mat);
+    // (Earth B0: the crust layer, tinted by these vertex colours - tracks and worn paths stay; the dig square's
+    // untouched edge ground uses the same formula)
+    const ground = new THREE.Mesh(g, this.earth.groundMaterial);
     ground.receiveShadow = true;
     ground.name = "ground";
     this.scene.add(ground);

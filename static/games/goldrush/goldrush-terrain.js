@@ -333,6 +333,9 @@ export class DiggableTerrain {
         const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3), uv = new Float32Array(n * 2);
         const matw = new Float32Array(n * 4);          // (gravel, stone, cut, streak) -> detail textures, fresh-cut relief, streak marks
         const fresh = new Float32Array(n).fill(-1e5);  // when the ground here was last dug (fades in the shader)
+        // Earth B0 (goldrush-earthmat.js): the material at the surface, one-hot (dirt, compact, gravel, stone), and
+        // the ground's state (untouched edge ground, the camp's fill, cover on the original surface, loosened)
+        const geoA = new Float32Array(n * 4), earthA = new Float32Array(n * 4);
         const i0 = cx * cc, j0 = cz * cc;
         for (let j = 0; j < vpc; j++) {
           for (let i = 0; i < vpc; i++) {
@@ -350,6 +353,8 @@ export class DiggableTerrain {
         geom.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
         geom.setAttribute("aMat", new THREE.BufferAttribute(matw, 4));
         geom.setAttribute("aFresh", new THREE.BufferAttribute(fresh, 1));
+        geom.setAttribute("aGeo", new THREE.BufferAttribute(geoA, 4));
+        geom.setAttribute("aEarth", new THREE.BufferAttribute(earthA, 4));
         geom.setIndex(this.stride === 2 ? this.indexHalf : this.indexFull);
         const mesh = new THREE.Mesh(geom, this.material);
         mesh.castShadow = true;
@@ -371,6 +376,7 @@ export class DiggableTerrain {
     if (i0 > i1 || j0 > j1) return false;
     const pos = chunk.geom.attributes.position.array, nor = chunk.geom.attributes.normal.array, col = chunk.geom.attributes.color.array;
     const matw = chunk.geom.attributes.aMat.array, fresh = chunk.geom.attributes.aFresh.array;
+    const geoA = chunk.geom.attributes.aGeo.array, earthA = chunk.geom.attributes.aEarth.array, Cn = this.consumed;
     const last = vps - 1;
     const rgb = [0, 0, 0];
     for (let gj = j0; gj <= j1; gj++) {
@@ -422,6 +428,14 @@ export class DiggableTerrain {
         // stone: its fracture state instead of a streak (phase 8): 0..1 cracking, 2 broken rubble
         matw[v * 4 + 3] = mat === MAT.STONE ? (this.rubble[k] > 0 ? 2 : this.crack[k] / FRACTURE.full) : this._st;
         fresh[v] = this.freshAt[k];
+        geoA[v * 4] = mat === MAT.DIRT ? 1 : 0;
+        geoA[v * 4 + 1] = mat === MAT.COMPACT ? 1 : 0;
+        geoA[v * 4 + 2] = mat === MAT.GRAVEL ? 1 : 0;
+        geoA[v * 4 + 3] = mat === MAT.STONE ? 1 : 0;
+        earthA[v * 4] = gw;
+        earthA[v * 4 + 1] = fillW > 0 ? fw : 0;
+        earthA[v * 4 + 2] = Math.max(smoothstep(0.004, 0.05, h - this.base[k]), Cn && h - Cn[k] > 0.01 ? smoothstep(0.01, 0.06, h - Cn[k]) : 0);
+        earthA[v * 4 + 3] = smoothstep(1, 6, this.loose[k]);
       }
     }
     chunk.geom.attributes.position.needsUpdate = true;
@@ -429,6 +443,8 @@ export class DiggableTerrain {
     chunk.geom.attributes.color.needsUpdate = true;
     chunk.geom.attributes.aMat.needsUpdate = true;
     chunk.geom.attributes.aFresh.needsUpdate = true;
+    chunk.geom.attributes.aGeo.needsUpdate = true;
+    chunk.geom.attributes.aEarth.needsUpdate = true;
     chunk.geom.computeBoundingSphere();
     return true;
   }
@@ -507,6 +523,7 @@ export class DiggableTerrain {
       if (gi1 < ch.i0 || gi0 > ch.i0 + cc || gj1 < ch.j0 || gj0 > ch.j0 + cc) continue;
       if (this._refreshChunk(ch, gi0, gi1, gj0, gj1)) touched++;
     }
+    if (this.onRefresh) this.onRefresh(gi0, gi1, gj0, gj1);     // the renderer's derived state (Earth B0: StateTex, GeoTex)
     return touched;
   }
 

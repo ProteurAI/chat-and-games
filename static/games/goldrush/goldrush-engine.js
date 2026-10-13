@@ -218,6 +218,8 @@ export class GoldRushGame {
     this.rocks.attachColliders(world.colliders);
     const envMap = await world.buildEnvironment(renderer);   // the HDRI's image-based light (a local file; analytic fallback)
     if (this.disposed) throw ABORTED;
+    // Earth B0: the ground's texture layers at the resolution of the starting quality
+    await world.loadEarth(renderer, this._earthRes(this.settings.quality === "auto" ? this.autoLevel : this.settings.quality));
     if (this.disposed) throw ABORTED;
 
     const camera = (this.camera = new THREE.PerspectiveCamera(FOV, 1, 0.05, 900));
@@ -305,6 +307,8 @@ export class GoldRushGame {
     renderer.setRenderTarget(null);
     renderer.compile(this.hands.scene, this.hands.camera);
     if (this.rocks.tex) renderer.initTexture(this.rocks.tex);   // no upload hitch when the first boulder comes into view
+    if (world.earth.arrays) { renderer.initTexture(world.earth.arrays.a); renderer.initTexture(world.earth.arrays.b); }
+    if (world.earth.geo) { renderer.initTexture(world.earth.geo.texture); renderer.initTexture(world.earth.stateTex); }
     for (const t of pr.textures()) renderer.initTexture(t);   // the machines' shared maps (heap, load) before a heap first comes into view
     this.render();                                        // uploads the gold pieces' buffers too
     for (const o of culled) o.frustumCulled = true;
@@ -359,6 +363,9 @@ export class GoldRushGame {
     this.on(ui.canvas, "webglcontextrestored", () => {
       this.glLost = false;
       this.post.timer.pending = [];
+      // the earth layers' pixels were handed to the GPU and let go (42 MB): load them again
+      const earth = this.world.earth;
+      if (earth.res > 2) { earth.loaded = false; this.world.loadEarth(this.renderer, earth.res); }
       this.post.timer.ext = this.renderer.getContext().getExtension("EXT_disjoint_timer_query_webgl2");
       const sun = this.world.sun;
       if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
@@ -418,6 +425,10 @@ export class GoldRushGame {
     this.post.setQuality({ ...q, samples: this.mobile && q.samplesMobile != null ? q.samplesMobile : q.samples });
     this.world.applyQuality(q);
     this._alphaToCoverage();
+    // the earth layers follow the tier's texture size (loaded in the background, swapped when ready)
+    const er = this._earthRes(level), earth = this.world.earth;
+    earth.geoBudget = level === "low" ? 1 : 2;
+    if (earth.res) this.world.loadEarth(this.renderer, er);      // (already there: returns at once; a stale load is dropped)
     this.effects.setLimits(q.particles, q.fragments);
     this.loot.setLimits(GLINTS[level]);
     if (this.camera) this.resize();
@@ -434,6 +445,11 @@ export class GoldRushGame {
         if (m.alphaTest > 0 && !m.transparent && m.alphaToCoverage !== on) { m.alphaToCoverage = on; m.needsUpdate = true; }
       }
     });
+  }
+
+  _earthRes(level) {
+    const q = QUALITY[level] || QUALITY.medium;
+    return this.mobile && q.earthResMobile ? q.earthResMobile : q.earthRes;
   }
 
   // in-game switch; the system preference always wins
@@ -996,6 +1012,7 @@ export class GoldRushGame {
     if (this.reticle.visible) { const m = this.reticle.material; m.opacity += ((this._reticleWant || 0.2) - m.opacity) * Math.min(1, dt * 10); }
     this.terrain.clock += dt;
     this.world.terrainUniforms.uTime.value = this.terrain.clock;
+    this.world.earth.update(this.terrain.clock, dt);          // Earth B0: StateTex (fresh / wet), GeoTex building
     this.world.updatePebbles();
     this._stationTick(dt);
     this.economy.addPlayTime(dt * 1000);
@@ -1126,6 +1143,7 @@ export class GoldRushGame {
       gpu: this.post.timer.enabled ? this.post.timer.report() : null, gpuTimer: this.post.timer.available,
       heapMB: performance.memory ? +(performance.memory.usedJSHeapSize / 1048576).toFixed(1) : null,
       fov: +this.camera.fov.toFixed(2), env: this.world.envSource, envStats: this.world.envStats, envError: this.world.envError || null,
+      earth: this.world.earth.stats(), earthError: this.world.earthError || null,
     };
   }
 

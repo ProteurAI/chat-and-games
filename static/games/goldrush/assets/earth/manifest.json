@@ -1,0 +1,91 @@
+{
+ "version": 1,
+ "format": "jpg (KTX2 planned once a Basis encoder is part of the build)",
+ "resolutions": [
+  1024,
+  512
+ ],
+ "channels": {
+  "albedo": "sRGB base colour",
+  "normal": "tangent space, OpenGL (+Y)",
+  "orh": "R ambient occlusion, G roughness, B height 0..1"
+ },
+ "licence": "CC0 1.0 (Poly Haven, https://polyhaven.com/license)",
+ "layers": [
+  {
+   "key": "crust",
+   "role": "weathered crust - dry, sun-baked surface with fine pebbles",
+   "tile_m": 2.6,
+   "source": "https://polyhaven.com/a/dry_ground_rocks",
+   "asset": "dry_ground_rocks",
+   "name": "Dry Ground Rocks",
+   "authors": [
+    "Rob Tuytel"
+   ],
+   "scan_size_m": 4.0,
+   "licence": "CC0 1.0"
+  },
+  {
+   "key": "loose",
+   "role": "loose fresh dirt - crumbly, small clods",
+   "tile_m": 1.3,
+   "source": "https://polyhaven.com/a/brown_mud_dry",
+   "asset": "brown_mud_dry",
+   "name": "Brown Mud Dry",
+   "authors": [
+    "Rob Tuytel"
+   ],
+   "scan_size_m": 1.3,
+   "licence": "CC0 1.0"
+  },
+  {
+   "key": "compact",
+   "role": "compact clay / compact soil - dense, smoother",
+   "tile_m": 2.07,
+   "source": "https://polyhaven.com/a/dirt_floor",
+   "asset": "dirt_floor",
+   "name": "Dirt Floor",
+   "authors": [
+    "eye-candy.xyz"
+   ],
+   "scan_size_m": 2.07,
+   "licence": "CC0 1.0"
+  },
+  {
+   "key": "gravel",
+   "role": "alluvial gravel - rounded pebbles in a sandy matrix",
+   "tile_m": 2.16,
+   "source": "https://polyhaven.com/a/ganges_river_pebbles",
+   "asset": "ganges_river_pebbles",
+   "name": "Ganges River Pebbles",
+   "authors": [
+    "Amal Kumar"
+   ],
+   "scan_size_m": 2.16,
+   "licence": "CC0 1.0"
+  },
+  {
+   "key": "rock",
+   "role": "rock - weathered, cracked stone (outcrops, stone lenses, rubble)",
+   "tile_m": 2.0,
+   "source": "https://polyhaven.com/a/dry_riverbed_rock",
+   "asset": "dry_riverbed_rock",
+   "name": "Dry Riverbed Rock",
+   "authors": [
+    "Amal Kumar"
+   ],
+   "scan_size_m": 2.0,
+   "licence": "CC0 1.0"
+  }
+ ],
+ "hdri": {
+  "file": "hdri/goegap_1k.hdr",
+  "role": "Goegap (Namaqualand) - clear, dry, sunny; used for image-based lighting only",
+  "source": "https://polyhaven.com/a/goegap",
+  "name": "Goegap",
+  "authors": [
+   "Greg Zaal"
+  ],
+  "licence": "CC0 1.0"
+ }
+}
