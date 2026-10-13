@@ -42,7 +42,10 @@ Liegt bewusst außerhalb von `static/`, wird also nicht ausgeliefert.
 | Waschanlage: Verteilerkasten, drei Rinnen, Konzentratwanne (Prompt 10) | `goldrush-washplant.js` (`WashPlant`, `WP`); die Rinne gibt ab (`Sluice.wp`) |
 | Bergseiten-Abbaugerät (Prompt 10) | `goldrush-autominer.js` (`AutoMiner`, `MINER`, `MINER_DEF`, `MINER_HOME`), Modell / Rig `goldrush-autominermodel.js` (`AutoMinerRig`, `AM`); Platzierung in `goldrush-engine.js` (`_placeStart` / `_placeUpdate` / `_placeEnd`) |
 | Empfänger-Tabelle (alles, worin gekippt wird) (Prompt 10) | `ProcessingSystem.receivers()` in `goldrush-processing.js` |
-| Entwickler-/QA-Werkzeuge | `goldrush-dev*.js` (siehe unten; Phase 6 / 7 / 7A / 7B / 8 / 9 / 10: `goldrush-devcommands6.js`, `goldrush-devcommands7.js`, `goldrush-devcommands7a.js`, `goldrush-devcommands7b.js`, `goldrush-devcommands8.js`, `goldrush-devcommands9.js`, `goldrush-devcommands10.js`) |
+| Entwickler-/QA-Werkzeuge | `goldrush-dev*.js` (siehe unten; Phase 6 / 7 / 7A / 7B / 8 / 9 / 10: `goldrush-devcommands6.js`, `goldrush-devcommands7.js`, `goldrush-devcommands7a.js`, `goldrush-devcommands7b.js`, `goldrush-devcommands8.js`, `goldrush-devcommands9.js`, `goldrush-devcommands10.js`; Visual Overhaul A: `goldrush-devvisual.js`) |
+| Licht, Himmel, Dunst, Tonkurve, HDRI (Visual Overhaul A) | `goldrush-atmos.js` (`SUN_DIR`, `GRADE`, `AIR`, `installAtmosphere`, `skyMaterial`, `hdriEnvironment`) |
+| Post-Stack, Werkzeug-Tiefenschnitt (Visual Overhaul A) | `goldrush-post.js` (`PostPipeline`, `POST`, `installToolClip`) |
+| Boden-Material Earth B0, Zustandstextur, Geologie-3D-Textur | `goldrush-earthmat.js` (`EarthSystem`, `EARTH`), `goldrush-geotex.js` (`GeoTex`) |
 
 ## Materialfluss und Maschinen (Phase 6)
 
@@ -1280,6 +1283,191 @@ Kleine Fortschritte zwischen den großen Maschinen, ohne neue Architektur:
   wächst dieselbe Maschine (Standort und Zähler bleiben).
 * Speicherstand v9 unverändert (Upgrades und `owned` wie bisher).
 * Tests: `goldrush_workingmine_e2e.py --only p1001`.
+
+## Visual Overhaul A + Earth B0 (Projekt Opus, Phase 1)
+
+Nur Darstellung: die Simulation bleibt die Wahrheit. Alles Neue ist abgeleitet,
+rekonstruierbar, wird nicht gespeichert und fließt nie in Abbau, Geologie oder
+Wirtschaft zurück. Speicherstand v9, `GEOLOGY_VERSION`, `TERRAIN_GEN` und alle
+Spielwerte (Reichweiten, Durchsätze, Preise) sind unverändert.
+
+**Module.** `goldrush-atmos.js` (Sonne, Himmel, Dunst, Tonkurve, HDRI,
+Albedo-Debug), `goldrush-post.js` (`PostPipeline`, `installToolClip`, GPU-Zeiten),
+`goldrush-earthmat.js` (`EarthSystem`: Texturschichten, StateTex, Erd-Shader),
+`goldrush-geotex.js` (`GeoTex`), `goldrush-devvisual.js` (Bookmarks und
+Debug-Ansichten); Assets in `static/games/goldrush/assets/` (Herkunft:
+`ASSETS.md`), gebaut von `tools/goldrush/build_earth_assets.py`; Bild-QA
+`tests/e2e/goldrush_visualqa.py`.
+
+**Qualitätsstufen** (`QUALITY` in `goldrush-renderer.js`):
+
+| Stufe | Bildweg | Kantenglättung | AO | DPR Desktop / Mobil | Erde |
+|---|---|---|---|---|---|
+| Niedrig | direkt auf den Canvas | Canvas-MSAA (wenn beim Start an) | – | 1 / 1 | 512 px |
+| Mittel | HDR-Ziel + Post | FXAA (MSAA 4× kostete ~4,5 ms) | ¼ Auflösung, 6 Samples | 1,25 / 1,25 | 1024 / 512 px |
+| Hoch | HDR-Ziel + Post | MSAA 4× (mobil 2×) + Alpha-to-Coverage | ½ Auflösung, 10 Samples | 1,5 / 1,5 | 1024 px |
+
+**Post-Stack** (`goldrush-post.js`): Welt in ein Half-Float-Ziel mit
+Tiefentextur → AO nur aus der Tiefe (Radius 0,6 m, blendet bis 70 m aus,
+tiefenbewusste 4×4-Unschärfe; im Sonnenlicht schwächer als im Schatten) →
+Bloom (Schwelle 2,4 linear, weiches Knie, 5 Stufen runter / 4 hoch, Stärke 0,06:
+Sonnenscheibe, Glanz auf Gold, nasse Spitzlichter – kein sonnenbeschienener
+Dreck) → Ausgabe: Belichtung, Tonkurve, Grade, sRGB, Dither, ggf. FXAA. Die
+Hände werden danach direkt auf den Canvas gezeichnet, mit derselben Kurve
+(`CustomToneMapping` = derselbe GLSL-Code). Ziele werden einmal angelegt und
+nur skaliert; GPU-Zeiten über `EXT_disjoint_timer_query_webgl2` nur auf
+Anfrage (`setGpuTiming`, DevTools „Render-Statistik“). Alles, was in das
+HDR-Ziel zeichnet, lässt keinen Sampler auf dessen Tiefe zeigen – auch der
+Warm-up einer gerade gekauften Maschine (die Werkzeuge am Camp-Regal tragen
+den Werkzeug-Schnitt; WebKit meldete sonst eine Feedback-Schleife). Der
+Test-Hook `camLook` rendert auf Mittel / Hoch durch den Stack wie ein Frame
+(sonst kompiliert er Canvas-Varianten, die das Spiel nie braucht).
+
+**Tonkurve – A/B-Entscheidung.** Auf den QA-Bookmarks bei gleichem Licht
+verglichen: AgX (grau, entsättigt Erde und Gelblack), ACES (verschiebt Gelb
+Richtung Orange, wäscht aus), **Khronos PBR Neutral** (Farbtöne bleiben: Erde,
+Gelblack, blauer Himmel) – gewählt. Grade: Belichtung 1,2, Sättigung 1,05,
+Kontrast 1,03, kühle Schatten / warme Lichter ganz leicht (`GRADE`).
+
+**Licht – eingefroren als Basis** (Erde, Maschinen und Hände sind daran
+kalibriert): Sonne 22° über dem Horizont aus WSW (Richtung wie bisher, nur
+tiefer → lange Schatten, das Relief liest sich), 4,6, `0xffe2bc`; Halbkugel-
+licht nur noch 0,18; das Bounce-Licht ist weg; Bildbasiertes Licht aus dem HDRI
+„Goegap“ (CC0, lokal): auf den Sonnen-Azimut gedreht, seine Sonne
+herausgeklemmt (das Richtungslicht ist die Sonne), auf 22 % entsättigt und leicht
+gewärmt (Stahl und Gold spiegeln sonst den tiefblauen Zenit navy / oliv), auf die
+Energie der alten analytischen Sonde normiert – alle bisherigen
+`envMapIntensity` bleiben gültig; `environmentIntensity` 0,6. Kann die Datei
+nicht geladen werden: die alte analytische Sonde.
+
+**Himmel und Dunst.** Shader-Kuppel: staubiger Verlauf, die Sonnenscheibe genau
+dort, wo das Licht herkommt (HDR → Bloom), Halo, langsam ziehende hohe Wolken
+(Uhr = `terrain.clock`). Dunst ersetzt three.js' Fog-Chunks global:
+Distanz (exp², Dichte je Stufe 0,0052 / 0,0046 / 0,0044) + eine Höhenschicht
+(0,0028/m am Boden, halbiert alle ~3,5 m) + Sonnen-Inscatter, linear vor der
+Tonkurve – Himmel, Dunst und Boden treffen sich auf einer Kurve.
+
+**Sichtfeld.** Standard 60° (vorher 70°), Einstellung 55–75° (Regler in den
+Einstellungen, `settings.fov`, eine Geräte-Einstellung wie die Qualität). Die
+Hände benutzen jetzt immer das Sichtfeld der Welt – Voraussetzung dafür, dass
+das Schaufelblatt den Boden trifft (bei 60° entspricht das der alten Rahmung
+70° × 0,83).
+
+**Albedo-Kalibrierung.** Debug-Ansicht „Albedo-Helligkeit (Falschfarben)“
+(Bänder < 0,02 / 0,04 / 0,1 / 0,2 / 0,35 / 0,6 / 0,85 linear). Korrigiert:
+Handschuhe (wirkten grell orange, jetzt ~0,25), Schaufelstiel, Gummi / dunkler
+Lack ≥ ~0,025 (Bagger, Lader, Förderband, Schubkarrenreifen), Waschpfanne
+(heller, matter Stahl). Gelblack (~0,37–0,4), verzinkter Stahl, Boden im Band.
+
+**Earth B0 – der Boden als PBR-Material** (`goldrush-earthmat.js`):
+
+* Fünf gescannte CC0-Schichten: Kruste (unberührte, verwitterte Oberfläche),
+  lose Erde (gegraben, gelockert, abgekippt), kompakter Lehm, Flusskies, Fels
+  (Steinlinsen, Ausbisse). Zwei `DataArrayTexture` je Auflösung: A = Albedo
+  (sRGB) + AO, B = Normale x/y + Rauheit + Höhe. 1024 px: 53 MB GPU, 512 px:
+  13 MB; die CPU-Kopien werden nach dem Hochladen freigegeben (bei
+  Kontextverlust neu geladen).
+* **Was wo liegt, kommt aus der Simulation – nur an der sichtbaren Oberfläche:**
+  `GeoTex` (`goldrush-geotex.js`) ist das `MaterialField` (`materialAt`) als
+  3D-Textur (one-hot Erde / Lehm / Kies / Stein, 0,25 m quer × 0,125 m hoch,
+  121×84×121, 4,9 MB), gelesen 2 cm unter dem sichtbaren Punkt – eine
+  senkrechte Abbauwand zeigt ihre Schichten, nichts schimmert durch. Gebaut
+  in Zeitscheiben nach dem Laden (~470.000 Proben à ~0,5 µs; 2 ms pro Frame,
+  Niedrig 1 ms), bis dahin das Material je Vertex (`aGeo`). Die 3D-Textur
+  wird schon im Warm-up (leer) auf der GPU angelegt; der Abschluss füllt
+  dieselbe Textur – keine neue Textur mitten im Spiel (der 10.000-Treffer-
+  Lecktest der Phase 6 hatte sie als +1 gezählt). Säulen, deren Stein sich
+  ändert (gebrochen / durchgegraben), werden neu abgetastet.
+* Zustand je Vertex (`aEarth`): Rand-Boden wie die Ebene draußen, Camp-
+  Auffüllung, Deckschicht über dem Ursprungsgelände, gelockert; dazu `aMat`
+  (abgegraben, Streak / Bruchzustand). `StateTex` (241², RGBA8): R frisch
+  (exp(−Alter/80 s)), G nass (Grundlage – bisher nur per DevTools gesetzt),
+  B/A reserviert; im frischen Bereich alle 0,5 s bzw. sofort nach einem Stich
+  neu berechnet; nie gespeichert.
+* Unberührt = Kruste (Kies schimmert durch, Flecken loser Erde und steile
+  Flanken bröseliger); abgegraben = das Material selbst; aufgeschüttet = lose
+  Erde; Camp-Auffüllung = gepresster Kies / Lehm. Höhenbasiertes Mischen,
+  Triplanar mit Whiteout-Normalen, eine Makrovariation, zweite gedrehte
+  Krustenprobe gegen Kachelung, Distanz-LOD (weniger Projektionen / Schichten
+  ab 14–24 m). Frisch: dunkler (×0,78), satter, glatter, nie schwarz; nass:
+  ×0,66, glänzend, Relief weicher.
+* Spielrelevante Lesbarkeit bleibt: mineralisierte Streaks (Rost, dunkle
+  Bänder, Quarzäderchen) und die Risse / der Schutt der Spitzhacke auf Stein.
+* Die Ebene außerhalb des Grabquadrats nutzt dieselbe Kruste (getönt durch
+  ihre Vertexfarben: Wege, Spuren) – keine Naht am Quadrat.
+* `_colorAt` ist nicht mehr die Identität des Bodens: er färbt nur noch die
+  Gold-Heatmap (Debug, Taste H) und dient als Rückfall. Die Farbe von Krümeln
+  und Staub kommt aus den Schichtmitteln (`EarthSystem.surfaceColor`).
+* Die CPU-Geländemesh bleibt (Raster, LOD, Simulation unverändert); das
+  Material hängt nur an Weltposition, GeoTex und StateTex – ein GPU-
+  Heightfield-Renderer kann es übernehmen.
+* **Polnaht / Gipfel-Rillen:** kamen aus dem alten Shader (`atan` um den
+  Hügelmittelpunkt: Rinnen, Schichten) – mit Earth B0 weg. Die Rillen des
+  Generators (`atan2` in `_generate`) springen an der Naht gemessen um
+  höchstens 2,3 cm mehr als die Nachbarzellen – nicht sichtbar. Kein
+  `TERRAIN_GEN`-Bump, Spielstände bleiben gültig.
+* **KTX2:** untersucht – auf der Build-Maschine gibt es keinen Basis-Encoder
+  (`toktx` / `basisu`). Dokumentierter Rückfall: JPG (q 90 / 92) → zur Laufzeit
+  dekodiert in die Arrays. Umstieg später in `build_earth_assets.py`.
+
+**Schaufel trifft den Boden (C-lite).** Die Keyframes ließen die Spitze 0,35–
+0,76 m neben dem echten Treffpunkt. Jetzt wird die Schaufel während des Stichs
+auf den Punkt gerichtet (Drehung um die rechte Hand am D-Griff, höchstens 34°)
+und am Stiel nachgeschoben (höchstens 0,42 m); Gewicht je Phase (Ausholen →
+Stich = auf dem Punkt → Schaufeln → loslassen), absolut, also bei jeder
+Framerate. Die Spitze geht 6 cm über die Oberfläche hinaus und wird von der
+Welttiefe abgeschnitten (Mittel / Hoch) – das Blatt steckt im Boden, die Arme
+bleiben vorn. Spielreichweite unverändert (Schaufel 2,4 m). QA bei 5 fps: 20 von
+20 Stichen, Treffer 1,64–2,03 m, Drehung 15–29°, Schub −0,05 bis 0,30 m,
+Bildschirmabweichung 0 px. Ein Rest (weiter als Drehung + Schub reichen)
+würde protokolliert (`hands.contactLog`), kam nicht vor.
+
+**Grab-Effekte.** Echte Stiche übergeben das abgetragene Volumen: Krümel und
+Brocken skalieren damit gegen den vollen Biss des Werkzeugs ((V/ref)^0,6), dazu
+eine Schicht mittelgroßer Klumpen (2–5 cm Erde, kleine Kiesel). Der Staub ist
+beleuchtet (Himmel + Sonne, deutlich heller gegen die Sonne, gedämpft im
+Schatten). Aufrufe ohne Volumen (Test-Hooks) verhalten sich wie bisher.
+
+**DevTools** (Welt → „Visual-QA (VO-A)“ / „Visual-Debug (VO-A)“): neun feste
+Kamerapunkte (`vo.bm.*`), Qualität fest, Licht / Grade live (`vo.set`, JSON),
+Post-Ansichten (fertig, nur AO, ohne AO / Bloom, nur Bloom, roh), AO an / aus,
+Post an / aus, Albedo-Falschfarben, Erd-Ansichten (Schichten, Material-ID,
+StateTex, GeoTex roh, Vertex-Material), nasse Stelle / trocken,
+Render-Statistik mit GPU-Zeit je Pass.
+
+**Leistung** (1600×900, DPR 1, AMD-Radeon-iGPU, Chromium/ANGLE D3D11): Niedrig
+60 fps; Mittel 60 fps (GPU 8–11 ms: Welt 6,6–9,3, AO ~0,45, Bloom ~0,55,
+Ausgabe ~0,75; Ziele 24,5 MB); Hoch ~47 fps (GPU ~15 ms, MSAA 4× ~4,6 ms davon;
+Ziele 92 MB) – AUTO wählt auf dieser GPU-Klasse Mittel. Mobil (390×844,
+Emulation): Niedrig auf freier Sicht 60 fps; an Anlage / Halden bei 4× CPU-
+Drosselung 42–46 fps – CPU-gebunden durch den schon vorher vorhandenen
+Szenendurchlauf (20,2 ms gegenüber 20,8 ms vorher an derselben Stelle, vorher
+39 fps). Gepaarte Nachmessung (13.10., 9abb6f4 gegen den fertigen Stand, Anlage,
+Niedrig, Mobil-Emulation): ungedrosselt beide 60 fps bei denselben 139 Draw
+Calls, Render-CPU 4,0–4,2 ms (vorher 4,1–4,3 ms); mit 4× Drosselung schwanken
+beide Stände mit dem Takt der Maschine (26–55 fps von Lauf zu Lauf) – VO-A
+kostet dort keine CPU; ~50 fps an der Anlage erreichte auch der alte Stand
+nicht verlässlich. Draw Calls je Ansicht wie vorher (+12 Vollbild-Pässe auf
+Mittel / Hoch).
+
+**Bild-QA.** `python tests/e2e/goldrush_visualqa.py capture --out DIR --tag after`
+(Seed 4242, alle Bookmarks, ohne HUD, mit Frame-Statistik), `compare` (Vorher |
+Nachher), `tune --configs F.json` (mehrere Licht- / Debug-Einstellungen je
+Ansicht), `perf [--mobile --cpu 4]`, `shovel --strikes 20` (Kontakt-QA bei 5 fps).
+
+**Tests (Regression nach VO-A, ohne Wirtschafts-Benchmarks – kein Spielwert
+geändert):** alle GoldRush-Suites in Chromium (Kern 47, Mining 56, Werkzeuge 63,
+Camp `--quick` 65, Processing 49, Dev 64, Phase 6 54, 7 43, 7A 61, 7B 44,
+Premium 45, Mechanisiert 95, Hotfix 9.1 26, Working Mine 119) und in WebKit die
+grafikkritischen (Kern 39, Werkzeuge 60, Premium-Teile 38, Mechanisiert 89,
+Working Mine 116, Hotfix 9.1 26, 7A 40, Dev 51, eine Bookmark-Aufnahme) grün;
+dazu Unit-Tests (103), Spiele-Regression (269), UI-Audit (442).
+Angepasst, weil seit Prompt 10 überholt: T43 (neuer Spielstand ~3,0 KB), T26
+(die Großnuggets ausgenommen), Mechanisiert GEO / SAV (`CURRENT_GEOLOGY` statt
+3). Bekannte Zufalls- / Zeit-Ausreißer, die beim Wiederholen bestanden: T19
+(Platzhalter-Klang „break“ einmal +1,5 dBFS – vier Schläge mit zufälligem
+Abstand), W7 (Schubkarre voll / leer knapp an 0,8), T34 in WebKit (rAF ~24/s),
+Premium PERF (ein Hänger unter Last).
 
 ## Entwicklertools (QA-Modus, Prompt 5.5)
 

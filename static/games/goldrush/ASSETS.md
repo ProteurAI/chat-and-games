@@ -1,19 +1,24 @@
 # GoldRush – assets and their origin
 
-GoldRush ships **no third-party art, models, textures or sounds**. Everything
-you see and hear is generated at runtime by the game's own code:
+Apart from the ground's scanned textures and one HDRI environment (both CC0,
+Poly Haven - see "Earth B0 textures and HDRI" below, Visual Overhaul A),
+GoldRush ships **no third-party art, models or sounds**. Everything else you see
+and hear is generated at runtime by the game's own code:
 
 | What | Where it is made | Origin |
 |---|---|---|
-| Terrain, mound, materials (dirt, compact dirt, gravel, stone) | `goldrush-terrain.js`, `goldrush-resources.js` | procedural, own code |
-| Soil / gravel / rock / wood detail textures, signs | `goldrush-world.js` (canvas drawing) | procedural, own code |
-| Boulders, props, fence, sky, environment light; the water tank's weathered galvanised plates (riveted seams, rust streaks, phase 7B) | `goldrush-world.js` (canvas-drawn plate texture) | procedural, own code |
+| Terrain, mound, materials (dirt, compact dirt, gravel, stone) - the shape and what it is made of | `goldrush-terrain.js`, `goldrush-resources.js` | procedural, own code |
+| The ground's look (Visual Overhaul A / Earth B0): crust, loose dirt, compact clay, gravel and rock as PBR layers, chosen per pixel from the MaterialField at the visible surface (3D material texture), fresh / wet state, the plain outside the dig square | `goldrush-earthmat.js`, `goldrush-geotex.js` (shader: triplanar, height blending) | own code over **CC0 scanned textures** (below) |
+| Soil / rock / wood detail textures (piles, boulders, timber), signs | `goldrush-world.js` (canvas drawing) | procedural, own code |
+| Sky (gradient, sun disc, clouds), haze (distance + height fog, sun inscatter) | `goldrush-atmos.js` (shaders) | procedural, own code |
+| Environment light (image-based) | `goldrush-atmos.js` (`hdriEnvironment`: rotated, sun clamped, desaturated, normalised; the analytic probe as fallback) | **CC0 HDRI** (below) |
+| Boulders, props, fence; the water tank's weathered galvanised plates (riveted seams, rust streaks, phase 7B) | `goldrush-world.js` (canvas-drawn plate texture) | procedural, own code |
 | First-person work gloves and arms (phase 8: forearm and upper arm at fixed lengths with an elbow, a work-jacket sleeve; the left glove a true mirror of the right) | `goldrush-hand.js` (capsules, spheres, cylinders) | procedural, own code |
 | Shovel (round-point blade with lift, D-grip, steel collar, rivets, worn edge, soil load) and pickaxe (oval handle, forged eye, curved point, adze) | `goldrush-toolmodels.js` (extruded outline, swept tubes along curves, cylinders; canvas-drawn wood grain and scratched steel) | procedural, own code |
 | Boulders, their crack stages, rubble | `goldrush-rocks.js` (noise-displaced icosahedra, a cellular crack network per boulder in a shader) | procedural, own code |
 | The camp's stations (phase 8): the Goldankauf assay booth (plank walls, lean-to sheet-metal roof, counter, brass balance with pans and weights, shelves of sample jars / crucibles / bottles, lockbox, ledger, sample sack, lantern) and the open-front Ausrüstung supply shack (counter, tool rack with the shovel / pickaxe for sale, shelves, crates, spare handles, buckets, sacks), painted signs (GOLDANKAUF in gold letters on the roof board and the counter) | `goldrush-buildings.js`, `goldrush-stations.js` (boxes, lathes; corrugated roof and signs drawn on canvas in Georgia/serif) | procedural, own code |
 | Tool upgrade looks (riveted blade rim, pale ash shaft, hardened point, heavier head) | `goldrush-toolmodels.js` | procedural, own code |
-| Small loose pebbles on the pile, fresh-dirt look, terrain micro detail | `goldrush-world.js` (instanced icosahedra; value noise + a rotated second detail sample in the terrain shader) | procedural, own code |
+| Small loose pebbles on the pile | `goldrush-world.js` (instanced icosahedra) | procedural, own code |
 | The wash place (wooden trough fed from the camp's water tank, tap, painted "WASCHPLATZ" sign), a galvanised bucket with bail and its load, the steel gold pan (riffles as upgrade), the shaker screen (classifier) over its concentrate tub | `goldrush-processmodels.js` (lathes, boxes, a swept bail; woven wire, wet soil and water ripples drawn on canvas) | procedural, own code |
 | Material in bucket / pan / tub, muddy water, pebbles tossed out, gold showing at the bottom of the pan, fines falling through the screen, muddy drops over the pan's rim | `goldrush-processing.js`, `goldrush-hand.js` (fill discs, instanced pebbles and flakes, pooled drops; no fluid or granular simulation) | procedural, own code |
 | Bulk hopper (galvanised funnel on a timber frame with braces, angle-steel rim, outlet with a red slide gate, the chute, a painted level gauge with a float pointer, the extension boards), its loading ramp and platform with rails, the control post (lever, lamp), the delivered pallet / crate | `goldrush-automodels.js` (boxes, a four-sided frustum, cylinders, spheres; the gauge drawn on canvas) | procedural, own code |
@@ -26,12 +31,12 @@ you see and hear is generated at runtime by the game's own code:
 | The shovel's load building up on the blade and sliding off it, crumbs / pebbles on top of it (phase 7A; phase 7B: a loose heaped layer that lags the swing and slides to the tip) | `goldrush-toolmodels.js`, `goldrush-hand.js`, `goldrush-heap.js` | procedural, own code |
 | Loose material (phase 8: shaped by its container): a shallow layer on the shovel blade, a nearly level fill in the bucket, the load inside the barrow's tapered tray, a thin layer across the classifier's screen that thins and opens while shaken - coloured by what the batch holds, with crumbs / clods / pebbles / stones on it | `goldrush-heap.js` (`GridLoad`: a fixed grid with a shape function per container, vertex alpha for ragged edges, one instanced faceted lump mesh; fixed buffers) | procedural, own code |
 | Black sand and gold in the pan (phase 8): an uneven dark drift in the low corner, gold in a few drifts on it | `goldrush-processmodels.js` (a noise-edged disc), `goldrush-processing.js` (instanced flakes, seeded per load) | procedural, own code |
-| Embedded stone (phase 8): natural joints, cracks that grow with each pick hit, broken angular rubble | `goldrush-world.js` (terrain shader: cellular noise, crack lines from value noise), `goldrush-terrain.js` (fracture state per column) | procedural, own code |
-| The mountain's geology (phase 8): gullies with gravel beds, spurs, redder bands, damp / dry patches, talus fans at the foot, rock outcrops, granular earth up close | `goldrush-world.js` (terrain shader; instanced pebbles and noise-displaced icosahedra) | procedural, own code |
-| Mineralised streaks at the surface (rust stain, quartz veinlets, dark heavy-mineral streaks), crumb relief on worked ground and steep fresh cuts, ragged material borders, less texture tiling (phase 7A) | `goldrush-terrain.js` (vertex colours / weights), `goldrush-world.js` (terrain shader: value noise, a procedural bump term) | procedural, own code |
+| Embedded stone (phase 8): cracks that grow with each pick hit, broken angular rubble (drawn over the rock layer) | `goldrush-earthmat.js` (cellular noise, crack lines from value noise), `goldrush-terrain.js` (fracture state per column) | procedural, own code |
+| Talus fans at the foot, rock outcrops (phase 8) | `goldrush-world.js` (instanced pebbles and noise-displaced icosahedra) | procedural, own code |
+| Mineralised streaks at the surface (rust stain, quartz veinlets, dark heavy-mineral bands) | `goldrush-terrain.js` (streak weight per vertex), `goldrush-earthmat.js` (value noise over the layers) | procedural, own code |
 | The camp as a working place (phase 7A): worn paths and wheelbarrow ruts between its places, sacks, spare planks, a coiled hose, picked stones, an old wheel rim, duckboards and a drain at the wash place, a heap of washed sand | `goldrush-campdressing.js` (ribbons along polylines, boxes, tori, icosahedra; merged per material) | procedural, own code |
 | Distant mountains with painted atmosphere (nearer ring warmer, far ring cooler and paler, the sun side lit) | `goldrush-world.js` (vertex colours on the ridge strips) | procedural, own code |
-| Dig effects per material and tool: dust puffs, crumbs, clods, rounded pebbles, flat stone chips, micro debris that lies a few seconds, the trickle after a steep cut; colours sampled from the terrain under the hit | `goldrush-vfx.js` (one pooled point cloud + one instanced faceted rock, per-instance shape scale; no physics engine) | procedural, own code |
+| Dig effects per material and tool: dust puffs (lit by the sun), crumbs, clods (Visual Overhaul A: scaled by the dug volume, plus mid-size clods), rounded pebbles, flat stone chips, micro debris that lies a few seconds, the trickle after a steep cut; colours from the ground layers under the hit | `goldrush-vfx.js` (one pooled point cloud + one instanced faceted rock, per-instance shape scale; no physics engine) | procedural, own code |
 | Glints | `goldrush-loot.js` | procedural, own code |
 | Wheelbarrow (open steel tray, wooden handles, spoked wheel with tyre, legs, its load of soil / gravel) | `goldrush-mechmodels.js` (boxes, cylinders, a torus tyre with spokes; phase 7B: the load a loose heap from `goldrush-heap.js` that grows with the fill) | procedural, own code |
 | Sluice (the delivered stack of boards and rolled mat, the sloped wooden box on legs with its riffle bars over a mat, the hopper with its fill, the pipe from the water tank, running water, gravel moving down the riffles, the heavy concentrate behind the bars, the outlet and its growing tailings heap, the concentrate tray) | `goldrush-mechmodels.js`, `goldrush-sluice.js` (boxes, cylinders, a scrolling canvas-drawn flow texture, instanced pebbles; the heap a cone that grows with the tailings) | procedural, own code |
@@ -54,7 +59,44 @@ The only external code is three.js r176 (MIT), vendored in
 `static/vendor/three/` (see its README for version, source and checksum) -
 since phase 8 including its `GLTFLoader` and `BufferGeometryUtils` addons from
 the same npm tarball (`static/vendor/three/addons/`, only the `'three'` import
-path changed), loaded only when an authored model is asked for.
+path changed), loaded only when an authored model is asked for; since Visual
+Overhaul A also its `RGBELoader` (r176, same source, import path rewritten to
+`'../../three.module.min.js'`) for the HDRI.
+
+## Earth B0 textures and HDRI (Visual Overhaul A)
+
+All from [Poly Haven](https://polyhaven.com), licence **CC0 1.0**
+(https://polyhaven.com/license - public domain, no attribution required; kept
+here and in `assets/earth/manifest.json` anyway). Downloaded once by
+`tools/goldrush/build_earth_assets.py` (1k JPG maps), converted and **shipped
+locally** - the game never loads anything from Poly Haven (no hotlinking).
+
+| Layer | Role | Poly Haven asset | Author(s) | Real size | Tile in game |
+|---|---|---|---|---|---|
+| crust | weathered, sun-baked surface of untouched ground | [Dry Ground Rocks](https://polyhaven.com/a/dry_ground_rocks) | Rob Tuytel | 4.0 m | 2.6 m |
+| loose | loose / freshly moved dirt | [Brown Mud Dry](https://polyhaven.com/a/brown_mud_dry) | Rob Tuytel | 1.3 m | 1.3 m |
+| compact | compact clay / packed soil in a cut | [Dirt Floor](https://polyhaven.com/a/dirt_floor) | eye-candy.xyz | 2.07 m | 2.07 m |
+| gravel | alluvial gravel, rounded pebbles in sand | [Ganges River Pebbles](https://polyhaven.com/a/ganges_river_pebbles) | Amal Kumar | 2.16 m | 2.16 m |
+| rock | stone lenses, outcrops (cracks / rubble drawn over it) | [Dry Riverbed Rock](https://polyhaven.com/a/dry_riverbed_rock) | Amal Kumar | 2.0 m | 2.0 m |
+| HDRI | image-based light only (the sky is the shader dome) | [Goegap](https://polyhaven.com/a/goegap) | Greg Zaal | - | `hdri/goegap_1k.hdr` |
+
+Files (`static/games/goldrush/assets/`, ~13 MB): `earth/<layer>_albedo_<res>.jpg`
+(sRGB), `earth/<layer>_normal_<res>.jpg` (tangent space, OpenGL +Y),
+`earth/<layer>_orh_<res>.jpg` (R ambient occlusion, G roughness, B height
+stretched 0..1), res 1024 (desktop HIGH / MEDIUM) and 512 (mobile, LOW);
+`earth/manifest.json` (sources, authors, licence, sizes); `hdri/goegap_1k.hdr`
+(unchanged Radiance HDR). Calibration (tint per layer, roughness floors, AO
+strength) is in `goldrush-earthmat.js` (`EARTH`), not baked into the files.
+
+**Format decision (KTX2):** investigated - no Basis Universal encoder
+(`toktx` / `basisu`) is available in this build environment, so the documented
+fallback is used: JPG (quality 90, normals 92), decoded once at load into two
+`DataArrayTexture`s per resolution (A: albedo + AO, B: normal xy + roughness +
+height; GPU mipmaps). Switching to KTX2 / Basis later is one step in
+`build_earth_assets.py` plus a `KTX2Loader` path in `loadEarthArrays`.
+
+Rebuild: `python tools/goldrush/build_earth_assets.py [--cache DIR]` (needs
+Pillow and network access once; writes the files above).
 
 ## Authored models (.glb / .gltf) - optional, phase 8
 
