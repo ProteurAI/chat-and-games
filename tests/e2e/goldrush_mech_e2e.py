@@ -230,7 +230,8 @@ def dig_feel(A, shots):
     h1 = heap_mb(A)
     ok("10,000 impacts: the pools never exceed their fixed size, no geometry / texture / object / heap growth", peak["dust"] <= pools["dust"] and peak["frags"] <= pools["frags"]
        and i1["geometries"] == i0["geometries"] and i1["textures"] == i0["textures"] and i1["sceneObjects"] == i0["sceneObjects"] and (h0 is None or h1 - h0 < 8),
-       f"peak {peak} of {pools['dust']}/{pools['frags']}, geo {i0['geometries']}->{i1['geometries']}, heap {h0}->{h1}")
+       f"peak {peak} of {pools['dust']}/{pools['frags']}, geo {i0['geometries']}->{i1['geometries']}, tex {i0['textures']}->{i1['textures']}, "
+       f"objects {i0['sceneObjects']}->{i1['sceneObjects']}, heap {h0}->{h1}")
     # trickle after a steep fresh cut: visual only
     fresh(A)
     G(A, f"() => {{ {GR}.grant('shovel'); {GR}.equipNow('shovel'); }}")

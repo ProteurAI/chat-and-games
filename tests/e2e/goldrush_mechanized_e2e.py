@@ -193,7 +193,7 @@ def geology(A):
     after = G(A, f"() => {{ const g = {GR}; return {{ h: g.hashes(), bucket: g.procObj().bucket.batch.goldUg, ml: g.procObj().bucket.batch.volumeMl, notice: document.querySelector('.gr-notice') ? document.querySelector('.gr-notice').textContent : '' }}; }}")
     doc = G(A, f"() => {{ {GR}.save(); return JSON.parse(localStorage.getItem(grKey())); }}")
     ok("GEO v7 -> v8: used slices stay used, the bucket keeps exactly its gold", after["h"]["slices"] == before["h"]["slices"] and after["bucket"] == before["bucket"] and after["ml"] == before["ml"], f"{before['bucket']} -> {after['bucket']}")
-    ok("GEO v7 -> v8: geology {version 3 (9.1), from 1}, told once", doc["geology"].get("version") == 3 and doc["geology"].get("from") == 1 and doc["geology"].get("noted") is True and "neu vermessen" in after["notice"], str(doc["geology"]))
+    ok("GEO v7 -> v8: geology {the current version (3 since 9.1, 4 since Prompt 10), from 1}, told once", doc["geology"].get("version") == CURRENT_GEOLOGY and doc["geology"].get("from") == 1 and doc["geology"].get("noted") is True and "neu vermessen" in after["notice"], str(doc["geology"]))
 
 
 # ======================================================================
@@ -689,7 +689,7 @@ def save(A):
     gr_ready(A, choice="new")
     d2 = G(A, f"() => {{ {GR}.save(); return JSON.parse(localStorage.getItem(grKey())); }}")
     p2 = d2["processing"]
-    ok("SAV a new mine starts clean: no plant, no excavator, no prospecting, contract at 0", not d2.get("prospect") and not p2.get("conveyor") and not p2.get("excavator") and not p2.get("trommel") and G(A, f"() => {GR}.contract()")["pct"] == 0 and d2["geology"]["version"] == 3)
+    ok("SAV a new mine starts clean: no plant, no excavator, no prospecting, contract at 0", not d2.get("prospect") and not p2.get("conveyor") and not p2.get("excavator") and not p2.get("trommel") and G(A, f"() => {GR}.contract()")["pct"] == 0 and d2["geology"]["version"] == CURRENT_GEOLOGY)
     # mid-excavation: saved while the bucket is in the cut (its material taken, the arm half way) - the cut, the
     # bucket, the pose and the ledger come back exactly; the motion itself starts again from that pose
     fresh(A, 4242)

@@ -798,7 +798,8 @@ def progression(browser, base, user, shots, bench):
             done += r["n"]
         sizes[str(mark)] = G(A, "() => { window.__goldrush.save(); return window.__goldrush.saveBytes(); }")
     print("  save sizes (bytes):", sizes, flush=True)
-    ok("T43 save sizes stay small (new / 100 / 1k / 5k / 10k actions; 10k < 150 KB)", all(v < 150000 for v in sizes.values()) and sizes["new"] < 3000, json.dumps(sizes))
+    # (a new mine ~3.0 KB since Prompt 10: the empty slots of the working-mine machines - piles, loader, wash plant, miner)
+    ok("T43 save sizes stay small (new / 100 / 1k / 5k / 10k actions; 10k < 150 KB)", all(v < 150000 for v in sizes.values()) and sizes["new"] < 3500, json.dumps(sizes))
 
     # T44: unlock costs are prepared, provisional, and fit the measured pace
     defs = G(A, "() => window.__goldrush.toolDefs()")

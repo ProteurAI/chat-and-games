@@ -625,8 +625,10 @@ def economy_suite(browser, base, user):
        and stats["eur_1min"] >= 0.05 and stats["eur_5min"] <= 12 and stats["nugget_rate"] <= 0.2, json.dumps(stats))
     ok("T26 no huge nugget: the biggest single find stays in the small-nugget range (<= € 4)", stats["max_ct"] <= 400, f"max {stats['max_ct']} ct")
     ok("T6 (economy run) no slice ever paid twice over all strokes", len(keys) == len(set(keys)), f"{len(keys)} finds")
-    mx = A.evaluate("() => { let m = 0; for (let i = 25; i < 216; i += 3) for (let j = 25; j < 216; j += 3) for (let iy = 20; iy < 200; iy += 2) { const v = window.__goldrush.voxel(i, j, iy); if (v.massUg > m) m = v.massUg; } return m; }")
-    ok("T26 ... also across the whole resource field (sampled): no slice holds more than a € 4 nugget", mx <= 40000, f"max {mx} µg")
+    # (Prompt 10's very rare big nuggets - JACKPOT tiers, voxel.jackpot >= 0 - are the one deliberate exception; their own
+    # checks are goldrush_workingmine_e2e.py --only nuggets)
+    mx = A.evaluate("() => { let m = 0; for (let i = 25; i < 216; i += 3) for (let j = 25; j < 216; j += 3) for (let iy = 20; iy < 200; iy += 2) { const v = window.__goldrush.voxel(i, j, iy); if (!(v.jackpot >= 0) && v.massUg > m) m = v.massUg; } return m; }")
+    ok("T26 ... also across the whole resource field (sampled): no slice holds more than a € 4 nugget (Prompt 10's big nuggets aside)", mx <= 40000, f"max {mx} µg")
     lv = A.evaluate(AUDIO_LEVELS)
     if lv is None:
         print("  sound: skipped - this browser build has no OfflineAudioContext (the game then simply stays silent)", flush=True)
