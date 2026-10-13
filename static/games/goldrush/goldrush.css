@@ -384,6 +384,8 @@ button.gr-tool { border: none; font-family: inherit; cursor: default; }
 }
 .gr-seg button[aria-checked="true"] { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-sm); }
 .gr-toggle { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); cursor: pointer; }
+.gr-range { width: 100%; accent-color: var(--accent-fill); }
+.gr-range-val { font-weight: var(--font-normal, 400); color: var(--text-muted); margin-left: var(--space-1, 4px); }
 .gr-toggle input { width: 20px; height: 20px; accent-color: var(--accent-fill); }
 .gr-toggle em { color: var(--text-muted); font-style: normal; }
 .gr-toggle input:disabled + span { color: var(--text-muted); }

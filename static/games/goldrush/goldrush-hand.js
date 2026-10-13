@@ -472,9 +472,10 @@ export class FirstPersonHands {
 
   setAspect(aspect, worldFov = 70) {
     this.camera.aspect = aspect;
-    // follow the world camera: where it opens up (upright phones) the hands
-    // get smaller instead of filling half the screen
-    this.camera.fov = aspect < 0.9 ? Math.min(95, worldFov) : Math.max(55, Math.min(80, worldFov * 0.83));
+    // Visual Overhaul A: the world camera's field of view, always - the hands and the tool live in the world's
+    // view space (the blade meets the ground where it digs, clipped by the world's depth); at the default
+    // 60 deg this is the old framing (70 x 0.83 = 58); wider settings show the hands smaller, as they are
+    this.camera.fov = worldFov;
     this.camera.updateProjectionMatrix();
     // narrow (portrait) screens: bring the hands in so they stay on screen
     this.aspectK = Math.max(0.42, Math.min(1, aspect / 1.6));

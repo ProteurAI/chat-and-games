@@ -226,6 +226,10 @@ class GoldRushShell {
             </div>
             <div class="gr-sub" data-role="q-note"></div>
           </div>
+          <div class="gr-field">
+            <label class="gr-label" for="gr-fov">Sichtfeld <span class="gr-range-val" data-role="fov-val">60°</span></label>
+            <input type="range" class="gr-range" id="gr-fov" min="55" max="75" step="1" data-role="fov" />
+          </div>
           <label class="gr-toggle"><input type="checkbox" data-role="headbob" /><span>Kopfbewegung beim Laufen</span></label>
           <label class="gr-toggle"><input type="checkbox" data-role="reduced" /><span>Reduzierte Bewegung <em>(kein Wippen, kein Rückstoß, keine HUD-Animationen)</em></span></label>
           <div class="gr-sub" data-role="bob-note" hidden>Dein System wünscht reduzierte Bewegung – sie ist hier immer an.</div>
@@ -327,6 +331,11 @@ class GoldRushShell {
         else this._setSetting("quality", qb.dataset.q);
         this._syncSettings();
       }
+    });
+    this.on(root.querySelector("[data-role=fov]"), "input", (e) => {
+      const v = Number(e.target.value);
+      if (this.game) this.game.setFov(v); else this._setSetting("fov", v);
+      this._syncSettings();
     });
     this.on(root.querySelector("[data-role=headbob]"), "change", (e) => {
       if (this.game) { this.game.settings.headBob = e.target.checked; this.game.persistSettings(); } else this._setSetting("headBob", e.target.checked);
@@ -893,6 +902,9 @@ class GoldRushShell {
     const names = { low: "Niedrig", medium: "Mittel", high: "Hoch" };
     this.root.querySelector("[data-role=q-note]").textContent = s.quality === "auto"
       ? (g ? `Auto nutzt gerade: ${names[g.level]} – passt sich an, wenn es ruckelt.` : "Auto wählt beim Start passend zu deinem Gerät.") : "Gilt sofort, ohne Neustart.";
+    const fov = this.root.querySelector("[data-role=fov]"), fv = Math.round(Math.max(55, Math.min(75, Number(s.fov) || 60)));
+    if (Number(fov.value) !== fv) fov.value = String(fv);
+    this.root.querySelector("[data-role=fov-val]").textContent = `${fv}°`;
     const bob = this.root.querySelector("[data-role=headbob]");
     bob.checked = !!s.headBob && !reduced;
     bob.disabled = reduced;
@@ -1252,7 +1264,9 @@ class GoldRushShell {
         const c = g.camera, f0 = c.fov;
         if (fov) { c.fov = fov; c.updateProjectionMatrix(); }
         c.position.set(x, y, z); c.lookAt(tx, ty, tz); c.updateMatrixWorld();
-        g.renderer.render(g.world.scene, c);
+        // (MEDIUM / HIGH: through the post stack as a frame is - the world's programs are those for its HDR target)
+        if (g.post.enabled) g.post.render(c, () => g.renderer.render(g.world.scene, c));
+        else g.renderer.render(g.world.scene, c);
         if (fov) { c.fov = f0; c.updateProjectionMatrix(); }
         return true;
       },

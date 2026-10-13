@@ -17,6 +17,7 @@ import { LootSystem } from "./goldrush-loot.js";
 import { MAT, MATERIALS } from "./goldrush-materials.js";
 import { MiningSystem } from "./goldrush-mining.js";
 import { QUALITY, QUALITY_LEVELS, applyRendererQuality, createRenderer, guessQuality, isMobileDevice } from "./goldrush-renderer.js";
+import { PostPipeline, installToolClip } from "./goldrush-post.js";
 import { FIND, FIND_IDS, GEOLOGY_VERSION, VOXEL_H, jackpotTier } from "./goldrush-resources.js";
 import { RockSystem } from "./goldrush-rocks.js";
 import { DEFAULT_SETTINGS, SAVE_VERSION } from "./goldrush-save.js";
@@ -66,7 +67,8 @@ const RADIUS = 0.33;
 const WALK = 3.4;
 const SPRINT = 5.6;
 const SEE = 5;                                    // m: the crosshair reads the ground this far (reach is the tool's)
-const FOV = 70;                                   // vertical, for the usual 16:9 / 16:10 screens
+const FOV = 60;                                   // vertical, for the usual 16:9 / 16:10 screens (Visual Overhaul A: 70 -> 60)
+export const FOV_RANGE = [55, 75];                // the player's setting (settings.fov)
 const HFOV_MIN = Math.tan((50 * Math.PI) / 360);  // phones upright: still enough view to the sides
 const HFOV_MAX = Math.tan((106 * Math.PI) / 360); // phones sideways: no fish-eye
 // Prompt 10 (human QA): the jump - about 38 cm, a quick dip before it (anticipation), your momentum carries
@@ -182,6 +184,7 @@ export class GoldRushGame {
     const renderer = (this.renderer = createRenderer(THREE, ui.canvas, { antialias: this.settings.quality !== "low" }));
     this.gpu = guessQuality(renderer.getContext());
     this.autoLevel = this.gpu.level;
+    this.post = new PostPipeline(THREE, renderer);       // Visual Overhaul A: HDR, AO, bloom, one tone curve (MEDIUM / HIGH)
 
     this.assets = new AssetManager(THREE);
     const world = (this.world = new GoldRushWorld(THREE, { seed: this.doc.worldSeed, assets: this.assets }));
@@ -213,7 +216,9 @@ export class GoldRushGame {
     await step();
     world.buildScenery();
     this.rocks.attachColliders(world.colliders);
-    const envMap = world.buildEnvironment(renderer);
+    const envMap = await world.buildEnvironment(renderer);   // the HDRI's image-based light (a local file; analytic fallback)
+    if (this.disposed) throw ABORTED;
+    if (this.disposed) throw ABORTED;
 
     const camera = (this.camera = new THREE.PerspectiveCamera(FOV, 1, 0.05, 900));
     camera.rotation.order = "YXZ";
@@ -294,7 +299,10 @@ export class GoldRushGame {
     // (phase 8: the hands' scene too - the upper arms only come into view on the barrow's grips)
     const culledH = [];
     this.hands.scene.traverse((o) => { if (o.frustumCulled) { culledH.push(o); o.frustumCulled = false; } });
+    // (the world's programs for the target it is drawn into: the HDR target on MEDIUM / HIGH)
+    renderer.setRenderTarget(this.post.enabled ? this.post.rtWorld : null);
     renderer.compile(world.scene, camera);
+    renderer.setRenderTarget(null);
     renderer.compile(this.hands.scene, this.hands.camera);
     if (this.rocks.tex) renderer.initTexture(this.rocks.tex);   // no upload hitch when the first boulder comes into view
     for (const t of pr.textures()) renderer.initTexture(t);   // the machines' shared maps (heap, load) before a heap first comes into view
@@ -350,6 +358,8 @@ export class GoldRushGame {
     });
     this.on(ui.canvas, "webglcontextrestored", () => {
       this.glLost = false;
+      this.post.timer.pending = [];
+      this.post.timer.ext = this.renderer.getContext().getExtension("EXT_disjoint_timer_query_webgl2");
       const sun = this.world.sun;
       if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
       ui.showGlLost(false);
@@ -405,12 +415,25 @@ export class GoldRushGame {
     this.level = level;
     this.q = q;
     this.dpr = applyRendererQuality(THREE, this.renderer, this.world.scene, q, this.mobile);
+    this.post.setQuality({ ...q, samples: this.mobile && q.samplesMobile != null ? q.samplesMobile : q.samples });
     this.world.applyQuality(q);
+    this._alphaToCoverage();
     this.effects.setLimits(q.particles, q.fragments);
     this.loot.setLimits(GLINTS[level]);
     if (this.camera) this.resize();
     this.monitor = { t: 0, acc: 0, n: 0, cooldown: MONITOR.cooldown };
     this.ui.onQuality && this.ui.onQuality(this.settings.quality, level);
+  }
+
+  // cut-out materials (alphaTest: heap edges, the trommel's mesh, screens) get soft MSAA edges where the world
+  // target has samples (HIGH); without MSAA they keep their plain cut-out (no thicker, smeared edges)
+  _alphaToCoverage() {
+    const on = this.post.enabled && this.post.q.samples > 0;
+    this.world.scene.traverse((o) => {
+      for (const m of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) {
+        if (m.alphaTest > 0 && !m.transparent && m.alphaToCoverage !== on) { m.alphaToCoverage = on; m.needsUpdate = true; }
+      }
+    });
   }
 
   // in-game switch; the system preference always wins
@@ -884,6 +907,14 @@ export class GoldRushGame {
     this.persistSettings();
   }
 
+  // the field of view (degrees, 55-75) - a device setting like the quality
+  setFov(v) {
+    this.settings.fov = Math.round(Math.max(FOV_RANGE[0], Math.min(FOV_RANGE[1], Number(v) || FOV)));
+    this.persistSettings();
+    this.resize();
+    return this.settings.fov;
+  }
+
   setQualitySetting(value) {
     this.settings.quality = value;
     this.applyQuality(value === "auto" ? this.autoLevel : value);
@@ -1047,21 +1078,31 @@ export class GoldRushGame {
 
   render() {
     if (this.glLost || this.disposed) return;
-    const r = this.renderer, pr = this.processing;
+    const r = this.renderer, pr = this.processing, post = this.post;
     if (pr && pr.warmPending && this.ready) {
       // a machine was just bought: all its parts once through the GPU, drawn into one pixel the frame covers
       pr.warmPending = false;
       pr.warmMachines(true);
+      this._alphaToCoverage();                            // (its cut-out parts too - before they are compiled)
+      r.setRenderTarget(post.enabled ? post.rtWorld : null);
+      post.toolClip.uGrDepth.value = null;                // (the rack's tools clip against that target's depth: a feedback loop)
       r.setScissorTest(true);
       r.setScissor(0, 0, 1, 1);
       r.render(this.world.scene, this.camera);
       r.setScissorTest(false);
+      r.setRenderTarget(null);
       pr.warmMachines(false);
     }
-    r.render(this.world.scene, this.camera);
-    // draw calls of the main pass (as in phase 1; the shadow pass comes on top) + the hands pass
-    this.frameCalls = r.info.render.calls;
-    this.frameTris = r.info.render.triangles;
+    // draw calls of the main pass (as in phase 1; the shadow pass comes on top) + the hands pass; the
+    // post stack's own full-screen passes are counted apart (postCalls)
+    const world = () => {
+      r.render(this.world.scene, this.camera);
+      this.frameCalls = r.info.render.calls;
+      this.frameTris = r.info.render.triangles;
+    };
+    if (post.enabled) post.render(this.camera, world);
+    else world();
+    this.postCalls = post.enabled ? post.calls : 0;
     if (this.hands && this.ready && !this.cab) {
       r.autoClear = false;
       this.hands.render(r);
@@ -1070,6 +1111,25 @@ export class GoldRushGame {
       this.frameTris += r.info.render.triangles;
     }
   }
+
+  // frame statistics (visual QA, the perf pass): draw calls / triangles of world + hands, the post stack's
+  // passes, GPU time per pass (EXT_disjoint_timer_query_webgl2 - while gpu timing is on), memory
+  renderStats() {
+    const r = this.renderer, i = r.info, f = this.frameMs.slice(-60), avg = f.length ? f.reduce((a, b) => a + b, 0) / f.length : 0;
+    const db = r.getDrawingBufferSize(new THREE.Vector2());
+    return {
+      calls: this.frameCalls, tris: this.frameTris, postCalls: this.postCalls || 0, passes: this.post.passes(),
+      textures: i.memory.textures, geometries: i.memory.geometries, programs: i.programs ? i.programs.length : null,
+      frameMs: +avg.toFixed(2), fps: avg ? +(1000 / avg).toFixed(1) : null, dpr: this.dpr, buffer: [db.x, db.y],
+      level: this.level, post: this.post.enabled, samples: this.post.q.samples, ao: this.post.q.ao, fxaa: this.post.q.fxaa,
+      targetsMB: +(this.post.enabled ? this.post.memory() / 1048576 : 0).toFixed(1),
+      gpu: this.post.timer.enabled ? this.post.timer.report() : null, gpuTimer: this.post.timer.available,
+      heapMB: performance.memory ? +(performance.memory.usedJSHeapSize / 1048576).toFixed(1) : null,
+      fov: +this.camera.fov.toFixed(2), env: this.world.envSource, envStats: this.world.envStats, envError: this.world.envError || null,
+    };
+  }
+
+  setGpuTiming(on) { this.post.timer.enabled = !!on; if (on) this.post.timer.reset(); return this.post.timer.available; }
 
   // ------------------------------------------------------------ simulation
 
@@ -2240,10 +2300,11 @@ export class GoldRushGame {
     const w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
-    this.camera.fov = fovFor(w / h);
+    this.camera.fov = fovFor(w / h, this.settings.fov);
     this.camera.updateProjectionMatrix();
     this.hands.setAspect(w / h, this.camera.fov);
     const db = this.renderer.getDrawingBufferSize(this._v2);
+    this.post.setSize(db.x, db.y);
     const px = db.y / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
     this.effects.setScale(px);
     this.loot.setScale(px);
@@ -2488,6 +2549,7 @@ export class GoldRushGame {
     if (this.reticle) { this.reticle.geometry.dispose(); this.reticle.material.dispose(); }
     if (this.world) this.world.dispose();
     if (this.assets) this.assets.dispose();
+    if (this.post) this.post.dispose();
     if (this.renderer) {
       this.renderer.dispose();
       this.renderer.forceContextLoss();                     // hand the GL context back to the browser now
@@ -2498,13 +2560,14 @@ export class GoldRushGame {
 const ZUP = new THREE.Vector3(0, 0, 1);
 const SUN_VEC = new THREE.Vector3(...SUN_DIR).normalize();
 
-// vertical FOV for an aspect ratio: 70 deg, unless that would leave the
+// vertical FOV for an aspect ratio: the setting (60 deg by default), unless that would leave the
 // horizontal view too narrow (portrait) or too wide (very wide landscape)
-function fovFor(aspect) {
-  const h = Math.tan((FOV * Math.PI) / 360) * aspect;
+function fovFor(aspect, setting) {
+  const fov = Number.isFinite(setting) ? Math.max(FOV_RANGE[0], Math.min(FOV_RANGE[1], setting)) : FOV;
+  const h = Math.tan((fov * Math.PI) / 360) * aspect;
   if (h < HFOV_MIN) return (2 * Math.atan(HFOV_MIN / aspect) * 180) / Math.PI;
   if (h > HFOV_MAX) return (2 * Math.atan(HFOV_MAX / aspect) * 180) / Math.PI;
-  return FOV;
+  return fov;
 }
 const round3 = (v) => Math.round(v * 1000) / 1000;
 

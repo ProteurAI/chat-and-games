@@ -1,24 +1,37 @@
 // GoldRush - WebGL renderer + graphics quality.
 //
 // WebGLRenderer only (WebGPU is not required anywhere - Safari / iPhone /
-// Android). ACES filmic tone mapping, sRGB output, PCF soft shadows from
-// one sun whose shadow camera is fitted to the claim. Quality only changes
-// how things are drawn, never the game itself.
+// Android). sRGB output, PCF soft shadows from one sun whose shadow camera is
+// fitted to the claim. Quality only changes how things are drawn, never the
+// game itself.
+//
+// Visual Overhaul A: one tone curve + grade for everything (goldrush-atmos.js, AgX by default) - the
+// renderer's CustomToneMapping for what is drawn straight to the screen (LOW, the hands), the same GLSL in
+// the post stack's output pass (goldrush-post.js) for MEDIUM / HIGH:
+//   post     HDR world target + AO + bloom + output pass (false: straight to the canvas)
+//   samples  MSAA of the world target (mobile: samplesMobile; 0 = FXAA in the output pass)
+//   ao       0 off, 1 quarter resolution, 2 half resolution
+//   earthRes texture size of the earth layers (goldrush-earthmat.js)
+
+import { GRADE, installAtmosphere } from "./goldrush-atmos.js";
 
 export const QUALITY_LEVELS = ["low", "medium", "high"];
 
 export const QUALITY = {
   low: {
     label: "Niedrig", dprDesktop: 1, dprMobile: 1, shadowSize: 1024, softShadows: false,
-    particles: 90, fragments: 70, terrainStride: 2, grass: 0.35, fogDensity: 0.0074,
+    particles: 90, fragments: 70, terrainStride: 2, grass: 0.35, fogDensity: 0.0052,
+    post: false, samples: 0, ao: 0, bloom: false, earthRes: 512,
   },
   medium: {
-    label: "Mittel", dprDesktop: 1.5, dprMobile: 1.35, shadowSize: 2048, softShadows: true,
-    particles: 170, fragments: 150, terrainStride: 1, grass: 0.7, fogDensity: 0.0062,
+    label: "Mittel", dprDesktop: 1.25, dprMobile: 1.25, shadowSize: 2048, softShadows: true,
+    particles: 170, fragments: 150, terrainStride: 1, grass: 0.7, fogDensity: 0.0046,
+    post: true, samples: 0, ao: 1, bloom: true, earthRes: 1024, earthResMobile: 512,          // FXAA (MSAA 4x cost ~4.5 ms)
   },
   high: {
-    label: "Hoch", dprDesktop: 2, dprMobile: 1.6, shadowSize: 4096, shadowSizeMobile: 2048, softShadows: true,
-    particles: 280, fragments: 230, terrainStride: 1, grass: 1, fogDensity: 0.0058,
+    label: "Hoch", dprDesktop: 1.5, dprMobile: 1.5, shadowSize: 4096, shadowSizeMobile: 2048, softShadows: true,
+    particles: 280, fragments: 230, terrainStride: 1, grass: 1, fogDensity: 0.0044,
+    post: true, samples: 4, samplesMobile: 2, ao: 2, bloom: true, earthRes: 1024,
   },
 };
 
@@ -46,12 +59,13 @@ export function guessQuality(gl) {
 }
 
 export function createRenderer(THREE, canvas, { antialias }) {
+  installAtmosphere(THREE);                               // shader chunks (fog, tone curve) before anything compiles
   const renderer = new THREE.WebGLRenderer({
     canvas, antialias, alpha: false, stencil: false, powerPreference: "high-performance", preserveDrawingBuffer: false,
   });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.02;
+  renderer.toneMapping = THREE.CustomToneMapping;
+  renderer.toneMappingExposure = GRADE.exposure;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   return renderer;

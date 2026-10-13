@@ -12,6 +12,7 @@ import { DiggableTerrain } from "./goldrush-terrain.js";
 import { CampDressing } from "./goldrush-campdressing.js";
 import { mergeStatic } from "./goldrush-merge.js";
 import { fbm2, hash3, mulberry32, noise2, ridged2, smoothstep } from "./goldrush-noise.js";
+import { AIR, SUN_DIR, analyticEnvironment, hdriEnvironment, skyMaterial } from "./goldrush-atmos.js";
 
 export const CLAIM = { minX: -24, maxX: 24, minZ: -30, maxZ: 20 };      // fenced play area
 export const MOUND_CENTER = { x: 0, z: -6 };
@@ -21,8 +22,9 @@ export const MACHINE_ZONES = [
   { id: "B", x: -18.5, z: -9, w: 6, d: 8, label: "ZONE B" },
   { id: "C", x: 15.5, z: 13, w: 7, d: 5, label: "ZONE C" },
 ];
-export const SUN_DIR = [-0.74, 0.6, 0.36];                                     // towards the sun (west, low-ish)
-const FOG_COLOR = 0xd3c19f;
+export { SUN_DIR };                       // towards the sun: west-south-west, 22 deg up (Visual Overhaul A, goldrush-atmos.js)
+// image-based light: a CC0 HDRI (Poly Haven "Goegap", ASSETS.md), local - never hotlinked
+const HDRI_URL = new URL("./assets/hdri/goegap_1k.hdr", import.meta.url).href;
 
 // --------------------------------------------------------------- textures
 
@@ -234,8 +236,9 @@ export class GoldRushWorld {
     this.decks = [];               // phase 7: walkable timber (a loading ramp, a platform) - see addDeck
     this.heightSources = [];       // Prompt 10: more walkable surfaces on the ground (stockpiles) - see addHeightSource
     const scene = (this.scene = new THREE.Scene());
-    scene.fog = new THREE.FogExp2(FOG_COLOR, 0.0062);
-    scene.background = new THREE.Color(FOG_COLOR);
+    // (Visual Overhaul A: the haze is goldrush-atmos.js' fog - distance + height layer + sun inscatter, in linear light)
+    scene.fog = new THREE.FogExp2(new THREE.Color().setRGB(...AIR.fog), 0.0046);
+    scene.background = new THREE.Color().setRGB(...AIR.horizon);
     this._textures();
   }
 
@@ -472,45 +475,21 @@ export class GoldRushWorld {
 
   _sky() {
     const THREE = this.THREE;
-    const sun = new THREE.Vector3(...SUN_DIR).normalize();
-    const mat = this.track(new THREE.ShaderMaterial({
-      side: THREE.BackSide, depthWrite: false, fog: false,
-      uniforms: {
-        uSun: { value: sun },
-        uZenith: { value: new THREE.Color(0x3a74bd) },
-        uHorizon: { value: new THREE.Color(0xe0cda9) },
-        uGround: { value: new THREE.Color(0xb8a07e) },
-      },
-      vertexShader: `varying vec3 vDir; void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: `
-        uniform vec3 uSun, uZenith, uHorizon, uGround; varying vec3 vDir;
-        void main() {
-          vec3 d = normalize(vDir);
-          float h = d.y;
-          vec3 col = mix(uHorizon, uZenith, pow(clamp(h, 0.0, 1.0), 0.55));
-          col = mix(col, uGround, smoothstep(0.0, -0.12, h));
-          float s = max(dot(d, uSun), 0.0);
-          col += vec3(1.0, 0.86, 0.62) * (pow(s, 12.0) * 0.28 + pow(s, 900.0) * 3.0);   // haze glow + sun disc
-          col = mix(col, uHorizon, exp(-abs(h) * 14.0) * 0.35);                           // dusty horizon band
-          gl_FragColor = vec4(col, 1.0);
-          #include <tonemapping_fragment>
-          #include <colorspace_fragment>
-        }`,
-    }));
-    const sky = new THREE.Mesh(this.track(new THREE.SphereGeometry(420, 32, 16)), mat);
+    const sky = new THREE.Mesh(this.track(new THREE.SphereGeometry(420, 48, 24)), this.track(skyMaterial(THREE, this.terrainUniforms.uTime)));
     sky.name = "sky";
     sky.frustumCulled = false;
+    sky.renderOrder = -10;
     this.scene.add(sky);
   }
 
   _lights() {
     const THREE = this.THREE;
-    // (phase 7A: a little less flat fill, a warmer sun, a warm bounce - shapes read, shadows stay cool-ish)
-    // (phase 8: the sky probe lights the shade now - scene.environment, buildEnvironment - so the flat
-    // hemisphere fill is lower: dark wood and steel keep their detail in shadow, the sun keeps its contrast)
-    const hemi = (this.hemi = new THREE.HemisphereLight(0xaec6e6, 0x7f6146, 0.56));
+    // Visual Overhaul A: a low sun (22 deg) carries the light; the sky is the HDRI's image-based light
+    // (buildEnvironment), so the flat hemisphere fill is only a trace and the bounce light is gone - shade
+    // has depth again, the relief reads, the beige wash is gone
+    const hemi = (this.hemi = new THREE.HemisphereLight(0xaec6e6, 0x7f6146, 0.18));
     this.scene.add(hemi);
-    const sun = (this.sun = new THREE.DirectionalLight(0xffe6c4, 3.7));
+    const sun = (this.sun = new THREE.DirectionalLight(0xffe2bc, 4.6));
     const target = new THREE.Vector3(0, 0, -5);
     sun.position.set(target.x + SUN_DIR[0] * 70, SUN_DIR[1] * 70, target.z + SUN_DIR[2] * 70);
     sun.target.position.copy(target);
@@ -520,10 +499,6 @@ export class GoldRushWorld {
     sun.shadow.bias = -0.00035;
     sun.shadow.normalBias = 0.045;
     this.scene.add(sun, sun.target);
-    // a faint bounce from the warm ground towards the shadowed faces
-    const bounce = new THREE.DirectionalLight(0xd9b387, 0.34);
-    bounce.position.set(-SUN_DIR[0] * 40, 12, -SUN_DIR[2] * 40);
-    this.scene.add(bounce);
   }
 
   // the ground everywhere except the mound's square (a hole, so digging below
@@ -1073,43 +1048,26 @@ export class GoldRushWorld {
 
   // (the boulders IN the pile are goldrush-rocks.js: they settle, crack and break)
 
-  // image-based light for metals (gold!): a soft, warm version of this
-  // place - hazy sky, the sun, sunlit sand - pre-filtered once. (The real
-  // deep-blue sky would tint gold green.)
-  buildEnvironment(renderer) {
+  // image-based light: the HDRI (goldrush-atmos.js: rotated to the sun, its sun clamped out, a little
+  // desaturated so gold stays gold, normalised to the energy of the old analytic probe - every
+  // envMapIntensity tuned before stays valid); the analytic probe when the file cannot be loaded
+  async buildEnvironment(renderer) {
     const THREE = this.THREE;
-    const pm = new THREE.PMREMGenerator(renderer);
-    const env = new THREE.Scene();
-    const geo = new THREE.SphereGeometry(100, 32, 16);
-    const mat = new THREE.ShaderMaterial({
-      side: THREE.BackSide, depthWrite: false,
-      uniforms: { uSun: { value: new THREE.Vector3(...SUN_DIR).normalize() } },
-      vertexShader: `varying vec3 vDir; void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: `
-        uniform vec3 uSun; varying vec3 vDir;
-        void main() {
-          vec3 d = normalize(vDir);
-          vec3 sky = mix(vec3(0.92, 0.84, 0.7), vec3(0.62, 0.7, 0.8), smoothstep(0.0, 0.9, d.y));
-          vec3 ground = mix(vec3(0.74, 0.6, 0.42), vec3(0.4, 0.3, 0.2), smoothstep(0.0, -0.6, d.y));
-          vec3 col = d.y >= 0.0 ? sky : ground;
-          float s = max(dot(d, uSun), 0.0);
-          col += vec3(1.0, 0.9, 0.7) * (pow(s, 40.0) * 2.5 + pow(s, 400.0) * 20.0);
-          gl_FragColor = vec4(col, 1.0);
-        }`,
-    });
-    env.add(new THREE.Mesh(geo, mat));
-    this.envRT = pm.fromScene(env, 0, 0.1, 1000);
+    let env;
+    try { env = await hdriEnvironment(THREE, renderer, HDRI_URL); } catch (e) {
+      this.envError = String((e && e.message) || e);
+      env = analyticEnvironment(THREE, renderer);
+    }
+    this.envRT = env.rt;
+    this.envSource = env.source;
+    this.envStats = env.stats || null;
     this.envMap = this.envRT.texture;
     // phase 7B: the camp's metal reflects the sky (without it the tank and bands read black)
     for (const m of this._metalMats || []) { m.envMap = this.envMap; m.envMapIntensity = 0.4; m.needsUpdate = true; }
-    // phase 8: every standard material gets a little image-based light from the sky probe (ambient that
-    // depends on the surface: metal reflects, rough wood and soil stay matte) - materials with an own
-    // envMap keep it
+    // phase 8: every standard material gets image-based light (ambient that depends on the surface: metal
+    // reflects, rough wood and soil stay matte) - materials with an own envMap keep it
     this.scene.environment = this.envMap;
-    this.scene.environmentIntensity = 0.42;
-    geo.dispose();
-    mat.dispose();
-    pm.dispose();
+    this.scene.environmentIntensity = 0.6;
     return this.envMap;
   }
 

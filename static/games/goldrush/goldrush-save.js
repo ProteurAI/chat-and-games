@@ -92,7 +92,8 @@ const LEGACY_KEY = "goldrush.save";
 const LEGACY_BACKUP_KEY = "goldrush.save.backup";
 const LEGACY_MARK_KEY = "goldrush.legacy";
 const SETTINGS_KEY = "goldrush.settings";
-export const DEFAULT_SETTINGS = Object.freeze({ quality: "auto", headBob: true, reducedMotion: false, sound: true, vibration: true });
+// fov: the vertical field of view in degrees (55-75; Visual Overhaul A: 60 by default)
+export const DEFAULT_SETTINGS = Object.freeze({ quality: "auto", headBob: true, reducedMotion: false, sound: true, vibration: true, fov: 60 });
 
 const finite = (v) => typeof v === "number" && Number.isFinite(v);
 
