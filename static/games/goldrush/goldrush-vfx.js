@@ -18,6 +18,11 @@
 //
 // Density follows the graphics quality (LOW fewer, HIGH more); what is dug
 // never depends on it.
+//
+// Visual Overhaul A: a real dig passes the volume it removed - the pieces scale with it (a partial scoop throws
+// less than a full one), and a fourth layer of mid-size CLODS (2-5 cm lumps of soil, small pebbles) comes off a
+// shovel cut / a pick's bite in proportion. The dust is lit: brighter towards the sun (forward scattering),
+// dimmer when the dig is in shade (the engine passes the sun direction and whether the sun reaches you).
 
 const DUST_MAX = 320;
 const FRAG_MAX = 260;
@@ -54,6 +59,13 @@ const PROFILES = [
     chunks: { n: 2.2, s0: 0.016, s1: 0.03, speed: 2.3, bounce: 0.24, rest: 7, shape: "chip", stone: true },
   },
 ];
+// Visual Overhaul A: the mid-size clods per material (count at the tool's full bite)
+const CLODS = [
+  { n: 2.2, s0: 0.018, s1: 0.04, speed: 1.0, bounce: 0.05, rest: 6, shape: "clod", tint: 0.74 },
+  { n: 3.0, s0: 0.022, s1: 0.05, speed: 0.9, bounce: 0.06, rest: 7, shape: "clod", tint: 0.68 },
+  { n: 1.6, s0: 0.016, s1: 0.03, speed: 1.4, bounce: 0.25, rest: 8, shape: "pebble", stone: true },
+  { n: 0.8, s0: 0.018, s1: 0.032, speed: 2.0, bounce: 0.22, rest: 7, shape: "chip", stone: true },
+];
 
 // what a fragment may look like (linear luminance): from the ground's colour, but never
 // a black "coal" lump in brown earth nor a white speck in the sun (phase 7A)
@@ -65,11 +77,12 @@ function bandColor(c, lo, hi) {
 }
 
 // per tool: how much of each layer, how big, how fast, which way
+// (ref: the tool's full bite in litres - goldrush-tools.js kernels; clods: how many mid-size clods it frees)
 const TOOLS = {
-  hand: { count: 0.42, dust: 0.55, chunks: 0.2, size: 0.8, speed: 0.5, mode: "hand" },
-  shovel: { count: 1.45, dust: 1.25, chunks: 1.8, size: 1.05, speed: 0.9, mode: "scoop" },
-  pickaxe: { count: 1.0, dust: 0.75, chunks: 0.9, size: 0.95, speed: 1.3, mode: "strike" },
-  rock: { count: 1.5, dust: 1.1, chunks: 2.6, size: 1.35, speed: 1.15, mode: "strike" },      // a boulder breaking apart
+  hand: { count: 0.42, dust: 0.55, chunks: 0.2, size: 0.8, speed: 0.5, mode: "hand", ref: 0.135, clods: 0 },
+  shovel: { count: 1.45, dust: 1.25, chunks: 1.8, size: 1.05, speed: 0.9, mode: "scoop", ref: 1.63, clods: 1 },
+  pickaxe: { count: 1.0, dust: 0.75, chunks: 0.9, size: 0.95, speed: 1.3, mode: "strike", ref: 0.4, clods: 0.7 },
+  rock: { count: 1.5, dust: 1.1, chunks: 2.6, size: 1.35, speed: 1.15, mode: "strike", ref: 1, clods: 0 },      // a boulder breaking apart
 };
 
 export class DigEffects {
@@ -91,15 +104,19 @@ export class DigEffects {
     g.setAttribute("aAlpha", new THREE.BufferAttribute(alpha, 1));
     g.setAttribute("aSize", new THREE.BufferAttribute(size, 1));
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, -6), 60);
+    // (lit: ambient sky + the sun, much brighter looking towards it - fine dust scatters forward)
     this.dustMat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, fog: true, vertexColors: true,
-      uniforms: { uScale: { value: 400 }, ...THREE.UniformsLib.fog },
+      uniforms: { uScale: { value: 400 }, uSunView: { value: new THREE.Vector3(0, 1, 0) }, uSunLit: { value: 1 }, ...THREE.UniformsLib.fog },
       vertexShader: `
         attribute float aAlpha; attribute float aSize; varying float vAlpha; varying vec3 vColor; uniform float uScale;
+        uniform vec3 uSunView; uniform float uSunLit;
         #include <fog_pars_vertex>
         void main() {
-          vAlpha = aAlpha; vColor = color;
+          vAlpha = aAlpha;
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          float mu = max(dot(normalize(mvPosition.xyz), uSunView), 0.0);
+          vColor = color * (0.62 + uSunLit * (0.55 + 1.6 * pow(mu, 5.0)));
           gl_PointSize = aSize * uScale / max(0.1, -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;
           #include <fog_vertex>
@@ -176,22 +193,31 @@ export class DigEffects {
 
   setScale(px) { this.dustMat.uniforms.uScale.value = px; }
 
+  /** the sun for the dust: its direction in view space, and how much of it reaches the dig (0 shade .. 1) */
+  setLight(sunView, lit) {
+    const u = this.dustMat.uniforms;
+    u.uSunView.value.copy(sunView);
+    u.uSunLit.value += (lit - u.uSunLit.value) * 0.1;
+  }
+
   pools() { return { dust: DUST_MAX, frags: FRAG_MAX, dustLimit: this.dustLimit, fragLimit: this.fragLimit, density: this.density }; }
 
   // tests: what is in the air / on the ground right now, by layer (lying pieces are counted in their layer too)
   stats() {
-    const out = { dust: 0, debris: 0, chunks: 0, trickle: 0, lying: this.lying, flat: 0, bounced: 0, sizeDebris: 0, sizeChunks: 0, speed: 0 };
+    const out = { dust: 0, debris: 0, chunks: 0, clods: 0, trickle: 0, lying: this.lying, flat: 0, bounced: 0, sizeDebris: 0, sizeChunks: 0, sizeClods: 0, speed: 0 };
     for (const d of this.dust) if (d.life > 0) out.dust++;
     let sp = 0, n = 0;
     for (const f of this.fragState) {
       if (!f.on) continue;
       if (f.layer === 1) { out.debris++; out.sizeDebris += f.s; } else if (f.layer === 2) { out.chunks++; out.sizeChunks += f.s; } else if (f.layer === 3) out.trickle++;
+      else if (f.layer === 4) { out.clods++; out.sizeClods += f.s; }
       if (f.ky < 0.45) out.flat++;
       if (f.hops > 0) out.bounced++;
       if (f.phase === 0) { sp += Math.hypot(f.vx, f.vy, f.vz); n++; }
     }
     if (out.debris) out.sizeDebris /= out.debris;
     if (out.chunks) out.sizeChunks /= out.chunks;
+    if (out.clods) out.sizeClods /= out.clods;
     out.speed = n ? sp / n : 0;
     return out;
   }
@@ -244,10 +270,13 @@ export class DigEffects {
   /**
    * One hit. hit: { x, y, z, normal }, mat: MAT index, tool: "hand" |
    * "shovel" | "pickaxe" | "rock", dir: the tool's motion (camera forward),
-   * strength ~0.5..1.5 (how much came loose)
+   * strength ~0.5..1.5 (how much came loose); volumeL: what the dig removed (litres) - the pieces scale with it
+   * against the tool's full bite, and the mid-size clods come with it (no volume: the strength alone, no clods)
    */
-  impact(hit, mat, tool, dir, strength = 1) {
+  impact(hit, mat, tool, dir, strength = 1, volumeL = null) {
     const P = PROFILES[mat] || PROFILES[0], T = TOOLS[tool] || TOOLS.hand;
+    const kv = volumeL != null ? Math.max(0.3, Math.min(1.6, (Math.max(0, volumeL) / T.ref) ** 0.6)) : 1;
+    if (volumeL != null) strength = kv;
     const k = this.density * Math.max(0.2, Math.min(1.6, strength));
     this._basis(hit.normal || this._v.set(0, 1, 0), dir);
     const tc = this._tc;
@@ -257,6 +286,7 @@ export class DigEffects {
     this._frags(hit, P.debris, this._count(P.debris.n * T.count * k), T, mat, 1);
     const nc = this._count(P.chunks.n * T.chunks * Math.min(1.3, k));
     this._frags(hit, P.chunks, tool === "hand" ? Math.min(nc, 1) : nc, T, mat, 2);
+    if (volumeL != null && T.clods > 0) this._frags(hit, CLODS[mat] || CLODS[0], this._count(CLODS[mat].n * T.clods * this.density * kv ** 1.2), T, mat, 4);
   }
 
   _dust(hit, L, n, T, mat) {

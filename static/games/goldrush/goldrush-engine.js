@@ -1005,6 +1005,9 @@ export class GoldRushGame {
     const steps = Math.max(1, Math.ceil(dt / 0.034));
     for (let i = 0; i < steps; i++) this.update(dt / steps);
     this.effects.update(dt);
+    // (lit dust: the sun in view space, dimmed while you stand in the mound's shadow)
+    const sv = this._sunView || (this._sunView = new THREE.Vector3()), qi = this._camQi || (this._camQi = new THREE.Quaternion());
+    this.effects.setLight(sv.copy(SUN_VEC).applyQuaternion(qi.copy(this.camera.quaternion).invert()), this.sunVisible ? 1 : 0.3);
     this.loot.update(dt, this.camera, this.player);
     this._sunCheck(dt);
     this.processing.update(dt, this.player);
@@ -2077,7 +2080,7 @@ export class GoldRushGame {
     this.tools.react("ok", r.material);
     if (def.id === "shovel") { const c = mdef.fragmentColor; this.hands.models.loadRgb = [c[0] * 1.2, c[1] * 1.2, c[2] * 1.2]; }
     this.hands.contact("ok", r.material, r.removedMassKg);
-    this.effects.impact(hit, r.material, def.id, dir, Math.min(1.5, 0.6 + r.removedMassKg / 2.5));
+    this.effects.impact(hit, r.material, def.id, dir, Math.min(1.5, 0.6 + r.removedMassKg / 2.5), r.removedVolume != null ? r.removedVolume * 1000 : null);
     // broken stone (rubble) sounds like the coarse gravel it now is; the pick's own crack has its sound
     const soundMat = r.material === MAT.STONE && r.rubble && def.id !== "pickaxe" ? MAT.GRAVEL : r.material;
     const kind = r.crack && !r.crack.fractured ? null : (DIG_SOUND[def.id] || DIG_SOUND.hand)[soundMat] || "hand_dirt";
