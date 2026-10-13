@@ -1413,6 +1413,28 @@ class GoldRushShell {
       saveBytes: () => this.saves.bytes(),
       saveKeys: () => ({ ...this.saves.keys }),
       setQuality: (v) => { g.setQualitySetting(v); this._syncSettings(); return g.level; },
+      // Visual Overhaul A: field of view, frame statistics (+ GPU time per pass), the post stack's debug views
+      setFov: (v) => { const f = g.setFov(v); this._syncSettings(); return { setting: f, fov: g.camera.fov, handsFov: g.hands.camera.fov }; },
+      renderStats: () => g.renderStats(),
+      gpuTiming: (on) => g.setGpuTiming(on),
+      game: () => g,                                       // (perf experiments in tests: the engine itself, never serialised)
+      postDebug: (mode) => { g.post.debug = mode | 0; g.render(); return g.post.debug; },
+      // the shovel's world contact (C-lite): one entry per stroke; frames stepped at a fixed rate (the loop paused)
+      contactLog: (clear) => { const L = g.hands.contactLog || []; const out = L.slice(); if (clear) L.length = 0; return out; },
+      contactNow: () => {
+        // (and where the blade tip and the contact point land on the screen: NDC through each pass's own camera)
+        const h = g.hands, sh = h.models.shovel, V3 = h.THREE.Vector3, at = g._contactAt;
+        h.camera.updateMatrixWorld(); g.camera.updateMatrixWorld();
+        const tip = sh.localToWorld(sh.userData.tip.clone()), tipNdc = tip.clone().project(h.camera);
+        const hitNdc = at ? new V3(at.x, at.y, at.z).project(g.camera) : null;
+        return { info: h.contactInfo || null, clip: g.post.toolClip.uGrClip.value, at: at || null, tipView: tip.toArray().map((x) => +x.toFixed(3)),
+          tipNdc: [+tipNdc.x.toFixed(4), +tipNdc.y.toFixed(4)], hitNdc: hitNdc ? [+hitNdc.x.toFixed(4), +hitNdc.y.toFixed(4)] : null, fov: [g.camera.fov, h.camera.fov] };
+      },
+      stepFrames: (n = 1, dt = 0.2) => {
+        if (g.running) return { ok: false, error: "running" };
+        for (let i = 0; i < n; i++) { g.running = true; g._frame(g.last + dt * 1000); cancelAnimationFrame(g.raf); g.running = false; }
+        return { ok: true, phase: g.tools.phase, state: g.tools.state, cycle: g.tools.cycles };
+      },
       loseContext: () => { const ext = g.renderer.getContext().getExtension("WEBGL_lose_context"); if (ext) { ext.loseContext(); setTimeout(() => ext.restoreContext(), 400); } return !!ext; },
       sampleAt: (x, y, z) => g.terrain.field.sample(x, y, z, {}),
       three: this.engine.THREE_REVISION,
@@ -1481,10 +1503,11 @@ class GoldRushShell {
         const reg = await import("./goldrush-devregistry.js");
         await import("./goldrush-devcommands9.js");
         await import("./goldrush-devcommands10.js");
+        await import("./goldrush-devvisual.js");
         const c = reg.devRegistry.get(id);
         if (!c) return { ok: false, error: "unknown" };
         const ctx = { game: g, shell: this, saves: this.saves, tools: null, actions: null, state: {} };
-        const r = c.kind === "info" ? { ok: true, rows: c.view(ctx) } : c.run(ctx, arg);
+        const r = c.kind === "info" ? { ok: true, rows: c.view(ctx) } : await c.run(ctx, arg);
         return JSON.parse(JSON.stringify(r || null));
       },
       excEnter: () => g.enterCab(),
