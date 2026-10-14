@@ -26,12 +26,14 @@
 // 1024 px (desktop HIGH / MEDIUM) or 512 px (mobile, LOW) per layer. JPG sources, decoded once into the arrays
 // (KTX2 / Basis is the planned format once an encoder is part of the build - ASSETS.md).
 //
-// The CPU terrain mesh stays (its vertex grid, LOD and the simulation are untouched); the material does not
-// depend on the mesh being that mesh (world position, GeoTex, StateTex) - a GPU heightfield renderer can take
-// it over. _colorAt is no longer the ground's identity: the dig effects' colour comes from the layers too.
+// Earth 2.0A: the terrain is drawn from a height texture (goldrush-terrainview.js). The per-vertex state that
+// used to be vertex attributes (aGeo, aEarth, aMat, colour) is read from textures by world position, so the
+// material does not depend on any mesh (world position, GeoTex, StateTex, the state textures). _colorAt is no
+// longer the ground's identity: the dig effects' colour comes from the layers too.
 
 import { GeoTex } from "./goldrush-geotex.js";
 import { SLICE_ORIGIN_Y } from "./goldrush-terrain.js";
+import { TERRAIN_GLSL } from "./goldrush-terrainview.js";
 
 const ASSET_DIR = new URL("./assets/earth/", import.meta.url).href;
 export const EARTH_LAYERS = ["crust", "loose", "compact", "gravel", "rock"];
@@ -171,10 +173,15 @@ const COMMON = `
 
 const TERRAIN_DECL = `
   uniform sampler2D tEState; uniform vec4 uEState; uniform highp sampler3D tEGeo; uniform vec3 uEGeoMin; uniform vec3 uEGeoInv; uniform float uEGeoReady;
-  varying vec4 vEGeo; varying vec4 vEEarth; varying vec4 vEMat;`;
+  ${TERRAIN_GLSL.fragmentDecl}`;
 
 // the layer weights, the blend, the surface - into diffuseColor / grEN (world normal) / grERough / grEAO / grEDbg
 const MAIN = `
+  #ifdef EARTH_GROUND
+    vec3 grVC = vColor.rgb;
+  #else
+    ${TERRAIN_GLSL.fragmentState}
+  #endif
   vec3 grEP = vEWPos, grEN0 = normalize(vEWNor);
   float grEView = length(grEP - cameraPosition);
   eFar = smoothstep(4.0, 7.0, grEView);
@@ -196,7 +203,7 @@ const MAIN = `
   #ifdef EARTH_GROUND
     float grEG = 0.25 * smoothstep(0.2, 0.8, 0.5 + 0.5 * eNoise(grEP.xz * 0.21 + 7.0));
     grEW[0] = 1.0 - grEG; grEW[1] = 0.0; grEW[2] = 0.0; grEW[3] = grEG; grEW[4] = 0.0;
-    grETint = clamp(vColor.rgb / uERefGround, vec3(0.6), vec3(1.5));
+    grETint = clamp(grVC / uERefGround, vec3(0.6), vec3(1.5));
   #else
     // the material at the visible surface (GeoTex: a little inside it; the vertices' until it is built)
     grEGeo3 = texture(tEGeo, (grEP - grEN0 * 0.02 - uEGeoMin) * uEGeoInv);
@@ -221,8 +228,8 @@ const MAIN = `
     float grEG = 0.25 * smoothstep(0.2, 0.8, 0.5 + 0.5 * eNoise(grEP.xz * 0.21 + 7.0));
     for (int i = 0; i < 5; i++) grEW[i] *= 1.0 - grEGw;
     grEW[0] += grEGw * (1.0 - grEG); grEW[3] += grEGw * grEG;
-    grETint = mix(vec3(1.0), clamp(vColor.rgb / uERefGround, vec3(0.6), vec3(1.5)), grEGw)
-            * mix(vec3(1.0), clamp(vColor.rgb / uERefFill, vec3(0.6), vec3(1.5)), grEFill * (1.0 - grEGw));
+    grETint = mix(vec3(1.0), clamp(grVC / uERefGround, vec3(0.6), vec3(1.5)), grEGw)
+            * mix(vec3(1.0), clamp(grVC / uERefFill, vec3(0.6), vec3(1.5)), grEFill * (1.0 - grEGw));
     grEW[2] *= 0.75 + 0.5 * grENb; grEW[3] *= 0.75 + 0.5 * (1.0 - grENb);
   #endif
   // height blend: each active layer's height lifts it over the others (pebbles out of the sand)
@@ -293,7 +300,7 @@ const MAIN = `
   grERough = mix(grERough, 0.32, grEWet);
   grEN = normalize(mix(grEN, grEN0, grEWet * 0.5));
   diffuseColor.rgb = grEAlb;
-  if (uEHeat > 0.5) { diffuseColor.rgb = vColor.rgb; grEN = grEN0; grEAO = 1.0; }
+  if (uEHeat > 0.5) { diffuseColor.rgb = grVC; grEN = grEN0; grEAO = 1.0; }
   if (uEDebug == 2) grEDbg = vec3(0.45, 0.3, 0.18) * grEGeo.x + vec3(0.75, 0.2, 0.12) * grEGeo.y + vec3(0.5, 0.58, 0.7) * grEGeo.z + vec3(0.15, 0.15, 0.2) * grEGeo.w;
   if (uEDebug == 3) grEDbg = vec3(0.08) + grEFresh * vec3(1.0, 0.82, 0.0) + grEWet * vec3(0.0, 0.4, 1.0);
   if (uEDebug == 4) grEDbg = vec3(0.45, 0.3, 0.18) * grEGeo3.x + vec3(0.75, 0.2, 0.12) * grEGeo3.y + vec3(0.5, 0.58, 0.7) * grEGeo3.z + vec3(0.15, 0.15, 0.2) * grEGeo3.w;
@@ -305,11 +312,12 @@ function patchShader(shader, ground) {
   const v = shader.vertexShader
     .replace("#include <common>", `#include <common>
       varying vec3 vEWPos; varying vec3 vEWNor;
-      ${ground ? "" : "attribute vec4 aMat; attribute vec4 aGeo; attribute vec4 aEarth; varying vec4 vEGeo; varying vec4 vEEarth; varying vec4 vEMat;"}`)
+      ${ground ? "" : TERRAIN_GLSL.vertexDecl}`)
+    .replace("#include <beginnormal_vertex>", ground ? "#include <beginnormal_vertex>" : TERRAIN_GLSL.normal)
     .replace("#include <begin_vertex>", `#include <begin_vertex>
+      ${ground ? "" : TERRAIN_GLSL.lift}
       vEWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
-      vEWNor = normalize(mat3(modelMatrix) * objectNormal);
-      ${ground ? "" : "vEGeo = aGeo; vEEarth = aEarth; vEMat = aMat;"}`);
+      vEWNor = normalize(mat3(modelMatrix) * objectNormal);`);
   const f = shader.fragmentShader
     .replace("#include <common>", `#include <common>\n${COMMON}\n${ground ? "" : TERRAIN_DECL}`)
     .replace("#include <map_fragment>", MAIN)
@@ -351,6 +359,7 @@ export class EarthSystem {
   attach(terrain) {
     const T = this.THREE, t = terrain, V = t.vps;
     this.terrain = t;
+    Object.assign(this.uniforms, t.view.uniforms);     // height + state textures (the material compiles on its first draw, after this)
     this.stateData = new Uint8Array(V * V * 4);
     this.stateTex = new T.DataTexture(this.stateData, V, V, T.RGBAFormat, T.UnsignedByteType);
     this.stateTex.minFilter = this.stateTex.magFilter = T.LinearFilter;
@@ -378,12 +387,12 @@ export class EarthSystem {
 
   _material(ground) {
     const T = this.THREE;
-    const m = new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0, color: 0xffffff });
+    const m = new T.MeshStandardMaterial({ vertexColors: ground, roughness: 0.9, metalness: 0, color: 0xffffff });   // (the terrain reads its colour from a texture)
     m.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, this.uniforms);
       patchShader(shader, ground);
     };
-    m.customProgramCacheKey = () => `goldrush-earth-b0-v1-${ground ? "ground" : "terrain"}`;
+    m.customProgramCacheKey = () => `goldrush-earth-2-0a-v1-${ground ? "ground" : "terrain"}`;
     return m;
   }
 
@@ -496,10 +505,9 @@ export class EarthSystem {
 
   /** the layer weights at a vertex (as the shader, without GeoTex detail / height blending) */
   weightsAt(gi, gj) {
-    const t = this.terrain, cc = t.chunkCells, per = t.chunksPerSide;
-    const ch = t.chunks[Math.min(per - 1, Math.floor(gj / cc)) * per + Math.min(per - 1, Math.floor(gi / cc))];
-    if (!ch || !ch.geom.attributes.aGeo) return null;
-    const v = (gj - ch.j0) * (cc + 1) + (gi - ch.i0), g = ch.geom.attributes.aGeo.array, e = ch.geom.attributes.aEarth.array, m = ch.geom.attributes.aMat.array;
+    const t = this.terrain, vis = t.vis;
+    if (!vis) return null;
+    const v = gj * t.vps + gi, g = vis.geo, e = vis.earth, m = vis.mat;
     const G = [g[v * 4], g[v * 4 + 1], g[v * 4 + 2], g[v * 4 + 3]], cover = e[v * 4 + 2], loose = e[v * 4 + 3];
     const dist = Math.min(1, Math.max(m[v * 4 + 2], cover, loose)), u = 1 - dist;
     const w = [

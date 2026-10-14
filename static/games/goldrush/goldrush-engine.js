@@ -1118,6 +1118,8 @@ export class GoldRushGame {
       r.setRenderTarget(null);
       pr.warmMachines(false);
     }
+    // Earth 2.0A: what the digging changed goes to the GPU as a texture rectangle; the tiles pick their LOD
+    if (this.terrain && this.terrain.view) { this.terrain.view.flush(r); this.terrain.view.update(this.camera); }
     // draw calls of the main pass (as in phase 1; the shadow pass comes on top) + the hands pass; the
     // post stack's own full-screen passes are counted apart (postCalls)
     const world = () => {

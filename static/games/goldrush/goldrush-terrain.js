@@ -1,10 +1,12 @@
 // GoldRush - the diggable mound.
 //
 // A deformable HEIGHTFIELD (no voxels, no caves or overhangs in phase 1):
-// one height per grid vertex, split into square chunks that are separate
-// meshes. Digging changes a few dozen heights and re-uploads only the
-// chunks it touched (positions, normals, colours, bounds). Normals come
-// from the global height grid, so chunk borders never show seams.
+// one height per grid vertex. This file is the simulation and the CPU side
+// of the picture: the integer heights (the truth), digging, settling, saves,
+// and the per-vertex surface state the Earth material reads (this.vis).
+// Drawing it is goldrush-terrainview.js (Earth 2.0A): the heights and that
+// state live in textures, the render meshes are static tiles - a dig re-uploads
+// a small texture rectangle, never geometry.
 //
 // The mound itself is generated from the world seed (overlapping, warped
 // lobes + fractal detail + rock outcrops), so the same seed always gives
@@ -14,6 +16,7 @@ import { fbm2, hash3, mulberry32, noise2, ridged2, smoothstep } from "./goldrush
 import { MAT } from "./goldrush-materials.js";
 import { MaterialField } from "./goldrush-resources.js";
 import { decodeInt16Rle, decodeIntRle, encodeIntRle } from "./goldrush-save.js";
+import { TerrainView } from "./goldrush-terrainview.js";
 
 export const FLOOR_Y = -2.5;          // today's open-pit floor (the dig limit) - later phases may lower it
 // Origin of the resource-slice index (1 cm slices, goldrush-mining.js /
@@ -143,7 +146,7 @@ export class DiggableTerrain {
     this.group = new THREE.Group();
     this.group.name = "goldrush-terrain";
     this._sample = {};
-    this._buildChunks();
+    this._buildView();
   }
 
   // ------------------------------------------------------------ generation
@@ -309,89 +312,38 @@ export class DiggableTerrain {
     return h > top[k] && target < top[k] ? top[k] : target;
   }
 
-  // ------------------------------------------------------------ meshes
+  // ------------------------------------------------------------ the picture
 
-  _index(vpc, step) {
-    const idx = [];
-    for (let j = 0; j + step < vpc; j += step) {
-      for (let i = 0; i + step < vpc; i += step) {
-        const a = j * vpc + i, b = (j + step) * vpc + i, cc = j * vpc + i + step, d = (j + step) * vpc + i + step;
-        idx.push(a, b, cc, cc, b, d);
-      }
-    }
-    return new this.THREE.BufferAttribute(new Uint32Array(idx), 1);
+  // the surface state per grid point (what the Earth material reads, as textures - goldrush-terrainview.js):
+  //   col   linear colour (the palette colour: ground / fill tint, gold heatmap)
+  //   mat   (gravel, stone, cut, streak) -> detail layers, fresh-cut relief, streak marks
+  //   geo   one-hot material at the surface (dirt, compact, gravel, stone)
+  //   earth (untouched edge ground, the camp's fill, cover on the original surface, loosened)
+  _buildView() {
+    const n = this.vps * this.vps;
+    this.vis = { col: new Float32Array(n * 3), mat: new Float32Array(n * 4), geo: new Float32Array(n * 4), earth: new Float32Array(n * 4) };
+    this._refreshVisual(0, this.vps - 1, 0, this.vps - 1);
+    this.view = new TerrainView(this.THREE, this, this.material);
+    this.chunks = this.view.tiles;                    // (the render tiles: cx, cz, i0, j0, mesh, geom)
+    if (this.stride === 2) this.view.setForceCoarse(true);
   }
 
-  _buildChunks() {
-    const THREE = this.THREE, cc = this.chunkCells, vpc = cc + 1;
-    this.indexFull = this._index(vpc, 1);
-    this.indexHalf = this._index(vpc, 2);
-    this.chunks = [];
-    for (let cz = 0; cz < this.chunksPerSide; cz++) {
-      for (let cx = 0; cx < this.chunksPerSide; cx++) {
-        const n = vpc * vpc;
-        const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3), uv = new Float32Array(n * 2);
-        const matw = new Float32Array(n * 4);          // (gravel, stone, cut, streak) -> detail textures, fresh-cut relief, streak marks
-        const fresh = new Float32Array(n).fill(-1e5);  // when the ground here was last dug (fades in the shader)
-        // Earth B0 (goldrush-earthmat.js): the material at the surface, one-hot (dirt, compact, gravel, stone), and
-        // the ground's state (untouched edge ground, the camp's fill, cover on the original surface, loosened)
-        const geoA = new Float32Array(n * 4), earthA = new Float32Array(n * 4);
-        const i0 = cx * cc, j0 = cz * cc;
-        for (let j = 0; j < vpc; j++) {
-          for (let i = 0; i < vpc; i++) {
-            const v = j * vpc + i, x = this.x0 + (i0 + i) * this.cell, z = this.z0 + (j0 + j) * this.cell;
-            pos[v * 3] = x;
-            pos[v * 3 + 2] = z;
-            uv[v * 2] = x * 0.5;
-            uv[v * 2 + 1] = z * 0.5;
-          }
-        }
-        const geom = new THREE.BufferGeometry();
-        geom.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-        geom.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
-        geom.setAttribute("color", new THREE.BufferAttribute(col, 3));
-        geom.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
-        geom.setAttribute("aMat", new THREE.BufferAttribute(matw, 4));
-        geom.setAttribute("aFresh", new THREE.BufferAttribute(fresh, 1));
-        geom.setAttribute("aGeo", new THREE.BufferAttribute(geoA, 4));
-        geom.setAttribute("aEarth", new THREE.BufferAttribute(earthA, 4));
-        geom.setIndex(this.stride === 2 ? this.indexHalf : this.indexFull);
-        const mesh = new THREE.Mesh(geom, this.material);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        mesh.name = `terrain-chunk-${cx}-${cz}`;
-        const chunk = { cx, cz, i0, j0, mesh, geom };
-        this.chunks.push(chunk);
-        this.group.add(mesh);
-        this._refreshChunk(chunk, i0, i0 + cc, j0, j0 + cc);
-      }
-    }
-  }
-
-  // re-derive y / normal / colour for the given GLOBAL vertex range of one chunk
-  _refreshChunk(chunk, gi0, gi1, gj0, gj1) {
-    const cc = this.chunkCells, vpc = cc + 1, vps = this.vps, c = this.cell, H = this.height;
-    const i0 = Math.max(gi0, chunk.i0), i1 = Math.min(gi1, chunk.i0 + cc);
-    const j0 = Math.max(gj0, chunk.j0), j1 = Math.min(gj1, chunk.j0 + cc);
+  // re-derive the surface state for the given GLOBAL vertex range
+  _refreshVisual(gi0, gi1, gj0, gj1) {
+    const vps = this.vps, c = this.cell, H = this.height, vis = this.vis;
+    const i0 = Math.max(0, gi0), i1 = Math.min(vps - 1, gi1), j0 = Math.max(0, gj0), j1 = Math.min(vps - 1, gj1);
     if (i0 > i1 || j0 > j1) return false;
-    const pos = chunk.geom.attributes.position.array, nor = chunk.geom.attributes.normal.array, col = chunk.geom.attributes.color.array;
-    const matw = chunk.geom.attributes.aMat.array, fresh = chunk.geom.attributes.aFresh.array;
-    const geoA = chunk.geom.attributes.aGeo.array, earthA = chunk.geom.attributes.aEarth.array, Cn = this.consumed;
+    const col = vis.col, matw = vis.mat, geoA = vis.geo, earthA = vis.earth, Cn = this.consumed;
     const last = vps - 1;
     const rgb = [0, 0, 0];
     for (let gj = j0; gj <= j1; gj++) {
       for (let gi = i0; gi <= i1; gi++) {
-        const k = gj * vps + gi;
-        const v = (gj - chunk.j0) * vpc + (gi - chunk.i0);
+        const k = gj * vps + gi, v = k;
         const h = H[k];
-        pos[v * 3 + 1] = h;
         const hl = H[gj * vps + (gi > 0 ? gi - 1 : gi)], hr = H[gj * vps + (gi < last ? gi + 1 : gi)];
         const hd = H[(gj > 0 ? gj - 1 : gj) * vps + gi], hu = H[(gj < last ? gj + 1 : gj) * vps + gi];
         const nx = (hl - hr) / (2 * c), nz = (hd - hu) / (2 * c);
         const inv = 1 / Math.sqrt(nx * nx + 1 + nz * nz);
-        nor[v * 3] = nx * inv;
-        nor[v * 3 + 1] = inv;
-        nor[v * 3 + 2] = nz * inv;
         const curv = (hl + hr + hd + hu - 4 * h) / (c * c);   // >0 concave, <0 ridge
         const x = this.x0 + gi * c, z = this.z0 + gj * c;
         // what shows at the surface: stone only where it really is exposed
@@ -427,7 +379,6 @@ export class DiggableTerrain {
         matw[v * 4 + 2] = smoothstep(CHANGED_EPS, 0.06, this.base[k] - h);     // worked ground: crumb relief in the shader
         // stone: its fracture state instead of a streak (phase 8): 0..1 cracking, 2 broken rubble
         matw[v * 4 + 3] = mat === MAT.STONE ? (this.rubble[k] > 0 ? 2 : this.crack[k] / FRACTURE.full) : this._st;
-        fresh[v] = this.freshAt[k];
         geoA[v * 4] = mat === MAT.DIRT ? 1 : 0;
         geoA[v * 4 + 1] = mat === MAT.COMPACT ? 1 : 0;
         geoA[v * 4 + 2] = mat === MAT.GRAVEL ? 1 : 0;
@@ -438,14 +389,6 @@ export class DiggableTerrain {
         earthA[v * 4 + 3] = smoothstep(1, 6, this.loose[k]);
       }
     }
-    chunk.geom.attributes.position.needsUpdate = true;
-    chunk.geom.attributes.normal.needsUpdate = true;
-    chunk.geom.attributes.color.needsUpdate = true;
-    chunk.geom.attributes.aMat.needsUpdate = true;
-    chunk.geom.attributes.aFresh.needsUpdate = true;
-    chunk.geom.attributes.aGeo.needsUpdate = true;
-    chunk.geom.attributes.aEarth.needsUpdate = true;
-    chunk.geom.computeBoundingSphere();
     return true;
   }
 
@@ -517,12 +460,8 @@ export class DiggableTerrain {
 
 
   _refresh(gi0, gi1, gj0, gj1) {
-    const cc = this.chunkCells;
-    let touched = 0;
-    for (const ch of this.chunks) {
-      if (gi1 < ch.i0 || gi0 > ch.i0 + cc || gj1 < ch.j0 || gj0 > ch.j0 + cc) continue;
-      if (this._refreshChunk(ch, gi0, gi1, gj0, gj1)) touched++;
-    }
+    this._refreshVisual(gi0, gi1, gj0, gj1);
+    const touched = this.view.mark(gi0, gi1, gj0, gj1);              // (uploaded as a texture rectangle before the next draw)
     if (this.onRefresh) this.onRefresh(gi0, gi1, gj0, gj1);     // the renderer's derived state (Earth B0: StateTex, GeoTex)
     return touched;
   }
@@ -545,14 +484,10 @@ export class DiggableTerrain {
   // the ground's own colour at a point (the vertex colour of the nearest grid
   // point - what the dig effects tint their dust and crumbs with) -> out [r, g, b]
   surfaceColor(x, z, out) {
-    const cc = this.chunkCells, per = this.chunksPerSide;
     const gi = Math.round((x - this.x0) / this.cell), gj = Math.round((z - this.z0) / this.cell);
     if (gi < 0 || gj < 0 || gi >= this.vps || gj >= this.vps) return false;
-    const cx = Math.min(per - 1, Math.floor(gi / cc)), cz = Math.min(per - 1, Math.floor(gj / cc));
-    const ch = this.chunks[cz * per + cx];
-    if (!ch) return false;
-    const v = (gj - ch.j0) * (cc + 1) + (gi - ch.i0), col = ch.geom.attributes.color.array;
-    out[0] = col[v * 3]; out[1] = col[v * 3 + 1]; out[2] = col[v * 3 + 2];
+    const k = (gj * this.vps + gi) * 3, col = this.vis.col;
+    out[0] = col[k]; out[1] = col[k + 1]; out[2] = col[k + 2];
     return true;
   }
 
@@ -895,7 +830,7 @@ export class DiggableTerrain {
 
   setLod(stride) {
     this.stride = stride === 2 ? 2 : 1;
-    for (const ch of this.chunks) ch.geom.setIndex(this.stride === 2 ? this.indexHalf : this.indexFull);
+    if (this.view) this.view.setForceCoarse(this.stride === 2);
   }
 
   setHeatmap(on) {
@@ -905,8 +840,7 @@ export class DiggableTerrain {
   }
 
   stats() {
-    const perChunk = (this.stride === 2 ? this.indexHalf : this.indexFull).count / 3;
-    return { chunks: this.chunks.length, vertices: this.vps * this.vps, triangles: perChunk * this.chunks.length };
+    return { chunks: this.chunks.length, vertices: this.vps * this.vps, triangles: this.view.triangles(), lod: this.view.lodCounts() };
   }
 
   // sanity check used by tests / debug: every height finite and inside limits
@@ -953,7 +887,7 @@ export class DiggableTerrain {
   }
 
   dispose() {
-    for (const ch of this.chunks) ch.geom.dispose();
+    this.view.dispose();
     this.chunks = [];
     this.group.clear();
   }

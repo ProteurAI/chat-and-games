@@ -1264,6 +1264,7 @@ class GoldRushShell {
         const c = g.camera, f0 = c.fov;
         if (fov) { c.fov = fov; c.updateProjectionMatrix(); }
         c.position.set(x, y, z); c.lookAt(tx, ty, tz); c.updateMatrixWorld();
+        g.terrain.view.flush(g.renderer); g.terrain.view.update(c);          // (what a frame does before drawing: pending dig upload, tile LOD)
         // (MEDIUM / HIGH: through the post stack as a frame is - the world's programs are those for its HDR target)
         if (g.post.enabled) g.post.render(c, () => g.renderer.render(g.world.scene, c));
         else g.renderer.render(g.world.scene, c);
@@ -1280,8 +1281,7 @@ class GoldRushShell {
       reticle: () => ({ visible: g.reticle.visible, opacity: +g.reticle.material.opacity.toFixed(3), scale: +g.reticle.scale.x.toFixed(3) }),
       fresh: () => {
         const t = g.terrain, cols = t.freshAt.reduce((n, f) => n + (f > -1e4 ? 1 : 0), 0);
-        const verts = t.chunks.reduce((n, c) => n + c.geom.attributes.aFresh.array.reduce((m, f) => m + (f > -1e4 ? 1 : 0), 0), 0);
-        return { clock: t.clock, uTime: g.world.terrainUniforms.uTime.value, cols, verts };
+        return { clock: t.clock, uTime: g.world.terrainUniforms.uTime.value, cols, verts: cols };
       },
       advanceClock: (s) => { g.terrain.clock += s; g.world.terrainUniforms.uTime.value = g.terrain.clock; g.render(); return g.terrain.clock; },
       probe: () => g.probe(),
