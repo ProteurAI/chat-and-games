@@ -73,8 +73,15 @@ def eco(page):
     return compat(page.evaluate("() => window.__goldrush.economy()"))
 
 
+def calm(page, timeout=25):
+    """after a bulk of hook-driven digs the dig effects still load the frames for a while (Earth 2.0A made the hook digs
+    ~2x faster - no geometry upload - so the follow-up steps start inside that window): wait for the frame rate"""
+    return wait_for(lambda: page.evaluate("() => { const i = window.__goldrush.info(); return i.fps >= 40 && i.particles < 20; }") and (time.sleep(0.4) or page.evaluate("() => { const i = window.__goldrush.info(); return i.fps >= 40 && i.particles < 20; }")), timeout)
+
+
 def settled(page, timeout=6):
     """all pieces picked up and the money counter done counting"""
+    calm(page)
     return wait_for(lambda: page.evaluate("() => { const G = window.__goldrush, e = G.economy(); return G.loot().active === 0 && e.shownCents === e.cashCents && e.shownPouch === e.pouchCents; }"), timeout)
 
 
@@ -432,6 +439,7 @@ def desktop_suite(browser, base, user, shots):
     tg = aim_material(A, "dirt", start=0.9)
     A.evaluate("(p) => window.__goldrush.aimAt(p)", tg)
     A.evaluate(DIG_HERE, {"ang": tg["ang"], "n": 160})
+    calm(A)
     s = st(A)
     ground = A.evaluate("(p) => window.__goldrush.heightAt(p.x, p.z)", s)
     ok("T21 after digging a pit in front of you: eye height stays valid (never inside the ground)",

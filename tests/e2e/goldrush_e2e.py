@@ -77,16 +77,19 @@ DIG_HERE = """({ ang, n }) => {
 }"""
 
 GEOMETRY_OK = """() => {
+  // Earth 2.0A: heights + surface state live in textures fed from CPU arrays; the tiles are static flat grids
   const t = window.__goldrush.terrain();
   let bad = 0, verts = 0;
   for (const ch of t.chunks) {
-    for (const name of ['position', 'normal', 'color']) {
-      const a = ch.geom.attributes[name].array;
-      for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) bad++;
-      if (name === 'position') verts += a.length / 3;
-    }
+    const a = ch.geom.attributes.position.array;
+    for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) bad++;
+    verts += a.length / 3;
     const s = ch.geom.boundingSphere;
-    if (!s || !Number.isFinite(s.radius) || !Number.isFinite(s.center.x)) bad++;
+    if (!s || !Number.isFinite(s.radius) || !Number.isFinite(s.center.x) || !Number.isFinite(s.center.y)) bad++;
+  }
+  for (const name of ['col', 'mat', 'geo', 'earth']) {
+    const a = t.vis[name];
+    for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) bad++;
   }
   return { ok: bad === 0 && t.validate(), bad, verts };
 }"""
@@ -462,6 +465,8 @@ def desktop_suite(browser, base, user, shots, engine):
     ok("T8 100 digs while playing: no frame drops (p95 frame time at the calm level)",
        n100 >= 100 and busy and busy["p95"] < max(34, calm["p95"] * 1.6) and (not strict or busy["max"] < max(120, calm["max"] * 2.5)),
        f"{n100} digs in {time.time() - t0:.1f}s, calm {calm} busy {busy}, one dig {per_dig and round(per_dig, 2)} ms, save {size100} B")
+    vs = A.evaluate("() => window.__goldrush.terrain().view.stats")
+    print("   terrain view:", vs)
     shot(A, shots, "desktop_after100")
 
     # ---- TEST 9: 500 digs - still valid geometry, no NaN (strokes on stone

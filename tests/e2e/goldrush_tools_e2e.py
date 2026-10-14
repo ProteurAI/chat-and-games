@@ -227,12 +227,8 @@ LEDGER = r"""() => {
 
 # stone-weight attribute of the terrain mesh at grid point (i, j)
 SURFACE_STONE = r"""({ i, j }) => {
-  const t = window.__goldrush.terrain(), cc = t.chunkCells, per = t.chunksPerSide;
-  const ci = Math.min(per - 1, Math.floor(i / cc)), cj = Math.min(per - 1, Math.floor(j / cc));
-  const ch = t.chunks.find((c) => c.i0 === ci * cc && c.j0 === cj * cc);
-  const v = (j - ch.j0) * (cc + 1) + (i - ch.i0);
-  const a = ch.geom.attributes.aMat;                 // (gravel, stone, ...) per vertex - phase 7A: 4 weights
-  return a.array[v * a.itemSize + 1];
+  const t = window.__goldrush.terrain();
+  return t.vis.mat[(j * t.vps + i) * 4 + 1];         // (gravel, stone, ...) per grid point - phase 7A: 4 weights (Earth 2.0A: a CPU array behind the state texture)
 }"""
 
 # columns where stone is buried a few cm under the surface / lies open
