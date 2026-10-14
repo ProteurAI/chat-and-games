@@ -1471,6 +1471,32 @@ Angepasst, weil seit Prompt 10 überholt: T43 (neuer Spielstand ~3,0 KB), T26
 Abstand), W7 (Schubkarre voll / leer knapp an 0,8), T34 in WebKit (rAF ~24/s),
 Premium PERF (ein Hänger unter Last).
 
+## Earth 2.0A – Terrain-Renderer (GPU-Heightfield)
+
+Das Terrain wird aus Texturen gezeichnet; die Simulation (integer `qh`, `DiggableTerrain.height`, Raycast,
+Kollision, Save, Masse) ist unverändert die Wahrheit. `static/games/goldrush/goldrush-terrainview.js`
+(`TerrainView`) ist rein abgeleitet und wird nie zurückgelesen.
+
+* **HeightTex** (R32F, ein Texel je Gitterpunkt) teilt sich das Float32Array `height` ohne Kopie. Der
+  Vertex-Shader liest Höhe und Normale (zentrale Differenzen) aus der Textur; die Render-Kacheln sind
+  flache, statische Gitter in Weltkoordinaten (30 × 30 Zellen, wasserdichte Nähte).
+* **Zustandstexturen** (RGBA16F: Farbe, Geo, Earth, Mat) ersetzen die Vertex-Attribute `aGeo`, `aEarth`,
+  `aMat`, `color`; das Fragment liest sie bilinear per Weltposition (Earth-Shader unverändert, kein LOD-Pop
+  des Materials). Die CPU-Quelle ist `terrain.vis.{col,mat,geo,earth}`; `aFresh` entfällt (StateTex).
+* **Graben** markiert eine Dirty-Box; einmal pro Frame vor dem Zeichnen wird sie gepackt und als
+  Teilrechteck (`copyTextureToTexture`) in den gerade ungenutzten von zwei Texturensätzen geladen
+  (kein Treiber-Stall); bei > 30 % der Fläche komplett. Kachel-Bounds folgen den neuen Höhen.
+* **LOD** je Kachel nach Entfernung (21 / 25 m Hysterese): LOD 0 = jeder Gitterpunkt, LOD 1 = jeder zweite;
+  fein neben grob lässt die ungeraden Randvertices weg (Fan-Blöcke), also keine Risse und keine Skirts.
+  `setLod(2)` (Qualität LOW) erzwingt grob. Schatten nutzen dieselbe Verschiebung (`customDepthMaterial`).
+* **Vorbereitung für größere Welten:** Texturzugriff über `(p - uTGrid.xy) * uTGrid.z`; Kacheln werden per
+  Weltposition adressiert – mehrere Regionen / Clipmap ersetzen die eine Textur ohne Materialänderung.
+* **Tests:** `GEOMETRY_OK` (E2E T9) prüft Kachel-Positionen/Bounds und `terrain.vis`; `SURFACE_STONE` liest
+  `terrain.vis.mat`. `terrain().view.stats` zeigt Flushes, Teil-/Volluploads, Pack-/Upload-ms, LOD-Wechsel.
+* **Messung (Visual QA, 1600×900, Seed 4242):** Bilder je Bookmark identisch zu 1208c45; Draw Calls
+  unverändert; Terrain-Dreiecke sinken durch LOD (z. B. MEDIUM spawn 190 740 → 170 325); GPU-Zeit
+  im Rauschen (MEDIUM 8–13 ms, HIGH 15–21 ms); Heap 65 → 58 MB.
+
 ## Entwicklertools (QA-Modus, Prompt 5.5)
 
 - **Zugang nur serverseitig:** Umgebungsvariable `GOLDRUSH_DEV_CODE`

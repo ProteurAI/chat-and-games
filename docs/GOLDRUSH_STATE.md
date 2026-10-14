@@ -1,7 +1,7 @@
 # GoldRush – aktueller Stand (Handoff)
 
-**Stand:** 2026-10-14 · `main` = `origin/main` = `752cc16e70f975eff93384e70f1a400e3f9a6457`
-(nach Visual Overhaul A + Earth B0). Nächste Phase laut Roadmap: **Earth 2.0A** – nicht begonnen.
+**Stand:** 2026-10-14 · nach Earth 2.0A (Terrain-Renderer); Basis war `1208c45`, Backup
+`backup/pre-goldrush-earth-2-0a`. Nächste Phase laut Roadmap: **Earth 2.0B** – nicht begonnen.
 
 Diese Datei ist der Einstieg. Details je Phase stehen in `docs/goldrush.md` (nur den jeweiligen
 Abschnitt lesen), Asset-Herkunft in `static/games/goldrush/ASSETS.md`, kommende Phasen in
@@ -15,7 +15,7 @@ Abschnitt lesen), Asset-Herkunft in `static/games/goldrush/ASSETS.md`, kommende 
 | Geologie | 4 (Großnuggets) | `GEOLOGY_VERSION`, `goldrush-resources.js` |
 | Hügel-Generator | 1 | `TERRAIN_GEN`, `goldrush-terrain.js` (ändern nur mit Bump + Migration) |
 | three.js | r176, vendored (+ GLTFLoader, BufferGeometryUtils, RGBELoader) | `static/vendor/three/` |
-| Letztes Backup | `backup/pre-goldrush-visual-overhaul-a` = 9abb6f4 | Branches `backup/pre-goldrush-*` |
+| Letztes Backup | `backup/pre-goldrush-earth-2-0a` = 1208c45 | Branches `backup/pre-goldrush-*` |
 
 ## Was gebaut ist
 
@@ -27,6 +27,7 @@ Abschnitt lesen), Asset-Herkunft in `static/games/goldrush/ASSETS.md`, kommende 
 | 9 / 9.1 | Mechanisierter Claim (Band, Trommel, Bagger, Bergauftrag), Gold-Audit | Phase 9, 9.1 |
 | 10 / 10.0.1 | Arbeitsmine (Halden, Radlader, Waschanlage, Abbaugerät, Großnuggets), Zwischenstufen | Prompt 10, 10.0.1 |
 | VO-A + Earth B0 | Licht, Post-Stack, Himmel/Dunst, PBR-Boden, Schaufelkontakt, Visual-QA | Visual Overhaul A + Earth B0 |
+| Earth 2.0A | Terrain-Renderer: HeightTex + Zustandstexturen, statische LOD-Kacheln | Earth 2.0A |
 
 ## Visual-Architektur (seit VO-A + Earth B0)
 
@@ -51,9 +52,14 @@ Abgeleitete Darstellungsschicht über der Simulation; nichts davon wird gespeich
   Materialwahl nur an der sichtbaren Oberfläche aus `GeoTex` (`goldrush-geotex.js`: MaterialField
   als 3D-Textur, Zeitscheiben-Aufbau, im Warm-up angelegt) + Vertex-Zustand (`aGeo`, `aEarth`, `aMat`)
   + `StateTex` (R frisch, G nass, B/A reserviert). Frisch ×0,78 (nie schwarz), nass ×0,66.
-* **CPU-Terrain-Mesh bleibt** (Raster, LOD, Simulation unverändert). Für Earth 2.0A: das Material
-  hängt an Weltposition, GeoTex und StateTex; die Vertex-Attribute (`aGeo/aEarth/aMat`) müssen beim
-  GPU-Heightfield in Texturen wandern.
+* **Earth 2.0A – Terrain-Renderer** (`goldrush-terrainview.js`, `TerrainView`): Die Simulation (integer `qh`,
+  `DiggableTerrain.height`) bleibt die Wahrheit; gezeichnet wird aus einer R32F-HeightTex (teilt sich das
+  Float32Array) und RGBA16F-Zustandstexturen (Farbe, Geo, Earth, Mat = die früheren Vertex-Attribute,
+  CPU-Quelle `terrain.vis.*`). Render-Kacheln sind statische flache Gitter in Weltkoordinaten, LOD 0/1 je
+  Kachel mit Naht-Stitching (21/25 m Hysterese), Schatten über `customDepthMaterial`. Ein Dig lädt ein
+  Textur-Teilrechteck hoch (zwei alternierende Sätze, einmal pro Frame vor dem Zeichnen), nie Geometrie.
+  Texturzugriff per Weltposition (`uTGrid`) – Grundlage für Regionen / Clipmap in Earth 2.0C.
+  Details: `docs/goldrush.md` „Earth 2.0A“. KTX2 bleibt offen.
 * **Schaufel C-lite** (`goldrush-hand.js`, `CONTACT`): Drehung ≤ 34° um die rechte Hand + Schub
   ≤ 0,42 m entlang des Stiels; 20/20 Stiche auf dem Treffpunkt. Spielreichweite unverändert (2,4 m).
 * **Grab-Effekte** (`goldrush-vfx.js`): skaliert mit dem echten Volumen, beleuchteter Staub.
@@ -90,17 +96,23 @@ Abgeleitete Darstellungsschicht über der Simulation; nichts davon wird gespeich
 * Mobil-Emulation (390×844, LOW): freie Sicht 60 fps; an Anlage/Halden CPU-gebunden, gepaart ohne
   Mehrkosten gegenüber 9abb6f4; mit 4× CPU-Drosselung 26–55 fps je nach Lauf. Kein echtes Gerät gemessen.
 
-## Teststatus (2026-10-13, Stand 752cc16 – alles grün)
+## Teststatus (2026-10-14, Earth 2.0A – alles grün, Details unten)
 
 * Chromium: Kern 47, Mining 56, Werkzeuge 63, Camp 65, Processing 49, Dev 64, Phase 6 54, 7 43,
   7A 61, 7B 44, Premium 45, Mechanisiert 95, Hotfix 9.1 26, Working Mine 119.
 * WebKit: Kern 39, Werkzeuge 60, Premium 38, Mechanisiert 89, Working Mine 116, Hotfix 26, 7A 40, Dev 51.
-* Unit 103, Spiele-Regression 269, UI-Audit 442. Keine Wirtschafts-Benchmarks seit Prompt 10.
-* Bekannte Flakes (bestehen beim Wiederholen): T19 Klang „break“ übersteuert selten, W7 Schubkarre
+* Earth 2.0A (Chromium, `--quick` wo üblich): Kern 47, Mining 54, Werkzeuge 62, Dev 64, Quality 64, Camp 65,
+  Processing 58, Material 45, Premium 45, Mechanisiert 95, Working Mine 119, Hotfix 26, Mech 61, Auto 49;
+  WebKit Kern 39. Unit 103. Nicht neu gelaufen: übrige WebKit-Suiten, Spiele-Regression, UI-Audit.
+* Vorher: Unit 103, Spiele-Regression 269, UI-Audit 442. Keine Wirtschafts-Benchmarks seit Prompt 10.
+* Earth 2.0A: Hook-Grabungen (`DIG_HERE`) laufen ~2× schneller (kein Geometrie-Upload) und lassen das Effekt-Backlog
+  länger in die Folgeschritte reichen; Mining-Test wartet jetzt mit `calm()` (fps ≥ 40, < 20 Partikel).
+* Bekannte Flakes (bestehen beim Wiederholen): PERF-Schwellen (60 fps) in Quality/Material; T19 Klang „break“ übersteuert selten, W7 Schubkarre
   voll/leer an der 0,8-Grenze, T34 (WebKit), Premium-PERF-Hänger, T7 / T8 / T14 unter Last.
 
 ## Offene Punkte
 
+* Earth 2.0B (Graben sichtbar) und 2.0C (Maßstab) laut Roadmap; Terrain bisher ein Textur-Satz (30×30 m).
 * Aus Prompt 10 noch offen: A10–E10-Benchmark mit Abbaugerät + Großnuggets, 48-Punkte-Bericht.
 * KTX2 für die Erd-Texturen (kein Basis-Encoder in der Build-Umgebung).
 * Nässe (StateTex G) nur über DevTools – echte Quellen fehlen.
