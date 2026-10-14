@@ -2,6 +2,8 @@
 
 Interne Notizen für die Weiterentwicklung (Prompt 6–12). Nicht für Spieler.
 Liegt bewusst außerhalb von `static/`, wird also nicht ausgeliefert.
+Aktueller Stand, Invarianten und offene Punkte: `docs/GOLDRUSH_STATE.md`;
+kommende Phasen: `docs/GOLDRUSH_ROADMAP.md`.
 
 ## Module (Stand Prompt 10)
 
