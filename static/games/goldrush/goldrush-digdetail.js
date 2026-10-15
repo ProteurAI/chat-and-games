@@ -1,8 +1,8 @@
-// GoldRush - Earth 2.0B: what a tool leaves in the ground, below the simulation's grid.
+// GoldRush - Earth 2.0B / 2.0C: what a tool leaves in the ground, below the simulation's grid.
 //
 // The terrain's heights live on a 12.5 cm grid (the truth: integer qh, mass, gold). A shovel's scoop is a 1-2 cm dent
 // over a few cells there - the grid cannot show a tool's edge, a lip, the blade's scrape marks. DigDetail is a derived,
-// never-saved picture of exactly that: a fine texture (4 texels per grid cell, ~3 cm) over the whole terrain
+// never-saved picture of exactly that, in a fine texture (~3 cm per texel):
 //
 //   R  relief: a height offset in metres around 0.5 (+-2 cm), the tool's imprint: floor scrape marks / finger grooves /
 //      the pick's pit and cracks, the walls of the cut, a broken, irregular lip of spoil around it, crumbs that fell
@@ -11,23 +11,34 @@
 //   G  footprint: where the tool just worked (1 inside, falling off through the lip) - a crisp "freshly cut" mask
 //      instead of the grid's blurry one.
 //
+// Earth 2.0C: REGIONS. The detail is no longer one texture over the whole terrain. The world is cut into square tiles
+// (6 m, 192 texels + a 2-texel apron), addressed by WORLD position; a tile gets a layer of a fixed POOL (a texture
+// array) the first time something is stamped into it, and an indirection texture (tile -> layer) tells the shader where
+// to look. The pool is the memory budget - independent of the world's size: a mountain 50 times as big needs the same
+// pool, only the tiles near the work are alive (the least recently stamped one is recycled when the pool is full: an
+// old imprint is lost, the ground itself is not). The apron holds the neighbouring tile's texels, so bilinear filtering
+// and the shader's normal taps run across tile borders without a seam (a stamp near a border is written into both).
+//
 // A stamp is computed from the bite the terrain reports (terrain.lastBite: where, which way, how big, what tool) in the
 // tool's own plane on the real surface (so it follows a slope), with a noise-broken outline, and blended into what was
 // there (repeated digging overwrites the older imprint under the new footprint). Two later passes of the same stamp
 // (settleAt) relax it: wall and lip sag a little, crumbs land in the floor - the short "settle" after a cut.
 //
-// Uploads: a stamp marks a texel box; once per frame before drawing it goes to the idle one of two texture sets as a
-// sub-rectangle (as TerrainView does for the state textures: no driver stall). Nothing here is read back. After a
+// Uploads: a stamp marks per-layer texel boxes; once per frame before drawing they go to the idle one of two pool sets as
+// touched layers (as TerrainView does for the state textures: no driver stall). Nothing here is read back. After a
 // reload the detail is empty (the shader's height-derived crest / cavity and the worked-ground state still show the cuts).
 
 import { noise2, smoothstep } from "./goldrush-noise.js";
 
 export const DIG_DETAIL = {
-  perCell: 4,                 // texels per terrain grid cell
+  tileSize: 6,                // m per tile
+  texels: 192,                // texels per tile side (3.1 cm)
+  apron: 2,                   // texels copied from the neighbours around each tile
+  pool: 40,                   // layers: the whole pool is ~3 MB per set whatever the world's size
+  window: 16,                 // tiles per side the indirection covers (96 m around the terrain)
   range: 0.02,                // m: the relief texture spans +-range around 0.5
   settleAt: [0.12, 0.5],      // s after the cut: the stamp is redone, more settled each time
   maxQueue: 12,
-  fullShare: 0.3,
 };
 
 const R0 = 128;
@@ -37,35 +48,51 @@ export class DigDetail {
   constructor(THREE, t) {
     this.THREE = THREE;
     this.t = t;
-    const res = (this.res = Math.round(t.cols * DIG_DETAIL.perCell));
-    this.texel = t.size / res;
-    this.range = DIG_DETAIL.range;
+    const D = DIG_DETAIL, S = (this.S = D.tileSize), N = (this.N = D.texels), A = (this.A = D.apron), M = (this.M = N + 2 * A), P = (this.P = D.pool), W = (this.W = D.window);
+    this.texel = S / N;
+    this.range = D.range;
     this.enabled = true;
-    this.data = new Uint8Array(res * res * 2);
+    // the window of tiles around the terrain (world anchored: tile (tx, tz) covers [ox + tx S, ox + (tx + 1) S))
+    this.ox = Math.round(t.center.x / S) * S - (W * S) / 2;
+    this.oz = Math.round(t.center.z / S) * S - (W * S) / 2;
+    this.layerSize = M * M * 2;
+    this.data = new Uint8Array(P * this.layerSize);
     for (let i = 0; i < this.data.length; i += 2) this.data[i] = R0;
+    this.index = new Uint8Array(W * W);                      // tile -> layer + 1 (0: no imprint there)
+    this.tiles = new Map();                                  // tile key -> { tx, tz, layer, used }
+    this.layerTile = new Array(P).fill(null);
+    this.freeLayers = Array.from({ length: P }, (_, i) => P - 1 - i);
+    this.tick = 0;
     this.queue = [];
-    this.dirty = null;                      // texel box changed since the last flush
+    this.dirty = null;                                       // Map layer -> texel box changed since the last flush
     this.full = true;
-    this.stats = { stamps: 0, restamps: 0, texels: 0, stampMs: 0, maxStampMs: 0, flushes: 0, partial: 0, fullUploads: 0, uploadMs: 0, maxFlushMs: 0 };
+    this.stats = { stamps: 0, restamps: 0, texels: 0, stampMs: 0, maxStampMs: 0, flushes: 0, partial: 0, fullUploads: 0, uploadMs: 0, maxFlushMs: 0, tiles: 0, recycled: 0 };
     const make = () => {
-      const tex = new THREE.DataTexture(this.data, res, res, THREE.RGFormat, THREE.UnsignedByteType);
+      const tex = new THREE.DataArrayTexture(this.data, M, M, P);
+      tex.format = THREE.RGFormat;
+      tex.type = THREE.UnsignedByteType;
       tex.minFilter = tex.magFilter = THREE.LinearFilter;
       tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
       tex.generateMipmaps = false;
       tex.colorSpace = THREE.NoColorSpace;
       tex.unpackAlignment = 1;
       tex.needsUpdate = true;
-      const stage = new THREE.DataTexture(this.data, res, res, THREE.RGFormat, THREE.UnsignedByteType);
-      stage.unpackAlignment = 1;
-      stage.colorSpace = THREE.NoColorSpace;
-      return { tex, stage, pending: null, full: true };
+      return { tex, pending: new Set(), full: true };
     };
     this.sets = [make(), make()];
     this.cur = 0;
+    this.indexTex = new THREE.DataTexture(this.index, W, W, THREE.RedFormat, THREE.UnsignedByteType);
+    this.indexTex.minFilter = this.indexTex.magFilter = THREE.NearestFilter;
+    this.indexTex.generateMipmaps = false;
+    this.indexTex.colorSpace = THREE.NoColorSpace;
+    this.indexTex.unpackAlignment = 1;
+    this.indexTex.needsUpdate = true;
     this.uniforms = {
       tDDetail: { value: this.sets[0].tex },
-      uDDetail: { value: new THREE.Vector4(t.x0, t.z0, 1 / t.size, 1 / res) },        // origin, 1 / size, 1 texel (uv)
-      uDDetailK: { value: new THREE.Vector4(2 * this.range, this.texel, 2.2, 1) },    // relief span (m), texel (m), normal strength, on
+      tDIndex: { value: this.indexTex },
+      uDRegion: { value: new THREE.Vector4(this.ox, this.oz, 1 / S, W) },          // window origin, 1 / tile size, tiles per side
+      uDTile: { value: new THREE.Vector4(A, N, M, this.texel) },                     // apron, texels, stored size, texel (m)
+      uDDetailK: { value: new THREE.Vector4(2 * this.range, this.texel, 2.2, 1) },   // relief span (m), texel (m), normal strength, on
     };
   }
 
@@ -81,9 +108,48 @@ export class DigDetail {
   clear() {
     const d = this.data;
     for (let i = 0; i < d.length; i += 2) { d[i] = R0; d[i + 1] = 0; }
+    this.index.fill(0);
+    this.tiles.clear();
+    this.layerTile.fill(null);
+    this.freeLayers = Array.from({ length: this.P }, (_, i) => this.P - 1 - i);
     this.queue.length = 0;
     this.full = true;
     this.dirty = null;
+    this.indexTex.needsUpdate = true;
+  }
+
+  // ------------------------------------------------------------ tiles (world addressed, pooled)
+
+  _tile(tx, tz, create) {
+    const W = this.W;
+    if (tx < 0 || tz < 0 || tx >= W || tz >= W) return null;
+    const key = tz * W + tx;
+    let e = this.tiles.get(key);
+    if (e || !create) { if (e && create) e.used = this.tick; return e || null; }
+    let layer = this.freeLayers.pop();
+    if (layer === undefined) {                                // the pool is full: recycle the least recently stamped tile
+      let old = null;
+      for (const v of this.tiles.values()) if (!old || v.used < old.used) old = v;
+      layer = old.layer;
+      this.tiles.delete(old.tz * W + old.tx);
+      this.index[old.tz * W + old.tx] = 0;
+      this.stats.recycled++;
+    }
+    const d = this.data, o = layer * this.layerSize;
+    for (let i = 0; i < this.layerSize; i += 2) { d[o + i] = R0; d[o + i + 1] = 0; }
+    e = { tx, tz, layer, used: this.tick };
+    this.tiles.set(key, e);
+    this.layerTile[layer] = e;
+    this.index[key] = layer + 1;
+    this.indexTex.needsUpdate = true;
+    this._mark(layer, 0, this.M - 1, 0, this.M - 1);
+    this.stats.tiles = this.tiles.size;
+    return e;
+  }
+
+  _mark(layer, i0, i1, j0, j1) {
+    const m = this.dirty || (this.dirty = new Map()), d = m.get(layer);
+    m.set(layer, d ? { i0: Math.min(d.i0, i0), i1: Math.max(d.i1, i1), j0: Math.min(d.j0, j0), j1: Math.max(d.j1, j1) } : { i0, i1, j0, j1 });
   }
 
   // ------------------------------------------------------------ stamping
@@ -114,30 +180,53 @@ export class DigDetail {
 
   /**
    * Draw one bite's imprint into the detail. settle 0 .. 1: how far the cut has relaxed (wall / lip sag, crumbs in the floor).
-   * Everything is a function of (bite, settle): the same seed gives the same marks every pass.
+   * Everything is a function of (bite, settle, world position of the texel): the same seed gives the same marks every pass
+   * and in every tile that holds the texel (its own area and the neighbours' aprons).
    */
   stamp(b, settle = 0, again = false) {
-    const t = this.t, T = this.texel, res = this.res, data = this.data, range = this.range, t0 = performance.now();
+    const t0 = performance.now();
+    this.tick++;
+    const S = this.S, T = this.texel, A = this.A, M = this.M;
+    const reach = Math.max(b.a, b.b) * 1.6 + 2 * T;
+    const pad = A * T;
+    const tx0 = Math.floor((b.x - reach - pad - this.ox) / S), tx1 = Math.floor((b.x + reach + pad - this.ox) / S);
+    const tz0 = Math.floor((b.z - reach - pad - this.oz) / S), tz1 = Math.floor((b.z + reach + pad - this.oz) / S);
+    let n = 0;
+    for (let tz = tz0; tz <= tz1; tz++) {
+      for (let tx = tx0; tx <= tx1; tx++) {
+        const wx0 = this.ox + tx * S - pad, wz0 = this.oz + tz * S - pad;       // world corner of texel (0, 0) of this layer
+        const i0 = Math.max(0, Math.floor((b.x - reach - wx0) / T)), i1 = Math.min(M - 1, Math.floor((b.x + reach - wx0) / T));
+        const j0 = Math.max(0, Math.floor((b.z - reach - wz0) / T)), j1 = Math.min(M - 1, Math.floor((b.z + reach - wz0) / T));
+        if (i0 > i1 || j0 > j1) continue;
+        const e = this._tile(tx, tz, true);
+        if (!e) continue;
+        n += this._stampTile(e, wx0, wz0, i0, i1, j0, j1, b, settle);
+      }
+    }
+    const St = this.stats, ms = performance.now() - t0;
+    if (again) St.restamps++; else St.stamps++;
+    St.texels += n;
+    St.stampMs += ms;
+    St.maxStampMs = Math.max(St.maxStampMs, ms);
+  }
+
+  _stampTile(e, wx0, wz0, i0, i1, j0, j1, b, settle) {
+    const t = this.t, T = this.texel, M = this.M, data = this.data, range = this.range, base = e.layer * this.layerSize;
     const a = b.a, bw = b.b, sd = b.seed | 0;
     const type = b.type === "pick" ? 1 : b.type === "scrape" ? 2 : 0;
-    const reach = Math.max(a, bw) * 1.6 + 2 * T;
-    const i0 = Math.max(0, Math.floor((b.x - reach - t.x0) / T)), i1 = Math.min(res - 1, Math.floor((b.x + reach - t.x0) / T));
-    const j0 = Math.max(0, Math.floor((b.z - reach - t.z0) / T)), j1 = Math.min(res - 1, Math.floor((b.z + reach - t.z0) / T));
-    if (i0 > i1 || j0 > j1) return;
     const nx = b.nx, ny = b.ny, nz = b.nz, ux = b.ux, uy = b.uy, uz = b.uz;
     const vx = ny * uz - nz * uy, vy = nz * ux - nx * uz, vz = nx * uy - ny * ux;
     // size of the marks: a bigger tool, a bigger lip; a partial bite leaves a lighter mark
     const amp = clamp(Math.sqrt(Math.max(a, bw) / 0.2), 0.7, 2.2) * (0.45 + 0.55 * b.frac) * (type === 1 ? 1.7 : 1);
     const sp = clamp(bw * 0.075, 0.011, 0.03);                      // the blade's scrape-line spacing
     const wob = type === 1 ? 0.3 : type === 2 ? 0.2 : 0.16;         // how broken the outline is
-    const wy0 = b.y;
     const k127 = 127 / range;
     let n = 0;
     for (let j = j0; j <= j1; j++) {
-      const wz = t.z0 + (j + 0.5) * T, pz = wz - b.z;
+      const wz = wz0 + (j + 0.5) * T, pz = wz - b.z;
       for (let i = i0; i <= i1; i++) {
-        const wx = t.x0 + (i + 0.5) * T, px = wx - b.x;
-        const py = t.getHeightAt(wx, wz) - wy0;
+        const wx = wx0 + (i + 0.5) * T, px = wx - b.x;
+        const py = t.getHeightAt(wx, wz) - b.y;
         const dn = px * nx + py * ny + pz * nz;
         if (dn > 0.3 || dn < -0.3) continue;                       // not on this face (the far side of a ridge)
         const du = (px * ux + py * uy + pz * uz) / a, dv = (px * vx + py * vy + pz * vz) / bw;
@@ -179,7 +268,7 @@ export class DigDetail {
             + 0.0078 * amp * band * (0.35 + 1.1 * lipN * lipN) * spoil * sag
             + 0.0032 * amp * crumb * inside;
         }
-        const o = (j * res + i) * 2;
+        const o = base + (j * M + i) * 2;
         const old = (data[o] - R0) / k127;
         const nr = old + (rel - old) * W;
         data[o] = clamp(Math.round(R0 + nr * k127), 0, 255);
@@ -188,40 +277,30 @@ export class DigDetail {
         n++;
       }
     }
-    const d = this.dirty;
-    this.dirty = d ? { i0: Math.min(d.i0, i0), i1: Math.max(d.i1, i1), j0: Math.min(d.j0, j0), j1: Math.max(d.j1, j1) } : { i0, i1, j0, j1 };
-    const S = this.stats, ms = performance.now() - t0;
-    if (again) S.restamps++; else S.stamps++;
-    S.texels += n;
-    S.stampMs += ms;
-    S.maxStampMs = Math.max(S.maxStampMs, ms);
+    this._mark(e.layer, i0, i1, j0, j1);
+    return n;
   }
 
-  // ------------------------------------------------------------ upload (as TerrainView: idle set, sub-rectangle)
+  // ------------------------------------------------------------ upload (as TerrainView: idle set, sub-rectangles)
 
   flush(renderer) {
     if (!this.dirty && !this.full) return false;
-    const S = this.stats, t0 = performance.now(), THREE = this.THREE, res = this.res, whole0 = this.full, dirty = this.dirty;
-    const all = { i0: 0, i1: res - 1, j0: 0, j1: res - 1 };
+    const S = this.stats, t0 = performance.now(), whole0 = this.full, dirty = this.dirty;
     for (const set of this.sets) {
       if (whole0) set.full = true;
-      else if (dirty) set.pending = set.pending ? { i0: Math.min(set.pending.i0, dirty.i0), i1: Math.max(set.pending.i1, dirty.i1), j0: Math.min(set.pending.j0, dirty.j0), j1: Math.max(set.pending.j1, dirty.j1) } : dirty;
+      else if (dirty) {
+        for (const layer of dirty.keys()) set.pending.add(layer);
+      }
     }
     const next = this.sets[1 - this.cur];
-    let up = next.pending;
-    if (next.full || !up || (up.i1 - up.i0 + 1) * (up.j1 - up.j0 + 1) > res * res * DIG_DETAIL.fullShare) up = next.full || up ? all : null;
-    if (up) {
-      if (up === all) { next.tex.needsUpdate = true; S.fullUploads++; }
-      else {
-        const src = (this._src = this._src || new THREE.Box2()), dst = (this._dst = this._dst || new THREE.Vector2());
-        src.min.set(up.i0, up.j0); src.max.set(up.i1 + 1, up.j1 + 1); dst.set(up.i0, up.j0);
-        renderer.copyTextureToTexture(next.stage, next.tex, src, dst);
-        S.partial++;
-      }
-      next.pending = null;
-      next.full = false;
+    if (next.full) { next.tex.needsUpdate = true; S.fullUploads++; next.full = false; next.pending.clear(); }
+    else if (next.pending.size) {
+      for (const layer of next.pending) next.tex.addLayerUpdate(layer);      // (only the touched layers are uploaded)
+      next.tex.needsUpdate = true;
+      S.partial += next.pending.size;
+      next.pending.clear();
     }
-    if (!this._warm) { this._warm = true; for (const set of this.sets) renderer.initTexture(set.tex); }
+    if (!this._warm) { this._warm = true; for (const set of this.sets) renderer.initTexture(set.tex); renderer.initTexture(this.indexTex); }
     this.cur = 1 - this.cur;
     this.uniforms.tDDetail.value = this.sets[this.cur].tex;
     this.dirty = null;
@@ -233,15 +312,17 @@ export class DigDetail {
     return true;
   }
 
-  /** tests / the dev tools: the relief (m) and footprint (0..1) at a world point (nearest texel) */
+  /** tests / the dev tools: the relief (m) and footprint (0..1) at a world point (nearest texel; zero where no tile is alive) */
   sample(x, z) {
-    const t = this.t, i = Math.floor((x - t.x0) / this.texel), j = Math.floor((z - t.z0) / this.texel);
-    if (i < 0 || j < 0 || i >= this.res || j >= this.res) return { relief: 0, mask: 0 };
-    const o = (j * this.res + i) * 2;
-    return { relief: ((this.data[o] - R0) / (127 / this.range)), mask: this.data[o + 1] / 255 };
+    const S = this.S, tx = Math.floor((x - this.ox) / S), tz = Math.floor((z - this.oz) / S), e = this._tile(tx, tz, false);
+    if (!e) return { relief: 0, mask: 0 };
+    const i = Math.floor((x - (this.ox + tx * S)) / this.texel) + this.A, j = Math.floor((z - (this.oz + tz * S)) / this.texel) + this.A;
+    const o = e.layer * this.layerSize + (j * this.M + i) * 2;
+    return { relief: (this.data[o] - R0) / (127 / this.range), mask: this.data[o + 1] / 255 };
   }
 
   dispose() {
-    for (const set of this.sets) { set.tex.dispose(); set.stage.dispose(); }
+    for (const set of this.sets) set.tex.dispose();
+    this.indexTex.dispose();
   }
 }

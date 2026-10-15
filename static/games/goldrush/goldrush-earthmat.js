@@ -44,6 +44,7 @@ import { GeoTex } from "./goldrush-geotex.js";
 import { SLICE_ORIGIN_Y } from "./goldrush-terrain.js";
 import { TERRAIN_GLSL } from "./goldrush-terrainview.js";
 import { DigDetail } from "./goldrush-digdetail.js";
+import { noise2, smoothstep } from "./goldrush-noise.js";
 
 const ASSET_DIR = new URL("./assets/earth/", import.meta.url).href;
 export const EARTH_LAYERS = ["crust", "loose", "compact", "gravel", "rock"];
@@ -57,6 +58,8 @@ export const EARTH = {
   blendDepth: 0.22,
   freshDecay: 80,             // s (as the old shader)
 };
+// Earth 2.0C: the wet map covers the camp, the plant places and the claim (72 m square, ~14 cm per texel)
+export const WET_MAP = { x0: -36, z0: -40, size: 72, res: 512, up: 0.3, down: 1 / 240 };
 const DEBUG_COLORS = [[0.82, 0.66, 0.4], [0.95, 0.45, 0.1], [0.75, 0.15, 0.12], [0.45, 0.55, 0.7], [0.22, 0.22, 0.28]];
 
 // ---------------------------------------------------------------------------------------- texture arrays
@@ -120,6 +123,7 @@ const COMMON = `
   uniform highp sampler2DArray tEA; uniform highp sampler2DArray tEB;
   uniform float uETile[5]; uniform vec3 uETint[5]; uniform float uEAO[5]; uniform float uENrm[5]; uniform float uERMin[5];
   uniform vec3 uERefGround; uniform vec3 uERefFill; uniform int uEDebug; uniform float uEHeat;
+  uniform sampler2D tEWetMap; uniform vec4 uEWetMap;
   varying vec3 vEWPos; varying vec3 vEWNor;
   const mat2 E_ROT = mat2(0.8, -0.6, 0.6, 0.8);
   float eFar = 0.0;            // 0 near .. 1 from ~5 m: the crust's second, turned sample (no tiling at a distance)
@@ -182,7 +186,7 @@ const COMMON = `
   }`;
 
 const TERRAIN_DECL = `
-  uniform highp sampler2D tDDetail; uniform vec4 uDDetail; uniform vec4 uDDetailK;
+  uniform highp sampler2DArray tDDetail; uniform highp sampler2D tDIndex; uniform vec4 uDRegion; uniform vec4 uDTile; uniform vec4 uDDetailK;
   uniform sampler2D tEState; uniform vec4 uEState; uniform highp sampler3D tEGeo; uniform vec3 uEGeoMin; uniform vec3 uEGeoInv; uniform float uEGeoReady;
   ${TERRAIN_GLSL.fragmentDecl}`;
 
@@ -230,16 +234,23 @@ const MAIN = `
     float grDCover = 1.0 - smoothstep(0.3, 0.8, clamp(vEEarth.z, 0.0, 1.0));
     if (uDDetailK.w > 0.5) {
       grDFade = 1.0 - smoothstep(9.0, 18.0, grEView);
-      vec2 grDUv = (grEP.xz - uDDetail.xy) * uDDetail.z;
-      if (grDFade > 0.0 && grDUv.x > 0.0 && grDUv.y > 0.0 && grDUv.x < 1.0 && grDUv.y < 1.0) {
-        vec2 grDC = textureLod(tDDetail, grDUv, 0.0).rg;
-        float grDe = uDDetail.w;
-        float grDxp = textureLod(tDDetail, grDUv + vec2(grDe, 0.0), 0.0).r, grDxm = textureLod(tDDetail, grDUv - vec2(grDe, 0.0), 0.0).r;
-        float grDzp = textureLod(tDDetail, grDUv + vec2(0.0, grDe), 0.0).r, grDzm = textureLod(tDDetail, grDUv - vec2(0.0, grDe), 0.0).r;
-        grDG = grDC.g * grDCover;
-        grDRel = (grDC.r - 0.50196) * uDDetailK.x;
-        grDGrad = vec2(grDxp - grDxm, grDzp - grDzm) * (uDDetailK.x * 0.5 / uDDetailK.y);
-        grDK = grDFade * grDAge * grDCover * uDDetailK.z;
+      // (Earth 2.0C: regions - the world tile under this point, its layer in the pool; none: nothing was stamped there)
+      vec2 grDT = (grEP.xz - uDRegion.xy) * uDRegion.z;
+      ivec2 grDI = ivec2(floor(grDT));
+      int grDW = int(uDRegion.w);
+      if (grDFade > 0.0 && grDI.x >= 0 && grDI.y >= 0 && grDI.x < grDW && grDI.y < grDW) {
+        float grDL = floor(texelFetch(tDIndex, grDI, 0).r * 255.0 + 0.5) - 1.0;
+        if (grDL >= 0.0) {
+          vec2 grDUv = (uDTile.x + fract(grDT) * uDTile.y) / uDTile.z;
+          float grDe = 1.0 / uDTile.z;
+          vec2 grDC = textureLod(tDDetail, vec3(grDUv, grDL), 0.0).rg;
+          float grDxp = textureLod(tDDetail, vec3(grDUv + vec2(grDe, 0.0), grDL), 0.0).r, grDxm = textureLod(tDDetail, vec3(grDUv - vec2(grDe, 0.0), grDL), 0.0).r;
+          float grDzp = textureLod(tDDetail, vec3(grDUv + vec2(0.0, grDe), grDL), 0.0).r, grDzm = textureLod(tDDetail, vec3(grDUv - vec2(0.0, grDe), grDL), 0.0).r;
+          grDG = grDC.g * grDCover;
+          grDRel = (grDC.r - 0.50196) * uDDetailK.x;
+          grDGrad = vec2(grDxp - grDxm, grDzp - grDzm) * (uDDetailK.x * 0.5 / uDDetailK.y);
+          grDK = grDFade * grDAge * grDCover * uDDetailK.z;
+        }
       }
     }
     // the footprint sharpens the grid's blurry fresh: inside full, its skirt a little less
@@ -266,6 +277,10 @@ const MAIN = `
             * mix(vec3(1.0), clamp(grVC / uERefFill, vec3(0.6), vec3(1.5)), grEFill * (1.0 - grEGw));
     grEW[2] *= 0.75 + 0.5 * grENb; grEW[3] *= 0.75 + 0.5 * (1.0 - grENb);
   #endif
+  // Earth 2.0C: wetness from real sources (the wash place, the sluice, the plant): a world-addressed map read by the
+  // terrain AND the plain ground around it (goldrush-earthmat.js WetMap)
+  vec2 grWUv = (grEP.xz - uEWetMap.xy) * uEWetMap.z;
+  if (grWUv.x > 0.0 && grWUv.y > 0.0 && grWUv.x < 1.0 && grWUv.y < 1.0) grEWet = max(grEWet, textureLod(tEWetMap, grWUv, 0.0).r);
   // height blend: each active layer's height lifts it over the others (pebbles out of the sand)
   float grEThr = mix(0.02, 0.09, grELod);
   vec4 grEBv[5]; vec3 grENv[5];
@@ -302,7 +317,7 @@ const MAIN = `
     // Earth 2.0B: the imprint's relief tilts the normal; dents are shaded, crests a little lighter and drier
     grEN = normalize(grEN + vec3(-grDGrad.x, 0.0, -grDGrad.y) * grDK);
     grDq = grDFade * grDAge * grDCover;
-    grEAO *= 1.0 - 0.25 * smoothstep(0.0, 0.007, -grDRel) * grDq;
+    grEAO *= 1.0 - 0.18 * smoothstep(0.0, 0.007, -grDRel) * grDq;
     // the cut's shoulder from the heights: a crest (lip, dry, crumbly) and a cavity (shaded); broken up by noise
     grDCrest = grES.b; grDCav = grES.a;
     grDEdge = max(grDCrest, grDCav) * (1.0 - smoothstep(10.0, 20.0, grEView));
@@ -311,8 +326,9 @@ const MAIN = `
       float bn = eNoise(bp), bx = eNoise(bp + vec2(0.3, 0.0)), bz = eNoise(bp + vec2(0.0, 0.3));
       float broken = smoothstep(-0.25, 0.45, bn * 0.7 + eNoise(grEP.xz * 47.0 + 9.1) * 0.3 + (grDEdge - 0.5) * 0.9);
       grEN = normalize(grEN + vec3(-(bx - bn), 0.0, -(bz - bn)) * 0.55 * grDEdge * broken);
-      grEAO *= 1.0 - 0.3 * grDCav * (0.55 + 0.45 * broken);
+      grEAO *= 1.0 - 0.22 * grDCav * (0.55 + 0.45 * broken);
     }
+    grEAO = max(grEAO, 0.55);                                  // (a dug hollow is shaded, never a black hole)
   #endif
   grEAlb *= grETint * (1.0 + 0.1 * grEMac);
   grEAlb = mix(grEAlb, grEAlb * vec3(1.04, 0.99, 0.95), 0.5 + 0.5 * eNoise(grEP.xz * 0.05 + 9.1));
@@ -400,8 +416,22 @@ export class EarthSystem {
       uERefGround: { value: new T.Vector3(...refs.ground) }, uERefFill: { value: new T.Vector3(...refs.fill) },
       uEDebug: { value: 0 }, uEHeat: { value: 0 },
       tEState: { value: null }, uEState: { value: new T.Vector4(0, 0, 1, 1) },
+      tEWetMap: { value: null }, uEWetMap: { value: new T.Vector4(WET_MAP.x0, WET_MAP.z0, 1 / WET_MAP.size, 0) },
       tEGeo: { value: null }, uEGeoMin: { value: new T.Vector3() }, uEGeoInv: { value: new T.Vector3(1, 1, 1) }, uEGeoReady: { value: 0 },
     };
+    // Earth 2.0C: the wet map (sources -> a slowly changing wetness by world position)
+    this.wetData = new Uint8Array(WET_MAP.res * WET_MAP.res);
+    this.wetTarget = new Float32Array(WET_MAP.res * WET_MAP.res);
+    this.wetMap = new T.DataTexture(this.wetData, WET_MAP.res, WET_MAP.res, T.RedFormat, T.UnsignedByteType);
+    this.wetMap.minFilter = this.wetMap.magFilter = T.LinearFilter;
+    this.wetMap.generateMipmaps = false;
+    this.wetMap.colorSpace = T.NoColorSpace;
+    this.wetMap.unpackAlignment = 1;
+    this.wetMap.needsUpdate = true;
+    this.uniforms.tEWetMap.value = this.wetMap;
+    this.wetSources = [];
+    this._wetBox = null;
+    this._wetT = 0;
     this.terrainMaterial = this._material(false);
     this.groundMaterial = this._material(true);
     this.means = null;
@@ -530,6 +560,60 @@ export class EarthSystem {
     this.stateTex.needsUpdate = true;
   }
 
+  /**
+   * Earth 2.0C: wet ground from real sources. list: [{ x, z, r (m), level 0..1 }] - the wash place's trough and pan spot,
+   * the sluice and its outlet, the plant. The ground there darkens to the level (about 0.3 / s) and dries again when a
+   * source is gone (over minutes). Visual only - no water, no flow; the dev tools' paintWet is separate (StateTex G).
+   */
+  setWetSources(list) {
+    const key = JSON.stringify(list.map((s) => [+s.x.toFixed(2), +s.z.toFixed(2), +s.r.toFixed(2), +s.level.toFixed(2)]));
+    if (key === this._wetKey) return;
+    this._wetKey = key;
+    const W = WET_MAP, c = W.size / W.res;
+    let box = this._wetBox;
+    const grow = (i0, i1, j0, j1) => { box = box ? { i0: Math.min(box.i0, i0), i1: Math.max(box.i1, i1), j0: Math.min(box.j0, j0), j1: Math.max(box.j1, j1) } : { i0, i1, j0, j1 }; };
+    const old = this.wetSources;
+    this.wetSources = list.slice();
+    for (const s of [...old, ...list]) {
+      const r = s.r * 1.25 + c;
+      grow(Math.max(0, Math.floor((s.x - r - W.x0) / c)), Math.min(W.res - 1, Math.ceil((s.x + r - W.x0) / c)), Math.max(0, Math.floor((s.z - r - W.z0) / c)), Math.min(W.res - 1, Math.ceil((s.z + r - W.z0) / c)));
+    }
+    if (!box) return;
+    const T = this.wetTarget, res = W.res;
+    for (let j = box.j0; j <= box.j1; j++) for (let i = box.i0; i <= box.i1; i++) T[j * res + i] = 0;
+    for (const s of list) {
+      const r = s.r * 1.25;
+      const i0 = Math.max(0, Math.floor((s.x - r - W.x0) / c)), i1 = Math.min(res - 1, Math.ceil((s.x + r - W.x0) / c));
+      const j0 = Math.max(0, Math.floor((s.z - r - W.z0) / c)), j1 = Math.min(res - 1, Math.ceil((s.z + r - W.z0) / c));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const x = W.x0 + (i + 0.5) * c, z = W.z0 + (j + 0.5) * c;
+        const d = Math.hypot(x - s.x, z - s.z) / s.r;
+        // an irregular outline (a wet patch is never a circle)
+        const n = noise2(x * 2.3 + 5, z * 2.3 - 3, 77) * 0.22 + noise2(x * 6.1, z * 6.1, 78) * 0.1;
+        const v = s.level * smoothstep(1.0 + n, 0.25 + n * 0.5, d);
+        if (v > T[j * res + i]) T[j * res + i] = v;
+      }
+    }
+    this._wetBox = box;
+    this._wetBusy = true;
+  }
+
+  _wetStep(dt) {
+    const box = this._wetBox;
+    if (!box) return;
+    const W = WET_MAP, res = W.res, D = this.wetData, T = this.wetTarget;
+    let moving = false;
+    const up = W.up * dt * 255, down = W.down * dt * 255;
+    for (let j = box.j0; j <= box.j1; j++) for (let i = box.i0; i <= box.i1; i++) {
+      const k = j * res + i, t = T[k] * 255, v = D[k];
+      if (v === Math.round(t)) continue;
+      D[k] = Math.round(v < t ? Math.min(t, v + Math.max(1, up)) : Math.max(t, v - Math.max(1, down)));
+      moving = true;
+    }
+    this.wetMap.needsUpdate = true;
+    if (!moving) { this._wetBusy = false; if (!this.wetSources.length) this._wetBox = null; }
+  }
+
   /** the quality tier: the tool imprints are drawn on every tier but the lowest */
   setDetail(on) { if (this.detail) this.detail.setEnabled(on); }
 
@@ -537,6 +621,7 @@ export class EarthSystem {
   update(clock, dt) {
     if (!this.terrain) return;
     this.detail.update(dt);
+    if (this._wetBusy && (this._wetT -= dt) <= 0) { this._wetStep(0.5 - this._wetT); this._wetT = 0.5; }
     this._stateT -= dt;
     if (this._stateNow || (this.fb && this._stateT <= 0)) { this._state(clock); this._stateNow = false; this._stateT = 0.5; }
     if (!this.geo.ready) {
@@ -607,6 +692,7 @@ export class EarthSystem {
     if (this.arrays) { this.arrays.a.dispose(); this.arrays.b.dispose(); }
     if (this.stateTex) this.stateTex.dispose();
     if (this.detail) this.detail.dispose();
+    if (this.wetMap) this.wetMap.dispose();
     if (this.geo) this.geo.dispose();
     this.terrainMaterial.dispose();
     this.groundMaterial.dispose();

@@ -501,6 +501,16 @@ export class ProcessingSystem {
     if (key !== this._wetKey) this._wetBuild(key);
     const low = this.ctx.quality && this.ctx.quality() === "low", ran = !!(this.sluice && this.sluice.installed && this.sluice.stats.processedMl > 0);
     for (const m of this._wet) m.visible = (m.userData.which === "wash" || ran) && !(low && m.userData.puddle);
+    // Earth 2.0C: the same places wet the real ground (a world-addressed wet map the terrain and the plain ground read)
+    const earth = this.world && this.world.earth;
+    if (earth && earth.setWetSources) {
+      const list = [];
+      for (const [x, z, size, st, puddle, which] of this._wetSpots(key)) {
+        if (which !== "wash" && !ran) continue;
+        list.push({ x, z, r: 0.5 * size * Math.max(1, st) * 0.9, level: puddle ? 1.0 : 0.9 });
+      }
+      earth.setWetSources(list);
+    }
   }
 
   // what is visible where (after a purchase / load)
