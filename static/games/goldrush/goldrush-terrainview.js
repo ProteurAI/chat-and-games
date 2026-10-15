@@ -124,6 +124,7 @@ export class TerrainView {
     const V = (this.V = t.vps), cc = (this.cells = t.chunkCells), per = (this.per = t.chunksPerSide);
     this.material = material;
     this.forceCoarse = false;
+    this.detail = null;                    // Earth 2.0B: the dig detail texture (goldrush-digdetail.js) - uploaded along with the rest
     this.opts = { ...TERRAIN_VIEW, force: null };      // (per view: tests / the dev tools may force a LOD: 0 or 1)
     this.dirty = null;                     // the box changed since the last flush
     this.full = true;                      // everything changed (first upload, markAll)
@@ -196,7 +197,7 @@ export class TerrainView {
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         mesh.name = `terrain-chunk-${cx}-${cz}`;
-        mesh.onBeforeRender = (renderer) => { if (this.dirty || this.full) this.flush(renderer); };
+        mesh.onBeforeRender = (renderer) => { if (this.dirty || this.full || (this.detail && (this.detail.dirty || this.detail.full))) this.flush(renderer); };
         const tile = { cx, cz, i0, j0, mesh, geom, lod: 0, mask: 0, ccx: t.x0 + (i0 + cc / 2) * t.cell, ccz: t.z0 + (j0 + cc / 2) * t.cell, midY: 0 };
         mesh.userData.tile = tile;
         this.tiles.push(tile);
@@ -254,7 +255,8 @@ export class TerrainView {
 
   /** pack + upload what changed (once per frame, before drawing) into the idle texture set, then draw from it */
   flush(renderer) {
-    if (!this.dirty && !this.full) return false;
+    const dd = this.detail, didDetail = dd && (dd.dirty || dd.full) ? dd.flush(renderer) : false;
+    if (!this.dirty && !this.full) return didDetail;
     const V = this.V, S = this.stats, t0 = performance.now(), THREE = this.THREE, whole0 = this.full, dirty = this.dirty;
     let box = dirty;
     const all = { i0: 0, i1: V - 1, j0: 0, j1: V - 1 };

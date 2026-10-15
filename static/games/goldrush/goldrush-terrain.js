@@ -131,6 +131,9 @@ export class DiggableTerrain {
     this.stoneBot = this.field.stoneBot;
     this.consumed = null;                            // set by the mining system (worked-over depth per column)
     // what the last excavate() did per cell (the mining system books it)
+    this.lastBite = { x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0, ux: 1, uy: 0, uz: 0, a: 0.2, b: 0.15, edge: 0.5, tilt: 0, type: "scoop", frac: 1, seed: 0, cells: 0 };
+    this.onBite = null;                              // (bite) - Earth 2.0B: the renderer's imprint of the tool (set by the earth system)
+    this.onReset = null;                             // () - a save was loaded: derived visual state starts over
     this.rec = { n: 0, k: new Int32Array(REC_MAX), before: new Float32Array(REC_MAX), after: new Float32Array(REC_MAX), mat: new Uint8Array(REC_MAX) };
     this._bite = { n: 0, k: new Int32Array(REC_MAX), w: new Float32Array(REC_MAX) };
     this.load = new Uint8Array(n);                   // columns a boulder rests on (no crust: they give way)
@@ -319,9 +322,10 @@ export class DiggableTerrain {
   //   mat   (gravel, stone, cut, streak) -> detail layers, fresh-cut relief, streak marks
   //   geo   one-hot material at the surface (dirt, compact, gravel, stone)
   //   earth (untouched edge ground, the camp's fill, cover on the original surface, loosened)
+  //   rim   (Earth 2.0B) crest / cavity of a worked edge, from the heights alone (so a loaded save has it too)
   _buildView() {
     const n = this.vps * this.vps;
-    this.vis = { col: new Float32Array(n * 3), mat: new Float32Array(n * 4), geo: new Float32Array(n * 4), earth: new Float32Array(n * 4) };
+    this.vis = { col: new Float32Array(n * 3), mat: new Float32Array(n * 4), geo: new Float32Array(n * 4), earth: new Float32Array(n * 4), rim: new Float32Array(n * 2) };
     this._refreshVisual(0, this.vps - 1, 0, this.vps - 1);
     this.view = new TerrainView(this.THREE, this, this.material);
     this.chunks = this.view.tiles;                    // (the render tiles: cx, cz, i0, j0, mesh, geom)
@@ -333,7 +337,7 @@ export class DiggableTerrain {
     const vps = this.vps, c = this.cell, H = this.height, vis = this.vis;
     const i0 = Math.max(0, gi0), i1 = Math.min(vps - 1, gi1), j0 = Math.max(0, gj0), j1 = Math.min(vps - 1, gj1);
     if (i0 > i1 || j0 > j1) return false;
-    const col = vis.col, matw = vis.mat, geoA = vis.geo, earthA = vis.earth, Cn = this.consumed;
+    const col = vis.col, matw = vis.mat, geoA = vis.geo, earthA = vis.earth, rimA = vis.rim, Cn = this.consumed, B0 = this.base;
     const last = vps - 1;
     const rgb = [0, 0, 0];
     for (let gj = j0; gj <= j1; gj++) {
@@ -345,6 +349,15 @@ export class DiggableTerrain {
         const nx = (hl - hr) / (2 * c), nz = (hd - hu) / (2 * c);
         const inv = 1 / Math.sqrt(nx * nx + 1 + nz * nz);
         const curv = (hl + hr + hd + hu - 4 * h) / (c * c);   // >0 concave, <0 ridge
+        // Earth 2.0B: the same at two cells' reach - the shoulder of a cut: crest (convex) and cavity (concave), only
+        // where the ground is (or was just next to) dug below the original surface
+        const gl = gi > 1 ? gi - 2 : 0, gr = gi < last - 1 ? gi + 2 : last, gd = gj > 1 ? gj - 2 : 0, gu = gj < last - 1 ? gj + 2 : last;
+        const kl = gj * vps + gl, kr = gj * vps + gr, kd = gd * vps + gi, ku = gu * vps + gi;
+        const lap2 = (H[kl] + H[kr] + H[kd] + H[ku]) * 0.25 - h;
+        const dug2 = Math.max(B0[k] - h, B0[kl] - H[kl], B0[kr] - H[kr], B0[kd] - H[kd], B0[ku] - H[ku]);
+        const rg = smoothstep(0.003, 0.02, dug2);
+        rimA[v * 2] = rg > 0 ? smoothstep(0.0012, 0.007, -lap2) * rg : 0;
+        rimA[v * 2 + 1] = rg > 0 ? smoothstep(0.0015, 0.009, lap2) * rg : 0;
         const x = this.x0 + gi * c, z = this.z0 + gj * c;
         // what shows at the surface: stone only where it really is exposed
         // (a lens a few cm under the soil stays hidden until dug free)
@@ -460,6 +473,7 @@ export class DiggableTerrain {
 
 
   _refresh(gi0, gi1, gj0, gj1) {
+    gi0 -= 1; gj0 -= 1; gi1 += 1; gj1 += 1;                          // (Earth 2.0B: the crest / cavity reach two cells)
     this._refreshVisual(gi0, gi1, gj0, gj1);
     const touched = this.view.mark(gi0, gi1, gj0, gj1);              // (uploaded as a texture rectangle before the next draw)
     if (this.onRefresh) this.onRefresh(gi0, gi1, gj0, gj1);     // the renderer's derived state (Earth B0: StateTex, GeoTex)
@@ -655,6 +669,15 @@ export class DiggableTerrain {
     const w0 = this._win;
     const chunks = this._refresh(w0.i0 - 1, w0.i1 + 1, w0.j0 - 1, w0.j1 + 1);
     this.revision++;
+    // Earth 2.0B: what this bite was (a copy: the kernel's vectors are reused) - the renderer stamps the tool's
+    // imprint from it, the dig effects slump from it. Visual only: nothing reads it back into the simulation.
+    const bite = this.lastBite, bn = K.n, bu = K.u;
+    bite.x = hit.x; bite.y = hit.y; bite.z = hit.z; bite.nx = bn.x; bite.ny = bn.y; bite.nz = bn.z; bite.ux = bu.x; bite.uy = bu.y; bite.uz = bu.z;
+    bite.a = K.a; bite.b = K.b; bite.edge = K.edge; bite.tilt = K.tilt || 0; bite.type = K.type || "scoop";
+    bite.frac = K.vol > 0 ? Math.min(1, ((removedQ / HEIGHT_Q) * area) / K.vol) : 1;
+    bite.seed = (this.revision * 7919 + Math.round(hit.x * 131 + hit.z * 197)) | 0;
+    bite.cells = cells;
+    if (this.onBite) this.onBite(bite);
     return { requested: requested * area, removed: (removedQ / HEIGHT_Q) * area, relocated: (movedQ / HEIGHT_Q) * area, cells, chunks };
   }
 
@@ -883,6 +906,7 @@ export class DiggableTerrain {
     }
     this.refreshAll();
     this.revision++;
+    if (this.onReset) this.onReset();
     return true;
   }
 

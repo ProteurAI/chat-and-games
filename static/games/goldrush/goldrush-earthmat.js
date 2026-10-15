@@ -12,8 +12,8 @@
 //     its layers); until it is built, the per-vertex material (aGeo, materialAt at the surface)
 //   - the terrain's state per vertex (aMat / aEarth): dug below the original surface, deposited on it (cover),
 //     loosened, the camp's fill, untouched edge ground (matches the plain outside)
-//   - StateTex (this file): R fresh (a cut / a move, fading over ~80 s), G wet; B / A reserved. Visual only,
-//     rebuilt from the terrain, never saved
+//   - StateTex (this file): R fresh (a cut / a move, fading over ~80 s), G wet, B / A (Earth 2.0B) the crest / cavity
+//     of a worked edge (from the heights). Visual only, rebuilt from the terrain, never saved
 // Untouched ground is crust; gravel shows through it where the ground is gravelly; disturbed ground shows its
 // material (loose dirt, compact clay, gravel, stone); deposits are loose. Fresh ground is darker and moister
 // (never black); wet ground darker still, glossier, its relief softened.
@@ -26,6 +26,15 @@
 // 1024 px (desktop HIGH / MEDIUM) or 512 px (mobile, LOW) per layer. JPG sources, decoded once into the arrays
 // (KTX2 / Basis is the planned format once an encoder is part of the build - ASSETS.md).
 //
+// Earth 2.0B: a dig reads at close range. Three derived layers on top of the same material, none of them geometry:
+//   - DigDetail (goldrush-digdetail.js): the tool's imprint as a fine relief + footprint texture -> normal, cavity,
+//     a crisp fresh / worked mask (blade lines, cut wall, a broken lip, the pick's pit and cracks)
+//   - StateTex B / A: crest and cavity of a cut's shoulder, from the simulation heights (a loaded save has them too);
+//     the shader breaks them up with noise (no clean geometric edge) and tints them (dry crumbly crest, shaded cavity)
+//   - the fresh mask (StateTex R) is sharpened by the footprint, so a fresh cut has an outline.
+// The persistent ground is still only the simulation's heights; the fine relief fades with distance (no shimmer) and
+// with age (it softens as the ground dries, like the fresh darkening).
+//
 // Earth 2.0A: the terrain is drawn from a height texture (goldrush-terrainview.js). The per-vertex state that
 // used to be vertex attributes (aGeo, aEarth, aMat, colour) is read from textures by world position, so the
 // material does not depend on any mesh (world position, GeoTex, StateTex, the state textures). _colorAt is no
@@ -34,6 +43,7 @@
 import { GeoTex } from "./goldrush-geotex.js";
 import { SLICE_ORIGIN_Y } from "./goldrush-terrain.js";
 import { TERRAIN_GLSL } from "./goldrush-terrainview.js";
+import { DigDetail } from "./goldrush-digdetail.js";
 
 const ASSET_DIR = new URL("./assets/earth/", import.meta.url).href;
 export const EARTH_LAYERS = ["crust", "loose", "compact", "gravel", "rock"];
@@ -172,6 +182,7 @@ const COMMON = `
   }`;
 
 const TERRAIN_DECL = `
+  uniform highp sampler2D tDDetail; uniform vec4 uDDetail; uniform vec4 uDDetailK;
   uniform sampler2D tEState; uniform vec4 uEState; uniform highp sampler3D tEGeo; uniform vec3 uEGeoMin; uniform vec3 uEGeoInv; uniform float uEGeoReady;
   ${TERRAIN_GLSL.fragmentDecl}`;
 
@@ -212,9 +223,32 @@ const MAIN = `
     vec2 grESt = (grEP.xz - uEState.xy) * uEState.z;
     vec4 grES = texture(tEState, (grESt + 0.5) * uEState.w);
     grEFresh = grES.r; grEWet = grES.g;
+    // Earth 2.0B: the tool's imprint (fine relief + footprint) where the detail texture has one
+    float grDG = 0.0, grDRel = 0.0, grDFade = 0.0, grDK = 0.0;
+    vec2 grDGrad = vec2(0.0);
+    float grDAge = 0.45 + 0.55 * grEFresh;
+    float grDCover = 1.0 - smoothstep(0.3, 0.8, clamp(vEEarth.z, 0.0, 1.0));
+    if (uDDetailK.w > 0.5) {
+      grDFade = 1.0 - smoothstep(9.0, 18.0, grEView);
+      vec2 grDUv = (grEP.xz - uDDetail.xy) * uDDetail.z;
+      if (grDFade > 0.0 && grDUv.x > 0.0 && grDUv.y > 0.0 && grDUv.x < 1.0 && grDUv.y < 1.0) {
+        vec2 grDC = textureLod(tDDetail, grDUv, 0.0).rg;
+        float grDe = uDDetail.w;
+        float grDxp = textureLod(tDDetail, grDUv + vec2(grDe, 0.0), 0.0).r, grDxm = textureLod(tDDetail, grDUv - vec2(grDe, 0.0), 0.0).r;
+        float grDzp = textureLod(tDDetail, grDUv + vec2(0.0, grDe), 0.0).r, grDzm = textureLod(tDDetail, grDUv - vec2(0.0, grDe), 0.0).r;
+        grDG = grDC.g * grDCover;
+        grDRel = (grDC.r - 0.50196) * uDDetailK.x;
+        grDGrad = vec2(grDxp - grDxm, grDzp - grDzm) * (uDDetailK.x * 0.5 / uDDetailK.y);
+        grDK = grDFade * grDAge * grDCover * uDDetailK.z;
+      }
+    }
+    // the footprint sharpens the grid's blurry fresh: inside full, its skirt a little less
+    grEFresh *= mix(1.0, mix(0.5, 1.0, grDG), smoothstep(0.0, 0.1, grDG));
     grEStoneV = vEGeo.w;
     float grECover = clamp(vEEarth.z, 0.0, 1.0), grELoose = clamp(vEEarth.w, 0.0, 1.0);
-    float grEDist = clamp(max(max(vEMat.z, grECover), grELoose), 0.0, 1.0), grEU = 1.0 - grEDist;
+    float grEDist = clamp(max(max(vEMat.z, grECover), grELoose), 0.0, 1.0);
+    grEDist = max(grEDist, grDG * 0.55);                      // (a tool's footprint is worked ground, with a crisp outline)
+    float grEU = 1.0 - grEDist;
     float grESteep = smoothstep(0.55, 0.85, 1.0 - grEN0.y);
     grEW[0] = grEU * (1.0 - grEGeo.w) * (1.0 - 0.45 * grEGeo.z);
     float grEPatch = smoothstep(0.15, 0.65, eNoise(grEP.xz * 0.23 + vec2(5.2, grEP.y * 0.15)) * 0.7 + eNoise(grEP.xz * 0.61 + 1.9) * 0.3);
@@ -263,6 +297,23 @@ const MAIN = `
   }
   if (grEBs < 1e-4) { grEAlb = vec3(0.2, 0.16, 0.12); grEAO = 1.0; grERough = 0.9; grEN = grEN0; }
   grEN = normalize(grEN + grEN0 * 1e-3);
+  float grDq = 0.0, grDEdge = 0.0, grDCrest = 0.0, grDCav = 0.0;
+  #ifndef EARTH_GROUND
+    // Earth 2.0B: the imprint's relief tilts the normal; dents are shaded, crests a little lighter and drier
+    grEN = normalize(grEN + vec3(-grDGrad.x, 0.0, -grDGrad.y) * grDK);
+    grDq = grDFade * grDAge * grDCover;
+    grEAO *= 1.0 - 0.25 * smoothstep(0.0, 0.007, -grDRel) * grDq;
+    // the cut's shoulder from the heights: a crest (lip, dry, crumbly) and a cavity (shaded); broken up by noise
+    grDCrest = grES.b; grDCav = grES.a;
+    grDEdge = max(grDCrest, grDCav) * (1.0 - smoothstep(10.0, 20.0, grEView));
+    if (grDEdge > 0.01) {
+      vec2 bp = grEP.xz * 21.0 + 3.7;
+      float bn = eNoise(bp), bx = eNoise(bp + vec2(0.3, 0.0)), bz = eNoise(bp + vec2(0.0, 0.3));
+      float broken = smoothstep(-0.25, 0.45, bn * 0.7 + eNoise(grEP.xz * 47.0 + 9.1) * 0.3 + (grDEdge - 0.5) * 0.9);
+      grEN = normalize(grEN + vec3(-(bx - bn), 0.0, -(bz - bn)) * 0.55 * grDEdge * broken);
+      grEAO *= 1.0 - 0.3 * grDCav * (0.55 + 0.45 * broken);
+    }
+  #endif
   grEAlb *= grETint * (1.0 + 0.1 * grEMac);
   grEAlb = mix(grEAlb, grEAlb * vec3(1.04, 0.99, 0.95), 0.5 + 0.5 * eNoise(grEP.xz * 0.05 + 9.1));
   #ifndef EARTH_GROUND
@@ -295,6 +346,11 @@ const MAIN = `
   float grEL = dot(grEAlb, vec3(0.2126, 0.7152, 0.0722));
   grEAlb = mix(grEAlb, mix(vec3(grEL), grEAlb, 1.12) * 0.78, grEFresh);
   grEAlb *= mix(1.0, 0.66, grEWet);
+  #ifndef EARTH_GROUND
+    // Earth 2.0B (continued): the dents of the imprint darker, the lip lighter, the edge's crest drier / its cavity moister
+    grEAlb *= 1.0 - 0.14 * smoothstep(0.0, 0.007, -grDRel) * grDq + 0.12 * smoothstep(0.0, 0.006, grDRel) * grDq;
+    if (grDEdge > 0.01) grEAlb *= 1.0 + (0.09 * grDCrest - 0.16 * grDCav) * (0.55 + 0.45 * smoothstep(-0.25, 0.45, eNoise(grEP.xz * 21.0 + 3.7)));
+  #endif
   grEAlb = max(grEAlb, vec3(0.022));
   grERough = clamp(grERough * mix(1.0, 0.75, grEFresh), 0.3, 1.0);
   grERough = mix(grERough, 0.32, grEWet);
@@ -367,6 +423,12 @@ export class EarthSystem {
     this.stateTex.needsUpdate = true;
     this.wet = new Uint8Array(V * V);            // G: wet (visual foundation - set by the dev tools for now)
     this.geo = new GeoTex(T, t, SLICE_ORIGIN_Y);
+    // Earth 2.0B: the tool's imprint (derived, never saved), uploaded with the terrain's textures
+    this.detail = new DigDetail(T, t);
+    t.view.detail = this.detail;
+    Object.assign(this.uniforms, this.detail.uniforms);
+    t.onBite = (b) => this.detail.bite(b);
+    t.onReset = () => this.detail.clear();
     this.fb = null;                               // the region with fresh ground (vertex box) - recomputed while it fades
     this._stateT = 0;
     const u = this.uniforms;
@@ -392,7 +454,7 @@ export class EarthSystem {
       Object.assign(shader.uniforms, this.uniforms);
       patchShader(shader, ground);
     };
-    m.customProgramCacheKey = () => `goldrush-earth-2-0a-v1-${ground ? "ground" : "terrain"}`;
+    m.customProgramCacheKey = () => `goldrush-earth-2-0b-v1-${ground ? "ground" : "terrain"}`;
     return m;
   }
 
@@ -441,6 +503,13 @@ export class EarthSystem {
     i0 = Math.max(0, i0); j0 = Math.max(0, j0); i1 = Math.min(V - 1, i1); j1 = Math.min(V - 1, j1);
     const fb = this.fb;
     this.fb = fb ? { i0: Math.min(fb.i0, i0), i1: Math.max(fb.i1, i1), j0: Math.min(fb.j0, j0), j1: Math.max(fb.j1, j1) } : { i0, i1, j0, j1 };
+    // Earth 2.0B: the cut shoulder's crest / cavity (the terrain derived them from the heights) go to StateTex B / A
+    const rim = this.terrain.vis.rim, d = this.stateData;
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const k = j * V + i;
+      d[k * 4 + 2] = Math.round(255 * rim[k * 2]);
+      d[k * 4 + 3] = Math.round(255 * rim[k * 2 + 1]);
+    }
     this._stateNow = true;
     this.geo.refreshColumns(i0, i1, j0, j1);
   }
@@ -461,9 +530,13 @@ export class EarthSystem {
     this.stateTex.needsUpdate = true;
   }
 
-  /** per frame: StateTex (fresh fading - twice a second, at once after a dig), GeoTex building */
+  /** the quality tier: the tool imprints are drawn on every tier but the lowest */
+  setDetail(on) { if (this.detail) this.detail.setEnabled(on); }
+
+  /** per frame: StateTex (fresh fading - twice a second, at once after a dig), GeoTex building, the imprints settling */
   update(clock, dt) {
     if (!this.terrain) return;
+    this.detail.update(dt);
     this._stateT -= dt;
     if (this._stateNow || (this.fb && this._stateT <= 0)) { this._state(clock); this._stateNow = false; this._stateT = 0.5; }
     if (!this.geo.ready) {
@@ -533,9 +606,10 @@ export class EarthSystem {
     this.disposed = true;
     if (this.arrays) { this.arrays.a.dispose(); this.arrays.b.dispose(); }
     if (this.stateTex) this.stateTex.dispose();
+    if (this.detail) this.detail.dispose();
     if (this.geo) this.geo.dispose();
     this.terrainMaterial.dispose();
     this.groundMaterial.dispose();
-    if (this.terrain) this.terrain.onRefresh = null;
+    if (this.terrain) { this.terrain.onRefresh = null; this.terrain.onBite = null; this.terrain.onReset = null; }
   }
 }
