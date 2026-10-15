@@ -28,14 +28,14 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "static" / "games" / "goldrush" / "assets" / "rocks"
 CACHE = Path(sys.argv[sys.argv.index("--cache") + 1]) if "--cache" in sys.argv else ROOT / ".rock_cache"
 
-# Poly Haven asset id, author(s) as listed on polyhaven.com
+# Poly Haven asset id (the authors are read from the API into the manifest)
 SHAPES = [
-    ("namaqualand_boulder_05", "Rico Cilliers"),
-    ("namaqualand_boulder_03", "Rico Cilliers"),
-    ("namaqualand_boulder_04", "Rico Cilliers"),
-    ("namaqualand_boulder_02", "Rico Cilliers"),
-    ("namaqualand_boulder_06", "Rico Cilliers"),
-    ("rock_07", "Rico Cilliers"),
+    ("namaqualand_boulder_05", "see polyhaven.com"),
+    ("namaqualand_boulder_03", "see polyhaven.com"),
+    ("namaqualand_boulder_04", "see polyhaven.com"),
+    ("namaqualand_boulder_02", "see polyhaven.com"),
+    ("namaqualand_boulder_06", "see polyhaven.com"),
+    ("rock_07", "see polyhaven.com"),
 ]
 LODS = [1600, 400, 32]
 

@@ -1,8 +1,8 @@
 # GoldRush – aktueller Stand (Handoff)
 
-**Stand:** 2026-10-15 · nach Earth 2.0B (Graben sichtbar) auf dem Branch `feature/goldrush-earth-2-0b`
-(Start `3b17f71` = Earth 2.0A, Backup `backup/pre-goldrush-earth-2-0b`; **nicht nach main gemergt**).
-Nächste Phase laut Roadmap: **Earth 2.0C** – nicht begonnen.
+**Stand:** 2026-10-15 · nach Earth 2.0C (echte Felsen, Nässe aus Quellen, Dig-Detail nach Regionen) auf dem Branch
+`feature/goldrush-earth-2-0c` (Start `57f880a` = Earth 2.0B, Backup `backup/pre-goldrush-earth-2-0c`; **nicht nach main gemergt**).
+Earth 2.0B liegt auf `feature/goldrush-earth-2-0b`. Nächster Visual-Schritt: siehe „Offene Punkte“ (größerer Berg ist weiter nicht begonnen).
 
 Diese Datei ist der Einstieg. Details je Phase stehen in `docs/goldrush.md` (nur den jeweiligen
 Abschnitt lesen), Asset-Herkunft in `static/games/goldrush/ASSETS.md`, kommende Phasen in
@@ -29,6 +29,7 @@ Abschnitt lesen), Asset-Herkunft in `static/games/goldrush/ASSETS.md`, kommende 
 | 10 / 10.0.1 | Arbeitsmine (Halden, Radlader, Waschanlage, Abbaugerät, Großnuggets), Zwischenstufen | Prompt 10, 10.0.1 |
 | VO-A + Earth B0 | Licht, Post-Stack, Himmel/Dunst, PBR-Boden, Schaufelkontakt, Visual-QA | Visual Overhaul A + Earth B0 |
 | Earth 2.0A | Terrain-Renderer: HeightTex + Zustandstexturen, statische LOD-Kacheln | Earth 2.0A |
+| Earth 2.0C | Echte Felsen (CC0-Scans, Rock-Material mit Bodenkontakt), Nässe aus Quellen (Nasskarte), Dig-Detail als Kachel-Pool | Earth 2.0C |
 | Earth 2.0B | Graben sichtbar: Werkzeugabdruck (DigDetail), Schnittkanten (StateTex B/A), Nachrutschen (VFX) | Earth 2.0B |
 
 ## Visual-Architektur (seit VO-A + Earth B0)
@@ -66,6 +67,11 @@ Abgeleitete Darstellungsschicht über der Simulation; nichts davon wird gespeich
   `terrain.lastBite` gestempelt (Scoop/Pick/Hand, folgt Hängen, gebrochene Kontur, Lippe, zweimal „gesetzt“), im Shader
   als Normal/Cavity/Fresh-Maske; Schnittkante aus den Höhen (`vis.rim` → StateTex B/A); `DigEffects.slump` (Layer 5).
   Rein abgeleitet, nie gespeichert, keine Geometrie. Nicht auf LOW. Details: `docs/goldrush.md` „Earth 2.0B“.
+* **Earth 2.0C** (`goldrush-rockset.js`, `goldrush-rockmat.js`, `assets/rocks/rocks.glb`): sechs CC0-Fels-Scans (3 LODs, nur Geometrie)
+  ersetzen die Ikosaeder bei Pile-Boulder, Szenerie-Clustern, Outcrops, Kieseln; ein Rock-Material (Earth-Fels-Schicht triplanar,
+  Geologie-Tint, Bodenkontakt aus HeightTex). `EarthSystem.setWetSources` + `WET_MAP`: weltadressierte Nasskarte aus Waschplatz/Rinne/
+  Anlage, von Terrain **und** Außenboden gelesen. `DigDetail` ist ein Pool aus 6-m-Weltkacheln mit Indirektion (Speicher unabhängig von
+  der Weltgröße). Details: `docs/goldrush.md` „Earth 2.0C“, Lizenzen: `ASSETS.md`. Simulation/Platzierung der Spiel-Boulder unverändert.
 * **Schaufel C-lite** (`goldrush-hand.js`, `CONTACT`): Drehung ≤ 34° um die rechte Hand + Schub
   ≤ 0,42 m entlang des Stiels; 20/20 Stiche auf dem Treffpunkt. Spielreichweite unverändert (2,4 m).
 * **Grab-Effekte** (`goldrush-vfx.js`): skaliert mit dem echten Volumen, beleuchteter Staub.
@@ -102,6 +108,13 @@ Abgeleitete Darstellungsschicht über der Simulation; nichts davon wird gespeich
 * Mobil-Emulation (390×844, LOW): freie Sicht 60 fps; an Anlage/Halden CPU-gebunden, gepaart ohne
   Mehrkosten gegenüber 9abb6f4; mit 4× CPU-Drosselung 26–55 fps je nach Lauf. Kein echtes Gerät gemessen.
 
+## Teststatus Earth 2.0C (2026-10-15, Chromium `--quick --no-bench`)
+
+Unit 103; Kern 47, Mining 54, Werkzeuge 62, Quality 61, Material 44, Dev 64, Mechanisiert 95 (ein PRF-fps-Flake 33 fps beim ersten Lauf,
+zweimal 60 fps / 95 grün), Mech 54, Working Mine 119, Hotfix 9.1 26; WebKit Kern 39. `goldrush_seams.py`: 56 Fälle (8 LOD-Muster × 7
+Kameras), 0 Löcher. Perf MEDIUM/HIGH (spawn/face/camp/summit): fps und GPU-Zeit wie 2.0B, Draw Calls +2, Dreiecke +~75 k (+50 %),
+Texturen +2, Heap +10 MB. Nicht gelaufen: Phase 6/7/7A/7B, Premium, Camp, Processing, Auto, übrige WebKit-Suiten, Spiele-Regression, UI-Audit.
+
 ## Teststatus Earth 2.0B (2026-10-15, Chromium `--quick --no-bench`, Branch-Stand)
 
 Unit 103; Kern 47, Mining 54, Werkzeuge 62, Quality 61, Material 44, Dev 64, Mechanisiert 95, Mech 54, Working Mine 119,
@@ -126,7 +139,7 @@ Nicht gelaufen: Phase 6/7/7A/7B/Premium/Camp/Processing/Auto, WebKit-Nebensuiten
 
 ## Offene Punkte
 
-* Earth 2.0C (Maßstab) laut Roadmap; Terrain bisher ein Textur-Satz (30×30 m). Aus 2.0B offen: echte Fels-Assets, Nässe aus
+* Größerer Berg (Maßstab, Roadmap-Punkt „2.0C Maßstab“) weiter offen; Terrain bisher ein Textur-Satz (30×30 m); Dig-Detail-Fenster fest 96 m. Aus 2.0B offen: echte Fels-Assets, Nässe aus
   Quellen; Abdrücke gehen beim Reload verloren (Kanten bleiben); Pick-Abdruck in Erde ist wegen der kleinen Abtragsmenge dezent.
 * Aus Prompt 10 noch offen: A10–E10-Benchmark mit Abbaugerät + Großnuggets, 48-Punkte-Bericht.
 * KTX2 für die Erd-Texturen (kein Basis-Encoder in der Build-Umgebung).

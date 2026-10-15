@@ -1519,6 +1519,38 @@ verändert – nichts kann über dem Boden schweben, ins Terrain clippen oder Sc
   auf Flachem in die Mulde (Layer 5, `stats().slump`); ohne Wirkung auf Terrain/Masse.
 * **QA**: `tests/e2e/goldrush_digqa.py capture|compare|perf` (feste Szenen, Seed 4242, `--root` für eine alte Revision).
 
+## Earth 2.0C – echte Felsen, Nässe, Detail nach Regionen
+
+Weiterhin nur Darstellung: Position, Radius, Einbettung, Schaden und Zerbrechen der Pile-Boulder (`goldrush-rocks.js`), Gold,
+Masse und Save sind unverändert; die Platzierung der Spiel-Boulder (`MaterialField.boulders`) wurde nicht angefasst.
+
+* **Fels-Formen** (`assets/rocks/rocks.glb`, `goldrush-rockset.js`): sechs CC0-Scans (Poly Haven, Lizenz/Autoren in `ASSETS.md`
+  und `assets/rocks/manifest.json`), von `tools/goldrush/build_rock_assets.py` auf drei LODs (~1600 / 400 / 32 Dreiecke)
+  reduziert, nur Geometrie (keine Texturen/UVs), ~0,3 MB. `loadRockSet()` liefert `null`, wenn die Datei fehlt – dann bleiben
+  die alten prozeduralen Ikosaeder (Fallback in Rocks, World).
+* **Material** (`goldrush-rockmat.js`): ein Material für Pile-Boulder, Szenerie-Felsen, Outcrops und Kiesel: die Earth-B0-Fels-
+  Schicht (Albedo/Normal/Rauheit) triplanar in Weltkoordinaten, Geologie-Tint pro Instanz (Farbton des Bodens, Helligkeit variiert),
+  **Bodenkontakt**: innerhalb ~17 cm über dem Boden (live aus HeightTex, außerhalb des Claims aus `aGY` je Instanz) nimmt der Fels
+  den Staub der Kruste an, wird dunkler (Kontakt-AO) und rauer. Ein freigelegter Fels zeigt sauberen Stein über dieser Linie.
+* **Dressing** (`World._rockDressing`): an den bisherigen Ankern Cluster – ein größerer Boulder, 1–4 Begleiter, 4–9 Fragmente entlang
+  einer Richtung; unter jedem Fels liegt der tiefste Boden-Sample des *gerenderten* Bodengitters (`groundMeshHeightAt`, 3-m-Gitter
+  bilinear) – nichts schwebt; 40 % an der Hangnormalen ausgerichtet. Ein statisches gemergtes Mesh = ein Draw Call; Kolliderkreise
+  wie vorher (nur der Hauptfelsen). Outcrops (44 Platten) sind drei instanzierte Formen; Kiesel eine 32-Dreiecke-Form. Beide
+  verschwinden weiter, wenn ihr Boden gegraben wird.
+* **Nässe aus echten Quellen** (`EarthSystem.setWetSources`, `WET_MAP`): eine weltadressierte 512²-Nasskarte (72 m, R8), die Terrain
+  **und** der schlichte Boden außerhalb (Waschplatz, Rinne liegen dort) lesen. Quellen sind dieselben Stellen wie die Nassflecken-
+  Decals in `goldrush-processing.js` (`_wetSpots`, jede Sekunde in `_wetSync`): Waschplatz immer, Rinne/Anlage sobald sie lief.
+  Die Nässe steigt mit ~0,3/s und trocknet in ~4 min, wenn eine Quelle wegfällt. Keine Wasserphysik; Dev-`paintWet` bleibt StateTex G.
+* **Dig-Detail nach Regionen** (`goldrush-digdetail.js`): statt einer Textur über dem ganzen Terrain ein Pool von 40 Weltkacheln
+  (6 m, 192 Texel + 2 Texel Apron, `DataArrayTexture`, ~3 MB je Satz) plus Indirektions-Textur (Kachel → Layer, Fenster 16×16 Kacheln
+  = 96 m). Eine Kachel wird beim ersten Stempel belegt; ist der Pool voll, wird die am längsten nicht gestempelte recycelt (der alte
+  Abdruck geht verloren, der Boden nicht). Der Speicher hängt damit nicht von der Weltgröße ab. Pixelgleich zur Ein-Textur-Version
+  (Visual QA). **Offen für den großen Berg:** das Indirektionsfenster ist fest (96 m, am Terrain verankert) – ein größeres Fenster oder
+  ein mitwandernder Ausschnitt (Clipmap) ist der nächste Schritt; Terrain-Texturen (HeightTex, Zustand) bleiben ein Satz je Region.
+* **Qualität**: LOW (Mobil) ohne Abdrücke; die Felsen selbst gibt es überall (Fallback nur ohne Asset).
+* **QA**: `tests/e2e/goldrush_rockqa.py` (Fels-Szenen, `--root` für alte Revision), `tests/e2e/goldrush_seams.py` (Magenta-Test auf
+  Risse zwischen LOD-Kacheln: 8 LOD-Muster × 7 Kameras über Kachelgrenzen, muss 0 Pixel ergeben).
+
 ## Entwicklertools (QA-Modus, Prompt 5.5)
 
 - **Zugang nur serverseitig:** Umgebungsvariable `GOLDRUSH_DEV_CODE`
