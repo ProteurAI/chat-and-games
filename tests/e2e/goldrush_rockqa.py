@@ -39,6 +39,7 @@ if "--root" in sys.argv:
 JS_LOOK = """([x, y, z, tx, ty, tz, fov]) => {
   const w = window.__goldrush, g = w.game();
   g.effects.clear();
+  if (g.world.updateRocks) { for (let i = 0; i < 3; i++) g.world.updateRocks({ x, y, z }, g.rocks); }     // (the rocks' levels of detail for this camera)
   g.world.earth.update(g.terrain.clock, 1.0);
   return w.camLook({ x, y, z, tx, ty, tz, fov });
 }"""

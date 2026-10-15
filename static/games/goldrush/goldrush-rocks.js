@@ -167,6 +167,11 @@ export class RockSystem {
       im.receiveShadow = true;
       im.name = "pile-boulders";
       list.forEach((r, n) => { r.mesh = im; r.slot = n; });
+      if (real) {                                                  // Earth 2.0C1: from a distance the 400-triangle shape (the same per-instance attributes)
+        const g1 = this.rockSet.geometry(vi, 1).clone();
+        for (const k of ["aDamage", "aSeed", "aGY"]) g1.setAttribute(k, im.geometry.attributes[k]);
+        im.userData.geoNear = im.geometry; im.userData.geoFar = g1;
+      }
       this.scene.add(im);
       this.meshes.push(im);
     });
@@ -195,6 +200,11 @@ export class RockSystem {
     this.rubblePieces = [];
     this.scene.add(this.rubble);
     for (const r of this.rocks) this._place(r);
+  }
+
+  /** the pile's boulders at their far (400-triangle) shape / their full one */
+  setFar(far) {
+    for (const im of this.meshes) if (im.userData.geoFar) im.geometry = far ? im.userData.geoFar : im.userData.geoNear;
   }
 
   _place(r) {

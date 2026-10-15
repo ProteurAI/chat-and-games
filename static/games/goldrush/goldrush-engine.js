@@ -1025,6 +1025,7 @@ export class GoldRushGame {
     this.world.terrainUniforms.uTime.value = this.terrain.clock;
     this.world.earth.update(this.terrain.clock, dt);          // Earth B0: StateTex (fresh / wet), GeoTex building
     this.world.updatePebbles();
+    this.world.updateRocks(this.camera.position, this.rocks);            // Earth 2.0C1: rock levels of detail by distance
     this._stationTick(dt);
     this.economy.addPlayTime(dt * 1000);
     this.render();

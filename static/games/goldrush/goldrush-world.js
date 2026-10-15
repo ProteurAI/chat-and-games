@@ -605,16 +605,22 @@ export class GoldRushWorld {
   /**
    * Earth 2.0C: the boulders outside the pile as real rock - clusters (one bigger boulder, a few satellites lying with it, a
    * trail of fragments along one direction), each sunk into the ground (its lowest ground sample is below the rock's foot,
-   * so none floats), tilted a little with the slope, with their own shape, size, colour. One merged static mesh = one draw.
-   * Same anchors and colliders as the procedural boulders they replace (the main boulder's circle).
+   * so none floats), tilted a little with the slope, with their own shape, size, colour. Same anchors and colliders as the
+   * procedural boulders they replace (the main boulder's circle).
+   *
+   * Earth 2.0C1: ONE static mesh = one draw call, but every cluster is baked at three levels of detail (near: the full
+   * scans; mid: coarser, the smallest fragments dropped; far: the main boulder and its satellites only). The index buffer is
+   * rewritten from the clusters' current level (updateRocks, per cluster by distance with hysteresis): no extra draws, far
+   * clusters cost a fraction of the triangles.
    */
   _rockDressing(spots) {
     const THREE = this.THREE, set = this.rockSet, rng = mulberry32(this.seed + 301);
     const q = new THREE.Quaternion(), qs = new THREE.Quaternion(), e = new THREE.Euler(), m4 = new THREE.Matrix4(), sc = new THREE.Vector3(), pos = new THREE.Vector3();
     const up = new THREE.Vector3(0, 1, 0), nrm = new THREE.Vector3(), v = new THREE.Vector3(), nv = new THREE.Vector3(), col = new THREE.Color();
-    const parts = [];
-    const place = (shape, lod, x, z, r, squash, yaw, tint) => {
-      const geo = set.geometry(shape, lod), bb = geo.boundingBox, hy = ((bb.max.y - bb.min.y) / 2) * r * squash;
+    const items = [];
+    let cluster = -1;
+    const place = (kind, shape, x, z, r, squash, yaw, tint) => {
+      const bb = set.geometry(shape, 0).boundingBox, hy = ((bb.max.y - bb.min.y) / 2) * r * squash;
       let gmin = 1e9, gsum = 0;
       const R = Math.max(0.06, r * 0.9);
       for (let k = 0; k < 5; k++) {
@@ -629,13 +635,16 @@ export class GoldRushWorld {
       q.multiply(new THREE.Quaternion().setFromEuler(e));
       pos.set(x, gmin + hy * 0.55, z);                                      // the foot is below every ground sample: embedded
       m4.compose(pos, q, sc.set(r, r * squash, r));
-      parts.push({ geo, m: m4.clone(), gy: gsum / 5, c: tint });
+      items.push({ kind, shape, size: r, m: m4.clone(), gy: gsum / 5, c: tint, cluster });
     };
+    const clusters = [];
     for (let i = 0; i < spots.length; i++) {
       const [x, z] = spots[i];
+      cluster = i;
       const r = 0.45 + rng() * 0.9, shape = (i * 5 + Math.floor(rng() * set.count)) % set.count, squash = 0.62 + rng() * 0.3;
       const tone = 0.78 + rng() * 0.3;
-      place(shape, r > 0.8 ? 0 : 1, x, z, r, squash, rng() * 6.28, [tone, tone * 0.97, tone * 0.92]);
+      clusters.push({ x, z, v: 0, ranges: [] });
+      place("main", shape, x, z, r, squash, rng() * 6.28, [tone, tone * 0.97, tone * 0.92]);
       if (x > CLAIM.minX && x < CLAIM.maxX && z > CLAIM.minZ && z < CLAIM.maxZ) this.colliders.push({ type: "circle", x, z, r: r * 1.15 });
       // the cluster lies along one direction (a slide's trail / a joint), not in a ring
       const ax = rng() * 6.28, cx = Math.cos(ax), cz = Math.sin(ax);
@@ -643,43 +652,61 @@ export class GoldRushWorld {
       for (let k = 0; k < nSat; k++) {
         const d = r * (0.95 + rng() * 1.0) * (rng() < 0.5 ? -1 : 1), off = (rng() - 0.5) * r * 0.7, rs = r * (0.22 + rng() * 0.3);
         const t = tone * (0.85 + rng() * 0.3);
-        place((shape + 1 + k) % set.count, 1, x + cx * d - cz * off, z + cz * d + cx * off, rs, 0.7 + rng() * 0.5, rng() * 6.28, [t, t * 0.97, t * 0.92]);
+        place("sat", (shape + 1 + k) % set.count, x + cx * d - cz * off, z + cz * d + cx * off, rs, 0.7 + rng() * 0.5, rng() * 6.28, [t, t * 0.97, t * 0.92]);
       }
       const nFr = 4 + Math.floor(rng() * 6);
       for (let k = 0; k < nFr; k++) {
         const d = r * (1.1 + rng() * 2.0) * (rng() < 0.5 ? -1 : 1), off = (rng() - 0.5) * r * 1.1, rf = 0.035 + rng() * rng() * 0.12;
         const t = tone * (0.8 + rng() * 0.35);
-        place((shape + 2 + k) % set.count, rf < 0.07 ? 2 : 1, x + cx * d - cz * off, z + cz * d + cx * off, rf, 0.6 + rng() * 0.5, rng() * 6.28, [t, t * 0.97, t * 0.92]);
+        place("frag", (shape + 2 + k) % set.count, x + cx * d - cz * off, z + cz * d + cx * off, rf, 0.6 + rng() * 0.5, rng() * 6.28, [t, t * 0.97, t * 0.92]);
       }
     }
-    // one merged static mesh (positions / normals baked, a vertex colour, the ground level for the shader's contact blend)
-    let nvTotal = 0, niTotal = 0;
-    for (const p of parts) { nvTotal += p.geo.attributes.position.count; niTotal += p.geo.index.count; }
-    const P = new Float32Array(nvTotal * 3), N = new Float32Array(nvTotal * 3), C = new Float32Array(nvTotal * 3), GY = new Float32Array(nvTotal), I = new Uint32Array(niTotal);
+    // the level of detail of each piece at the three cluster levels (-1: not drawn there)
+    const lodOf = (it, lv) => {
+      if (it.kind === "main") return lv === 0 ? (it.size > 0.8 ? 0 : 1) : lv === 1 ? 1 : (it.size > 0.8 ? 1 : 2);
+      if (it.kind === "sat") return lv === 0 ? 1 : lv === 1 ? 2 : it.size > 0.12 ? 2 : -1;
+      return lv === 0 ? (it.size < 0.07 ? 2 : 1) : lv === 1 ? (it.size < 0.06 ? -1 : 2) : -1;
+    };
+    // bake every (piece, level) into one vertex buffer; the index ranges per cluster and level
+    let nv0 = 0, ni0 = 0;
+    for (const it of items) for (let lv = 0; lv < 3; lv++) { const l = lodOf(it, lv); if (l < 0) continue; const g = set.geometry(it.shape, l); nv0 += g.attributes.position.count; ni0 += g.index.count; }
+    const P = new Float32Array(nv0 * 3), N = new Float32Array(nv0 * 3), C = new Float32Array(nv0 * 3), GY = new Float32Array(nv0), I = new Uint32Array(ni0);
     const nm = new THREE.Matrix3();
     let ov = 0, oi = 0;
-    for (const p of parts) {
-      const gp = p.geo.attributes.position, gn = p.geo.attributes.normal;
-      nm.getNormalMatrix(p.m);
-      for (let k = 0; k < gp.count; k++) {
-        v.fromBufferAttribute(gp, k).applyMatrix4(p.m);
-        nv.fromBufferAttribute(gn, k).applyMatrix3(nm).normalize();
-        const o = ov + k;
-        P[o * 3] = v.x; P[o * 3 + 1] = v.y; P[o * 3 + 2] = v.z;
-        N[o * 3] = nv.x; N[o * 3 + 1] = nv.y; N[o * 3 + 2] = nv.z;
-        col.setRGB(p.c[0], p.c[1], p.c[2]);
-        C[o * 3] = col.r; C[o * 3 + 1] = col.g; C[o * 3 + 2] = col.b;
-        GY[o] = p.gy;
+    for (let ci = 0; ci < clusters.length; ci++) {
+      for (let lv = 0; lv < 3; lv++) {
+        const start = oi;
+        for (const it of items) {
+          if (it.cluster !== ci) continue;
+          const l = lodOf(it, lv);
+          if (l < 0) continue;
+          const geo = set.geometry(it.shape, l), gp = geo.attributes.position, gn = geo.attributes.normal;
+          nm.getNormalMatrix(it.m);
+          for (let k = 0; k < gp.count; k++) {
+            v.fromBufferAttribute(gp, k).applyMatrix4(it.m);
+            nv.fromBufferAttribute(gn, k).applyMatrix3(nm).normalize();
+            const o = ov + k;
+            P[o * 3] = v.x; P[o * 3 + 1] = v.y; P[o * 3 + 2] = v.z;
+            N[o * 3] = nv.x; N[o * 3 + 1] = nv.y; N[o * 3 + 2] = nv.z;
+            col.setRGB(it.c[0], it.c[1], it.c[2]);
+            C[o * 3] = col.r; C[o * 3 + 1] = col.g; C[o * 3 + 2] = col.b;
+            GY[o] = it.gy;
+          }
+          for (let k = 0; k < geo.index.count; k++) I[oi + k] = geo.index.getX(k) + ov;
+          ov += gp.count; oi += geo.index.count;
+        }
+        clusters[ci].ranges.push([start, oi - start]);
       }
-      for (let k = 0; k < p.geo.index.count; k++) I[oi + k] = p.geo.index.getX(k) + ov;
-      ov += gp.count; oi += p.geo.index.count;
     }
+    let maxLive = 0;
+    for (const c of clusters) maxLive += Math.max(...c.ranges.map((r) => r[1]));
+    const live = new Uint32Array(maxLive);
     const geo = this.track(new THREE.BufferGeometry());
     geo.setAttribute("position", new THREE.BufferAttribute(P, 3));
     geo.setAttribute("normal", new THREE.BufferAttribute(N, 3));
     geo.setAttribute("color", new THREE.BufferAttribute(C, 3));
     geo.setAttribute("aGY", new THREE.BufferAttribute(GY, 1));
-    geo.setIndex(new THREE.BufferAttribute(I, 1));
+    geo.setIndex(new THREE.BufferAttribute(live, 1).setUsage(THREE.DynamicDrawUsage));
     geo.computeBoundingSphere();
     const mat = this.track(makeRockMaterial(THREE, this.earth, { key: "scenery", vertexColors: true }));
     const mesh = new THREE.Mesh(geo, mat);
@@ -687,7 +714,54 @@ export class GoldRushWorld {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     this.scene.add(mesh);
-    this.sceneryRocks = { parts: parts.length, triangles: I.length / 3 };
+    this.sceneryLod = { clusters, all: I, live, geo, mesh, count: 0 };
+    this._sceneryIndex(true);
+    this.sceneryRocks = { parts: items.length, triangles: () => this.sceneryLod.count / 3, bakedTriangles: I.length / 3 };
+  }
+
+  // the cluster levels -> the live index buffer (only when a cluster changed its level)
+  _sceneryIndex(force) {
+    const S = this.sceneryLod;
+    if (!S) return;
+    let o = 0;
+    for (const c of S.clusters) {
+      const [a, n] = c.ranges[c.v];
+      if (n) { S.live.set(S.all.subarray(a, a + n), o); o += n; }
+    }
+    S.count = o;
+    S.geo.setDrawRange(0, o);
+    S.geo.index.needsUpdate = true;
+  }
+
+  /**
+   * Earth 2.0C1: rocks by distance - the scenery clusters one by one (near < 16 m, mid < 38 m, far beyond; 1.5 m hysteresis),
+   * and the pile's own rocks / outcrops / pebbles as a group by the camera's distance to the pile (near < 13 m).
+   * pos: the camera's position; rocks: the RockSystem (its boulders swap to their 400-triangle shapes). The lowest quality
+   * tier takes the coarser levels from half the distance.
+   */
+  updateRocks(pos, rocks) {
+    const b = this.rockLodScale || 1, h = 1.5;
+    const S = this.sceneryLod;
+    if (S) {
+      const T = [16 * b, 38 * b];
+      let changed = false;
+      for (const c of S.clusters) {
+        const d = Math.hypot(c.x - pos.x, c.z - pos.z);
+        let lv = c.v;
+        while (lv < 2 && d > T[lv] + h) lv++;
+        while (lv > 0 && d < T[lv - 1] - h) lv--;
+        if (lv !== c.v) { c.v = lv; changed = true; }
+      }
+      if (changed) this._sceneryIndex();
+    }
+    const d = Math.hypot(MOUND_CENTER.x - pos.x, MOUND_CENTER.z - pos.z), T = 13 * b;
+    const far = this._groupFar ? d > T - h : d > T + h;
+    if (far !== this._groupFar) {
+      this._groupFar = far;
+      for (const im of this.outcropMeshes || []) if (im.userData.geoFar) im.geometry = far ? im.userData.geoFar : im.userData.geoNear;
+      if (this.pebbleMesh && this.pebbleMesh.userData.geoFar) this.pebbleMesh.geometry = far ? this.pebbleMesh.userData.geoFar : this.pebbleMesh.userData.geoNear;
+      if (rocks && rocks.setFar) rocks.setFar(far);
+    }
   }
 
   _boulders() {
@@ -729,6 +803,9 @@ export class GoldRushWorld {
       geo.scale(1, 0.7, 1);
       geo.setAttribute("aGY", groundAttribute(THREE, max));
       mat = this.track(makeRockMaterial(THREE, this.earth, { key: "pebbles" }));
+      this._pebbleGeoFar = this.track(new THREE.OctahedronGeometry(1, 0));           // Earth 2.0C1: 8 triangles from a distance
+      this._pebbleGeoFar.scale(1, 0.7, 1);
+      this._pebbleGeoFar.setAttribute("aGY", geo.attributes.aGY);
     } else {
       geo = this.track(new THREE.IcosahedronGeometry(1, 0));
       const gp = geo.attributes.position;
@@ -782,6 +859,7 @@ export class GoldRushWorld {
     im.count = this.pebbles.length;
     this.pebbleMax = this.pebbles.length;
     this.pebbleMesh = im;
+    if (real) im.userData = { geoNear: geo, geoFar: this._pebbleGeoFar };
     this._pm = { m, q, e, sc, pos };
     this.pebbles.forEach((p, n) => this._placePebble(p, n));
     im.instanceMatrix.needsUpdate = true;
@@ -848,6 +926,11 @@ export class GoldRushWorld {
         mat = this.track(new THREE.MeshStandardMaterial({ map: this.rockTex, color: 0x9a8f80, roughness: 0.86, flatShading: true }));
       }
       const im = new THREE.InstancedMesh(geo, mat, items.length);
+      if (real) {                                       // Earth 2.0C1: from a distance the 32-triangle level (shares the ground attribute)
+        const gf = this.track(this.rockSet.geometry(3 + si, 2).clone());
+        gf.setAttribute("aGY", geo.attributes.aGY);
+        im.userData.geoNear = geo; im.userData.geoFar = gf;
+      }
       im.name = "pile-outcrops";
       im.castShadow = true;
       im.receiveShadow = true;
@@ -1014,6 +1097,7 @@ export class GoldRushWorld {
       if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
     }
     this.terrain.setLod(q.terrainStride);
+    this.rockLodScale = q.terrainStride > 1 ? 0.5 : 1;                 // (Earth 2.0C1: the lowest tier takes the coarse rocks from half the distance)
     if (this.grassMesh) this.grassMesh.count = Math.round(this.grassMax * q.grass);
     if (this.pebbleMesh) this.pebbleMesh.count = Math.round(this.pebbleMax * Math.max(0.4, Math.min(1, q.grass)));
     this.scene.fog.density = q.fogDensity;
