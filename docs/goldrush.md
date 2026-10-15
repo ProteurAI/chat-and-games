@@ -1551,6 +1551,17 @@ Masse und Save sind unverändert; die Platzierung der Spiel-Boulder (`MaterialFi
 * **QA**: `tests/e2e/goldrush_rockqa.py` (Fels-Szenen, `--root` für alte Revision), `tests/e2e/goldrush_seams.py` (Magenta-Test auf
   Risse zwischen LOD-Kacheln: 8 LOD-Muster × 7 Kameras über Kachelgrenzen, muss 0 Pixel ergeben).
 
+### Earth 2.0C1 – Stabilisierung (Rock-LOD, Nässe an Felsen, dunkle Gruben)
+
+* **Rock-LOD nach Distanz** (`World.updateRocks`, jeden Frame): Szenerie-Cluster sind in drei Stufen in EIN Mesh gebacken (nah: volle
+  Scans; mittel > 16 m: gröber, kleinste Fragmente weg; weit > 38 m: Hauptfelsen + Begleiter); der Index-Puffer wird je Cluster mit
+  1,5 m Hysterese neu zusammengesetzt – weiter ein Draw Call. Pile-Boulder, Outcrops und Kiesel wechseln als Gruppe ab 13 m (Abstand
+  Kamera–Berg) zu ihren groben Formen (400 / 32 / 8 Dreiecke); LOW halbiert die Schwellen. `RockSystem.setFar`.
+* **Nässe an Felsen**: der Rock-Shader liest dieselbe Nasskarte (Fuß am stärksten: dunkler, glänzender).
+* **Dunkle Gruben**: Gradient des Abdrucks begrenzt, Ambient-Untergrenze 0,75, schwächere Dellen-Abdunklung; Abdrucknormale 2,2 → 1,7.
+* **QA**: `goldrush_rockperf.py` (Frame-Statistik über vier Ansichten, wiederholt, `--mobile`), `goldrush_c1_smoke.py` (Nässe: Anstieg /
+  Trocknung / Fels reagiert, LOD-Pop-Größe, dunkle Mehrfach-Grabung).
+
 ## Entwicklertools (QA-Modus, Prompt 5.5)
 
 - **Zugang nur serverseitig:** Umgebungsvariable `GOLDRUSH_DEV_CODE`

@@ -1,8 +1,8 @@
 # GoldRush – aktueller Stand (Handoff)
 
-**Stand:** 2026-10-15 · nach Earth 2.0C (echte Felsen, Nässe aus Quellen, Dig-Detail nach Regionen) auf dem Branch
-`feature/goldrush-earth-2-0c` (Start `57f880a` = Earth 2.0B, Backup `backup/pre-goldrush-earth-2-0c`; **nicht nach main gemergt**).
-Earth 2.0B liegt auf `feature/goldrush-earth-2-0b`. Nächster Visual-Schritt: siehe „Offene Punkte“ (größerer Berg ist weiter nicht begonnen).
+**Stand:** 2026-10-15 · nach Earth 2.0C1 (Stabilisierung: Rock-LOD, Nässe an Felsen, dunkle Gruben) auf dem Branch
+`feature/goldrush-earth-2-0c1` (Start `e9c0d96` = Earth 2.0C, Backup `backup/pre-goldrush-earth-2-0c1`; **nicht nach main gemergt**,
+`origin/main` = `3b17f71`). Ketten-Branches: 2.0B → 2.0C → 2.0C1. Nächster Schritt laut Roadmap: größerer Berg (Maßstab) – nicht begonnen.
 
 Diese Datei ist der Einstieg. Details je Phase stehen in `docs/goldrush.md` (nur den jeweiligen
 Abschnitt lesen), Asset-Herkunft in `static/games/goldrush/ASSETS.md`, kommende Phasen in
@@ -72,6 +72,8 @@ Abgeleitete Darstellungsschicht über der Simulation; nichts davon wird gespeich
   Geologie-Tint, Bodenkontakt aus HeightTex). `EarthSystem.setWetSources` + `WET_MAP`: weltadressierte Nasskarte aus Waschplatz/Rinne/
   Anlage, von Terrain **und** Außenboden gelesen. `DigDetail` ist ein Pool aus 6-m-Weltkacheln mit Indirektion (Speicher unabhängig von
   der Weltgröße). Details: `docs/goldrush.md` „Earth 2.0C“, Lizenzen: `ASSETS.md`. Simulation/Platzierung der Spiel-Boulder unverändert.
+* **Earth 2.0C1**: Rock-LOD nach Distanz (`World.updateRocks`: Szenerie-Cluster 3 Stufen in einem Mesh per Index-Puffer, Pile-Boulder /
+  Outcrops / Kiesel gruppenweise ab 13 m, LOW ab halber Distanz); Felsen lesen die Nasskarte; dunkle Gruben (Gradient-Klemme, Ambient-Floor).
 * **Schaufel C-lite** (`goldrush-hand.js`, `CONTACT`): Drehung ≤ 34° um die rechte Hand + Schub
   ≤ 0,42 m entlang des Stiels; 20/20 Stiche auf dem Treffpunkt. Spielreichweite unverändert (2,4 m).
 * **Grab-Effekte** (`goldrush-vfx.js`): skaliert mit dem echten Volumen, beleuchteter Staub.
@@ -107,6 +109,15 @@ Abgeleitete Darstellungsschicht über der Simulation; nichts davon wird gespeich
   (+12 Vollbild-Pässe auf MEDIUM/HIGH).
 * Mobil-Emulation (390×844, LOW): freie Sicht 60 fps; an Anlage/Halden CPU-gebunden, gepaart ohne
   Mehrkosten gegenüber 9abb6f4; mit 4× CPU-Drosselung 26–55 fps je nach Lauf. Kein echtes Gerät gemessen.
+
+## Teststatus Earth 2.0C1 (2026-10-15, Chromium `--quick --no-bench`)
+
+Unit 103; Kern 47 (ein T8-Flake im Suite-Lauf, zweimal 47/47), Mining 54, Werkzeuge 62, Quality 61, Material 44, Dev 64, Mechanisiert 95,
+Mech 54, Working Mine 119, Hotfix 9.1 26; WebKit Kern 39; `goldrush_seams.py` 56 Fälle / 0 Löcher.
+Perf 2.0C → C1 (3 Läufe je Ansicht, spawn/wide/east/west): Dreiecke HIGH 201–243 k → 118–161 k, MEDIUM 186–228 k → 111–153 k, LOW(mobil) 144 k →
+70 k; Draw Calls gleich; HIGH-GPU-Zeit 23–29 → 16–23 ms (die Maschine lief in dieser Sitzung generell bei ~30 fps HIGH); MEDIUM / LOW 60 fps.
+Nässe: Quelle → Anstieg in ~3 s, 50 % trocken nach ~70 s, 90 % nach ~120 s, Fels dunkelt (Mitte 56 → 42 Grauwert). LOD-Pop: mittlere
+Grauwertdifferenz zwischen Stufen < 0,013.
 
 ## Teststatus Earth 2.0C (2026-10-15, Chromium `--quick --no-bench`)
 
