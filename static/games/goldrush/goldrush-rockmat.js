@@ -35,6 +35,7 @@ const FRAG_DECL = `
   uniform float uETile[5]; uniform vec3 uETint[5]; uniform float uENrm[5]; uniform float uERMin[5];
   uniform highp sampler2D tTHeight; uniform vec4 uTGrid;
   uniform vec3 uRockDust; uniform vec2 uRockK;
+  uniform sampler2D tEWetMap; uniform vec4 uEWetMap;
   varying vec3 vRWPos; varying vec3 vRWNor; varying float vRGY;
   float rHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float rNoise(vec2 p) {
@@ -74,6 +75,14 @@ const FRAG_BODY = `
   rAlb = mix(rAlb, uRockDust * (0.8 + 0.4 * rGrain), clamp(rDustAmt, 0.0, 0.55));
   rAlb *= 1.0 - 0.38 * rCon * rCon;
   rRough = mix(rRough, 0.95, rCon * 0.7);
+  // wet ground wets the rock lying in it (Earth 2.0C1): its foot most, darker and glossier - from the same world wet map
+  float rWet = 0.0;
+  {
+    vec2 wuv = (rP.xz - uEWetMap.xy) * uEWetMap.z;
+    if (wuv.x > 0.0 && wuv.y > 0.0 && wuv.x < 1.0 && wuv.y < 1.0) rWet = textureLod(tEWetMap, wuv, 0.0).r * (1.0 - 0.6 * smoothstep(0.0, 0.5, rHt));
+  }
+  rAlb *= mix(1.0, 0.72, rWet);
+  rRough = mix(rRough, 0.38, rWet);
   float rAO = 1.0 - 0.5 * rCon * rCon;
   diffuseColor.rgb *= rAlb;`;
 

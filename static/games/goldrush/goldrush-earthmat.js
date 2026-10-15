@@ -258,7 +258,7 @@ const MAIN = `
     grEStoneV = vEGeo.w;
     float grECover = clamp(vEEarth.z, 0.0, 1.0), grELoose = clamp(vEEarth.w, 0.0, 1.0);
     float grEDist = clamp(max(max(vEMat.z, grECover), grELoose), 0.0, 1.0);
-    grEDist = max(grEDist, grDG * 0.55);                      // (a tool's footprint is worked ground, with a crisp outline)
+    grEDist = max(grEDist, grDG * 0.45);                      // (a tool's footprint is worked ground, with a crisp outline)
     float grEU = 1.0 - grEDist;
     float grESteep = smoothstep(0.55, 0.85, 1.0 - grEN0.y);
     grEW[0] = grEU * (1.0 - grEGeo.w) * (1.0 - 0.45 * grEGeo.z);
@@ -315,6 +315,7 @@ const MAIN = `
   float grDq = 0.0, grDEdge = 0.0, grDCrest = 0.0, grDCav = 0.0;
   #ifndef EARTH_GROUND
     // Earth 2.0B: the imprint's relief tilts the normal; dents are shaded, crests a little lighter and drier
+    grDGrad *= min(1.0, 0.9 / max(length(grDGrad), 1e-4));          // (a steep imprint never turns a face fully away from the light)
     grEN = normalize(grEN + vec3(-grDGrad.x, 0.0, -grDGrad.y) * grDK);
     grDq = grDFade * grDAge * grDCover;
     grEAO *= 1.0 - 0.18 * smoothstep(0.0, 0.007, -grDRel) * grDq;
@@ -328,7 +329,7 @@ const MAIN = `
       grEN = normalize(grEN + vec3(-(bx - bn), 0.0, -(bz - bn)) * 0.55 * grDEdge * broken);
       grEAO *= 1.0 - 0.22 * grDCav * (0.55 + 0.45 * broken);
     }
-    grEAO = max(grEAO, 0.55);                                  // (a dug hollow is shaded, never a black hole)
+    grEAO = max(grEAO, 0.75);                                  // (a dug hollow is shaded, never a black hole)
   #endif
   grEAlb *= grETint * (1.0 + 0.1 * grEMac);
   grEAlb = mix(grEAlb, grEAlb * vec3(1.04, 0.99, 0.95), 0.5 + 0.5 * eNoise(grEP.xz * 0.05 + 9.1));
@@ -364,7 +365,7 @@ const MAIN = `
   grEAlb *= mix(1.0, 0.66, grEWet);
   #ifndef EARTH_GROUND
     // Earth 2.0B (continued): the dents of the imprint darker, the lip lighter, the edge's crest drier / its cavity moister
-    grEAlb *= 1.0 - 0.14 * smoothstep(0.0, 0.007, -grDRel) * grDq + 0.12 * smoothstep(0.0, 0.006, grDRel) * grDq;
+    grEAlb *= 1.0 - 0.07 * smoothstep(0.0, 0.007, -grDRel) * grDq + 0.12 * smoothstep(0.0, 0.006, grDRel) * grDq;
     if (grDEdge > 0.01) grEAlb *= 1.0 + (0.09 * grDCrest - 0.16 * grDCav) * (0.55 + 0.45 * smoothstep(-0.25, 0.45, eNoise(grEP.xz * 21.0 + 3.7)));
   #endif
   grEAlb = max(grEAlb, vec3(0.022));

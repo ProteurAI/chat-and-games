@@ -92,7 +92,7 @@ export class DigDetail {
       tDIndex: { value: this.indexTex },
       uDRegion: { value: new THREE.Vector4(this.ox, this.oz, 1 / S, W) },          // window origin, 1 / tile size, tiles per side
       uDTile: { value: new THREE.Vector4(A, N, M, this.texel) },                     // apron, texels, stored size, texel (m)
-      uDDetailK: { value: new THREE.Vector4(2 * this.range, this.texel, 2.2, 1) },   // relief span (m), texel (m), normal strength, on
+      uDDetailK: { value: new THREE.Vector4(2 * this.range, this.texel, 1.7, 1) },   // relief span (m), texel (m), normal strength, on
     };
   }
 
