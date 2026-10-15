@@ -1,7 +1,8 @@
 # GoldRush – aktueller Stand (Handoff)
 
-**Stand:** 2026-10-14 · nach Earth 2.0A (Terrain-Renderer); Basis war `1208c45`, Backup
-`backup/pre-goldrush-earth-2-0a`. Nächste Phase laut Roadmap: **Earth 2.0B** – nicht begonnen.
+**Stand:** 2026-10-15 · nach Earth 2.0B (Graben sichtbar) auf dem Branch `feature/goldrush-earth-2-0b`
+(Start `3b17f71` = Earth 2.0A, Backup `backup/pre-goldrush-earth-2-0b`; **nicht nach main gemergt**).
+Nächste Phase laut Roadmap: **Earth 2.0C** – nicht begonnen.
 
 Diese Datei ist der Einstieg. Details je Phase stehen in `docs/goldrush.md` (nur den jeweiligen
 Abschnitt lesen), Asset-Herkunft in `static/games/goldrush/ASSETS.md`, kommende Phasen in
@@ -28,6 +29,7 @@ Abschnitt lesen), Asset-Herkunft in `static/games/goldrush/ASSETS.md`, kommende 
 | 10 / 10.0.1 | Arbeitsmine (Halden, Radlader, Waschanlage, Abbaugerät, Großnuggets), Zwischenstufen | Prompt 10, 10.0.1 |
 | VO-A + Earth B0 | Licht, Post-Stack, Himmel/Dunst, PBR-Boden, Schaufelkontakt, Visual-QA | Visual Overhaul A + Earth B0 |
 | Earth 2.0A | Terrain-Renderer: HeightTex + Zustandstexturen, statische LOD-Kacheln | Earth 2.0A |
+| Earth 2.0B | Graben sichtbar: Werkzeugabdruck (DigDetail), Schnittkanten (StateTex B/A), Nachrutschen (VFX) | Earth 2.0B |
 
 ## Visual-Architektur (seit VO-A + Earth B0)
 
@@ -60,6 +62,10 @@ Abgeleitete Darstellungsschicht über der Simulation; nichts davon wird gespeich
   Textur-Teilrechteck hoch (zwei alternierende Sätze, einmal pro Frame vor dem Zeichnen), nie Geometrie.
   Texturzugriff per Weltposition (`uTGrid`) – Grundlage für Regionen / Clipmap in Earth 2.0C.
   Details: `docs/goldrush.md` „Earth 2.0A“. KTX2 bleibt offen.
+* **Earth 2.0B – Graben sichtbar** (`goldrush-digdetail.js`, `DigDetail`): feine Relief-/Footprint-Textur (~3 cm) aus
+  `terrain.lastBite` gestempelt (Scoop/Pick/Hand, folgt Hängen, gebrochene Kontur, Lippe, zweimal „gesetzt“), im Shader
+  als Normal/Cavity/Fresh-Maske; Schnittkante aus den Höhen (`vis.rim` → StateTex B/A); `DigEffects.slump` (Layer 5).
+  Rein abgeleitet, nie gespeichert, keine Geometrie. Nicht auf LOW. Details: `docs/goldrush.md` „Earth 2.0B“.
 * **Schaufel C-lite** (`goldrush-hand.js`, `CONTACT`): Drehung ≤ 34° um die rechte Hand + Schub
   ≤ 0,42 m entlang des Stiels; 20/20 Stiche auf dem Treffpunkt. Spielreichweite unverändert (2,4 m).
 * **Grab-Effekte** (`goldrush-vfx.js`): skaliert mit dem echten Volumen, beleuchteter Staub.
@@ -96,6 +102,14 @@ Abgeleitete Darstellungsschicht über der Simulation; nichts davon wird gespeich
 * Mobil-Emulation (390×844, LOW): freie Sicht 60 fps; an Anlage/Halden CPU-gebunden, gepaart ohne
   Mehrkosten gegenüber 9abb6f4; mit 4× CPU-Drosselung 26–55 fps je nach Lauf. Kein echtes Gerät gemessen.
 
+## Teststatus Earth 2.0B (2026-10-15, Chromium `--quick --no-bench`, Branch-Stand)
+
+Unit 103; Kern 47, Mining 54, Werkzeuge 62, Quality 61, Material 44, Dev 64, Mechanisiert 95, Mech 54, Working Mine 119,
+Hotfix 9.1 26; WebKit Kern 39 (erster Lauf hing in einem Klick-Timeout – bekannter WebKit-Stall –, Wiederholung grün).
+Visual QA: `tests/e2e/goldrush_digqa.py` (neu), vo.bm.* unverändert (Pixeldifferenz < 1/255 im Mittel). Dig-Perf
+(40 Scoops, HIGH): Stroke-Median 1,8 → 2,8 ms, Draw Calls / Dreiecke gleich, +2 Texturen, Heap +5 MB, 60 fps.
+Nicht gelaufen: Phase 6/7/7A/7B/Premium/Camp/Processing/Auto, WebKit-Nebensuiten, Spiele-Regression, UI-Audit.
+
 ## Teststatus (2026-10-14, Earth 2.0A – alles grün, Details unten)
 
 * Chromium: Kern 47, Mining 56, Werkzeuge 63, Camp 65, Processing 49, Dev 64, Phase 6 54, 7 43,
@@ -112,7 +126,8 @@ Abgeleitete Darstellungsschicht über der Simulation; nichts davon wird gespeich
 
 ## Offene Punkte
 
-* Earth 2.0B (Graben sichtbar) und 2.0C (Maßstab) laut Roadmap; Terrain bisher ein Textur-Satz (30×30 m).
+* Earth 2.0C (Maßstab) laut Roadmap; Terrain bisher ein Textur-Satz (30×30 m). Aus 2.0B offen: echte Fels-Assets, Nässe aus
+  Quellen; Abdrücke gehen beim Reload verloren (Kanten bleiben); Pick-Abdruck in Erde ist wegen der kleinen Abtragsmenge dezent.
 * Aus Prompt 10 noch offen: A10–E10-Benchmark mit Abbaugerät + Großnuggets, 48-Punkte-Bericht.
 * KTX2 für die Erd-Texturen (kein Basis-Encoder in der Build-Umgebung).
 * Nässe (StateTex G) nur über DevTools – echte Quellen fehlen.

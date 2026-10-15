@@ -1497,6 +1497,28 @@ Kollision, Save, Masse) ist unverändert die Wahrheit. `static/games/goldrush/go
   unverändert; Terrain-Dreiecke sinken durch LOD (z. B. MEDIUM spawn 190 740 → 170 325); GPU-Zeit
   im Rauschen (MEDIUM 8–13 ms, HIGH 15–21 ms); Heap 65 → 58 MB.
 
+## Earth 2.0B – Graben sichtbar (Abdrücke, Kanten, Nachrutschen)
+
+Alles abgeleitet und nie gespeichert; Höhen (`qh`), Masse, Gold und Save sind unverändert. Die Geometrie wird nicht
+verändert – nichts kann über dem Boden schweben, ins Terrain clippen oder Schatten-/LOD-Nähte erzeugen.
+
+* **Abdruck (`goldrush-digdetail.js`, `DigDetail`)**: feine RG8-Textur (4 Texel je Gitterzelle, ~3 cm) über dem
+  ganzen Terrain: R Relief (±2 cm), G Footprint. `terrain.excavate` füllt `terrain.lastBite` (Ort, Normale,
+  Strichrichtung, Größe, Werkzeugtyp, Füllgrad) und ruft `onBite`; der Stempel rechnet in der Werkzeugebene auf der
+  echten Oberfläche (folgt Hängen), mit rauschgebrochener Kontur. Scoop: Klingenlinien, Schnittwand, Vorderkante tiefer,
+  unregelmäßige Lippe (mehr zum Spieler hin). Pickel: Grube, Risse, Splitterlippe. Hand: Fingerrillen, flacher Rand.
+  Maschinen-Kernel („scoop“) bekommen den Stempel automatisch (skaliert mit a/b). Nach 0,12 s und 0,5 s wird derselbe
+  Stempel „gesetzt“ neu gezeichnet (Wand/Lippe sacken, Krümel fallen hinein) = kurze Settle-Reaktion.
+  Upload wie TerrainView (zwei Sätze, Teilrechteck vor dem Zeichnen). Nicht auf LOW (`earth.setDetail`).
+* **Schnittkante**: `terrain.vis.rim` (Krone/Mulde aus den Höhen im Abstand von 2 Zellen, nur an abgetragenem Boden) liegt
+  in StateTex B/A; der Shader bricht sie mit Rauschen auf (Krone heller/trocken, Mulde schattig). Das gilt auch nach
+  Save/Reload (der Abdruck ist dann leer, Kante und Arbeitszustand bleiben). `_refresh` erweitert die Box um 1 Zelle.
+* **Frisch**: das Footprint-G schärft StateTex R (Rand statt Wolke) und hebt den Arbeitszustand im Footprint an; der Abdruck
+  verblasst mit der Frische (45 % Reststärke) und mit der Distanz (9–18 m).
+* **Nachrutschen (`DigEffects.slump`)**: ein paar Krümel brechen verzögert vom Rand ab, am Hang vom oberen Rand abwärts,
+  auf Flachem in die Mulde (Layer 5, `stats().slump`); ohne Wirkung auf Terrain/Masse.
+* **QA**: `tests/e2e/goldrush_digqa.py capture|compare|perf` (feste Szenen, Seed 4242, `--root` für eine alte Revision).
+
 ## Entwicklertools (QA-Modus, Prompt 5.5)
 
 - **Zugang nur serverseitig:** Umgebungsvariable `GOLDRUSH_DEV_CODE`
