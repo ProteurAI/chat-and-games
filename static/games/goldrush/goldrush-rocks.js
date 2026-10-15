@@ -18,6 +18,7 @@
 // slump like loose soil (DiggableTerrain.load).
 
 import { mulberry32, noise2 } from "./goldrush-noise.js";
+import { makeRockMaterial, groundAttribute } from "./goldrush-rockmat.js";
 
 const RING = [0.5, 0.85];                  // sample rings (x horizontal radius)
 const RUBBLE = 4;                          // pieces a broken boulder leaves
@@ -25,7 +26,7 @@ const STONE_DENSITY = 2650;
 export const ROCK_STAGES = ["intact", "damaged", "heavilyDamaged", "broken"];
 
 export class RockSystem {
-  constructor(THREE, scene, terrain, world, { seed, rockTex }) {
+  constructor(THREE, scene, terrain, world, { seed, rockTex, rockSet = null, earth = null }) {
     this.THREE = THREE;
     this.scene = scene;
     this.terrain = terrain;
@@ -43,6 +44,8 @@ export class RockSystem {
     this._q2 = new THREE.Quaternion();
     this._m = new THREE.Matrix4();
     this._s = new THREE.Vector3();
+    this.rockSet = rockSet;                  // Earth 2.0C: real boulder shapes (goldrush-rockset.js); null: the procedural stand-ins
+    this.earth = earth;
     this._build(rockTex);
     for (const r of this.rocks) this._seat(r);
     this._markLoad();
@@ -66,6 +69,7 @@ export class RockSystem {
   _build(rockTex) {
     const THREE = this.THREE;
     this.geos = [0, 1, 2, 3].map((vi) => {
+      if (this.rockSet && this.earth) return this.rockSet.geometry(vi, 0).clone();
       const geo = new THREE.IcosahedronGeometry(1, 2);
       const p = geo.attributes.position;
       for (let v = 0; v < p.count; v++) {
@@ -84,8 +88,17 @@ export class RockSystem {
     // single giant crack (real cracks are the damage below)
     this.tex = rockTex ? rockTex.clone() : null;
     if (this.tex) { this.tex.wrapS = this.tex.wrapT = THREE.RepeatWrapping; this.tex.repeat.set(3, 2); this.tex.needsUpdate = true; }
-    this.mat = new THREE.MeshStandardMaterial({ color: 0x9a9185, map: this.tex, roughness: 0.92, flatShading: true });
-    this.mat.onBeforeCompile = (shader) => {
+    const real = !!(this.rockSet && this.earth);
+    this.mat = real ? makeRockMaterial(THREE, this.earth, { key: "boulder", extra: (shader) => this._damagePatch(shader) })
+      : new THREE.MeshStandardMaterial({ color: 0x9a9185, map: this.tex, roughness: 0.92, flatShading: true });
+    if (!real) this.mat.onBeforeCompile = (shader) => this._damagePatch(shader);
+    if (!real) this.mat.customProgramCacheKey = () => "goldrush-rock-v2";
+    this._buildInstances(THREE);
+  }
+
+  // the crack network that grows with damage (a shader chunk on top of either material)
+  _damagePatch(shader) {
+    {
       shader.vertexShader = shader.vertexShader
         .replace("#include <common>", "#include <common>\nattribute float aDamage;\nattribute float aSeed;\nvarying float vDamage;\nvarying vec3 vObj;")
         .replace("#include <begin_vertex>", "#include <begin_vertex>\nvDamage = aDamage;\nvObj = position + vec3(aSeed, aSeed * 1.7, aSeed * 0.6);");
@@ -122,8 +135,11 @@ export class RockSystem {
             diffuseColor.rgb *= 1.0 - 0.62 * cr;
             diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.12, 1.08, 1.02), 0.25 * vDamage);
           }`);
-    };
-    this.mat.customProgramCacheKey = () => "goldrush-rock-v2";
+    }
+  }
+
+  _buildInstances(THREE) {
+    const real = !!(this.rockSet && this.earth);
     const byVariant = [[], [], [], []];
     for (const r of this.rocks) byVariant[r.variant].push(r);
     this.meshes = [];
@@ -135,6 +151,18 @@ export class RockSystem {
       im.geometry = this.geos[vi].clone();                      // own attribute set per variant
       im.geometry.setAttribute("aDamage", dmg);
       im.geometry.setAttribute("aSeed", seed);
+      if (real) {
+        im.geometry.setAttribute("aGY", groundAttribute(THREE, list.length));
+        // geology: the colour of the ground it lies in (kept as a hue, not a brightness) and a little variation per rock
+        const c = new THREE.Color(), g = [0, 0, 0];
+        list.forEach((r, n) => {
+          let tr = 1, tg = 1, tb = 1;
+          if (this.terrain.surfaceColor && this.terrain.surfaceColor(r.x, r.z, g)) { const l = Math.max(1e-3, 0.2126 * g[0] + 0.7152 * g[1] + 0.0722 * g[2]); tr = g[0] / l; tg = g[1] / l; tb = g[2] / l; }
+          const v = 0.82 + 0.3 * ((r.index * 0.618) % 1), k = 0.3;
+          c.setRGB(v * (1 + (tr - 1) * k), v * (1 + (tg - 1) * k), v * (1 + (tb - 1) * k));
+          im.setColorAt(n, c);
+        });
+      }
       im.castShadow = true;
       im.receiveShadow = true;
       im.name = "pile-boulders";
@@ -144,10 +172,17 @@ export class RockSystem {
     });
     for (const g of this.geos) g.dispose();                     // the clones are the ones in use
     // rubble of broken boulders: one instanced draw call
-    const rg = new THREE.IcosahedronGeometry(1, 0);
-    const rp = rg.attributes.position;
-    for (let v = 0; v < rp.count; v++) rp.setXYZ(v, rp.getX(v) * (0.9 + (v % 3) * 0.12), rp.getY(v) * 0.62, rp.getZ(v) * (0.85 + (v % 2) * 0.2));
-    rg.computeVertexNormals();
+    let rg;
+    if (real) {
+      rg = this.rockSet.geometry(4, 1).clone();                // a rough angular piece: a real shape, flattened a little
+      rg.scale(1, 0.75, 1);
+    } else {
+      rg = new THREE.IcosahedronGeometry(1, 0);
+      const rp = rg.attributes.position;
+      for (let v = 0; v < rp.count; v++) rp.setXYZ(v, rp.getX(v) * (0.9 + (v % 3) * 0.12), rp.getY(v) * 0.62, rp.getZ(v) * (0.85 + (v % 2) * 0.2));
+      rg.computeVertexNormals();
+    }
+    if (real) rg.setAttribute("aGY", groundAttribute(THREE, Math.max(1, this.rocks.length * RUBBLE)));
     this.rubbleGeo = rg;
     this.rubble = new THREE.InstancedMesh(rg, this.mat, Math.max(1, this.rocks.length * RUBBLE));
     this.rubble.geometry = rg;
@@ -168,6 +203,7 @@ export class RockSystem {
     else m.compose(this._v.set(r.x, r.y, r.z), r.q, this._s.setScalar(r.r));
     r.mesh.setMatrixAt(r.slot, m);
     r.mesh.instanceMatrix.needsUpdate = true;
+    if (r.mesh.geometry.attributes.aGY) { r.mesh.geometry.attributes.aGY.setX(r.slot, this.terrain.getHeightAt(r.x, r.z)); r.mesh.geometry.attributes.aGY.needsUpdate = true; }
     r.mesh.geometry.attributes.aDamage.setX(r.slot, 1 - r.hp / r.maxHp);
     r.mesh.geometry.attributes.aDamage.needsUpdate = true;
     r.mesh.computeBoundingSphere();

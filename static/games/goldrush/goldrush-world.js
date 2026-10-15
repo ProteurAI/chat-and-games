@@ -14,6 +14,7 @@ import { mergeStatic } from "./goldrush-merge.js";
 import { fbm2, hash3, mulberry32, noise2, ridged2, smoothstep } from "./goldrush-noise.js";
 import { AIR, SUN_DIR, analyticEnvironment, hdriEnvironment, skyMaterial } from "./goldrush-atmos.js";
 import { EarthSystem } from "./goldrush-earthmat.js";
+import { makeRockMaterial, groundAttribute } from "./goldrush-rockmat.js";
 
 export const CLAIM = { minX: -24, maxX: 24, minZ: -30, maxZ: 20 };      // fenced play area
 export const MOUND_CENTER = { x: 0, z: -6 };
@@ -331,6 +332,12 @@ export class GoldRushWorld {
       return Math.max(0, hills) * smoothstep(2, 34, d) + (d > 0 ? 0.25 * fbm2(x * 0.1, z * 0.1, s + 211, 2) * smoothstep(0, 6, d) : 0);
     };
     this.groundHeightAt = heightAt;
+    // the height of the RENDERED ground (its 3 m grid, linear between the vertices): what a rock must sit on
+    this.groundMeshHeightAt = (x, z) => {
+      const fx = (x + span / 2) / step, fz = (z + span / 2) / step, i = Math.floor(fx), j = Math.floor(fz), tx = fx - i, tz = fz - j;
+      const h = (a, b) => heightAt(-span / 2 + a * step, -span / 2 + b * step);
+      return (h(i, j) * (1 - tx) + h(i + 1, j) * tx) * (1 - tz) + (h(i, j + 1) * (1 - tx) + h(i + 1, j + 1) * tx) * tz;
+    };
     // the ground's colour at a point (the terrain square uses it too where its ground is untouched)
     const colorAt = (x, z, y, out) => {
       const v = noise2(x * 0.08, z * 0.08, s + 221) * 0.5 + 0.5;
@@ -595,12 +602,101 @@ export class GoldRushWorld {
     }
   }
 
+  /**
+   * Earth 2.0C: the boulders outside the pile as real rock - clusters (one bigger boulder, a few satellites lying with it, a
+   * trail of fragments along one direction), each sunk into the ground (its lowest ground sample is below the rock's foot,
+   * so none floats), tilted a little with the slope, with their own shape, size, colour. One merged static mesh = one draw.
+   * Same anchors and colliders as the procedural boulders they replace (the main boulder's circle).
+   */
+  _rockDressing(spots) {
+    const THREE = this.THREE, set = this.rockSet, rng = mulberry32(this.seed + 301);
+    const q = new THREE.Quaternion(), qs = new THREE.Quaternion(), e = new THREE.Euler(), m4 = new THREE.Matrix4(), sc = new THREE.Vector3(), pos = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 1, 0), nrm = new THREE.Vector3(), v = new THREE.Vector3(), nv = new THREE.Vector3(), col = new THREE.Color();
+    const parts = [];
+    const place = (shape, lod, x, z, r, squash, yaw, tint) => {
+      const geo = set.geometry(shape, lod), bb = geo.boundingBox, hy = ((bb.max.y - bb.min.y) / 2) * r * squash;
+      let gmin = 1e9, gsum = 0;
+      const R = Math.max(0.06, r * 0.9);
+      for (let k = 0; k < 5; k++) {
+        const px = k ? x + Math.cos(k * 1.57) * R : x, pz = k ? z + Math.sin(k * 1.57) * R : z, h = this.groundMeshHeightAt(px, pz);
+        gmin = Math.min(gmin, h); gsum += h;
+      }
+      const gx = this.groundHeightAt(x + R, z) - this.groundHeightAt(x - R, z), gz = this.groundHeightAt(x, z + R) - this.groundHeightAt(x, z - R);
+      nrm.set(-gx, 2 * R, -gz).normalize();
+      qs.setFromUnitVectors(up, nrm);                                      // lie a little with the slope
+      q.identity().slerp(qs, 0.4);
+      e.set((rng() - 0.5) * 0.3, yaw, (rng() - 0.5) * 0.3, "YXZ");
+      q.multiply(new THREE.Quaternion().setFromEuler(e));
+      pos.set(x, gmin + hy * 0.55, z);                                      // the foot is below every ground sample: embedded
+      m4.compose(pos, q, sc.set(r, r * squash, r));
+      parts.push({ geo, m: m4.clone(), gy: gsum / 5, c: tint });
+    };
+    for (let i = 0; i < spots.length; i++) {
+      const [x, z] = spots[i];
+      const r = 0.45 + rng() * 0.9, shape = (i * 5 + Math.floor(rng() * set.count)) % set.count, squash = 0.62 + rng() * 0.3;
+      const tone = 0.78 + rng() * 0.3;
+      place(shape, r > 0.8 ? 0 : 1, x, z, r, squash, rng() * 6.28, [tone, tone * 0.97, tone * 0.92]);
+      if (x > CLAIM.minX && x < CLAIM.maxX && z > CLAIM.minZ && z < CLAIM.maxZ) this.colliders.push({ type: "circle", x, z, r: r * 1.15 });
+      // the cluster lies along one direction (a slide's trail / a joint), not in a ring
+      const ax = rng() * 6.28, cx = Math.cos(ax), cz = Math.sin(ax);
+      const nSat = 1 + Math.floor(rng() * 3.99);
+      for (let k = 0; k < nSat; k++) {
+        const d = r * (0.95 + rng() * 1.0) * (rng() < 0.5 ? -1 : 1), off = (rng() - 0.5) * r * 0.7, rs = r * (0.22 + rng() * 0.3);
+        const t = tone * (0.85 + rng() * 0.3);
+        place((shape + 1 + k) % set.count, 1, x + cx * d - cz * off, z + cz * d + cx * off, rs, 0.7 + rng() * 0.5, rng() * 6.28, [t, t * 0.97, t * 0.92]);
+      }
+      const nFr = 4 + Math.floor(rng() * 6);
+      for (let k = 0; k < nFr; k++) {
+        const d = r * (1.1 + rng() * 2.0) * (rng() < 0.5 ? -1 : 1), off = (rng() - 0.5) * r * 1.1, rf = 0.035 + rng() * rng() * 0.12;
+        const t = tone * (0.8 + rng() * 0.35);
+        place((shape + 2 + k) % set.count, rf < 0.07 ? 2 : 1, x + cx * d - cz * off, z + cz * d + cx * off, rf, 0.6 + rng() * 0.5, rng() * 6.28, [t, t * 0.97, t * 0.92]);
+      }
+    }
+    // one merged static mesh (positions / normals baked, a vertex colour, the ground level for the shader's contact blend)
+    let nvTotal = 0, niTotal = 0;
+    for (const p of parts) { nvTotal += p.geo.attributes.position.count; niTotal += p.geo.index.count; }
+    const P = new Float32Array(nvTotal * 3), N = new Float32Array(nvTotal * 3), C = new Float32Array(nvTotal * 3), GY = new Float32Array(nvTotal), I = new Uint32Array(niTotal);
+    const nm = new THREE.Matrix3();
+    let ov = 0, oi = 0;
+    for (const p of parts) {
+      const gp = p.geo.attributes.position, gn = p.geo.attributes.normal;
+      nm.getNormalMatrix(p.m);
+      for (let k = 0; k < gp.count; k++) {
+        v.fromBufferAttribute(gp, k).applyMatrix4(p.m);
+        nv.fromBufferAttribute(gn, k).applyMatrix3(nm).normalize();
+        const o = ov + k;
+        P[o * 3] = v.x; P[o * 3 + 1] = v.y; P[o * 3 + 2] = v.z;
+        N[o * 3] = nv.x; N[o * 3 + 1] = nv.y; N[o * 3 + 2] = nv.z;
+        col.setRGB(p.c[0], p.c[1], p.c[2]);
+        C[o * 3] = col.r; C[o * 3 + 1] = col.g; C[o * 3 + 2] = col.b;
+        GY[o] = p.gy;
+      }
+      for (let k = 0; k < p.geo.index.count; k++) I[oi + k] = p.geo.index.getX(k) + ov;
+      ov += gp.count; oi += p.geo.index.count;
+    }
+    const geo = this.track(new THREE.BufferGeometry());
+    geo.setAttribute("position", new THREE.BufferAttribute(P, 3));
+    geo.setAttribute("normal", new THREE.BufferAttribute(N, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(C, 3));
+    geo.setAttribute("aGY", new THREE.BufferAttribute(GY, 1));
+    geo.setIndex(new THREE.BufferAttribute(I, 1));
+    geo.computeBoundingSphere();
+    const mat = this.track(makeRockMaterial(THREE, this.earth, { key: "scenery", vertexColors: true }));
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = "scenery-rocks";
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    this.scene.add(mesh);
+    this.sceneryRocks = { parts: parts.length, triangles: I.length / 3 };
+  }
+
   _boulders() {
     const THREE = this.THREE;
     const rng = mulberry32(this.seed + 301);
     const mat = this.track(new THREE.MeshStandardMaterial({ color: 0x8f877c, roughness: 0.93, flatShading: true }));
     // (Prompt 10: the one by the west fence moved beyond it - the loader comes in there to the oversize pile)
     const spots = [[-21.5, -26], [21, -24.5], [22.2, 7.5], [-25.6, -12.4], [9.5, 17.5], [-9, 18.2], [30, 5], [-32, -8], [26, -38], [-28, 30], [38, 26], [-6, -40]];
+    if (this.rockSet && this.earth) { mat.dispose(); return this._rockDressing(spots); }
     for (const [x, z] of spots) {
       const r = 0.45 + rng() * 0.9;
       const geo = this.track(new THREE.IcosahedronGeometry(r, 1));
@@ -626,12 +722,20 @@ export class GoldRushWorld {
   // One instanced draw call, no shadows of their own; count follows quality.
   _pebbles() {
     const THREE = this.THREE, t = this.terrain, rng = mulberry32(this.seed + 907);
-    const geo = this.track(new THREE.IcosahedronGeometry(1, 0));
-    const gp = geo.attributes.position;
-    for (let v = 0; v < gp.count; v++) gp.setXYZ(v, gp.getX(v) * (0.85 + (v % 3) * 0.12), gp.getY(v) * 0.6, gp.getZ(v) * (0.9 + (v % 2) * 0.15));
-    geo.computeVertexNormals();
-    const mat = this.track(new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true }));
-    const max = 1300;
+    const real = !!(this.rockSet && this.earth), max = 1300;
+    let geo, mat;
+    if (real) {                                           // Earth 2.0C: a rounded 60-triangle piece of a real rock, the rock material
+      geo = this.track(this.rockSet.geometry(2, 2).clone());
+      geo.scale(1, 0.7, 1);
+      geo.setAttribute("aGY", groundAttribute(THREE, max));
+      mat = this.track(makeRockMaterial(THREE, this.earth, { key: "pebbles" }));
+    } else {
+      geo = this.track(new THREE.IcosahedronGeometry(1, 0));
+      const gp = geo.attributes.position;
+      for (let v = 0; v < gp.count; v++) gp.setXYZ(v, gp.getX(v) * (0.85 + (v % 3) * 0.12), gp.getY(v) * 0.6, gp.getZ(v) * (0.9 + (v % 2) * 0.15));
+      geo.computeVertexNormals();
+      mat = this.track(new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true }));
+    }
     const im = new THREE.InstancedMesh(geo, mat, max);
     im.name = "pile-pebbles";
     im.receiveShadow = true;
@@ -655,7 +759,8 @@ export class GoldRushWorld {
       this.pebbles.push({ k, x, z, s, ry: rng() * 6.28, tilt: (rng() - 0.5) * 0.6 });
       // earthy greys and browns (7B), darker than before (phase 8 review: in full sun they read as white specks)
       const gray = 0.1 + rng() * 0.09, warm = 0.03 + rng() * 0.06;
-      col.setRGB(gray + warm, gray + warm * 0.55, gray * 0.8);
+      if (real) { const v = 0.65 + rng() * 0.55; col.setRGB(v, v * (0.95 + warm * 0.3), v * 0.88); }       // (a tint on the rock layer, not an albedo)
+      else col.setRGB(gray + warm, gray + warm * 0.55, gray * 0.8);
       im.setColorAt(n, col);
     };
     for (const F of fans) {
@@ -698,23 +803,13 @@ export class GoldRushWorld {
    * the pebbles they are gone once their ground is dug or slid). One instanced draw, shadows on.
    */
   _outcrops(rng) {
-    const THREE = this.THREE, t = this.terrain, mc = MOUND_CENTER;
-    const geo = this.track(new THREE.IcosahedronGeometry(1, 1));
-    const gp = geo.attributes.position;
-    for (let v = 0; v < gp.count; v++) {
-      const x = gp.getX(v), y = gp.getY(v), z = gp.getZ(v), n = 0.82 + 0.3 * hash3(Math.round(x * 50), Math.round(y * 50), Math.round(z * 50), 71);
-      gp.setXYZ(v, x * n * 1.25, y * n * 0.42, z * n);
-    }
-    geo.computeVertexNormals();
-    const mat = this.track(new THREE.MeshStandardMaterial({ map: this.rockTex, color: 0x9a8f80, roughness: 0.86, flatShading: true }));
-    const max = 44, im = new THREE.InstancedMesh(geo, mat, max);
-    im.name = "pile-outcrops";
-    im.castShadow = true;
-    im.receiveShadow = true;
+    const THREE = this.THREE, t = this.terrain, mc = MOUND_CENTER, real = !!(this.rockSet && this.earth);
+    const q = new THREE.Quaternion(), e = new THREE.Euler(), m = new THREE.Matrix4(), sc = new THREE.Vector3(), p = new THREE.Vector3(), col = new THREE.Color();
+    const list = [];
     this.outcrops = [];
-    const col = new THREE.Color(), q = new THREE.Quaternion(), e = new THREE.Euler(), m = new THREE.Matrix4(), sc = new THREE.Vector3(), p = new THREE.Vector3();
     let tries = 0;
-    while (this.outcrops.length < max && tries++ < 400) {
+    const max = 44;
+    while (list.length < max && tries++ < 400) {
       const a = rng() * Math.PI * 2, r = 3 + rng() * 6.5;
       const x = mc.x + Math.cos(a) * r, z = mc.z + Math.sin(a) * r, k = this._colAt(x, z);
       if (k < 0 || t.base[k] < 0.9 || t.base[k] > 5.5) continue;
@@ -722,26 +817,54 @@ export class GoldRushWorld {
       // the slope here: the slabs lie with it (along the strata)
       const d = 0.25, gx = (t.getBaseHeightAt(x + d, z) - t.getBaseHeightAt(x - d, z)) / (2 * d), gz = (t.getBaseHeightAt(x, z + d) - t.getBaseHeightAt(x, z - d)) / (2 * d);
       const nc = 2 + Math.floor(rng() * 3);
-      for (let c = 0; c < nc && this.outcrops.length < max; c++) {
+      for (let c = 0; c < nc && list.length < max; c++) {
         const ox = x + (rng() - 0.5) * 0.7, oz = z + (rng() - 0.5) * 0.7, kk = this._colAt(ox, oz);
         if (kk < 0) continue;
         const s = 0.16 + rng() * 0.26;
-        const n = this.outcrops.length;
         e.set(Math.atan(gz) + (rng() - 0.5) * 0.3, rng() * 6.28, -Math.atan(gx) + (rng() - 0.5) * 0.3, "YXZ");
-        m.compose(p.set(ox, t.getHeightAt(ox, oz) - s * 0.18, oz), q.setFromEuler(e), sc.set(s, s, s * (0.7 + rng() * 0.5)));
-        im.setMatrixAt(n, m);
+        m.compose(p.set(ox, t.getHeightAt(ox, oz) - s * (real ? 0.3 : 0.18), oz), q.setFromEuler(e), real ? sc.set(s * 1.1, s * 0.62, s * (0.7 + rng() * 0.5)) : sc.set(s, s, s * (0.7 + rng() * 0.5)));
         const g = 0.78 + rng() * 0.22;
-        col.setRGB(g * 1.0, g * 0.95, g * 0.88);
-        im.setColorAt(n, col);
-        this.outcrops.push({ k: kk, gone: false });
+        list.push({ m: m.clone(), k: kk, g, shape: list.length % 3 });
       }
     }
-    im.count = this.outcrops.length;
-    im.instanceMatrix.needsUpdate = true;
-    if (im.instanceColor) im.instanceColor.needsUpdate = true;
-    im.computeBoundingSphere();
-    this.outcropMesh = im;
-    this.scene.add(im);
+    // procedural: one icosahedron mesh (as before); real: one instanced mesh per rock shape (three draws)
+    const groups = real ? [0, 1, 2].map((si) => list.filter((o) => o.shape === si)) : [list];
+    this.outcropMeshes = [];
+    groups.forEach((items, si) => {
+      if (!items.length) return;
+      let geo, mat;
+      if (real) {
+        geo = this.track(this.rockSet.geometry(3 + si, 1).clone());
+        geo.setAttribute("aGY", groundAttribute(THREE, items.length));
+        mat = this.outcropMat || (this.outcropMat = this.track(makeRockMaterial(THREE, this.earth, { key: "outcrops" })));
+      } else {
+        geo = this.track(new THREE.IcosahedronGeometry(1, 1));
+        const gp = geo.attributes.position;
+        for (let v = 0; v < gp.count; v++) {
+          const x = gp.getX(v), y = gp.getY(v), z = gp.getZ(v), n = 0.82 + 0.3 * hash3(Math.round(x * 50), Math.round(y * 50), Math.round(z * 50), 71);
+          gp.setXYZ(v, x * n * 1.25, y * n * 0.42, z * n);
+        }
+        geo.computeVertexNormals();
+        mat = this.track(new THREE.MeshStandardMaterial({ map: this.rockTex, color: 0x9a8f80, roughness: 0.86, flatShading: true }));
+      }
+      const im = new THREE.InstancedMesh(geo, mat, items.length);
+      im.name = "pile-outcrops";
+      im.castShadow = true;
+      im.receiveShadow = true;
+      items.forEach((o, n) => {
+        im.setMatrixAt(n, o.m);
+        if (real) col.setRGB(o.g * 1.0, o.g * 0.96, o.g * 0.9); else col.setRGB(o.g * 1.0, o.g * 0.95, o.g * 0.88);
+        im.setColorAt(n, col);
+        this.outcrops.push({ k: o.k, gone: false, mesh: im, slot: n });
+      });
+      im.count = items.length;
+      im.instanceMatrix.needsUpdate = true;
+      if (im.instanceColor) im.instanceColor.needsUpdate = true;
+      im.computeBoundingSphere();
+      this.outcropMeshes.push(im);
+      this.scene.add(im);
+    });
+    this.outcropMesh = this.outcropMeshes[0] || null;
   }
 
   _placePebble(p, n) {
@@ -767,8 +890,7 @@ export class GoldRushWorld {
     // the outcrops too: dug into, they are gone (looks only)
     let oc = false;
     const zero = this._pm.m;
-    if (this.outcrops) this.outcrops.forEach((o, n) => { if (!o.gone && t.qh[o.k] !== 0) { o.gone = true; this.outcropMesh.setMatrixAt(n, zero.makeScale(0, 0, 0)); oc = true; } });
-    if (oc) this.outcropMesh.instanceMatrix.needsUpdate = true;
+    if (this.outcrops) this.outcrops.forEach((o) => { if (!o.gone && t.qh[o.k] !== 0) { o.gone = true; o.mesh.setMatrixAt(o.slot, zero.makeScale(0, 0, 0)); o.mesh.instanceMatrix.needsUpdate = true; oc = true; } });
   }
 
   // dry grass tufts (a few thin blades each, vertex-coloured - no alpha

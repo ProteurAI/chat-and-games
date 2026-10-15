@@ -8,6 +8,7 @@
 
 import * as THREE from "../../vendor/three/three.module.min.js";
 import { AssetManager } from "./goldrush-assets.js";
+import { loadRockSet } from "./goldrush-rockset.js";
 import { GoldRushAudio } from "./goldrush-audio.js";
 import { Economy, centsForMass, formatEuro, formatMass } from "./goldrush-economy.js";
 import { FirstPersonHands } from "./goldrush-hand.js";
@@ -188,6 +189,7 @@ export class GoldRushGame {
 
     this.assets = new AssetManager(THREE);
     const world = (this.world = new GoldRushWorld(THREE, { seed: this.doc.worldSeed, assets: this.assets }));
+    world.rockSet = await loadRockSet(THREE);          // Earth 2.0C: the boulder shapes (null: the procedural stand-ins stay)
     progress(0.5, "Der Berg wird aufgeschüttet …");
     await step();
     world.buildTerrain();
@@ -206,7 +208,7 @@ export class GoldRushGame {
       this.loadNotice = "Der Claim wurde neu vermessen: alte Flussrinnen im Untergrund, der Lagerplatz am Camp ist aufgeschüttet. Was du schon abgebaut hast und alles in Behältern bleibt genau so.";
       geo.noted = true;
     }
-    this.rocks = new RockSystem(THREE, world.scene, this.terrain, world, { seed: this.doc.worldSeed, rockTex: world.rockTex });
+    this.rocks = new RockSystem(THREE, world.scene, this.terrain, world, { seed: this.doc.worldSeed, rockTex: world.rockTex, rockSet: world.rockSet, earth: world.earth });
     this.mining = new MiningSystem(this.terrain, this.rocks);
     if (terrainOk) {
       try { this.mining.deserialize(this.doc.resources); } catch (e) { this.mining.deserialize(null); }

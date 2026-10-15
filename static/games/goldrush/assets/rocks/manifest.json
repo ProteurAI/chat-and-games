@@ -1,0 +1,123 @@
+{
+ "about": "Boulder shapes for GoldRush (Earth 2.0C): decimated geometry of CC0 scans; shaded in-game (no textures shipped)",
+ "licence": "CC0 1.0 (https://polyhaven.com/license) - public domain, no attribution required; kept here anyway",
+ "lods": [
+  1600,
+  400,
+  32
+ ],
+ "shapes": [
+  {
+   "index": 0,
+   "id": "namaqualand_boulder_05",
+   "url": "https://polyhaven.com/a/namaqualand_boulder_05",
+   "authors": [
+    "Jenelle van Heerden",
+    "Dario Barresi"
+   ],
+   "triangles": [
+    1600,
+    400,
+    32
+   ],
+   "half_extents": [
+    0.678,
+    0.5,
+    0.372
+   ]
+  },
+  {
+   "index": 1,
+   "id": "namaqualand_boulder_03",
+   "url": "https://polyhaven.com/a/namaqualand_boulder_03",
+   "authors": [
+    "Jenelle van Heerden",
+    "Dario Barresi"
+   ],
+   "triangles": [
+    1600,
+    400,
+    32
+   ],
+   "half_extents": [
+    0.462,
+    0.5,
+    0.588
+   ]
+  },
+  {
+   "index": 2,
+   "id": "namaqualand_boulder_04",
+   "url": "https://polyhaven.com/a/namaqualand_boulder_04",
+   "authors": [
+    "Jenelle van Heerden"
+   ],
+   "triangles": [
+    1600,
+    400,
+    32
+   ],
+   "half_extents": [
+    0.528,
+    0.5,
+    0.522
+   ]
+  },
+  {
+   "index": 3,
+   "id": "namaqualand_boulder_02",
+   "url": "https://polyhaven.com/a/namaqualand_boulder_02",
+   "authors": [
+    "Greg Zaal",
+    "Rico Cilliers"
+   ],
+   "triangles": [
+    1600,
+    399,
+    31
+   ],
+   "half_extents": [
+    0.706,
+    0.5,
+    0.344
+   ]
+  },
+  {
+   "index": 4,
+   "id": "namaqualand_boulder_06",
+   "url": "https://polyhaven.com/a/namaqualand_boulder_06",
+   "authors": [
+    "Greg Zaal",
+    "Jenelle van Heerden"
+   ],
+   "triangles": [
+    1600,
+    400,
+    32
+   ],
+   "half_extents": [
+    0.376,
+    0.5,
+    0.674
+   ]
+  },
+  {
+   "index": 5,
+   "id": "rock_07",
+   "url": "https://polyhaven.com/a/rock_07",
+   "authors": [
+    "Jenelle van Heerden"
+   ],
+   "triangles": [
+    1600,
+    400,
+    32
+   ],
+   "half_extents": [
+    0.363,
+    0.5,
+    0.687
+   ]
+  }
+ ]
+}
