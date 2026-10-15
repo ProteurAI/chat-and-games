@@ -430,6 +430,7 @@ export class GoldRushGame {
     // the earth layers follow the tier's texture size (loaded in the background, swapped when ready)
     const er = this._earthRes(level), earth = this.world.earth;
     earth.geoBudget = level === "low" ? 1 : 2;
+    earth.setDetail(level !== "low");                          // Earth 2.0B: the tool imprints (not on the lowest tier)
     if (earth.res) this.world.loadEarth(this.renderer, er);      // (already there: returns at once; a stale load is dropped)
     this.effects.setLimits(q.particles, q.fragments);
     this.loot.setLimits(GLINTS[level]);
@@ -2083,6 +2084,7 @@ export class GoldRushGame {
     if (def.id === "shovel") { const c = mdef.fragmentColor; this.hands.models.loadRgb = [c[0] * 1.2, c[1] * 1.2, c[2] * 1.2]; }
     this.hands.contact("ok", r.material, r.removedMassKg);
     this.effects.impact(hit, r.material, def.id, dir, Math.min(1.5, 0.6 + r.removedMassKg / 2.5), r.removedVolume != null ? r.removedVolume * 1000 : null);
+    if (this.reducedMotion !== true) this.effects.slump(this.terrain.lastBite, r.material, def.id === "hand" ? 0.7 : 1);       // Earth 2.0B: the rim gives way (visual only)
     // broken stone (rubble) sounds like the coarse gravel it now is; the pick's own crack has its sound
     const soundMat = r.material === MAT.STONE && r.rubble && def.id !== "pickaxe" ? MAT.GRAVEL : r.material;
     const kind = r.crack && !r.crack.fractured ? null : (DIG_SOUND[def.id] || DIG_SOUND.hand)[soundMat] || "hand_dirt";
@@ -2179,6 +2181,7 @@ export class GoldRushGame {
     const disc = this.economy.discover(routed.finds, routed.count);
     if (visuals) {
       this.effects.impact(hit, r.material, id, this._toolDir(), Math.min(1.5, 0.6 + r.removedMassKg / 2.5));
+      this.effects.slump(this.terrain.lastBite, r.material, id === "hand" ? 0.7 : 1);
       if (disc.items.length) {
         if (disc.firstNugget) for (const it of disc.items) if (it.cls === FIND.NUGGET) { it.first = true; break; }
         this.loot.spawn(disc.items, hit);

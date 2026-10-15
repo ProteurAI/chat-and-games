@@ -16,6 +16,11 @@
 // "Nachrieseln": after a cut into a steep fresh face, a few crumbs trickle
 // down it a moment later - VISUAL ONLY: no terrain, no mass, no gold changes.
 //
+// Earth 2.0B - "Nachrutschen" right at the cut: the lip of a fresh bite gives way - a few crumbs break off the rim and
+// slide down a slope (or drop into the dent on flat ground), a moment after the tool. VISUAL ONLY, like the trickle: the
+// persistent shape is the simulation's heights (its own settling already moved the mass), the pieces are derived
+// effects that sink away again.
+//
 // Density follows the graphics quality (LOW fewer, HIGH more); what is dug
 // never depends on it.
 //
@@ -26,7 +31,7 @@
 
 const DUST_MAX = 320;
 const FRAG_MAX = 260;
-const QUEUE_MAX = 8;
+const QUEUE_MAX = 20;
 const GRAVITY = 9.81;
 
 // shapes (per-instance scale of one faceted rock): soil crumbs and clods are
@@ -158,7 +163,7 @@ export class DigEffects {
     }
     scene.add(this.frags);
     this.queue = [];
-    for (let i = 0; i < QUEUE_MAX; i++) this.queue.push({ t: -1, x: 0, y: 0, z: 0, gx: 0, gz: 0, mat: 0 });
+    for (let i = 0; i < QUEUE_MAX; i++) this.queue.push({ t: -1, k: 0, x: 0, y: 0, z: 0, gx: 0, gz: 0, mat: 0, vx: 0, vz: 0, s: 1, slide: false });
     this._m = new THREE.Matrix4();
     this._q = new THREE.Quaternion();
     this._e = new THREE.Euler();
@@ -204,13 +209,13 @@ export class DigEffects {
 
   // tests: what is in the air / on the ground right now, by layer (lying pieces are counted in their layer too)
   stats() {
-    const out = { dust: 0, debris: 0, chunks: 0, clods: 0, trickle: 0, lying: this.lying, flat: 0, bounced: 0, sizeDebris: 0, sizeChunks: 0, sizeClods: 0, speed: 0 };
+    const out = { dust: 0, debris: 0, chunks: 0, clods: 0, trickle: 0, slump: 0, lying: this.lying, flat: 0, bounced: 0, sizeDebris: 0, sizeChunks: 0, sizeClods: 0, speed: 0 };
     for (const d of this.dust) if (d.life > 0) out.dust++;
     let sp = 0, n = 0;
     for (const f of this.fragState) {
       if (!f.on) continue;
       if (f.layer === 1) { out.debris++; out.sizeDebris += f.s; } else if (f.layer === 2) { out.chunks++; out.sizeChunks += f.s; } else if (f.layer === 3) out.trickle++;
-      else if (f.layer === 4) { out.clods++; out.sizeClods += f.s; }
+      else if (f.layer === 4) { out.clods++; out.sizeClods += f.s; } else if (f.layer === 5) out.slump++;
       if (f.ky < 0.45) out.flat++;
       if (f.hops > 0) out.bounced++;
       if (f.phase === 0) { sp += Math.hypot(f.vx, f.vy, f.vz); n++; }
@@ -407,8 +412,67 @@ export class DigEffects {
     let q = null;
     for (const e of this.queue) if (e.t < 0) { q = e; break; }
     if (!q) return false;
-    q.t = delay; q.x = x; q.y = y; q.z = z; q.gx = gx; q.gz = gz; q.mat = mat;
+    q.t = delay; q.k = 0; q.x = x; q.y = y; q.z = z; q.gx = gx; q.gz = gz; q.mat = mat;
     return true;
+  }
+
+  /**
+   * The break-off after a cut (Earth 2.0B). b: the bite (terrain.lastBite: centre, normal, stroke direction, size, how full),
+   * mat: what was cut. Pieces come off the rim of the cut a moment later: down the slope on a slope, into the dent on flat
+   * ground. Stone does not slump (the pick's chips are its break).
+   */
+  slump(b, mat, strength = 1) {
+    if (!b || mat === 3) return 0;
+    const T = this.terrain, d = 0.15;
+    const gx = (T.getHeightAt(b.x - d, b.z) - T.getHeightAt(b.x + d, b.z)) / (2 * d);
+    const gz = (T.getHeightAt(b.x, b.z - d) - T.getHeightAt(b.x, b.z + d)) / (2 * d);
+    const sl = Math.hypot(gx, gz), steep = sl > 0.5;
+    const size = Math.max(b.a, b.b), vx = b.ny * b.uz - b.nz * b.uy, vz = b.nx * b.uy - b.ny * b.ux, vy = b.nz * b.ux - b.nx * b.uz;
+    const n = Math.min(10, this._count((1.2 + 4.6 * b.frac * Math.min(1.8, size / 0.2)) * this.density * Math.max(0.3, strength) * (steep ? 1.25 : 1)));
+    let placed = 0;
+    for (const q of this.queue) {
+      if (placed >= n) break;
+      if (q.t >= 0) continue;
+      // a point on the rim; on a slope the upper rim breaks off (the face above the cut gives way)
+      let ph = this._rand() * 6.2832;
+      if (steep) {
+        const up = Math.atan2(-(gx * vx + gz * vz) / (sl || 1) * 1, -(gx * b.ux + gz * b.uz) / (sl || 1));      // the angle of the uphill rim point
+        ph = up + (this._rand() - 0.5) * 2.2;
+      }
+      const r = 0.95 + 0.3 * this._rand(), cu = Math.cos(ph) * b.a * r, cv = Math.sin(ph) * b.b * r;
+      const x = b.x + b.ux * cu + vx * cv, z = b.z + b.uz * cu + vz * cv;
+      q.k = 1; q.t = 0.05 + this._rand() * 0.5; q.mat = mat; q.s = (this._rand() < 0.25 ? 1.7 : 1) * (size < 0.15 ? 0.8 : 1);
+      q.x = x; q.z = z; q.y = T.getHeightAt(x, z) + 0.012;
+      q.slide = steep;
+      if (steep) { q.gx = gx / sl; q.gz = gz / sl; q.vx = q.gx * (0.2 + 0.25 * this._rand()); q.vz = q.gz * (0.2 + 0.25 * this._rand()); }
+      else {                                              // flat: towards the middle of the cut, a short hop
+        const dx = b.x - x, dz = b.z - z, l = Math.hypot(dx, dz) || 1, sp = 0.18 + 0.3 * this._rand();
+        q.gx = dx / l; q.gz = dz / l; q.vx = q.gx * sp; q.vz = q.gz * sp;
+      }
+      placed++;
+    }
+    return placed;
+  }
+
+  _slumpPiece(q) {
+    const P = PROFILES[q.mat] || PROFILES[0], tc = this._tc, sh = SHAPE[P.debris.shape] || SHAPE.crumb;
+    if (!(this.terrain.surfaceColor && this.terrain.surfaceColor(q.x, q.z, tc))) { tc[0] = 0.42; tc[1] = 0.3; tc[2] = 0.2; }
+    for (let k = 0; k < FRAG_MAX; k++) {
+      if (k >= this.fragLimit) break;
+      const f = this.fragState[k];
+      if (f.on) continue;
+      this._place(f, q.x, q.y, q.z);
+      f.vx = q.vx; f.vz = q.vz; f.vy = 0.3 + this._rand() * 0.35;
+      f.s = (0.007 + this._rand() * 0.011) * q.s;
+      f.kx = sh[0] * (0.85 + 0.3 * this._rand()); f.ky = sh[1]; f.kz = sh[2] * (0.85 + 0.3 * this._rand());
+      f.bounce = Math.min(0.2, P.debris.bounce); f.rest = 1.2 + this._rand() * 1.5; f.layer = 5; f.slide = q.slide;
+      f.sx = (this._rand() - 0.5) * 10; f.sz = (this._rand() - 0.5) * 10;
+      this._color(k, P.debris, q.mat, tc);
+      this._dirty = true;
+      this.slumped = (this.slumped || 0) + 1;
+      return true;
+    }
+    return false;
   }
 
   _trickle(q) {
@@ -440,7 +504,7 @@ export class DigEffects {
     for (const q of this.queue) {
       if (q.t < 0) continue;
       q.t -= dt;
-      if (q.t <= 0) { q.t = -1; this._trickle(q); }
+      if (q.t <= 0) { q.t = -1; if (q.k) this._slumpPiece(q); else this._trickle(q); }
     }
     // dust
     const pos = this.dustGeo.attributes.position.array, col = this.dustGeo.attributes.color.array;
