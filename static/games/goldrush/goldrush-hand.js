@@ -28,6 +28,10 @@
 // processing system (swirling the pan, the bucket swinging).
 
 import { ToolModels } from "./goldrush-toolmodels.js";
+import { ARM, SHOULDER, GloveBase } from "./goldrush-armik.js";
+import { RiggedArm, makeRigMaterials } from "./goldrush-fprig.js";
+
+export { ARM };
 
 // poses of the RIGHT hand in view space (the left one is mirrored):
 // wrist position, rotation (x pitch, y yaw, z roll), finger curl 0..1
@@ -103,16 +107,11 @@ export const GRIPS = {
 };
 const HANDLE_IN_GLOVE = [0, -0.03, -0.072];      // where a held handle runs through the closed glove
 
-// the arm (m): shoulder -> elbow, elbow -> wrist - fixed, whatever the hand holds
-export const ARM = { upper: 0.31, fore: 0.28 };
 // Visual Overhaul A, C-lite: the shovel's blade meets the ground where the stroke digs. depth: how far the tip
 // goes in past the surface (along the view ray - the world's depth clips it); turn: the most the shovel is aimed
 // round the right hand (rad); slide: the most it is pushed along / pulled back on its shaft (m) - the arms
 // stretch, they do not grow; a point further away keeps a gap (logged; the gameplay reach is unchanged)
 export const CONTACT = { depth: 0.06, turn: 0.6, slide: 0.42 };
-// where the shoulders are while the hands work in view space (tools, bucket, pan): just below
-// and behind the camera, out to the sides (the right one; mirrored for the left)
-const SHOULDER = [0.25, -0.42, 0.14];
 // pushing the barrow: the shoulders on the body (world, from the eyes), the body facing the barrow
 const BODY_SHOULDER = { side: 0.19, down: 0.19, back: 0.06 };
 // a glove on a barrow grip, as if it were the right hand (the handle runs fore-aft through the
@@ -166,10 +165,11 @@ function mergeParts(THREE, parts) {
   return out;
 }
 
-class Glove {
+// the procedural glove (the fallback when the rigged arms - goldrush-fprig.js - cannot be loaded)
+class Glove extends GloveBase {
   constructor(THREE, side, res) {
-    this.side = side;                              // +1 right, -1 left
-    const root = (this.root = new THREE.Group());
+    super(THREE, side, clonePose(POSE.rest));
+    const root = this.root;
     root.scale.x = side;                           // the left glove is the mirrored right one
     root.add(new THREE.Mesh(res.bodyGeo, res.bodyMat));
     // fingers: two segments each, bending at the knuckle and the middle joint
@@ -214,22 +214,10 @@ class Glove {
     this.held.position.set(0, -0.036, -0.055);
     root.add(this.held);
     // the arm: forearm, elbow, upper arm - fixed lengths, posed by IK every frame (_arm)
-    this.arm = new THREE.Group();
     this.fore = new THREE.Mesh(res.foreGeo, res.armMat);
     this.elbow = new THREE.Mesh(res.elbowGeo, res.armMat);
     this.upper = new THREE.Mesh(res.upperGeo, res.upperMat);
     this.arm.add(this.fore, this.elbow, this.upper);
-    this.pose = clonePose(POSE.rest);
-    this._a = new THREE.Vector3();
-    this._b = new THREE.Vector3();
-    this._e = new THREE.Vector3();
-    this._u = new THREE.Vector3();
-    this._d = new THREE.Vector3();
-    this._p = new THREE.Vector3();
-    this._pole = new THREE.Vector3();
-    this._up = new THREE.Vector3(0, 1, 0);
-    this._m = new THREE.Matrix4();
-    this.info = { fore: ARM.fore, upper: ARM.upper, reach: true };
   }
 
   _curl(c, thumb = 0.6) {
@@ -242,75 +230,19 @@ class Glove {
     this.thumbMid.rotation.x = -0.15 - c * thumb;
   }
 
-  // bare-hand pose (view space)
-  apply(pose, aspectK, extra) {
-    const s = this.side, root = this.root;
-    root.position.set(pose.p[0] * s * aspectK + extra.x * s, pose.p[1] + extra.y, pose.p[2]);
-    root.rotation.set(pose.r[0] + extra.rx, pose.r[1] * s, pose.r[2] * s, "YXZ");
-    root.scale.set(s, 1, 1);
-    this.thumb.rotation.set(-0.2, 0.85, -0.5);
-    this._curl(pose.c);
-    root.updateMatrix();
-    this._arm(aspectK);
-  }
-
-  // on a tool grip: m = the glove's full matrix (incl. the mirror); thumb: its own pose (a hand on a
-  // rim: hooked over it) instead of closed round a handle
-  applyMatrix(m, aspectK, curl = 0.95, thumb = null) {
-    const root = this.root;
-    m.decompose(root.position, root.quaternion, root.scale);
-    if (thumb) this.thumb.rotation.set(thumb[0], thumb[1], thumb[2]);
-    else this.thumb.rotation.set(-0.55, 0.55, -0.9);          // thumb closed over the handle
-    this._curl(curl, thumb ? (thumb[3] != null ? thumb[3] : 0.9) : 0.9);
-    root.updateMatrix();
-    this._arm(aspectK);
-  }
-
-  /**
-   * The arm from the wrist (just inside the cuff) to the shoulder: two-bone IK
-   * with fixed lengths. shoulder / pole: view space (default: the view-space
-   * shoulder of this side, the elbow out and down). Out of reach the wrist
-   * keeps its place and the arm points back towards the shoulder - nothing is
-   * ever stretched.
-   */
-  _arm(aspectK, shoulder = null, pole = null) {
-    const s = this.side, a = ARM.upper, b = ARM.fore;
-    const W = this._a.set(0, -0.004, 0.035).applyMatrix4(this.root.matrix);
-    const S = shoulder ? this._b.copy(shoulder) : this._b.set(SHOULDER[0] * s * aspectK, SHOULDER[1], SHOULDER[2]);
-    const dir = this._d.subVectors(S, W);
-    const d = Math.max(1e-6, dir.length());
-    dir.multiplyScalar(1 / d);
-    const E = this._e, U = this._u;
-    let reach = true;
-    if (d >= a + b - 1e-6) {
-      reach = d <= a + b + 1e-3;
-      E.copy(W).addScaledVector(dir, b);
-      U.copy(E).addScaledVector(dir, a);
-    } else {
-      // the elbow: the law of cosines at the wrist, bent towards the pole (out and down)
-      const dd = Math.max(d, Math.abs(a - b) + 1e-4);
-      const cw = Math.max(-1, Math.min(1, (b * b + dd * dd - a * a) / (2 * b * dd))), sw = Math.sqrt(1 - cw * cw);
-      const P = pole ? this._pole.copy(pole) : this._pole.set(s * 0.85, -0.6, 0.25);
-      P.addScaledVector(dir, -P.dot(dir));
-      if (P.lengthSq() < 1e-8) P.set(s, 0, 0).addScaledVector(dir, -dir.x * s);
-      P.normalize();
-      E.copy(W).addScaledVector(dir, cw * b).addScaledVector(P, sw * b);
-      U.subVectors(S, E).normalize().multiplyScalar(a).add(E);
-    }
-    // forearm W -> E, upper arm E -> U (the geometries are built at their real lengths)
+  // the solved arm (goldrush-armik.js: wrist W, elbow E, shoulder point U) as meshes: the forearm W -> E, the upper arm E -> U
+  // (the geometries are built at their real lengths)
+  _applyArm(W, E, U) {
     this.fore.position.addVectors(W, E).multiplyScalar(0.5);
     this.fore.quaternion.setFromUnitVectors(this._up, this._p.subVectors(E, W).normalize());
     this.upper.position.addVectors(E, U).multiplyScalar(0.5);
     this.upper.quaternion.setFromUnitVectors(this._up, this._p.subVectors(U, E).normalize());
     this.elbow.position.copy(E);
-    this.info.fore = W.distanceTo(E);
-    this.info.upper = E.distanceTo(U);
-    this.info.reach = reach;
   }
 }
 
 export class FirstPersonHands {
-  constructor(THREE, { envMap } = {}) {
+  constructor(THREE, { envMap, fpArms = null } = {}) {
     this.THREE = THREE;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(58, 1, 0.01, 4);
@@ -356,8 +288,24 @@ export class FirstPersonHands {
     this.nuggetPlaceholder = new THREE.SphereGeometry(1, 8, 6);
     const res = { bodyGeo: this.bodyGeo, bodyMat: this.bodyMat, gloveMat: this.gloveMat, capsule: this.capsule, nuggetPlaceholder: this.nuggetPlaceholder,
       foreGeo: this.foreGeo, upperGeo: this.upperGeo, elbowGeo: this.elbowGeo, armMat: this.armMat, upperMat: this.upperMat };
-    this.right = new Glove(THREE, 1, res);
-    this.left = new Glove(THREE, -1, res);
+    // FP2.0A: the rigged arms (authored GLB: skinned work gloves + sleeves, finger clips) when they are loaded; the procedural
+    // gloves above only as the technical fallback
+    this.rigged = false;
+    if (fpArms) {
+      try {
+        const rigMats = makeRigMaterials(THREE, envMap);
+        this.rigMats = rigMats;
+        this.right = new RiggedArm(THREE, 1, fpArms, rigMats, clonePose(POSE.rest));
+        this.left = new RiggedArm(THREE, -1, fpArms, rigMats, clonePose(POSE.rest));
+        this.rigged = true;
+      } catch (e) {
+        if (typeof console !== "undefined") console.warn("[goldrush] the rigged arms could not be set up - the procedural gloves are used:", e && e.message ? e.message : e);
+      }
+    }
+    if (!this.rigged) {
+      this.right = new Glove(THREE, 1, res);
+      this.left = new Glove(THREE, -1, res);
+    }
     this.scene.add(this.right.root, this.left.root, this.right.arm, this.left.arm);
 
     // the tools (shared models, only the equipped one is shown)
@@ -598,7 +546,11 @@ export class FirstPersonHands {
     else this._updateTool(dt, view, extra);
     this._drops(dt);
     // dust on the gloves builds up while digging
-    this.gloveMat.color.copy(this.baseGlove).lerp(this.dirtColor, this.dirt * 0.55);
+    if (this.rigged) {
+      this.right.idleT = this.left.idleT = this.time;
+      this.right.reducedMotion = this.left.reducedMotion = rm;
+      this.rigMats.glove.color.setRGB(1, 1, 1).lerp(this._dirtMul || (this._dirtMul = new this.THREE.Color(0.55, 0.42, 0.32)), this.dirt * 0.55);
+    } else this.gloveMat.color.copy(this.baseGlove).lerp(this.dirtColor, this.dirt * 0.55);
     this.models.setDirt(this.dirt);
     // light: the world's sun, seen from the camera; dimmed in the mound's shadow
     this._q.copy(camera.quaternion).invert();

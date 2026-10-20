@@ -12,6 +12,7 @@ import { loadRockSet } from "./goldrush-rockset.js";
 import { GoldRushAudio } from "./goldrush-audio.js";
 import { Economy, centsForMass, formatEuro, formatMass } from "./goldrush-economy.js";
 import { FirstPersonHands } from "./goldrush-hand.js";
+import { loadFpArms } from "./goldrush-fprig.js";
 import { GoldRushHud } from "./goldrush-hud.js";
 import { GoldRushInput } from "./goldrush-input.js";
 import { LootSystem } from "./goldrush-loot.js";
@@ -235,7 +236,7 @@ export class GoldRushGame {
     this.loot = new LootSystem(THREE, world.scene, this.terrain, { envMap });
     this.loot.onCollect = (item) => this._collected(item);
     this.loot.onNuggetArrive = (item) => this._nuggetInHand(item);
-    this.hands = new FirstPersonHands(THREE, { envMap });
+    this.hands = new FirstPersonHands(THREE, { envMap, fpArms: await loadFpArms(THREE) });      // FP2.0A: the rigged arms (null: the procedural gloves)
     this.hands.reducedMotion = this.reducedMotion;
     this.hands.dirt = Math.min(0.6, this.economy.stats.successfulDigs / 800);
     this.hands.update(0, this.tools.view(), { camera, sunDir: SUN_VEC, sunVisible: true, walk: 0, bob: 0 });
