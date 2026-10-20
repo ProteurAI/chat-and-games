@@ -33,3 +33,6 @@ Lokale Chat-App (FastAPI `backend/`, statisches Frontend `static/`) mit Spielen.
 - Visual QA: `python tests/e2e/goldrush_visualqa.py capture|compare|perf|shovel --out DIR`
 - Suites nacheinander, nie parallel; während eines Laufs keine Spieldateien ändern. Benchmarks
   (`tests/e2e/goldrush_bench.py`) nur bei geänderten Spielwerten.
+
+## QA-Sicherheit (Windows-Cursor)
+- Automated GoldRush QA/screenshots must never capture or confine the host OS cursor. Prefer headless automation (`tests/e2e/qa_safety.py` forces it; `GOLDRUSH_QA_HEADED=1` only for manual visual QA); in automated browsers (`navigator.webdriver`) GoldRush never takes the Pointer Lock (free-mouse mode).

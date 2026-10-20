@@ -23,6 +23,7 @@ from playwright.sync_api import sync_playwright
 sys.path.insert(0, os.path.dirname(__file__))
 from games_regression import RECORDER, open_games_drawer  # noqa: E402
 from kopfkicker_e2e import login, start_server  # noqa: E402
+import qa_safety  # noqa: F401,E402  (headless by default; the pointer lock is never taken in automation)
 
 if hasattr(sys.stdout, "reconfigure"):       # Windows consoles: the check names contain ⛏️ / €
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")

@@ -9,6 +9,14 @@ const LOOK_MOUSE = 0.0021;       // rad per px
 const LOOK_TOUCH = 0.0052;
 const STICK_RADIUS = 52;         // px
 
+// Automated QA (Playwright / WebDriver browsers: navigator.webdriver) must never take the pointer lock: on a developer's Windows
+// machine a lock confines the real OS cursor. There the lock is "refused" exactly like in a browser that has none - the game
+// runs in free-mouse mode (right-button drag looks), every input can still be simulated. A real player is never affected.
+// Opt back in for a test of the lock itself: window.__GR_ALLOW_POINTER_LOCK = true.
+const automated = () => {
+  try { return !!(navigator.webdriver && !window.__GR_ALLOW_POINTER_LOCK); } catch (e) { return false; }
+};
+
 export class GoldRushInput {
   constructor({ root, canvas, touch, stickEl, knobEl, digBtn, onLockChange }) {
     this.root = root;
@@ -45,7 +53,9 @@ export class GoldRushInput {
     // desktop
     this.on(window, "keydown", (e) => this._key(e, true));
     this.on(window, "keyup", (e) => this._key(e, false));
-    this.on(window, "blur", () => this.releaseAll());
+    this.on(window, "blur", () => { this.releaseAll(); this.exitLock(); });
+    this.on(d, "visibilitychange", () => { if (d.visibilityState === "hidden") this.exitLock(); });       // (a hidden tab never keeps the mouse)
+    this.on(window, "pagehide", () => this.exitLock());
     this.on(d, "pointerlockchange", () => {
       this.locked = d.pointerLockElement === this.canvas;
       if (this.locked) this.everLocked = true;
@@ -105,6 +115,7 @@ export class GoldRushInput {
 
   requestLock() {
     if (this.touch || document.pointerLockElement === this.canvas) return;
+    if (automated()) { this.onLockChange(false, true); return; }
     try {
       const p = this.canvas.requestPointerLock();
       if (p && p.catch) p.catch(() => this.onLockChange(false, true));

@@ -26,6 +26,9 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import qa_safety  # noqa: F401,E402  (every e2e script imports this module: headless by default, see qa_safety.py)
+
 ROOT = Path(__file__).resolve().parents[2]
 RESULTS = []
 
