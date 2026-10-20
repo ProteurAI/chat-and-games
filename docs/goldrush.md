@@ -1562,6 +1562,22 @@ Masse und Save sind unverändert; die Platzierung der Spiel-Boulder (`MaterialFi
 * **QA**: `goldrush_rockperf.py` (Frame-Statistik über vier Ansichten, wiederholt, `--mobile`), `goldrush_c1_smoke.py` (Nässe: Anstieg /
   Trocknung / Fels reagiert, LOD-Pop-Größe, dunkle Mehrfach-Grabung).
 
+## FP2.0A – geriggte First-Person-Arme (Fundament)
+
+* **Asset** (`assets/fp/fp_arms.glb`, `tools/goldrush/build_fp_arms.py`): eigene Arbeit, keine Fremdassets. Zwei Skinned-Meshes (Lederhandschuh
+  mit Stulpe und Fingergelenken, Leinenärmel bis zur Schulter; links echter Spiegel), Knochen `upper → fore → hand → f0..f3_1..3 / th_1..3`,
+  AnimationClips `curl_R/L` (Finger) und `thumb_R/L`, Vertexfarben + gebackene Kontaktverschattung, ~6300 Dreiecke je Arm. Das Skript erzeugt
+  alles reproduzierbar (SDF → Marching Cubes → Decimation → Skinning → GLB). Nichts wird aus dem Netz geladen.
+* **Rig** (`goldrush-fprig.js`, `goldrush-armik.js`): `RiggedArm` erbt die Zwei-Knochen-IK (`GloveBase`, dieselbe Mathematik wie Phase 8) und
+  setzt Oberarm-/Unterarm-Knochen auf die gelösten Punkte, den Hand-Knochen auf die Matrix der Hand; die Finger sind die Clips
+  (AnimationMixer, Zeit = Krümmung 0..1). `FirstPersonHands` (goldrush-hand.js) ist unverändert der Pose-Geber: Keyframes, Grips
+  (`GRIPS`, `HANDLE_IN_GLOVE`), Kontaktausrichtung der Schaufel, Hit-Stop, Varianten. Gameplay löst die Animation aus (ToolController-Phasen);
+  die Animation entscheidet nichts. Fallback: ohne/mit defekter GLB (`loadFpArms` → `null`, Konsolenwarnung) bleiben die prozeduralen Handschuhe.
+* **Material** (`makeRigMaterials`): PBR, Vertexfarben, feines Leder-/Gewebe-Relief im Shader (Rest-Pose-Position), rau, kein Metall; Staub auf den
+  Handschuhen als Farbmultiplikation. Gilt für alle Qualitätsstufen (LOW zeigt dieselben Arme).
+* **Erhalten**: Schaufelkontakt (`visualqa.py shovel`: 20/20, 0 px Abstand), Gameplay, Werte, Save.
+* **QA**: `tests/e2e/goldrush_fpqa.py` (Standbilder und Bildfolgen je Zustand/Phase, `--root` für alte Revision).
+
 ## Entwicklertools (QA-Modus, Prompt 5.5)
 
 - **Zugang nur serverseitig:** Umgebungsvariable `GOLDRUSH_DEV_CODE`

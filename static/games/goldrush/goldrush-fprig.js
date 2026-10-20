@@ -95,6 +95,11 @@ export class RiggedArm extends GloveBase {
     this.bones = {};
     for (const b of this.skinned.skeleton.bones) this.bones[b.name.slice(2)] = b;
     this.restThumb = this.bones.th_1.quaternion.clone();
+    // the finger joints the way the procedural glove exposes them (tests: how far a fingertip reaches into a held vessel):
+    // `mid` is the middle joint (the next bone is children[0]), the thumb's middle joint stands in with its tip distance
+    this.fingers = [0, 1, 2, 3].map((i) => ({ mid: this.bones[`f${i}_2`] }));
+    const th2 = this.bones.th_2;
+    this.thumbMid = { localToWorld: (v) => th2.localToWorld(v), children: [{ position: { z: -0.0255 } }] };
     // the thumb's root takes the game's euler (as the procedural glove's thumb group did): the left arm is a mirror image, so its y / z flip
     const th = this.bones.th_1, s = side;
     this.thumb = { rotation: { set: (x, y, z) => th.rotation.set(x, y * s, z * s) } };

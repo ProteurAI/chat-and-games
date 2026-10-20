@@ -1,8 +1,7 @@
 # GoldRush – aktueller Stand (Handoff)
 
-**Stand:** 2026-10-15 · nach Earth 2.0C1 (Stabilisierung: Rock-LOD, Nässe an Felsen, dunkle Gruben) auf dem Branch
-`feature/goldrush-earth-2-0c1` (Start `e9c0d96` = Earth 2.0C, Backup `backup/pre-goldrush-earth-2-0c1`; **nicht nach main gemergt**,
-`origin/main` = `3b17f71`). Ketten-Branches: 2.0B → 2.0C → 2.0C1. Nächster Schritt laut Roadmap: größerer Berg (Maßstab) – nicht begonnen.
+**Stand:** 2026-10-20 · nach FP2.0A (geriggte First-Person-Arme) auf dem Branch `feature/goldrush-fp2-0a` (Start `e9f87d3` =
+main, Backup `backup/pre-goldrush-fp2-0a`; **nicht nach main gemergt**). Nächste Phase: FP2.0B (Polish) – nicht begonnen.
 
 Diese Datei ist der Einstieg. Details je Phase stehen in `docs/goldrush.md` (nur den jeweiligen
 Abschnitt lesen), Asset-Herkunft in `static/games/goldrush/ASSETS.md`, kommende Phasen in
@@ -29,6 +28,7 @@ Abschnitt lesen), Asset-Herkunft in `static/games/goldrush/ASSETS.md`, kommende 
 | 10 / 10.0.1 | Arbeitsmine (Halden, Radlader, Waschanlage, Abbaugerät, Großnuggets), Zwischenstufen | Prompt 10, 10.0.1 |
 | VO-A + Earth B0 | Licht, Post-Stack, Himmel/Dunst, PBR-Boden, Schaufelkontakt, Visual-QA | Visual Overhaul A + Earth B0 |
 | Earth 2.0A | Terrain-Renderer: HeightTex + Zustandstexturen, statische LOD-Kacheln | Earth 2.0A |
+| FP2.0A | Geriggte First-Person-Arme: eigenes Skinned-GLB (Handschuh + Ärmel, Finger-Clips), gemeinsame Arm-IK, prozeduraler Fallback | FP2.0A |
 | Earth 2.0C | Echte Felsen (CC0-Scans, Rock-Material mit Bodenkontakt), Nässe aus Quellen (Nasskarte), Dig-Detail als Kachel-Pool | Earth 2.0C |
 | Earth 2.0B | Graben sichtbar: Werkzeugabdruck (DigDetail), Schnittkanten (StateTex B/A), Nachrutschen (VFX) | Earth 2.0B |
 
@@ -74,6 +74,11 @@ Abgeleitete Darstellungsschicht über der Simulation; nichts davon wird gespeich
   der Weltgröße). Details: `docs/goldrush.md` „Earth 2.0C“, Lizenzen: `ASSETS.md`. Simulation/Platzierung der Spiel-Boulder unverändert.
 * **Earth 2.0C1**: Rock-LOD nach Distanz (`World.updateRocks`: Szenerie-Cluster 3 Stufen in einem Mesh per Index-Puffer, Pile-Boulder /
   Outcrops / Kiesel gruppenweise ab 13 m, LOW ab halber Distanz); Felsen lesen die Nasskarte; dunkle Gruben (Gradient-Klemme, Ambient-Floor).
+* **FP2.0A** (`assets/fp/fp_arms.glb`, `goldrush-fprig.js`, `goldrush-armik.js`, `tools/goldrush/build_fp_arms.py`): eigene geriggte Arme
+  (Knochenkette + Finger-/Daumen-Clips, ~6300 Dreiecke je Arm, eigene Arbeit/CC0), PBR-Material mit Lederrelief; `FirstPersonHands` bleibt der
+  Pose-Geber (Grips, Kontaktausrichtung, Phasen des ToolControllers unverändert). Fallback = prozedurale Handschuhe (404/defekte GLB: Warnung).
+* **QA-Cursor-Sicherheit**: in automatisierten Browsern (`navigator.webdriver`) nimmt GoldRush nie den Pointer Lock (Free-Mouse-Modus;
+  `window.__GR_ALLOW_POINTER_LOCK = true` zum Testen des Locks); `tests/e2e/qa_safety.py` erzwingt Headless (`GOLDRUSH_QA_HEADED=1` nur manuell).
 * **Schaufel C-lite** (`goldrush-hand.js`, `CONTACT`): Drehung ≤ 34° um die rechte Hand + Schub
   ≤ 0,42 m entlang des Stiels; 20/20 Stiche auf dem Treffpunkt. Spielreichweite unverändert (2,4 m).
 * **Grab-Effekte** (`goldrush-vfx.js`): skaliert mit dem echten Volumen, beleuchteter Staub.
@@ -109,6 +114,15 @@ Abgeleitete Darstellungsschicht über der Simulation; nichts davon wird gespeich
   (+12 Vollbild-Pässe auf MEDIUM/HIGH).
 * Mobil-Emulation (390×844, LOW): freie Sicht 60 fps; an Anlage/Halden CPU-gebunden, gepaart ohne
   Mehrkosten gegenüber 9abb6f4; mit 4× CPU-Drosselung 26–55 fps je nach Lauf. Kein echtes Gerät gemessen.
+
+## Teststatus FP2.0A (2026-10-20, Chromium `--quick --no-bench`)
+
+Unit 103; Kern 47 (ein Suite-Lauf T7/T8-Timing-Flake, zweimal 47/47), Mining 54, Werkzeuge 62, Quality 61, Material 44, Dev 64, Premium 45,
+Mechanisiert 95, Working Mine 119; WebKit Kern 39. Schaufelkontakt `visualqa.py shovel`: 20/20, 0 px (wie vorher). Fallback (404 / defekte GLB):
+Warnung, Spiel läuft, Dig ok. Perf (1600×900, 2 Läufe, vorher → nachher): MEDIUM 60 fps, Draw Calls 105 → 87 (spawn), Dreiecke +6 k, Texturen +2,
+Heap +5 MB; LOW 60 fps, Heap 48 → 73 MB (GLB geparst). Nicht gelaufen: Phase 6/7/7A/7B, Camp, Processing, Auto, übrige WebKit-Suiten.
+Offen/Grenzen: Finger lesen sich als Fäustling-artige Form (keine einzelnen Fingerphysik/Fingerspitzen-Detail), keine eigenen Clips pro Werkzeugphase
+(die Keyframes in goldrush-hand.js treiben weiter die Pose), Kamera-Impuls nur der vorhandene Kontakt-Kick, Linkshand-Daumen nur grob geprüft.
 
 ## Teststatus Earth 2.0C1 (2026-10-15, Chromium `--quick --no-bench`)
 
