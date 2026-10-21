@@ -1,8 +1,7 @@
 # GoldRush – aktueller Stand (Handoff)
 
-**Stand:** 2026-10-21 · nach FP2.0B (First-Person Polish, Bewegung, Kontakt) auf dem Branch `feature/goldrush-fp2-0b` (Start `d299bde` =
-Ende FP2.0A auf `feature/goldrush-fp2-0a`, Backup `backup/pre-goldrush-fp2-0b`; FP2.0A + B **nicht nach main gemergt**, main = `e9f87d3`/Earth 2.0C1).
-Nächste Phase nur auf Anweisung (Roadmap: Material in Motion).
+**Stand:** 2026-10-21 · nach Material in Motion 1A (Visual Mass + Pour Foundation) auf dem Branch `feature/goldrush-material-motion-1a` (Start `a702806` = Ende FP2.0B,
+Backup `backup/pre-goldrush-material-motion-1a`; **nicht nach main gemergt**; der Branch enthält FP2.0A/B, main = `a702806`). Nächste Phase nur auf Anweisung (Visual-Director-Neubewertung steht aus).
 
 Diese Datei ist der Einstieg. Details je Phase stehen in `docs/goldrush.md` (nur den jeweiligen
 Abschnitt lesen), Asset-Herkunft in `static/games/goldrush/ASSETS.md`, kommende Phasen in
@@ -16,7 +15,7 @@ Abschnitt lesen), Asset-Herkunft in `static/games/goldrush/ASSETS.md`, kommende 
 | Geologie | 4 (Großnuggets) | `GEOLOGY_VERSION`, `goldrush-resources.js` |
 | Hügel-Generator | 1 | `TERRAIN_GEN`, `goldrush-terrain.js` (ändern nur mit Bump + Migration) |
 | three.js | r176, vendored (+ GLTFLoader, BufferGeometryUtils, RGBELoader) | `static/vendor/three/` |
-| Letztes Backup | `backup/pre-goldrush-fp2-0b` = d299bde | Branches `backup/pre-goldrush-*` |
+| Letztes Backup | `backup/pre-goldrush-material-motion-1a` = a702806 | Branches `backup/pre-goldrush-*` |
 
 ## Was gebaut ist
 
@@ -31,6 +30,7 @@ Abschnitt lesen), Asset-Herkunft in `static/games/goldrush/ASSETS.md`, kommende 
 | Earth 2.0A | Terrain-Renderer: HeightTex + Zustandstexturen, statische LOD-Kacheln | Earth 2.0A |
 | FP2.0A | Geriggte First-Person-Arme: eigenes Skinned-GLB (Handschuh + Ärmel, Finger-Clips), gemeinsame Arm-IK, prozeduraler Fallback | FP2.0A |
 | FP2.0B | First-Person-Polish: neues Handschuh-Mesh (getrennte Finger, Nähte), Clips je Werkzeugphase, Kontakt auch für die Spitzhacke, Gewicht / Trägheit, Material-Polish, Motion-QA | FP2.0B |
+| Material in Motion 1A | Strom- / Pour-Darstellung aus echten Transfers (`MaterialFlow`, `DisplayHold`), Eimer-/Karren-/Schaufel-Pfade, Nass-Look, keine Doppelanzeige | Material in Motion 1A |
 | Earth 2.0C | Echte Felsen (CC0-Scans, Rock-Material mit Bodenkontakt), Nässe aus Quellen (Nasskarte), Dig-Detail als Kachel-Pool | Earth 2.0C |
 | Earth 2.0B | Graben sichtbar: Werkzeugabdruck (DigDetail), Schnittkanten (StateTex B/A), Nachrutschen (VFX) | Earth 2.0B |
 
@@ -83,6 +83,11 @@ Abgeleitete Darstellungsschicht über der Simulation; nichts davon wird gespeich
   Nähten im Shader, Ärmel olivfarben); Werkzeug-Clips = Wegpunkte je Controller-Phase (Dauern / Gameplay unverändert, jede Phase startet an der Endpose der
   vorigen); Kontakt-Ausrichtung für Schaufel **und** Spitzhacke (`CONTACT_TOOL`); Schulter-Nachgeben (`SHOULDER_SLACK`); Trägheit / Kontakt-Impuls (`MASS`,
   `_jolt`); Daumen-Winkel zentral (`THUMB`). Details: `docs/goldrush.md` „FP2.0B“.
+* **Material in Motion 1A** (`goldrush-matflow.js`, `goldrush-processing.js`, `goldrush-wheelbarrow.js`): abgeleitete Darstellung der Transfers, die `pour()` / `transfer()` in einem Schritt machen. `MaterialFlow` = gepoolte
+  instanzierte Klumpen auf Bögen von der Quelle zum Ziel (1 Draw Call, 30 / 60 / 90 je LOW / MEDIUM / HIGH), Menge = was der Transfer zurückgab (blockiert → kein Strom, Teiltransfer → Teilstrom),
+  `audit()` gestartet == gelandet + in der Luft. `DisplayHold` (`keep` / `owe`): gezeigt wird Wahrheit + keep − owe, nach dem Strom exakt die Wahrheit. Pfade: Eimer → Trichter / Verteilerkasten / Vorrat / Aufgabe / Karre
+  (Eimer in der Hand kippt), Karre → Ziele (Kippkurve mit Haltephase, Strom ab Transfer), Schaufel → Eimer / Karre (der Schnitt gibt das Material sofort, die Zeichnung wartet bis zum Abrutschen – vorher Doppelanzeige).
+  Nass-Look (`wet`), gekippt waagerechte Oberfläche (`bucketShape tilt`). Details: `docs/goldrush.md` „Material in Motion 1A“.
 * **QA-Cursor-Sicherheit**: in automatisierten Browsern (`navigator.webdriver`) nimmt GoldRush nie den Pointer Lock (Free-Mouse-Modus;
   `window.__GR_ALLOW_POINTER_LOCK = true` zum Testen des Locks); `tests/e2e/qa_safety.py` erzwingt Headless (`GOLDRUSH_QA_HEADED=1` nur manuell).
 * **Schaufel C-lite** (`goldrush-hand.js`, `CONTACT`): Drehung ≤ 34° um die rechte Hand + Schub
@@ -120,6 +125,15 @@ Abgeleitete Darstellungsschicht über der Simulation; nichts davon wird gespeich
   (+12 Vollbild-Pässe auf MEDIUM/HIGH).
 * Mobil-Emulation (390×844, LOW): freie Sicht 60 fps; an Anlage/Halden CPU-gebunden, gepaart ohne
   Mehrkosten gegenüber 9abb6f4; mit 4× CPU-Drosselung 26–55 fps je nach Lauf. Kein echtes Gerät gemessen.
+
+## Teststatus Material in Motion 1A (2026-10-21, Chromium `--quick --no-bench`)
+
+Unit 103; Kern 47, Mining 54, Werkzeuge 62, Material 44, Mech 54 (Karre / Trichter / Dump), Mechanisiert 95, Working Mine 119, Quality 61; Processing 48/49 – **Test 38** („ganze Kette gespielt“: echte Mausbewegung am
+Sieb, `sieve -> 0 ml`) scheitert in dieser Umgebung **identisch auf unverändertem main `a702806`** (gleiche Meldung, 48/49) – bestehender Befund, nicht von 1A. WebKit Kern 39/39 (der erste Lauf blieb im bekannten Klick-Timeout hängen, Wiederholung grün).
+Nicht gelaufen: Phase 6/7/7A/7B, Premium, Camp, Auto, übrige WebKit-Suiten, Spiele-/UI-Regression (Shared Core unverändert, kein Save-/Sim-Code berührt).
+Material-QA (`goldrush_matmotion.py`): Eimer-Pour 2,5 / 6 / 10 l in den Rinnen-Trichter, `audit.balance` 0 in jedem Lauf; Teiltransfer (4 l von 10 l bei fast vollem Trichter): Rest bleibt sichtbar im Eimer, volles Ziel: keine Aktion;
+Schaufel → Eimer: `owe` Spitze 1,6 l, am Ende 0, Anzeige nie negativ; Karre 40 l → Trichter: `keep` 40 l → 0. Perf (3 Pours à 10 l, 1280×720): Draw Calls +1, Dreiecke ±0, Geometrien / Texturen / Heap gleich, CPU-Frame (Median) LOW +0,6 / MEDIUM +0,2 / HIGH +0,8 ms.
+Grenzen: Hopper / Intake / Vorratstrichter zeigen den Zuwachs sofort (nur Eimer-Quelle, Karre-Quelle und Karre-Ziel folgen dem Strom); Eimer-Pour-Pose wurde auf einem Blickwinkel (Rinne, 390×844 nicht separat) abgestimmt; kein Mobil-Gerät; Lader / Bagger / Band / Halden unverändert (1B+).
 
 ## Teststatus FP2.0B (2026-10-21, Chromium `--quick`)
 
@@ -188,6 +202,7 @@ Nicht gelaufen: Phase 6/7/7A/7B/Premium/Camp/Processing/Auto, WebKit-Nebensuiten
 
 ## Offene Punkte
 
+* **Material in Motion – bewusst offen (1B+):** Haufen-Renderer 2.0 / große Stockpiles + Tailings, Strom für Lader / Bagger / Band / Dosierer / Halden, Zielanzeige-Verzögerung für Trichter / Aufgabe / Vorrat, Grab-Debris, Wetness aus echten Quellen im Eimer, Pour-Pose für Mobil abstimmen, Mobil-Gerät messen.
 * Größerer Berg (Maßstab, Roadmap-Punkt „2.0C Maßstab“) weiter offen; Terrain bisher ein Textur-Satz (30×30 m); Dig-Detail-Fenster fest 96 m. Aus 2.0B offen: echte Fels-Assets, Nässe aus
   Quellen; Abdrücke gehen beim Reload verloren (Kanten bleiben); Pick-Abdruck in Erde ist wegen der kleinen Abtragsmenge dezent.
 * Aus Prompt 10 noch offen: A10–E10-Benchmark mit Abbaugerät + Großnuggets, 48-Punkte-Bericht.

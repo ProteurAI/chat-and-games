@@ -1612,6 +1612,46 @@ Masse und Save sind unverändert; die Platzierung der Spiel-Boulder (`MaterialFi
   Ellbogenwinkel, Kontaktlücke; Filmstreifen + GIF), `goldrush_fpheap.py` (Heap nach erzwungener GC, Ressourcenzähler), `goldrush_fpfallback.py` (404 / defekte /
   abgeschnittene / clip-lose GLB, Context-Loss), `goldrush_fpperf.py`.
 
+## Material in Motion 1A – Visual Mass + Pour Foundation
+
+Branch `feature/goldrush-material-motion-1a` (Start `a702806`, Backup `backup/pre-goldrush-material-motion-1a`; **nicht nach main gemergt**).
+Die Simulation bleibt vollständig authoritative; alles hier ist abgeleitete Darstellung eines Transfers, den `pour()` / `transfer()` schon gemacht haben.
+
+**Was schon da war (Phase 8 / 7B, `goldrush-heap.js`):** `GridLoad` + Form-Funktionen zeigen die Ladung auf Schaufelblatt, im Eimer, in der Karre und auf dem Sieb
+aus Menge und Zusammensetzung. 1A baut darauf auf (kein zweiter Haufen-Renderer, das ist 1B+).
+
+**Neu: `goldrush-matflow.js`**
+
+* `MaterialFlow` – ein Pool aus 30 / 60 / 90 instanzierten Klumpen (LOW / MEDIUM / HIGH, ein Draw Call, feste Puffer, keine Allokation pro Frame) auf
+  ballistischen Bögen von der Quelle zum Ziel; Landung = kleine Staubwolke (`DigEffects.puff`, nur trocken) + ein, zwei Krümel aus demselben Pool.
+  `start({ml, rate, delay, from, to, comp, rgb, wet, onConsume, onLand, onEnd})` bekommt **die Menge, die der Transfer zurückgab** – ein blockierter Transfer
+  (ml = 0) startet nie einen Strom, ein Teiltransfer zeigt nur den Teil. Jeder Klumpen trägt seinen ml-Anteil: `gestartet == gelandet + in der Luft` (`flow.audit()`).
+  Aufbau / Ausdünnen des Stroms über Rampe; ein fünfter Pour beendet den ältesten sofort; `cancel` / `flush` lassen die Anzeige sofort zur Wahrheit springen.
+* `DisplayHold` – was die Zeichnung eines Behälters noch schuldet: `keep` (Material, das die Simulation schon verlassen hat, aber noch fällt) und `owe`
+  (Material, das die Simulation schon zählt, das aber noch nicht angekommen ist). Angezeigt wird `Wahrheit + keep − owe` (`shownLoad`); nach spätestens 2,5 s
+  oder beim Strom-Ende ist es wieder die Wahrheit.
+
+**Verdrahtung (`goldrush-processing.js`, `goldrush-wheelbarrow.js`, `goldrush-engine.js`)**
+
+| Pfad | Darstellung |
+|---|---|
+| Eimer → Rinnen-Trichter / Verteilerkasten / Vorratstrichter / Aufgabetrichter / Karre | Eimer in der Hand kippt (Pose `POUR_TILT` / `POUR_YAW`), Strom aus dem tiefsten Randpunkt, Füllstand im Eimer sinkt mit dem Strom (Oberfläche bleibt in der Welt waagerecht, am Rand gehalten), Karre als Ziel füllt sich mit dem Landen |
+| Karre → Trichter / Halde / Aufgabe | Kipp-Kurve mit Haltephase, Strom ab dem Transfer-Zeitpunkt (Spitze der Kippung), Tray leert sich mit dem Strom |
+| Schaufel → Eimer / Karre neben dir | der Schnitt gibt das Material sofort in den Behälter, die Zeichnung wartet (`owe`), bis die Last vom Blatt rutscht; dann fällt sie ins Gefäß – vorher zeigten Blatt **und** Behälter dieselbe Menge (Doppelanzeige) |
+
+Nicht verändert: Transfer-Zeitpunkt, Mengen, Ledger, Save, Dauer der Karren-Kippung (`DUMP_S`), Interaktions-Prompts (volles Ziel bleibt „voll“, kein Strom).
+Das alte Sofort-`spill` bei Eimer- und Karren-Transfers entfällt, solange `processing.flow` existiert (der Strom hat seinen eigenen Aufprall).
+
+**Look:** `GridLoad.set(..., { wet })` – nasses Material (Stufe ≠ RAW, 0,55) dunkler und leicht glänzender, trocken matt; Strom-Klumpen mischen die Farbe aus der echten
+Zusammensetzung (`looseColor`), Arten wie in der Ladung (Staub fein, Klumpen, Kies, Stein), Größe nach dem Mengenanteil, 42 % dunkler als die Rohfarbe (sonst heller als der Boden).
+`bucketShape(..., tilt, rim)`: gekippt bleibt die Oberfläche waagerecht und läuft am Rand über.
+
+**Performance (`tests/e2e/goldrush_matmotion.py --only perf`, 1280×720, je 3 Pours à 10 l):** Draw Calls +1 (13 statt 12), Dreiecke ±0, Geometrien / Texturen / Heap
+unverändert, CPU-Frame LOW 5,4 → 6,0 ms, MEDIUM 8,0 → 8,2 ms, HIGH 10,4 → 11,2 ms (Median), p95 +0 – +1,4 ms; die Stream-Programme laufen im Warm-up (`flow.warm`).
+
+**QA:** `tests/e2e/goldrush_matmotion.py --only bucket,shovel,barrow,block,perf [--quality low|medium|high]` – Filmstreifen + GIFs, `flow.audit().balance == 0`,
+Backpressure (Teiltransfer 4 l von 10 l; volles Ziel: keine Aktion, kein Strom).
+
 ## Entwicklertools (QA-Modus, Prompt 5.5)
 
 - **Zugang nur serverseitig:** Umgebungsvariable `GOLDRUSH_DEV_CODE`
