@@ -123,6 +123,7 @@ export class GridLoad {
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._e = new THREE.Euler(); this._v = new THREE.Vector3(); this._s = new THREE.Vector3(); this._c = new THREE.Color();
     this._o = { y: 0, a: 0, t: 0, l: -1 };
     this._sig = null;
+    this._wet = 0;
     this._rgb = [0, 0, 0];
     this.stats = { visibleVerts: 0, maxY: 0, lumps: 0 };
   }
@@ -136,9 +137,13 @@ export class GridLoad {
    * optionally out.l (lumps may lie here 0..1 - default: where material is, at least 3 mm thick);
    * comp: masses per MAT (colour, lumps); amount 0..1 lump density; rgb: an own colour
    */
-  set(sig, shape, comp, { amount = 1, rgb = null, tMax = 0.05 } = {}) {
+  set(sig, shape, comp, { amount = 1, rgb = null, tMax = 0.05, wet = 0 } = {}) {
     if (sig === this._sig) return false;
     this._sig = sig;
+    // Material in Motion 1A: wet material is darker and a little glossier, dry stays matte
+    this._wet = clamp(wet, 0, 1);
+    this.mat.roughness = 0.97 - 0.36 * this._wet;
+    const wetK = 1 - 0.34 * this._wet;
     const pos = this.geo.attributes.position.array, col = this.geo.attributes.color.array, o = this._o;
     const base = rgb ? (this._rgb = rgb.slice(0, 3)) : looseColor(comp, this._rgb);
     const { grain } = grainOf(comp);
@@ -150,7 +155,7 @@ export class GridLoad {
       pos[v * 3 + 1] = o.y;
       if ((o.l >= 0 ? o.l : o.a) >= 0.5) lumpCover++;
       // moist and darker in the hollows and where it is thin, lighter on crests; fine mottling by grain
-      const k = (0.71 + 0.3 * clamp(o.t / tMax, 0, 1) + 0.09 * sn(x * 31 / grain, z * 31 / grain, 997)) * (0.86 + 0.07 * sn(x * 9, z * 9, 991));
+      const k = (0.71 + 0.3 * clamp(o.t / tMax, 0, 1) + 0.09 * sn(x * 31 / grain, z * 31 / grain, 997)) * (0.86 + 0.07 * sn(x * 9, z * 9, 991)) * wetK;
       col[v * 4] = base[0] * k; col[v * 4 + 1] = base[1] * k; col[v * 4 + 2] = base[2] * k; col[v * 4 + 3] = o.a;
       if (o.a >= 0.5) { vis++; if (o.y > maxY) maxY = o.y; }
     }
@@ -184,7 +189,7 @@ export class GridLoad {
       this._m.compose(this._v.set(x, o.y + sz * 0.22, z), this._q, this._s.set(sz * M.lump[0], sz * M.lump[1], sz * M.lump[2]));
       L.setMatrixAt(n, this._m);
       // its own kind's colour, pulled towards the load's (a clod of this very earth, a stone a little greyer)
-      const vary = (0.8 + 0.32 * hash(this.seed + i * 11.3)) * M.dark, mix = k >= 2 ? 0.3 : 0.6;
+      const vary = (0.8 + 0.32 * hash(this.seed + i * 11.3)) * M.dark * (1 - 0.3 * this._wet), mix = k >= 2 ? 0.3 : 0.6;
       this._c.setRGB((M.rgb[0] * (1 - mix) + b[0] * mix) * vary, (M.rgb[1] * (1 - mix) + b[1] * mix) * vary, (M.rgb[2] * (1 - mix) + b[2] * mix) * vary);
       L.setColorAt(n, this._c);
       n++;
@@ -243,14 +248,17 @@ export function bladeShape(load, slide, lagX, lagZ, comp, seed = 5) {
  * (m above the floor), the wall at radius r(y). Nearly level, a little higher
  * at the wall (it creeps up), small clumps - no cone however full.
  */
-export function bucketShape(h, rAt, k, comp, seed = 11) {
+export function bucketShape(h, rAt, k, comp, seed = 11, tilt = 0, rim = 0.27) {
   const { grain } = grainOf(comp);
-  const lvl = Math.max(0.012, h);
+  const lvl = Math.max(0.012, h), slope = Math.tan(Math.min(1.2, Math.max(0, tilt)));
   return (x, z, o) => {
     const rho = Math.hypot(x, z), rw = rAt(lvl);
+    // (Material in Motion 1A: tipped, the free surface stays level in the world - in the bucket's frame it rises
+    // towards the lip (-z); where it reaches the rim it spills over, held at the rim)
     let y = lvl + 0.006 * (rho / rw) ** 4 + 0.008 * sn(x * 22 / grain + seed, z * 22 / grain, 977) + 0.004 * sn(x * 61, z * 61, 983)
-      + clumps(x / rw, z / rw, seed, 6, 0.32, 0.007 + 0.004 * k);
+      + clumps(x / rw, z / rw, seed, 6, 0.32, 0.007 + 0.004 * k) - slope * z;
     y = Math.max(0.006, y);
+    if (y > rim - 0.004) y = rim - 0.004;                          // (at the lip it just reaches the rim: the stream leaves from there)
     o.y = y; o.t = y - 0.004; o.a = rho < rAt(y) - 0.004 ? 1 : 0;
   };
 }

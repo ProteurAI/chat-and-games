@@ -365,6 +365,23 @@ export class DigEffects {
     this.impact(hit, mat, "pickaxe", null, strength);
   }
 
+  // Material in Motion 1A: a small dry puff of the material's own colour where a stream lands
+  // (rgb: the material, strength 0..1; a few soft billboards from the dust pool, no fragments)
+  puff(x, y, z, rgb, strength = 1) {
+    const n = Math.max(1, Math.round(Math.min(4, this.dustLimit / 40) * Math.min(1, strength) * this.density));
+    for (let k = 0, placed = 0; k < DUST_MAX && placed < n && k < this.dustLimit; k++) {
+      const d = this.dust[k];
+      if (d.life > 0) continue;
+      d.max = d.life = 0.4 + this._rand() * 0.35;
+      d.x = x + (this._rand() - 0.5) * 0.08; d.y = y; d.z = z + (this._rand() - 0.5) * 0.08;
+      d.vx = (this._rand() - 0.5) * 0.45; d.vy = 0.08 + this._rand() * 0.14; d.vz = (this._rand() - 0.5) * 0.45;
+      d.s = 0.05 + this._rand() * 0.06;
+      const v = 0.95 + this._rand() * 0.2;
+      d.r = rgb[0] * 0.8 * v; d.g = rgb[1] * 0.78 * v; d.b = rgb[2] * 0.74 * v; d.a = 0.26 * Math.min(1, strength);
+      placed++;
+    }
+  }
+
   // material sliding off a shovel blade / out of a bucket or a barrow:
   // clods dropping from a point (world space), a low puff where they land
   spill(x, y, z, def, strength = 1) {

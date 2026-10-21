@@ -260,13 +260,15 @@ export class ProcessModels {
   }
 
   // set the fill of a bucket group: ml of material (in the unscaled bucket), comp its masses per material
-  setBucketFill(group, ml, comp) {
+  setBucketFill(group, ml, comp, { tilt = 0, wet = 0 } = {}) {
     const L = group.userData.load, on = ml > 50;
     L.setVisible(on);
     if (!on) return;
     const h = bucketFillHeight(ml), k = Math.min(1, ml / 10000), c = comp || [1, 0, 0, 0];
     // phase 8: wall-constrained and nearly level, a few clumps - never a cone however full
-    L.set(`${Math.round(ml / 25)}:${c.map((v) => Math.round(v / 50)).join(",")}`, bucketShape(h, bucketRadius, k, c), c, { amount: 0.45 + 0.45 * k, tMax: 0.22 });
+    // (Material in Motion 1A: tipped - the surface stays level in the world; wet material darker)
+    const tq = Math.round(tilt * 12) / 12, wq = Math.round(wet * 4) / 4;
+    L.set(`${Math.round(ml / 25)}:${c.map((v) => Math.round(v / 50)).join(",")}:${tq}:${wq}`, bucketShape(h, bucketRadius, k, c, 11, tq, BUCKET.h), c, { amount: 0.45 + 0.45 * k, tMax: 0.22, wet: wq });
   }
 
   // ---- the gold pan (world or hand): body, riffles, mud, water, pebbles, flakes
