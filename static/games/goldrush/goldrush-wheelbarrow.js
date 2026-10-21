@@ -24,6 +24,7 @@ import { transfer } from "./goldrush-transfer.js";
 import { mergeStatic } from "./goldrush-merge.js";
 import { BARROW } from "./goldrush-mechmodels.js";
 import { PushController, PUSH } from "./goldrush-wheelbarrow-controller.js";
+import { shownLoad } from "./goldrush-matflow.js";
 
 export const BARROW_ML = 85000;                 // 85 l (tuned with the phase-6 benchmark)
 const EMPTY_KG = 18;                            // the barrow itself
@@ -35,6 +36,8 @@ const OVER_FEET = 0.08;                         // ... or ground no higher than 
 const MAX_DH = 0.95;                            // nor more than this above / below the ground you stand on (the grips stay in reach)
 const TRAY_R = 0.46;                            // what a parked barrow blocks
 const DUMP_S = 1.1;                             // tipping it over (s)
+// (Material in Motion 1A: the tilt rises to the top at half time, stays there while the load pours out, then comes back)
+const tipCurve = (u) => { const a = Math.max(0, Math.min(1, u / 0.5)), b = Math.max(0, Math.min(1, (u - 0.86) / 0.14)); return Math.min(a * a * (3 - 2 * a), 1 - b * b * (3 - 2 * b)); };
 const finite = (v) => typeof v === "number" && Number.isFinite(v);
 
 export class Wheelbarrow {
@@ -62,6 +65,7 @@ export class Wheelbarrow {
       ...mergeStatic(THREE, this.group, this.group.children.filter((c) => c.isMesh && !c.isInstancedMesh && !keep.has(c) && !c.userData.noMerge && !(u.load && (c === u.load.surface || c === u.load.lumps))))];
     this.collider = { type: "circle", x: 0, z: 0, r: TRAY_R };
     this.dump = null;                           // { t, target, onPeak, moved }
+    this.vis = null;                            // Material in Motion 1A: { keep, owe } DisplayHolds (set by the processing system)
     this.theta = 0;
     this.roll = 0;
     this._fwd = { x: 0, z: 0 };
@@ -246,7 +250,7 @@ export class Wheelbarrow {
       theta += (held - theta) * c.lift;
       roll += (c.bump * 0.04 * Math.sin(c.travel * 17) - roll) * c.lift;
     }
-    if (this.dump) theta += Math.sin(Math.min(1, this.dump.t / DUMP_S) * Math.PI) * 0.75;
+    if (this.dump) theta += tipCurve(this.dump.t / DUMP_S) * 0.75;
     this.theta = theta;
     this.roll = roll;
     G.position.set(this.x, yw, this.z);
@@ -291,11 +295,15 @@ export class Wheelbarrow {
   gripLocal() { return this._gl || (this._gl = [BARROW.gripX, BARROW.gripY + 0.02, BARROW.grip - 0.07]); }
 
   _fills() {
-    const b = this.batch, frac = Math.min(1, b.volumeMl / this.capacityMl);
-    const sig = `${b.volumeMl}:${b.massG}`;
+    const b = this.batch, v = this.vis;
+    // (Material in Motion 1A: what is drawn is the truth, plus what is still falling out / minus what has not yet landed)
+    let ml = b.volumeMl, comp = b.massG > 0 ? b.comp : null;
+    if (v && (v.keep.ml > 0 || v.owe.ml > 0)) { ml = shownLoad(b.volumeMl, b.comp, v.keep, v.owe, this._shown || (this._shown = [0, 0, 0, 0])); comp = this._shown; }
+    const frac = Math.min(1, ml / this.capacityMl);
+    const sig = `${Math.round(ml)}:${comp ? comp[0] + comp[1] + comp[2] + comp[3] : 0}`;
     if (sig === this._fillSig) return;
     this._fillSig = sig;
-    this.models.setBarrowFill(this.group, frac, b.massG > 0 ? b.comp : null);
+    this.models.setBarrowFill(this.group, frac, comp && comp[0] + comp[1] + comp[2] + comp[3] > 0 ? comp : null);
   }
 
   serialize() {

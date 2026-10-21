@@ -48,7 +48,7 @@
 // load takes its few seconds of real work - no bar that fills on its own.
 
 import { MaterialBatch, STAGE, COARSE, batchFromDig, classify, panLoad, panSeconds, sieveSeconds, washRecovery, PAN_CAPACITY_ML, BOWL_CAPACITY_ML, BOWL_REST_ML, pour } from "./goldrush-material.js";
-import { ProcessModels, bucketFillHeight, washShape } from "./goldrush-processmodels.js";
+import { ProcessModels, bucketFillHeight, washShape, BUCKET } from "./goldrush-processmodels.js";
 import { MechModels, BARROW } from "./goldrush-mechmodels.js";
 import { Wheelbarrow } from "./goldrush-wheelbarrow.js";
 import { Sluice, SLUICE_AT, SLUICE_SPOTS, CLEAN_S } from "./goldrush-sluice.js";
@@ -60,7 +60,8 @@ import { FIND } from "./goldrush-resources.js";
 import { findSize } from "./goldrush-loot.js";
 import { centsForMass } from "./goldrush-economy.js";
 import { mergeStatic } from "./goldrush-merge.js";
-import { screenShape } from "./goldrush-heap.js";
+import { screenShape, looseColor, TRAY } from "./goldrush-heap.js";
+import { MaterialFlow, DisplayHold, shownLoad } from "./goldrush-matflow.js";
 import { ProspectSystem, SAMPLE_PAN_S } from "./goldrush-prospect.js";
 import { PlantModels, OVER_BELT, OVER_DROP, TRAP } from "./goldrush-plantmodels.js";
 import { Conveyor, Trommel, SpoilHeap, INTAKE, INTAKE_SPOT, CONVEYOR_KIT, TROMMEL_KIT, OVERSIZE, SPOIL } from "./goldrush-plant.js";
@@ -93,6 +94,7 @@ const CLASSIFIER_ML = 14000;
 const REACH = 2.4;               // m: a bucket this close catches what you dig
 const USE_R = 1.6;               // m: work spots
 const PICK_R = 1.8;              // m: picking a bucket up
+const POUR_TILT = 1.3, POUR_YAW = -1.35;   // Material in Motion 1A: how far the bucket in your hands tips (rad) and swings
 const FULL_SLOW = 0.15;          // a full 10 l bucket: 15 % slower
 const HELD = {
   bucket: { p: [0.24, -0.52, -0.6], r: [0.42, 0.3, 0.06] },           // hanging from the right hand, rim and load in view
@@ -182,8 +184,16 @@ export class ProcessingSystem {
     this.workPhase = null;
     this.workResult = null;
     this.settleT = 0;
+    // Material in Motion 1A: transfers the simulation makes in one step, drawn as a stream (goldrush-matflow.js). The
+    // holds are what a container's drawing still owes / keeps while it runs (truth + keep - owe is what is drawn).
+    this.flow = new MaterialFlow(THREE, scene, { effects: ctx.effects, quality: ctx.quality });
+    this.vis = { bucket: { keep: new DisplayHold(), owe: new DisplayHold() }, barrow: { keep: new DisplayHold(), owe: new DisplayHold() } };
+    this._pourSlot = null;            // the bucket pour in progress (tips the bucket in your hands)
+    this.pourK = 0;                   // how far the bucket in your hands is tipped, 0..1
+    this._lip = new THREE.Vector3();
     this._build();
     this.barrow = this.owned.has("wheelbarrow") ? new Wheelbarrow(THREE, this.scene, this.world, this.mech, s.wheelbarrow, WASH.barrowDrop) : null;
+    if (this.barrow) this.barrow.vis = this.vis.barrow;
     if (this.barrow) this.barrow.applyUpgrades(this.upgrades());            // (Prompt 10: its sideboards, tyre, bearings)
     this.sluice = this.owned.has("sluice") ? this._newSluice(s.sluice) : null;
     this.bulk = this.owned.has("bulkhopper") ? new BulkHopper(THREE, this.scene, this.world, this.auto, s.bulkHopper, this._autoCtx()) : null;
@@ -544,6 +554,7 @@ export class ProcessingSystem {
     const w = this._warm || (this._warm = []);
     if (on) {
       for (const L of this.models.loads) L.warm(true);       // bucket fills, the classifier's heap (7B)
+      this.flow.warm(true);                                  // (Material in Motion 1A: the stream's program, no first-pour hitch)
       const meshes = [this.cls.userData.conc,
         this.restPan.userData.mud, this.restPan.userData.water, this.handPan.userData.mud, this.handPan.userData.water, this.restPan.userData.riffles, this.handPan.userData.riffles,
         this.restBowl.userData.mud, this.restBowl.userData.water, this.handBowl.userData.mud, this.handBowl.userData.water,
@@ -559,6 +570,7 @@ export class ProcessingSystem {
       for (const [m, v, c] of w) { m.visible = v; if (c != null) m.count = c; }
       w.length = 0;
       for (const L of this.models.loads) L.warm(false);
+      this.flow.warm(false);
     }
   }
 
@@ -598,7 +610,7 @@ export class ProcessingSystem {
     if (!EQUIP.includes(id) || this.owned.has(id)) return false;
     this.owned.add(id);
     if (id === "bucket") this.bucket = { x: WASH.supplyDrop.x, z: WASH.supplyDrop.z, ry: 0.3, carried: false, batch: this._batch(STAGE.RAW) };
-    if (id === "wheelbarrow") { this.barrow = new Wheelbarrow(this.THREE, this.scene, this.world, this.mech, null, WASH.barrowDrop); this.barrow.applyUpgrades(this.upgrades()); }
+    if (id === "wheelbarrow") { this.barrow = new Wheelbarrow(this.THREE, this.scene, this.world, this.mech, null, WASH.barrowDrop); this.barrow.vis = this.vis.barrow; this.barrow.applyUpgrades(this.upgrades()); }
     if (id === "sluice") this.sluice = this._newSluice(null);           // delivered: boards by the tank, to be built
     if (id === "bulkhopper") this.bulk = new BulkHopper(this.THREE, this.scene, this.world, this.auto, null, this._autoCtx());     // delivered: a pallet by the sluice
     if (id === "feeder") {
@@ -760,6 +772,9 @@ export class ProcessingSystem {
     this.ledger.inUg += part.goldUg; this.ledger.inFineUg += part.fineUg; this.ledger.inG += part.massG; this.ledger.inMl += part.volumeMl;
     this.ledger.inFinds += part.finds.length;
     out.intoMl = part.volumeMl; out.intoG = part.massG; out.intoUg = part.goldUg; out.intoFinds = part.finds.length;
+    // (Material in Motion 1A: a shovel's load is drawn on the blade until it is tipped - the container's drawing waits for it)
+    const hold = source === "shovel" && !tgt.holder ? (tgt.kind === "wheelbarrow" ? this.vis.barrow : this.vis.bucket) : null;
+    if (hold) hold.owe.add(part.volumeMl, part.comp);
     if (tgt.holder) { tgt.holder.put(part); this.conveyor.stats.inMl += out.intoMl; this.conveyor._fillSig = null; }
     else tgt.batch.absorb(part);
     out.finds = []; out.count = 0;
@@ -985,6 +1000,7 @@ export class ProcessingSystem {
       return { ok: true, kind: "pick" };
     }
     if ((id === "bucket-drop" || id === "bucket-wash") && b && b.carried) {
+      this.flow.flush("bucket");                       // (Material in Motion 1A: a bucket set down ends its pour - the picture catches up at once)
       if (id === "bucket-wash") { b.x = WASH.bucketSpot.x; b.z = WASH.bucketSpot.z; b.ry = 0.4; this.ledger.buckets += b.batch.volumeMl > 0 ? 1 : 0; }
       else {
         const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw), rx = Math.cos(player.yaw), rz = -Math.sin(player.yaw);
@@ -1003,24 +1019,25 @@ export class ProcessingSystem {
       const R = this.receivers().find((r) => r.act === id);
       if (!R) return { ok: false };
       let ok;
+      const pre = { ml: w.batch.volumeMl, comp: w.batch.comp.slice(), stage: w.batch.stage };      // (what the stream will show: the tray's load, its share that went over)
       if (R.pile) {
         const bin = this._pileBin || (this._pileBin = new MaterialBuffer({ capacityMl: 1e12 })), c = w.trayCenter(this._tc3 || (this._tc3 = {})), at = { x: c.x, z: c.z };
-        ok = w.startDump(bin, (ml) => { R.pile.dumpFrom(bin, Infinity, at.x, at.z, 0.55); R.done(ml); }, this.nextBatch++);
-      } else ok = w.startDump(R.holder, (ml) => R.done(ml), this.nextBatch++);
+        ok = w.startDump(bin, (ml) => { R.pile.dumpFrom(bin, Infinity, at.x, at.z, 0.55); R.done(ml); this._barrowPoured(pre, ml, R); }, this.nextBatch++);
+      } else ok = w.startDump(R.holder, (ml) => { R.done(ml); this._barrowPoured(pre, ml, R); }, this.nextBatch++);
       return ok ? { ok: true, kind: "dump" } : { ok: false };
     }
     const bk = this.bulk, fd = this.feeder;
     if (id === "bucket-bulk" && b && b.carried && bk && bk.installed) {
-      const ml = bk.pourIn({ batch: b.batch, capacityMl: this.capacityMl });
-      this._fills();
+      const pre = this._pourPre(), ml = bk.pourIn({ batch: b.batch, capacityMl: this.capacityMl });
+      this._bucketPoured(pre, ml, "bulk");
       return ml > 0 ? { ok: true, kind: "feed", ml, into: "bulk" } : { ok: false };
     }
     if (id === "bulk-build" && bk) { const ok = bk.startBuild(); if (ok) this._clearAutomationFoot(); return ok ? { ok: true, kind: "build", what: "bulk" } : { ok: false }; }
     // phase 9: the plant
     const cv = this.conveyor, tr = this.trommel;
     if (id === "bucket-intake" && b && b.carried && cv && cv.installed) {
-      const ml = cv.pourIn({ batch: b.batch, capacityMl: this.capacityMl });
-      this._fills();
+      const pre = this._pourPre(), ml = cv.pourIn({ batch: b.batch, capacityMl: this.capacityMl });
+      this._bucketPoured(pre, ml, "intake");
       return ml > 0 ? { ok: true, kind: "feed", ml, into: "intake" } : { ok: false };
     }
     if (id === "exc-enter" && this.excavator) return { ok: true, kind: "enter" };
@@ -1041,13 +1058,13 @@ export class ProcessingSystem {
     if (id === "feeder-mode" && fd && fd.installed) { fd.setMode(fd.nextMode()); return { ok: true, kind: "mode", mode: fd.mode }; }
     if (id === "bulk-gate" && bk) return bk.openGate() ? { ok: true, kind: "gate" } : { ok: false };
     if (id === "bucket-hopper" && b && b.carried && sl && sl.installed) {
-      const ml = pour({ batch: b.batch }, sl.hopper, Infinity, this.nextBatch++);
-      this._fills();
+      const pre = this._pourPre(), ml = pour({ batch: b.batch }, sl.hopper, Infinity, this.nextBatch++);
+      this._bucketPoured(pre, ml, "hopper");
       return ml > 0 ? { ok: true, kind: "feed", ml } : { ok: false };
     }
     if (id === "bucket-barrow" && b && b.carried && w) {
-      const ml = pour({ batch: b.batch }, w, Infinity, this.nextBatch++);
-      this._fills();
+      const pre = this._pourPre(), ml = pour({ batch: b.batch }, w, Infinity, this.nextBatch++);
+      this._bucketPoured(pre, ml, "barrow");
       return ml > 0 ? { ok: true, kind: "feed", ml } : { ok: false };
     }
     if (id === "sluice-build" && sl) return sl.startBuild() ? { ok: true, kind: "build" } : { ok: false };
@@ -1657,6 +1674,128 @@ export class ProcessingSystem {
     this.effects.spill(p.x + (Math.random() - 0.5) * 0.5, 0.58, p.z + (Math.random() - 0.5) * 0.4, def, 0.35);
   }
 
+  // ------------------------------------------------------------ Material in Motion 1A: transfers, drawn
+  //
+  // The simulation moves material in one exact step (pour() / transfer()). What follows only SHOWS that step
+  // (goldrush-matflow.js): the amount is the one the step returned (a blocked or partial transfer shows no / a
+  // smaller stream - nothing is poured that was not moved), the holds keep the drawings of source and destination
+  // in line with the stream, and everything is back at the truth when the stream ends (or is cancelled).
+
+  _pourPre() { const b = this.bucket.batch; return { ml: b.volumeMl, comp: b.comp.slice(), stage: b.stage }; }
+
+  // the world point a stream ends at -> how widely it lands (m)
+  _pourTarget(key, out, R = null) {
+    const W = this.world;
+    if (key === "hopper") {
+      const sl = this.sluice, wp = this.wp, at = wp ? wp.spots.dist : HOPPER_AT;
+      out.x = at.x; out.z = at.z; out.y = (sl ? sl.root.position.y : W.groundAt(at.x, at.z)) + (wp ? 1.2 : 1.12);
+      return wp ? 0.3 : 0.2;
+    }
+    if (key === "bulk") { const bk = this.bulk; out.x = bk.root.position.x; out.z = bk.root.position.z; out.y = bk.root.position.y + BULK.outletY + BULK.depth - 0.14; return 0.16; }
+    if (key === "intake") { out.x = INTAKE.x; out.z = INTAKE.z; out.y = W.groundBelowAt(INTAKE.x, INTAKE.z) + (this.conveyor ? this.conveyor.rimY : INTAKE.rimY) - 0.12; return 0.24; }
+    if (key === "barrow") {
+      const w = this.barrow, v = this._pv || (this._pv = new this.THREE.Vector3());
+      v.set(0, TRAY.fy + 0.1, (TRAY.zf0 + TRAY.zb0) / 2).applyMatrix4(w.group.matrixWorld);
+      out.x = v.x; out.y = v.y; out.z = v.z;
+      return 0.17;
+    }
+    if (key === "pile" && R && R.pile) { out.x = R.pile.site.drop.x; out.z = R.pile.site.drop.z; out.y = W.groundAt(out.x, out.z) + 0.3; return 0.4; }
+    if (key === "bucket") { const b = this.bucket; out.x = b.x; out.z = b.z; out.y = W.groundAt(b.x, b.z) + 0.2 * this.bucketScale; return 0.05; }
+    out.x = this.camera ? this.camera.position.x : 0; out.y = 0; out.z = this.camera ? this.camera.position.z : 0;
+    return 0.2;
+  }
+
+  /**
+   * Draw a transfer of `o.ml` (the amount the simulation moved) from `o.from` / `o.fromPos` to the point of `o.key`.
+   * srcHold: the source's `keep` (it still shows what falls out), dstHold: the destination's `owe` (it shows it on arrival).
+   */
+  _startPour(o) {
+    const tgt = this._pt || (this._pt = { x: 0, y: 0, z: 0 });
+    const spread = this._pourTarget(o.key, tgt, o.R || null);
+    const rgb = looseColor(o.comp, [0, 0, 0]), sh = o.srcHold || null, dh = o.dstHold || null;
+    if (sh) { sh.add(o.ml, o.comp); sh.start(o.ml); }
+    if (dh) { dh.add(o.ml, o.comp); dh.start(o.ml); }
+    const slot = this.flow.start({
+      ml: o.ml, rate: o.rate, delay: o.delay || 0, from: o.from || null, fromPos: o.fromPos || null, to: tgt, spread, comp: o.comp, rgb, wet: o.stage && o.stage !== STAGE.RAW ? 0.55 : 0,
+      dust: o.dust != null ? o.dust : 1, kind: o.kind,
+      onConsume: sh ? (d) => sh.consume(d) : null, onLand: dh ? (d) => dh.consume(d) : null,
+      onEnd: () => { if (slot && this._pourSlot === slot) this._pourSlot = null; },
+    });
+    if (!slot) { if (sh) sh.consume(o.ml); if (dh) dh.consume(o.ml); }
+    return slot;
+  }
+
+  // a bucket was tipped (pre: what it held; ml: what the transfer moved - 0: nothing, no stream)
+  _bucketPoured(pre, ml, key) {
+    if (ml > 0 && this.flow && this.camera && this.bucket) {
+      const b = this.bucket.batch, comp = [0, 0, 0, 0];
+      for (let k = 0; k < 4; k++) comp[k] = Math.max(0, pre.comp[k] - b.comp[k]);
+      this._lipUpdate();
+      this._pourSlot = this._startPour({
+        key, ml, comp, stage: pre.stage, kind: "bucket", delay: 0.24, rate: Math.max(1800, Math.min(11000, ml / 1.2)),
+        from: this._lipFn || (this._lipFn = (out) => out.copy(this._lip)),
+        srcHold: this.vis.bucket.keep, dstHold: key === "barrow" ? this.vis.barrow.owe : null,
+      });
+    }
+    this._fills();
+  }
+
+  // a barrow tipped over (at the top of its tilt the simulation moved ml; pre: what it held, R: the receiver)
+  _barrowPoured(pre, ml, R) {
+    const w = this.barrow;
+    if (!(ml > 0) || !this.flow || !w) return;
+    const share = pre.ml > 0 ? Math.min(1, ml / pre.ml) : 1, comp = [0, 0, 0, 0];
+    for (let k = 0; k < 4; k++) comp[k] = pre.comp[k] * share;
+    this._startPour({
+      key: R.pile ? "pile" : R.id, R, ml, comp, stage: pre.stage, kind: "barrow", rate: Math.max(4000, ml / 0.5),
+      from: (out) => out.set(0, TRAY.fy + TRAY.d, TRAY.zf1).applyMatrix4(w.group.matrixWorld),
+      srcHold: this.vis.barrow.keep, dstHold: null,
+    });
+  }
+
+  /**
+   * The shovel's load comes off the blade into the bucket / barrow beside you (the cut put it there in the same
+   * step; the drawing waited for this moment): drawn falling from `from` (world point) into the container.
+   * -> true when a stream was started (otherwise the caller keeps its own small spill)
+   */
+  shovelArrive(into, from) {
+    const key = into === "wheelbarrow" ? "barrow" : into === "bucket" ? "bucket" : null;
+    if (!key || !this.flow || !(key === "barrow" ? this.barrow : this.bucket)) return false;
+    const hold = this.vis[key].owe, ml = hold.pending;
+    if (!(ml > 0)) return false;
+    const comp = hold.g.slice(), tgt = this._pt || (this._pt = { x: 0, y: 0, z: 0 });
+    const spread = this._pourTarget(key, tgt);
+    hold.start(ml);
+    this.flow.start({ ml, rate: Math.max(2500, ml / 0.3), fromPos: from, to: tgt, spread, comp, rgb: looseColor(comp, [0, 0, 0]), wet: 0, dust: 0.55, kind: "shovel", onLand: (d) => hold.consume(d) });
+    return true;
+  }
+
+  // per frame: the streams, the holds, the bucket in your hands tipping over
+  _flowUpdate(dt) {
+    this.flow.update(dt);
+    for (const k of ["bucket", "barrow"]) { this.vis[k].keep.tick(dt); this.vis[k].owe.tick(dt); }
+    const want = this._pourSlot ? 1 : 0, k0 = this.pourK;
+    this.pourK += (want - this.pourK) * (1 - Math.exp(-dt * (want ? 9 : 7)));
+    if (this.pourK < 0.003) this.pourK = 0;
+    if (this._pourSlot) this._lipUpdate();
+    if (k0 !== this.pourK || this.vis.bucket.keep.ml > 0 || this.vis.bucket.owe.ml > 0) this._fills();
+  }
+
+  // the lowest point of the rim of the bucket in your hands, in the world (where the stream leaves it)
+  _lipUpdate() {
+    const g = this.handBucket, cam = this.camera;
+    if (!g || !cam) return;
+    g.updateMatrixWorld(true);
+    cam.updateMatrixWorld();
+    const v = this._lv || (this._lv = new this.THREE.Vector3()), r = BUCKET.r1 * 0.97;
+    let best = Infinity;
+    for (let i = 0; i < 10; i++) {
+      const a = i * 0.6283;
+      v.set(Math.cos(a) * r, BUCKET.h, Math.sin(a) * r).applyMatrix4(g.matrixWorld).applyMatrix4(cam.matrixWorld);
+      if (v.y < best) { best = v.y; this._lip.copy(v); }
+    }
+  }
+
   // ------------------------------------------------------------ visuals
 
   _fills() {
@@ -1664,7 +1803,12 @@ export class ProcessingSystem {
     const M = this.models;
     // world bucket + the one in your hand
     const bc = this.bucket ? this.bucket.batch.comp : null;
-    for (const g of [this.worldBucket, this.handBucket]) M.setBucketFill(g, this.bucket ? this.bucket.batch.volumeMl / (this.bucketScale ** 3) : 0, bc);
+    // (Material in Motion 1A: the truth, plus what is still falling out of it / minus what has not landed in it yet;
+    // wet once it has been washed; tipped, the surface stays level in the world)
+    const V = this.vis.bucket, held = V.keep.ml > 0 || V.owe.ml > 0, sc = this._shownC || (this._shownC = [0, 0, 0, 0]);
+    const ml = this.bucket ? (held ? shownLoad(this.bucket.batch.volumeMl, bc, V.keep, V.owe, sc) : this.bucket.batch.volumeMl) : 0;
+    const wet = this.bucket && this.bucket.batch.stage !== STAGE.RAW ? 0.55 : 0, tilt = Math.max(0, this.pourK * POUR_TILT - 0.42 - 0.12);
+    for (const g of [this.worldBucket, this.handBucket]) M.setBucketFill(g, ml / (this.bucketScale ** 3), held ? sc : bc, { tilt: g === this.handBucket ? tilt : 0, wet });
     // classifier heap and the tub's concentrate
     const u = this.cls.userData;
     this._sieveLook();
@@ -1819,6 +1963,7 @@ export class ProcessingSystem {
    * Per frame. Hands: the bucket you carry / the pan you swirl (view space).
    */
   update(dt, player = null) {
+    this._flowUpdate(dt);
     this.tickWork(dt);
     this.time += dt;
     if (this.prospect) this.prospect.update();
@@ -1897,8 +2042,10 @@ export class ProcessingSystem {
       if (H.held !== "bucket") H.setHeld("bucket", this.handBucket, HELD_GRIPS.bucket);
       const pose = this.handBucket.userData.pose || (this.handBucket.userData.pose = { p: [0, 0, 0], r: [0, 0, 0] });
       const sw = Math.sin(this.time * 2.2) * 0.012;
-      pose.p[0] = HELD.bucket.p[0]; pose.p[1] = HELD.bucket.p[1]; pose.p[2] = HELD.bucket.p[2];
-      pose.r[0] = HELD.bucket.r[0] + sw; pose.r[1] = HELD.bucket.r[1]; pose.r[2] = HELD.bucket.r[2] + sw * 0.6;
+      // (Material in Motion 1A: tipped for a pour - forward and up towards what it pours into, the rim turned away)
+      const pk = this.pourK;
+      pose.p[0] = HELD.bucket.p[0] + 0.08 * pk; pose.p[1] = HELD.bucket.p[1] + 0.14 * pk; pose.p[2] = HELD.bucket.p[2] - 0.2 * pk;
+      pose.r[0] = HELD.bucket.r[0] + sw - POUR_TILT * pk; pose.r[1] = HELD.bucket.r[1] + POUR_YAW * pk; pose.r[2] = HELD.bucket.r[2] + sw * 0.6;
     } else if (H.held) H.setHeld(null);
   }
 

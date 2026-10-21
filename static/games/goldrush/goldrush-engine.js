@@ -588,7 +588,7 @@ export class GoldRushGame {
     const l = (ml / 1000).toFixed(0), rest = pr.barrow && pr.barrow.batch.volumeMl > 0 ? " – der Rest bleibt in der Karre" : "";
     // phase 9: the intake at the mountain's foot, the spoil heap
     if (where === "intake" && pr.conveyor) {
-      if (this.effects) this.effects.spill(INTAKE.x, INTAKE.rimY + 0.2, INTAKE.z, MATERIALS[0], 1.0);
+      if (this.effects && !pr.flow) this.effects.spill(INTAKE.x, INTAKE.rimY + 0.2, INTAKE.z, MATERIALS[0], 1.0);       // (Material in Motion 1A: the stream shows it)
       this.audio.play("sluice_feed", { dist: 1.2, strength: 0.9 });
       this.hud.message("Ausgekippt", `${l} l im Aufgabetrichter (${Math.round(pr.conveyor.volumeMl / 1000)} / ${Math.round(pr.conveyor.capacityMl / 1000)} l)${rest}`);
       this.dirty = true;
@@ -601,7 +601,7 @@ export class GoldRushGame {
       return;
     }
     if (where === "bulk" && bk) {
-      if (this.effects) this.effects.spill(bk.root.position.x + 0.35, BULK.outletY + 0.55, bk.root.position.z, MATERIALS[0], 1.0);
+      if (this.effects && !pr.flow) this.effects.spill(bk.root.position.x + 0.35, BULK.outletY + 0.55, bk.root.position.z, MATERIALS[0], 1.0);
       this.audio.play("sluice_feed", { dist: 1.2, strength: 0.9 });
       this.hud.message("Ausgekippt", `${l} l im Vorratstrichter (${Math.round(bk.volumeMl / 1000)} / ${Math.round(bk.capacityMl / 1000)} l)${rest}`);
       this.dirty = true;
@@ -609,7 +609,7 @@ export class GoldRushGame {
     }
     if (!sl) return;
     const x = sl.root.position.x - 0.27, z = sl.root.position.z;
-    if (this.effects) this.effects.spill(x, 1.35, z, MATERIALS[0], 0.9);
+    if (this.effects && !pr.flow) this.effects.spill(x, 1.35, z, MATERIALS[0], 0.9);
     this.audio.play("sluice_feed", { dist: 1.2 });
     this.hud.message("Ausgekippt", `${l} l im Trichter${rest}`);
     this.dirty = true;
@@ -618,7 +618,7 @@ export class GoldRushGame {
   // a bucket emptied into the hopper / the barrow: a little spill over the edge
   _fedEffect(id) {
     const pr = this.processing;
-    if (!this.effects) return;
+    if (!this.effects || pr.flow) return;               // (Material in Motion 1A: a bucket's stream is drawn by the processing system)
     if (id === "bucket-hopper" && pr.sluice) this.effects.spill(pr.sluice.root.position.x - 0.27, 1.3, pr.sluice.root.position.z, MATERIALS[0], 0.5);
     else if (id === "bucket-bulk" && pr.bulk) this.effects.spill(pr.bulk.root.position.x + 0.3, BULK.outletY + 0.5, pr.bulk.root.position.z, MATERIALS[0], 0.5);
     else if (id === "bucket-barrow" && pr.barrow) { const c = pr.barrow.trayCenter(); this.effects.spill(c.x, this.world.groundAt(c.x, c.z) + 0.6, c.z, MATERIALS[0], 0.5); }
@@ -2136,6 +2136,12 @@ export class GoldRushGame {
   _shovelRelease(rl) {
     if (!this.effects) return;
     const pr = this.processing, def = MATERIALS[rl.mat] || MATERIALS[0], k = Math.min(0.8, 0.3 + rl.kg / 4);
+    // Material in Motion 1A: into a bucket / barrow - the load falls off the blade into it (the container's drawing waited for this)
+    if (rl.into && pr.flow) {
+      const c = this.camera, p = this.player, cp = Math.cos(p.pitch), from = this._blade || (this._blade = new THREE.Vector3());
+      from.set(c.position.x - Math.sin(p.yaw) * cp * 0.7 + Math.cos(p.yaw) * 0.28, c.position.y - 0.62, c.position.z - Math.cos(p.yaw) * cp * 0.7 - Math.sin(p.yaw) * 0.28);
+      if (pr.shovelArrive(rl.into, from)) return;
+    }
     if (rl.into === "wheelbarrow" && pr.barrow) { const c = pr.barrow.trayCenter(); this.effects.spill(c.x, this.world.groundAt(c.x, c.z) + 0.62, c.z, def, k); return; }
     if (rl.into === "bucket" && pr.bucket) { const b = pr.bucket; this.effects.spill(b.x, this.world.groundAt(b.x, b.z) + 0.34 * pr.bucketScale, b.z, def, k); return; }
     const p = this.player, cp = Math.cos(p.pitch), fx = -Math.sin(p.yaw) * cp, fz = -Math.cos(p.yaw) * cp, rx = Math.cos(p.yaw), rz = -Math.sin(p.yaw);
