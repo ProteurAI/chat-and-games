@@ -28,7 +28,7 @@
 // processing system (swirling the pan, the bucket swinging).
 
 import { ToolModels } from "./goldrush-toolmodels.js";
-import { ARM, SHOULDER, GloveBase } from "./goldrush-armik.js";
+import { ARM, SHOULDER, THUMB, GloveBase } from "./goldrush-armik.js";
 import { RiggedArm, makeRigMaterials } from "./goldrush-fprig.js";
 
 export { ARM };
@@ -105,7 +105,9 @@ export const GRIPS = {
     { side: -1, pos: [0, 0, 0.25], axis: "z", roll: 2.3, flip: 1, freeAtRest: true },   // joins for the swing
   ],
 };
-const HANDLE_IN_GLOVE = [0, -0.03, -0.072];      // where a held handle runs through the closed glove
+// where a held handle runs through the closed glove: the centre of the loop the curled fingers make (FP2.0B: fitted to the clip's
+// finger chains at curl 0.97 - the loop's radius clears a 17 mm shaft - and the palm's underside)
+const HANDLE_IN_GLOVE = [0, -0.036, -0.075];
 
 // Visual Overhaul A, C-lite: the shovel's blade meets the ground where the stroke digs. depth: how far the tip
 // goes in past the surface (along the view ray - the world's depth clips it); turn: the most the shovel is aimed
@@ -195,8 +197,8 @@ class Glove extends GloveBase {
     }
     // thumb, off the side of the palm
     const tb = (this.thumb = new THREE.Group());
-    tb.position.set(-0.04, -0.006, -0.026);
-    tb.rotation.set(-0.2, 0.85, -0.5);
+    tb.position.set(-0.036, -0.008, -0.022);
+    tb.rotation.set(THUMB.open[0], THUMB.open[1], THUMB.open[2]);
     const t1 = new THREE.Mesh(res.capsule, res.gloveMat);
     t1.scale.set(1.3, 1.25, 0.048 / 0.05);
     t1.position.z = -0.02;

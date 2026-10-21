@@ -11,6 +11,10 @@ export const ARM = { upper: 0.31, fore: 0.28 };
 // and behind the camera, out to the sides (the right one; mirrored for the left)
 export const SHOULDER = [0.25, -0.42, 0.14];
 
+// the thumb's root rotation (euler XYZ, the right hand; the left one is mirrored): open = the rest pose of the arm GLB
+// (tools/goldrush/build_fp_arms.py THUMB_EULER), grip = closed over a handle, rim = (see GRIPS in goldrush-hand.js)
+export const THUMB = { open: [-0.2, 0.55, -0.5], grip: [-0.55, 0.4, -0.9] };
+
 export class GloveBase {
   /** side: +1 right, -1 left; restPose: the pose object to start from (cloned by the caller's helper) */
   constructor(THREE, side, restPose) {
@@ -37,7 +41,7 @@ export class GloveBase {
     root.position.set(pose.p[0] * s * aspectK + extra.x * s, pose.p[1] + extra.y, pose.p[2]);
     root.rotation.set(pose.r[0] + extra.rx, pose.r[1] * s, pose.r[2] * s, "YXZ");
     root.scale.set(s, 1, 1);
-    this.thumb.rotation.set(-0.2, 0.85, -0.5);
+    this.thumb.rotation.set(THUMB.open[0], THUMB.open[1], THUMB.open[2]);
     this._curl(pose.c);
     root.updateMatrix();
     this._arm(aspectK);
@@ -49,7 +53,7 @@ export class GloveBase {
     const root = this.root;
     m.decompose(root.position, root.quaternion, root.scale);
     if (thumb) this.thumb.rotation.set(thumb[0], thumb[1], thumb[2]);
-    else this.thumb.rotation.set(-0.55, 0.55, -0.9);          // thumb closed over the handle
+    else this.thumb.rotation.set(THUMB.grip[0], THUMB.grip[1], THUMB.grip[2]);          // thumb closed over the handle
     this._curl(curl, thumb ? (thumb[3] != null ? thumb[3] : 0.9) : 0.9);
     root.updateMatrix();
     this._arm(aspectK);

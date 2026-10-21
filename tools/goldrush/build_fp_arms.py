@@ -33,18 +33,21 @@ from skimage import measure
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "static" / "games" / "goldrush" / "assets" / "fp"
-TRIS_GLOVE = int(sys.argv[sys.argv.index("--tris") + 1]) if "--tris" in sys.argv else 4200
+TRIS_GLOVE = int(sys.argv[sys.argv.index("--tris") + 1]) if "--tris" in sys.argv else 6200
 TRIS_SLEEVE = 1500
-H = 0.0013                                                      # voxel (m)
+CUFF_END = 0.064                                                  # where the glove cuff ends (the sleeve runs on)
+H = 0.001                                                      # voxel (m)
 
 # ---------------------------------------------------------------------------------------------- the model (right hand)
 WRIST_W = 0.035                                                   # the IK wrist (where the sleeve meets the glove), z
 ELBOW_Z = WRIST_W + 0.28
 SHOULDER_Z = ELBOW_Z + 0.31
-FINGERS = [(-0.029, 0.04, 0.034, 0.0112), (-0.0098, 0.045, 0.037, 0.0118), (0.0098, 0.042, 0.034, 0.0112), (0.028, 0.033, 0.027, 0.0098)]
+# (x at the knuckle, proximal length, middle + distal length, radius, splay: x drift per m of finger) - FP2.0B: wider apart and fanned,
+# so the four fingers read as four fingers (not one mitten); the knuckle bar spans them
+FINGERS = [(-0.0318, 0.041, 0.034, 0.0098, -0.10), (-0.0106, 0.046, 0.038, 0.0103, -0.02), (0.0106, 0.043, 0.035, 0.0098, 0.05), (0.0308, 0.034, 0.027, 0.0087, 0.13)]
 KNUCKLE_Z = -0.088
-THUMB_ORIGIN = np.array([-0.04, -0.006, -0.026])
-THUMB_EULER = (-0.2, 0.85, -0.5)                                  # XYZ, as three.js
+THUMB_ORIGIN = np.array([-0.036, -0.008, -0.022])
+THUMB_EULER = (-0.2, 0.55, -0.5)                                  # (= THUMB.open in goldrush-armik.js)                                  # XYZ, as three.js
 
 
 def euler_xyz(a, b, c):
@@ -86,16 +89,16 @@ def bones_right():
     add("upper", None, [0, -0.004, SHOULDER_Z])
     add("fore", "upper", [0, -0.004, ELBOW_Z])
     add("hand", "fore", [0, 0, 0])
-    for i, (x, l1, l2, rad) in enumerate(FINGERS):
+    for i, (x, l1, l2, rad, sp) in enumerate(FINGERS):
         s1, s2, s3 = l1, l2 * 0.55, l2 * 0.45
         add(f"f{i}_1", "hand", [x, 0.001, KNUCKLE_Z])
-        add(f"f{i}_2", f"f{i}_1", [x, 0.001, KNUCKLE_Z - s1])
-        add(f"f{i}_3", f"f{i}_2", [x, 0.001, KNUCKLE_Z - s1 - s2])
-        B[f"f{i}_tip"] = {"pos": np.array([x, 0.001, KNUCKLE_Z - s1 - s2 - s3]), "R": np.eye(3)}
+        add(f"f{i}_2", f"f{i}_1", [x + sp * s1, 0.001, KNUCKLE_Z - s1])
+        add(f"f{i}_3", f"f{i}_2", [x + sp * (s1 + s2), 0.001, KNUCKLE_Z - s1 - s2])
+        B[f"f{i}_tip"] = {"pos": np.array([x + sp * (s1 + s2 + s3), 0.001, KNUCKLE_Z - s1 - s2 - s3]), "R": np.eye(3)}
     Rt = euler_xyz(*THUMB_EULER)
     add("th_1", "hand", THUMB_ORIGIN, Rt)
     d = Rt @ np.array([0, 0, -1.0])
-    l1, l2, l3 = 0.038, 0.034, 0.022
+    l1, l2, l3 = 0.030, 0.027, 0.019
     add("th_2", "th_1", THUMB_ORIGIN + d * l1, Rt)
     add("th_3", "th_2", THUMB_ORIGIN + d * (l1 + l2), Rt)
     B["th_tip"] = {"pos": THUMB_ORIGIN + d * (l1 + l2 + l3), "R": Rt}
@@ -130,41 +133,49 @@ def build_field(B, part):
         h = 0.003
         xs = np.arange(-0.06, 0.06, h, dtype=np.float32)
         ys = np.arange(-0.06, 0.06, h, dtype=np.float32)
-        zs = np.arange(0.02, SHOULDER_Z + 0.03, h, dtype=np.float32)
+        zs = np.arange(0.0, SHOULDER_Z + 0.03, h, dtype=np.float32)
         P = np.meshgrid(xs, ys, zs, indexing="ij")
         X, Y, Z = P
         # forearm (a little wider at the elbow), the elbow, the upper arm
-        d = capsule(P, [0, -0.004, WRIST_W], [0, -0.004, ELBOW_Z], 0.033, 0.040)
+        d = capsule(P, [0, -0.004, WRIST_W - 0.02], [0, -0.004, ELBOW_Z], 0.0345, 0.040)
         d = smin(d, capsule(P, [0, -0.004, ELBOW_Z], [0, -0.004, SHOULDER_Z + 0.02], 0.042, 0.047), 0.012)
         # cloth folds near the elbow and the wrist
-        fold = 0.0011 * np.sin(Z * 210.0 + np.sin(X * 90.0) * 2.0) * np.exp(-(((Z - ELBOW_Z) / 0.05) ** 2)) + 0.0007 * np.sin(Z * 260.0 + X * 40.0) * np.exp(-(((Z - 0.07) / 0.03) ** 2))
+        fold = 0.0009 * np.sin(Z * 95.0 + np.sin(X * 70.0 + Y * 40.0) * 2.5) * np.exp(-(((Z - ELBOW_Z) / 0.06) ** 2)) + 0.0006 * np.sin(Z * 120.0 + X * 60.0 + Y * 30.0) * np.exp(-(((Z - 0.09) / 0.04) ** 2))
         return d + fold.astype(np.float32), (xs, ys, zs), h
-    xs = np.arange(-0.078, 0.078, H, dtype=np.float32)
+    xs = np.arange(-0.125, 0.062, H, dtype=np.float32)                  # (the thumb reaches out to x = -0.10)
     ys = np.arange(-0.062, 0.078, H, dtype=np.float32)
-    zs = np.arange(-0.215, 0.075, H, dtype=np.float32)
+    zs = np.arange(-0.215, 0.080, H, dtype=np.float32)
     P = np.meshgrid(xs, ys, zs, indexing="ij")
     X, Y, Z = P
-    # the gauntlet cuff (flared, over the sleeve) with its rolled rim
-    d = capsule(P, [0, -0.002, -0.004], [0, -0.002, 0.046], 0.0375, 0.0405)
-    ring = np.sqrt((np.sqrt(X ** 2 + (Y + 0.002) ** 2) - 0.0392) ** 2 + (Z + 0.003) ** 2) - 0.0048
-    d = smin(d, ring, 0.003)
+    # the gauntlet cuff (flared, over the sleeve) ends flat at CUFF_END with a rolled rim - the sleeve comes out of it cleanly
+    d = capsule(P, [0, -0.002, -0.014], [0, -0.002, CUFF_END + 0.02], 0.0372, 0.0408)
+    d = np.maximum(d, Z - CUFF_END)
+    ring = np.sqrt((np.sqrt(X ** 2 + (Y + 0.002) ** 2) - 0.0392) ** 2 + (Z + 0.003) ** 2) - 0.0042
+    ring2 = np.sqrt((np.sqrt(X ** 2 + (Y + 0.002) ** 2) - 0.0398) ** 2 + (Z - CUFF_END + 0.0035) ** 2) - 0.0034
+    d = smin(smin(d, ring, 0.003), ring2, 0.002)
     # the glove: palm, padded back, knuckle bar
     d = smin(d, ellipsoid(P, [0, 0, -0.047], [0.047, 0.021, 0.052]), 0.006)
     d = smin(d, ellipsoid(P, [0, 0.012, -0.05], [0.04, 0.012, 0.042]), 0.006)
-    d = smin(d, capsule(P, [-0.032, 0.002, -0.086], [0.032, 0.002, -0.086], 0.0135, 0.0125), 0.004)
-    # fingers: three joints each; a bulge at each joint (the glove's creases are in the vertex colours)
-    for i, (x, l1, l2, rad) in enumerate(FINGERS):
-        rad = rad * 0.8                                           # (the old capsules overlapped: slimmer, so the fingers read as fingers)
+    d = smin(d, capsule(P, [-0.030, 0.003, -0.087], [0.030, 0.003, -0.087], 0.0125, 0.0115), 0.004)
+    # fingers: three joints each, a bulge at each joint (the glove's creases are in the shading); the fingers are joined to the palm
+    # but NOT to each other (a hard union: the gaps between them stay open)
+    fing = None
+    for i, (x, l1, l2, rad, sp) in enumerate(FINGERS):
         a, b, c, e = B[f"f{i}_1"]["pos"], B[f"f{i}_2"]["pos"], B[f"f{i}_3"]["pos"], B[f"f{i}_tip"]["pos"]
-        d = smin(d, capsule(P, a, b, rad, rad * 0.97), 0.003)
-        d = smin(d, capsule(P, b, c, rad * 0.97, rad * 0.93), 0.003)
-        d = smin(d, capsule(P, c, e, rad * 0.93, rad * 0.8), 0.003)
-        d = smin(d, ellipsoid(P, e + np.array([0, 0, 0.004]), [rad * 0.8, rad * 0.78, rad * 0.9]), 0.003)
+        f = capsule(P, a, b, rad, rad * 0.97)
+        f = smin(f, capsule(P, b, c, rad * 0.97, rad * 0.92), 0.0025)
+        f = smin(f, capsule(P, c, e, rad * 0.92, rad * 0.78), 0.0025)
+        f = smin(f, ellipsoid(P, e + np.array([0, 0, 0.003]), [rad * 0.8, rad * 0.76, rad * 0.9]), 0.0025)
+        for jp in (b, c):                                          # the joint knuckles (back of the finger)
+            f = smin(f, ellipsoid(P, jp + np.array([0, rad * 0.35, 0]), [rad * 1.0, rad * 0.95, rad * 0.8]), 0.002)
+        fing = f if fing is None else np.minimum(fing, f)
+    d = smin(d, fing, 0.0035)
     # thumb
     t1, t2, t3, te = B["th_1"]["pos"], B["th_2"]["pos"], B["th_3"]["pos"], B["th_tip"]["pos"]
-    d = smin(d, capsule(P, t1 + (t1 - t2) * 0.15, t2, 0.0148, 0.0138), 0.004)
-    d = smin(d, capsule(P, t2, t3, 0.0138, 0.0128), 0.003)
-    d = smin(d, capsule(P, t3, te, 0.0128, 0.011), 0.003)
+    d = smin(d, capsule(P, t1 + (t1 - t2) * 0.15, t2, 0.0156, 0.0146), 0.004)
+    d = smin(d, capsule(P, t2, t3, 0.0146, 0.0138), 0.003)
+    d = smin(d, capsule(P, t3, te, 0.0138, 0.0124), 0.003)
+    d = smin(d, ellipsoid(P, te + (te - t3) * 0.1, [0.0124, 0.0118, 0.0128]), 0.003)          # a blunt, rounded thumb tip
     return d, (xs, ys, zs), H
 
 
@@ -183,14 +194,14 @@ def skin(V, B):
 
     add("upper", B["upper"]["pos"], B["fore"]["pos"], 0.045)
     add("fore", B["fore"]["pos"], [0, -0.004, WRIST_W], 0.04)
-    add("hand", [0, 0, 0.0], [0, 0, KNUCKLE_Z + 0.002], 0.032)
+    add("hand", [0, 0, 0.032], [0, 0, KNUCKLE_Z + 0.004], 0.030)
     for i in range(4):
-        add(f"f{i}_1", B[f"f{i}_1"]["pos"], B[f"f{i}_2"]["pos"], 0.0075)
-        add(f"f{i}_2", B[f"f{i}_2"]["pos"], B[f"f{i}_3"]["pos"], 0.0075)
-        add(f"f{i}_3", B[f"f{i}_3"]["pos"], B[f"f{i}_tip"]["pos"], 0.0075)
-    add("th_1", B["th_1"]["pos"], B["th_2"]["pos"], 0.0085)
+        add(f"f{i}_1", B[f"f{i}_1"]["pos"], B[f"f{i}_2"]["pos"], 0.0056)
+        add(f"f{i}_2", B[f"f{i}_2"]["pos"], B[f"f{i}_3"]["pos"], 0.0056)
+        add(f"f{i}_3", B[f"f{i}_3"]["pos"], B[f"f{i}_tip"]["pos"], 0.0056)
+    add("th_1", B["th_1"]["pos"] + (B["th_1"]["pos"] - B["th_2"]["pos"]) * 0.8, B["th_2"]["pos"], 0.013)
     add("th_2", B["th_2"]["pos"], B["th_3"]["pos"], 0.0085)
-    add("th_3", B["th_3"]["pos"], B["th_tip"]["pos"], 0.0085)
+    add("th_3", B["th_3"]["pos"], B["th_tip"]["pos"], 0.0062)
     W = np.zeros((len(V), len(names)), np.float32)
     for j, ((a, b), s) in enumerate(zip(segs, sig)):
         W[:, j] = np.exp(-((seg_dist(V, a, b) / s) ** 2))
@@ -205,27 +216,28 @@ def skin(V, B):
 def colours(V, B, AO=None):
     """linear vertex colours: leather glove (palm darker, back pad lighter, creases at the finger joints), the canvas cuff and sleeve"""
     lin = lambda h: np.array([((c / 255 + 0.055) / 1.055) ** 2.4 if c / 255 > 0.04045 else c / 255 / 12.92 for c in ((h >> 16) & 255, (h >> 8) & 255, h & 255)])
-    leather, cuffc, fore, upper = lin(0x9A7752), lin(0x6A5642), lin(0x6A5642), lin(0x5E4C3B)
+    # FP2.0B: darker, warmer work leather against an olive canvas sleeve (the glove must read as a glove, not as skin or a sleeve)
+    leather, cuffc, fore, upper = lin(0x7A5E42), lin(0x4A3C2C), lin(0x55513F), lin(0x4A4636)
     C = np.tile(leather, (len(V), 1)).astype(np.float64)
     x, y, z = V[:, 0], V[:, 1], V[:, 2]
     # a mottled, worn surface: slow patches + fine grain (the shader adds the relief)
     mott = 1.0 + 0.07 * np.sin(x * 190 + z * 130 + np.sin(y * 150) * 2) + 0.05 * np.sin(z * 410 - x * 270 + 1.3) + 0.03 * np.sin(y * 520 + z * 330)
     C *= mott[:, None]
-    C *= np.where(y < -0.008, 0.82, 1.0)[:, None] * np.where((y > 0.012) & (z > -0.1) & (z < 0), 1.07, 1.0)[:, None]
+    C *= np.where(y < -0.008, 0.68, 1.0)[:, None] * np.where((y > 0.012) & (z > -0.1) & (z < 0), 1.07, 1.0)[:, None]
     # creases: a dark ring at every finger joint, a seam down the middle of the back of the hand and along each finger's side
     for i in range(4):
         fx = FINGERS[i][0]
         for nm in (f"f{i}_2", f"f{i}_3"):
             zj = B[nm]["pos"][2]
             near = (np.abs(z - zj) < 0.0022) & (np.abs(x - fx) < 0.014)
-            C[near] *= 0.78
+            C[near] *= 0.7
         C[(np.abs(x - fx) < 0.0011) & (np.abs(y - 0.001) > 0.007) & (z < KNUCKLE_Z) & (z > -0.2)] *= 0.72
     C[(np.abs(x) < 0.0011) & (y > 0.015) & (z > -0.1) & (z < -0.002)] *= 0.7
     C[(z > -0.02) & (z < 0.002) & (y > 0.02)] *= 0.9
     # the cuff / sleeve by z
     t = np.clip((z - 0.0) / 0.012, 0, 1)[:, None]
-    C = C * (1 - t) + cuffc * t
-    t = np.clip((z - 0.05) / 0.02, 0, 1)[:, None]
+    C = C * (1 - t) + cuffc * t                                                                   # the gauntlet: darker, stitched leather
+    t = np.clip((z - (CUFF_END + 0.004)) / 0.006, 0, 1)[:, None]
     C = C * (1 - t) + fore * t
     t = np.clip((z - ELBOW_Z) / 0.06, 0, 1)[:, None]
     C = C * (1 - t) + upper * t

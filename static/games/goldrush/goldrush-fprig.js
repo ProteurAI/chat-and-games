@@ -55,11 +55,42 @@ export function makeRigMaterials(THREE, envMap) {
           return mix(mix(mix(rigH(i), rigH(i + vec3(1, 0, 0)), f.x), mix(rigH(i + vec3(0, 1, 0)), rigH(i + vec3(1, 1, 0)), f.x), f.y),
                      mix(mix(rigH(i + vec3(0, 0, 1)), rigH(i + vec3(1, 0, 1)), f.x), mix(rigH(i + vec3(0, 1, 1)), rigH(i + vec3(1, 1, 1)), f.x), f.y), f.z) * 2.0 - 1.0;
         }`)
+      .replace("#include <color_fragment>", `#include <color_fragment>
+        {
+          // FP2.0B: the glove's panels - mottled hide, stitched seams (rest position, glove frame: wrist 0, fingers -z, back +y)
+          float mot = rigN(vRigP * 70.0) * 0.5 + rigN(vRigP * 190.0) * 0.5;
+          diffuseColor.rgb *= 1.0 + mot * ${weave ? "0.10" : "0.17"};
+          ${weave ? "" : `
+          vec3 p = vRigP;
+          float sm = 0.0, st = 0.0;
+          // seams along the sides of each finger (the fingers fan out: x drifts with the distance from the knuckle line)
+          const float FX[4] = float[4](-0.0318, -0.0106, 0.0106, 0.0308);
+          const float FS[4] = float[4](-0.10, -0.02, 0.05, 0.13);
+          const float FR[4] = float[4](0.0098, 0.0103, 0.0098, 0.0087);
+          float run = clamp(-p.z - 0.087, 0.0, 0.12);
+          for (int i = 0; i < 4; i++) {
+            float fx = FX[i] + FS[i] * run;
+            float side = abs(abs(p.x - fx) - FR[i] * 0.93);
+            float on = (1.0 - smoothstep(0.0004, 0.0009, side)) * step(-0.19, p.z) * step(0.0, run + 0.0001) * (1.0 - smoothstep(0.0035, 0.006, abs(p.y - 0.001)));
+            sm = max(sm, on);
+            st = max(st, on * step(0.5, fract(p.z * 280.0)));
+          }
+          // the back of the hand: two panel lines and the knuckle guard's lower edge, the wrist strap, the gauntlet's stitch rows
+          float back = smoothstep(0.006, 0.012, p.y);
+          float pl = (1.0 - smoothstep(0.0004, 0.0009, abs(abs(p.x) - 0.0205))) * step(-0.084, p.z) * step(p.z, -0.006) * back;
+          float kg = (1.0 - smoothstep(0.0004, 0.0009, abs(p.z + 0.07))) * step(abs(p.x), 0.034) * back;
+          float rows = (1.0 - smoothstep(0.0004, 0.0009, abs(p.z - 0.012))) + (1.0 - smoothstep(0.0004, 0.0009, abs(p.z - 0.052)));
+          rows *= step(0.002, p.z);
+          sm = max(sm, max(pl, max(kg, rows)));
+          st = max(st, max(pl * step(0.5, fract(p.z * 300.0)), max(kg * step(0.5, fract(p.x * 300.0)), rows * step(0.5, fract(atan(p.x, p.y) * 60.0)))));
+          diffuseColor.rgb *= 1.0 - 0.38 * sm - 0.2 * st;
+          `}
+        }`)
       .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>
         {
           vec3 q = vRigP * ${weave ? "260.0" : "340.0"};
           vec3 g = vec3(rigN(q), rigN(q + 7.3), rigN(q + 13.1)) * ${weave ? "0.10" : "0.16"};
-          ${weave ? "g.x += sin(vRigP.z * 1700.0) * 0.09; g.y += sin(vRigP.x * 1500.0 + vRigP.y * 1500.0) * 0.07;" : "g += vec3(rigN(q * 3.1), rigN(q * 3.1 + 2.0), 0.0) * 0.06;"}
+          ${weave ? "g.x += sin(vRigP.z * 1700.0) * 0.035; g.y += sin(vRigP.x * 1500.0 + vRigP.y * 1500.0) * 0.03;" : "g += vec3(rigN(q * 3.1), rigN(q * 3.1 + 2.0), 0.0) * 0.06;"}
           normal = normalize(normal + g);
         }`);
   };
