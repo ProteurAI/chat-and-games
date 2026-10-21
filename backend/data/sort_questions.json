@@ -1,0 +1,2555 @@
+[
+ {
+  "id": "s001",
+  "category": "tiere",
+  "question": "Sortiere nach Höchstgeschwindigkeit",
+  "direction": "langsam → schnell",
+  "unit": "km/h",
+  "items": [
+   {
+    "label": "E-Scooter (erlaubt)",
+    "value": 20
+   },
+   {
+    "label": "Usain Bolt (Spitze)",
+    "value": 44.7
+   },
+   {
+    "label": "Hauskatze",
+    "value": 48
+   },
+   {
+    "label": "Kamel",
+    "value": 65
+   },
+   {
+    "label": "Strauß",
+    "value": 70
+   }
+  ],
+  "explanation": "Eine Hauskatze sprintet knapp schneller als Usain Bolt in Bestform – und ein Strauß läuft ihnen allen davon."
+ },
+ {
+  "id": "s002",
+  "category": "tiere",
+  "question": "Wie lange lebt das Tier typischerweise (bis zu)?",
+  "direction": "kurz → lang",
+  "unit": "Jahre",
+  "items": [
+   {
+    "label": "Hausmaus",
+    "value": 2
+   },
+   {
+    "label": "Kaninchen",
+    "value": 9
+   },
+   {
+    "label": "Hauskatze",
+    "value": 15
+   },
+   {
+    "label": "Graupapagei",
+    "value": 60
+   },
+   {
+    "label": "Riesenschildkröte",
+    "value": 150
+   }
+  ],
+  "explanation": "Papageien und Riesenschildkröten können mehrere Menschengenerationen überleben."
+ },
+ {
+  "id": "s003",
+  "category": "tiere",
+  "question": "Sortiere nach Körpergewicht",
+  "direction": "leicht → schwer",
+  "unit": "kg",
+  "items": [
+   {
+    "label": "Kolibri",
+    "value": 0.003
+   },
+   {
+    "label": "Wanderfalke",
+    "value": 1
+   },
+   {
+    "label": "Hauskatze",
+    "value": 4.5
+   },
+   {
+    "label": "Löwe",
+    "value": 190
+   },
+   {
+    "label": "Nilpferd",
+    "value": 1500
+   }
+  ],
+  "explanation": "Ein Kolibri wiegt so viel wie ein Stück Würfelzucker – ein Nilpferd etwa so viel wie ein Kleinwagen."
+ },
+ {
+  "id": "s004",
+  "category": "tiere",
+  "question": "Sortiere nach Ruhepuls (Herzschläge pro Minute)",
+  "direction": "langsam → schnell",
+  "unit": "Schläge/min",
+  "items": [
+   {
+    "label": "Blauwal",
+    "value": 8
+   },
+   {
+    "label": "Elefant",
+    "value": 30
+   },
+   {
+    "label": "Mensch",
+    "value": 70
+   },
+   {
+    "label": "Hauskatze",
+    "value": 150
+   },
+   {
+    "label": "Maus",
+    "value": 600
+   }
+  ],
+  "explanation": "Je kleiner das Tier, desto schneller schlägt das Herz – eine Maus kommt auf bis zu 600 Schläge."
+ },
+ {
+  "id": "s005",
+  "category": "tiere",
+  "question": "Wie lange schläft das Tier pro Tag (etwa)?",
+  "direction": "wenig → viel",
+  "unit": "Stunden",
+  "items": [
+   {
+    "label": "Elefant",
+    "value": 3.5
+   },
+   {
+    "label": "Mensch",
+    "value": 8
+   },
+   {
+    "label": "Hauskatze",
+    "value": 12.5
+   },
+   {
+    "label": "Faultier (Zoo)",
+    "value": 16
+   },
+   {
+    "label": "Fledermaus",
+    "value": 19
+   }
+  ],
+  "explanation": "Fledermäuse verschlafen den größten Teil des Tages – Elefanten kommen mit wenigen Stunden aus."
+ },
+ {
+  "id": "s006",
+  "category": "tiere",
+  "question": "Sortiere nach Tragzeit (Schwangerschaft)",
+  "direction": "kurz → lang",
+  "unit": "Tage",
+  "items": [
+   {
+    "label": "Hamster",
+    "value": 16
+   },
+   {
+    "label": "Hauskatze",
+    "value": 65
+   },
+   {
+    "label": "Mensch",
+    "value": 280
+   },
+   {
+    "label": "Pferd",
+    "value": 340
+   },
+   {
+    "label": "Elefant",
+    "value": 650
+   }
+  ],
+  "explanation": "Elefantenmütter sind fast 22 Monate trächtig – länger als bei jedem anderen Landtier."
+ },
+ {
+  "id": "s007",
+  "category": "tiere",
+  "question": "Sortiere nach Flügelspannweite",
+  "direction": "klein → groß",
+  "unit": "cm",
+  "items": [
+   {
+    "label": "Spatz",
+    "value": 22
+   },
+   {
+    "label": "Haustaube",
+    "value": 65
+   },
+   {
+    "label": "Weißstorch",
+    "value": 200
+   },
+   {
+    "label": "Andenkondor",
+    "value": 300
+   },
+   {
+    "label": "Wanderalbatros",
+    "value": 340
+   }
+  ],
+  "explanation": "Der Wanderalbatros hat die größte Spannweite aller lebenden Vögel."
+ },
+ {
+  "id": "s008",
+  "category": "technik",
+  "question": "Sortiere nach Erscheinungsjahr",
+  "direction": "alt → neu",
+  "unit": "",
+  "items": [
+   {
+    "label": "YouTube",
+    "value": 2005
+   },
+   {
+    "label": "Spotify",
+    "value": 2008
+   },
+   {
+    "label": "WhatsApp",
+    "value": 2009
+   },
+   {
+    "label": "Instagram",
+    "value": 2010
+   },
+   {
+    "label": "TikTok",
+    "value": 2016
+   }
+  ],
+  "explanation": "TikTok (damals Douyin) startete 2016 – YouTube war da schon über zehn Jahre alt."
+ },
+ {
+  "id": "s009",
+  "category": "technik",
+  "question": "Wann wurde es erfunden / erstmals vorgestellt?",
+  "direction": "alt → neu",
+  "unit": "",
+  "items": [
+   {
+    "label": "Telefon",
+    "value": 1876
+   },
+   {
+    "label": "Automobil",
+    "value": 1886
+   },
+   {
+    "label": "Kugelschreiber",
+    "value": 1938
+   },
+   {
+    "label": "Mikrowelle",
+    "value": 1946
+   },
+   {
+    "label": "Handy-Gespräch",
+    "value": 1973
+   }
+  ],
+  "explanation": "Das erste Handy-Gespräch fand 1973 statt – die Mikrowelle gab es also schon lange vorher."
+ },
+ {
+  "id": "s010",
+  "category": "technik",
+  "question": "Sortiere nach Gewicht (typisch)",
+  "direction": "leicht → schwer",
+  "unit": "kg",
+  "items": [
+   {
+    "label": "PS5",
+    "value": 4.5
+   },
+   {
+    "label": "Bowlingkugel",
+    "value": 6.4
+   },
+   {
+    "label": "Mikrowelle",
+    "value": 14
+   },
+   {
+    "label": "Waschmaschine",
+    "value": 70
+   },
+   {
+    "label": "Kühlschrank",
+    "value": 80
+   }
+  ],
+  "explanation": "Eine typische Bowlingkugel wiegt mehr als eine PlayStation 5."
+ },
+ {
+  "id": "s011",
+  "category": "technik",
+  "question": "Sortiere nach Speicherplatz",
+  "direction": "klein → groß",
+  "unit": "MB",
+  "items": [
+   {
+    "label": "Diskette",
+    "value": 1.44
+   },
+   {
+    "label": "CD-ROM",
+    "value": 700
+   },
+   {
+    "label": "DVD",
+    "value": 4700
+   },
+   {
+    "label": "Blu-ray",
+    "value": 25000
+   },
+   {
+    "label": "UHD-Blu-ray (3 Layer)",
+    "value": 100000
+   }
+  ],
+  "explanation": "Auf eine UHD-Blu-ray passen über 69.000 Disketten."
+ },
+ {
+  "id": "s012",
+  "category": "technik",
+  "question": "Wann wurde die Firma gegründet?",
+  "direction": "alt → neu",
+  "unit": "",
+  "items": [
+   {
+    "label": "Siemens",
+    "value": 1847
+   },
+   {
+    "label": "Nintendo",
+    "value": 1889
+   },
+   {
+    "label": "Microsoft",
+    "value": 1975
+   },
+   {
+    "label": "Apple",
+    "value": 1976
+   },
+   {
+    "label": "Google",
+    "value": 1998
+   }
+  ],
+  "explanation": "Nintendo stellte zuerst Spielkarten her – und ist über 130 Jahre alt."
+ },
+ {
+  "id": "s013",
+  "category": "technik",
+  "question": "Wann erschien das Spiel?",
+  "direction": "alt → neu",
+  "unit": "",
+  "items": [
+   {
+    "label": "Pong",
+    "value": 1972
+   },
+   {
+    "label": "Tetris",
+    "value": 1984
+   },
+   {
+    "label": "Super Mario Bros.",
+    "value": 1985
+   },
+   {
+    "label": "Minecraft (Vollversion)",
+    "value": 2011
+   },
+   {
+    "label": "Fortnite",
+    "value": 2017
+   }
+  ],
+  "explanation": "Tetris und Super Mario Bros. liegen nur ein Jahr auseinander."
+ },
+ {
+  "id": "s014",
+  "category": "technik",
+  "question": "Wann kam die Konsole auf den Markt?",
+  "direction": "alt → neu",
+  "unit": "",
+  "items": [
+   {
+    "label": "Atari 2600",
+    "value": 1977
+   },
+   {
+    "label": "Game Boy",
+    "value": 1989
+   },
+   {
+    "label": "PlayStation",
+    "value": 1994
+   },
+   {
+    "label": "Xbox",
+    "value": 2001
+   },
+   {
+    "label": "Nintendo Switch",
+    "value": 2017
+   }
+  ],
+  "explanation": "Der Atari 2600 ist über 45 Jahre alt – und läuft mit Cartridges."
+ },
+ {
+  "id": "s015",
+  "category": "technik",
+  "question": "Sortiere nach Bildauflösung",
+  "direction": "klein → groß",
+  "unit": "Megapixel",
+  "items": [
+   {
+    "label": "VGA (640×480)",
+    "value": 0.31
+   },
+   {
+    "label": "HD (1280×720)",
+    "value": 0.92
+   },
+   {
+    "label": "Full HD",
+    "value": 2.07
+   },
+   {
+    "label": "4K",
+    "value": 8.29
+   },
+   {
+    "label": "8K",
+    "value": 33.18
+   }
+  ],
+  "explanation": "8K hat 16-mal so viele Pixel wie Full HD."
+ },
+ {
+  "id": "s016",
+  "category": "essen",
+  "question": "Sortiere nach Kalorien pro 100 g",
+  "direction": "wenig → viel",
+  "unit": "kcal",
+  "items": [
+   {
+    "label": "Gurke",
+    "value": 12
+   },
+   {
+    "label": "Apfel",
+    "value": 52
+   },
+   {
+    "label": "Weißbrot",
+    "value": 265
+   },
+   {
+    "label": "Vollmilchschokolade",
+    "value": 535
+   },
+   {
+    "label": "Olivenöl",
+    "value": 884
+   }
+  ],
+  "explanation": "Reines Öl ist der Kalorien-Spitzenreiter – Gurken bestehen fast nur aus Wasser."
+ },
+ {
+  "id": "s017",
+  "category": "essen",
+  "question": "Sortiere nach Schärfe (Scoville)",
+  "direction": "mild → scharf",
+  "unit": "SHU",
+  "items": [
+   {
+    "label": "Paprika",
+    "value": 0
+   },
+   {
+    "label": "Jalapeño",
+    "value": 5000
+   },
+   {
+    "label": "Cayennepfeffer",
+    "value": 40000
+   },
+   {
+    "label": "Habanero",
+    "value": 200000
+   },
+   {
+    "label": "Carolina Reaper",
+    "value": 1600000
+   }
+  ],
+  "explanation": "Der Carolina Reaper ist hunderte Male schärfer als eine Jalapeño."
+ },
+ {
+  "id": "s018",
+  "category": "essen",
+  "question": "Sortiere nach Zuckergehalt pro 100 g",
+  "direction": "wenig → viel",
+  "unit": "g",
+  "items": [
+   {
+    "label": "Erdbeeren",
+    "value": 4.9
+   },
+   {
+    "label": "Orange",
+    "value": 9.4
+   },
+   {
+    "label": "Cola",
+    "value": 10.6
+   },
+   {
+    "label": "Gummibärchen",
+    "value": 46
+   },
+   {
+    "label": "Honig",
+    "value": 82
+   }
+  ],
+  "explanation": "Cola enthält mehr Zucker als eine Orange – aber nur ein Bruchteil von Honig."
+ },
+ {
+  "id": "s019",
+  "category": "essen",
+  "question": "Sortiere nach Wassergehalt",
+  "direction": "wenig → viel",
+  "unit": "%",
+  "items": [
+   {
+    "label": "Honig",
+    "value": 17
+   },
+   {
+    "label": "Brot",
+    "value": 38
+   },
+   {
+    "label": "Kartoffel",
+    "value": 78
+   },
+   {
+    "label": "Apfel",
+    "value": 86
+   },
+   {
+    "label": "Gurke",
+    "value": 96
+   }
+  ],
+  "explanation": "Gurken sind mit 96 % Wasser fast reines Wasser mit Geschmack."
+ },
+ {
+  "id": "s020",
+  "category": "essen",
+  "question": "Sortiere nach Koffein pro Portion (typisch)",
+  "direction": "wenig → viel",
+  "unit": "mg",
+  "items": [
+   {
+    "label": "Cola (0,33 l)",
+    "value": 33
+   },
+   {
+    "label": "Schwarztee",
+    "value": 40
+   },
+   {
+    "label": "Espresso",
+    "value": 63
+   },
+   {
+    "label": "Energy Drink (0,25 l)",
+    "value": 80
+   },
+   {
+    "label": "Filterkaffee (Tasse)",
+    "value": 95
+   }
+  ],
+  "explanation": "Ein Filterkaffee hat mehr Koffein als ein Energy Drink."
+ },
+ {
+  "id": "s021",
+  "category": "essen",
+  "question": "Seit wann gibt es es?",
+  "direction": "alt → neu",
+  "unit": "",
+  "items": [
+   {
+    "label": "Coca-Cola",
+    "value": 1886
+   },
+   {
+    "label": "Cornflakes (Kellogg's)",
+    "value": 1906
+   },
+   {
+    "label": "Haribo Goldbären",
+    "value": 1922
+   },
+   {
+    "label": "Nutella",
+    "value": 1964
+   },
+   {
+    "label": "Red Bull",
+    "value": 1987
+   }
+  ],
+  "explanation": "Coca-Cola ist fast 140 Jahre alt – ursprünglich als Medizin gedacht."
+ },
+ {
+  "id": "s022",
+  "category": "essen",
+  "question": "Sortiere nach Vitamin C pro 100 g",
+  "direction": "wenig → viel",
+  "unit": "mg",
+  "items": [
+   {
+    "label": "Apfel",
+    "value": 12
+   },
+   {
+    "label": "Orange",
+    "value": 53
+   },
+   {
+    "label": "Kiwi",
+    "value": 93
+   },
+   {
+    "label": "Rote Paprika",
+    "value": 140
+   },
+   {
+    "label": "Sanddorn",
+    "value": 400
+   }
+  ],
+  "explanation": "Rote Paprika enthält fast dreimal so viel Vitamin C wie eine Orange."
+ },
+ {
+  "id": "s023",
+  "category": "geografie",
+  "question": "Sortiere nach Einwohnerzahl",
+  "direction": "wenig → viel",
+  "unit": "Mio.",
+  "items": [
+   {
+    "label": "Island",
+    "value": 0.4
+   },
+   {
+    "label": "Österreich",
+    "value": 9.1
+   },
+   {
+    "label": "Deutschland",
+    "value": 84
+   },
+   {
+    "label": "USA",
+    "value": 335
+   },
+   {
+    "label": "Indien",
+    "value": 1420
+   }
+  ],
+  "explanation": "In Indien leben rund 3.500-mal so viele Menschen wie in Island."
+ },
+ {
+  "id": "s024",
+  "category": "geografie",
+  "question": "Sortiere nach Fläche",
+  "direction": "klein → groß",
+  "unit": "km²",
+  "items": [
+   {
+    "label": "Monaco",
+    "value": 2
+   },
+   {
+    "label": "Liechtenstein",
+    "value": 160
+   },
+   {
+    "label": "Österreich",
+    "value": 83900
+   },
+   {
+    "label": "Deutschland",
+    "value": 357600
+   },
+   {
+    "label": "Kanada",
+    "value": 9985000
+   }
+  ],
+  "explanation": "Kanada ist fast 28-mal so groß wie Deutschland."
+ },
+ {
+  "id": "s025",
+  "category": "geografie",
+  "question": "Sortiere nach Höhe",
+  "direction": "niedrig → hoch",
+  "unit": "m",
+  "items": [
+   {
+    "label": "Zugspitze",
+    "value": 2962
+   },
+   {
+    "label": "Großglockner",
+    "value": 3798
+   },
+   {
+    "label": "Matterhorn",
+    "value": 4478
+   },
+   {
+    "label": "Mont Blanc",
+    "value": 4806
+   },
+   {
+    "label": "Mount Everest",
+    "value": 8849
+   }
+  ],
+  "explanation": "Der Mont Blanc ist das Dach der Alpen – der Everest ist fast doppelt so hoch."
+ },
+ {
+  "id": "s026",
+  "category": "geografie",
+  "question": "Sortiere nach Länge des Flusses",
+  "direction": "kurz → lang",
+  "unit": "km",
+  "items": [
+   {
+    "label": "Spree",
+    "value": 400
+   },
+   {
+    "label": "Elbe",
+    "value": 1094
+   },
+   {
+    "label": "Rhein",
+    "value": 1233
+   },
+   {
+    "label": "Donau",
+    "value": 2850
+   },
+   {
+    "label": "Wolga",
+    "value": 3531
+   }
+  ],
+  "explanation": "Die Donau fließt durch zehn Länder – die Wolga ist trotzdem länger."
+ },
+ {
+  "id": "s027",
+  "category": "geografie",
+  "question": "Sortiere nach Luftlinie ab Wien",
+  "direction": "nah → weit",
+  "unit": "km",
+  "items": [
+   {
+    "label": "Salzburg",
+    "value": 250
+   },
+   {
+    "label": "Berlin",
+    "value": 520
+   },
+   {
+    "label": "Rom",
+    "value": 765
+   },
+   {
+    "label": "London",
+    "value": 1240
+   },
+   {
+    "label": "New York",
+    "value": 6790
+   }
+  ],
+  "explanation": "Rom ist von Wien aus näher als London – und Berlin kaum doppelt so weit wie Salzburg."
+ },
+ {
+  "id": "s028",
+  "category": "geografie",
+  "question": "Sortiere nach Seefläche",
+  "direction": "klein → groß",
+  "unit": "km²",
+  "items": [
+   {
+    "label": "Neusiedler See",
+    "value": 315
+   },
+   {
+    "label": "Gardasee",
+    "value": 370
+   },
+   {
+    "label": "Bodensee",
+    "value": 536
+   },
+   {
+    "label": "Genfersee",
+    "value": 580
+   },
+   {
+    "label": "Baikalsee",
+    "value": 31500
+   }
+  ],
+  "explanation": "Der Baikalsee ist größer als Belgien und enthält ein Fünftel des flüssigen Süßwassers der Erde."
+ },
+ {
+  "id": "s029",
+  "category": "geografie",
+  "question": "Von Nord nach Süd: Wer liegt wo?",
+  "direction": "Norden → Süden",
+  "unit": "° Nord",
+  "items": [
+   {
+    "label": "Reykjavik",
+    "value": 64.1
+   },
+   {
+    "label": "Berlin",
+    "value": 52.5
+   },
+   {
+    "label": "Wien",
+    "value": 48.2
+   },
+   {
+    "label": "Rom",
+    "value": 41.9
+   },
+   {
+    "label": "Kairo",
+    "value": 30.0
+   }
+  ],
+  "explanation": "Wien liegt weiter nördlich als Rom – und Kairo auf dem Breitengrad von New Orleans."
+ },
+ {
+  "id": "s030",
+  "category": "geografie",
+  "question": "Sortiere nach Inselfläche",
+  "direction": "klein → groß",
+  "unit": "km²",
+  "items": [
+   {
+    "label": "Mallorca",
+    "value": 3640
+   },
+   {
+    "label": "Sizilien",
+    "value": 25700
+   },
+   {
+    "label": "Island",
+    "value": 103000
+   },
+   {
+    "label": "Borneo",
+    "value": 743300
+   },
+   {
+    "label": "Grönland",
+    "value": 2166000
+   }
+  ],
+  "explanation": "Grönland ist die größte Insel der Welt – Australien zählt als Kontinent."
+ },
+ {
+  "id": "s031",
+  "category": "geografie",
+  "question": "Sortiere nach Fallhöhe des Wasserfalls",
+  "direction": "niedrig → hoch",
+  "unit": "m",
+  "items": [
+   {
+    "label": "Niagarafälle",
+    "value": 51
+   },
+   {
+    "label": "Iguazú-Fälle",
+    "value": 82
+   },
+   {
+    "label": "Victoriafälle",
+    "value": 108
+   },
+   {
+    "label": "Krimmler Wasserfälle",
+    "value": 380
+   },
+   {
+    "label": "Salto Ángel",
+    "value": 979
+   }
+  ],
+  "explanation": "Die Krimmler Wasserfälle in Salzburg sind die höchsten Europas – der Salto Ángel in Venezuela der höchste der Welt."
+ },
+ {
+  "id": "s032",
+  "category": "geschichte",
+  "question": "Was geschah zuerst?",
+  "direction": "früh → spät",
+  "unit": "",
+  "items": [
+   {
+    "label": "Bau der Cheops-Pyramide",
+    "value": -2560,
+    "text": "um 2560 v. Chr."
+   },
+   {
+    "label": "Letzte Mammuts auf der Wrangelinsel",
+    "value": -2000,
+    "text": "um 2000 v. Chr."
+   },
+   {
+    "label": "Geburt von Kleopatra",
+    "value": -69,
+    "text": "69 v. Chr."
+   },
+   {
+    "label": "Gutenberg-Bibel",
+    "value": 1455
+   },
+   {
+    "label": "Erstes iPhone",
+    "value": 2007
+   }
+  ],
+  "explanation": "Es gab noch Mammuts, als die Pyramiden schon standen – und Kleopatra lebte näher an uns als an den Pyramiden."
+ },
+ {
+  "id": "s033",
+  "category": "geschichte",
+  "question": "Sortiere die Ereignisse",
+  "direction": "früh → spät",
+  "unit": "",
+  "items": [
+   {
+    "label": "Ende des Zweiten Weltkriegs",
+    "value": 1945
+   },
+   {
+    "label": "Berliner Mauerbau",
+    "value": 1961
+   },
+   {
+    "label": "Mondlandung",
+    "value": 1969
+   },
+   {
+    "label": "Mauerfall",
+    "value": 1989
+   },
+   {
+    "label": "Euro-Bargeld",
+    "value": 2002
+   }
+  ],
+  "explanation": "Der Mensch war auf dem Mond, als die Berliner Mauer noch stand."
+ },
+ {
+  "id": "s034",
+  "category": "geschichte",
+  "question": "Österreichische Geschichte",
+  "direction": "früh → spät",
+  "unit": "",
+  "items": [
+   {
+    "label": "Ausgleich mit Ungarn",
+    "value": 1867
+   },
+   {
+    "label": "Republik ausgerufen",
+    "value": 1918
+   },
+   {
+    "label": "Anschluss",
+    "value": 1938
+   },
+   {
+    "label": "Staatsvertrag",
+    "value": 1955
+   },
+   {
+    "label": "EU-Beitritt",
+    "value": 1995
+   }
+  ],
+  "explanation": "Zwischen Staatsvertrag und EU-Beitritt liegen 40 Jahre."
+ },
+ {
+  "id": "s035",
+  "category": "geschichte",
+  "question": "Wie lange regierte die Person?",
+  "direction": "kurz → lang",
+  "unit": "Jahre",
+  "items": [
+   {
+    "label": "Napoleon (als Kaiser)",
+    "value": 10
+   },
+   {
+    "label": "Maria Theresia",
+    "value": 40
+   },
+   {
+    "label": "Kaiser Franz Joseph I.",
+    "value": 68
+   },
+   {
+    "label": "Elizabeth II.",
+    "value": 70
+   },
+   {
+    "label": "Ludwig XIV.",
+    "value": 72
+   }
+  ],
+  "explanation": "Ludwig XIV. war 72 Jahre lang König – länger als jeder andere große europäische Herrscher."
+ },
+ {
+  "id": "s036",
+  "category": "geschichte",
+  "question": "Wann wurde das Bauwerk fertig?",
+  "direction": "alt → neu",
+  "unit": "",
+  "items": [
+   {
+    "label": "Kolosseum",
+    "value": 80
+   },
+   {
+    "label": "Schloss Schönbrunn (Baubeginn)",
+    "value": 1696
+   },
+   {
+    "label": "Eiffelturm",
+    "value": 1889
+   },
+   {
+    "label": "Empire State Building",
+    "value": 1931
+   },
+   {
+    "label": "Burj Khalifa",
+    "value": 2010
+   }
+  ],
+  "explanation": "Das Kolosseum war schon 1.800 Jahre alt, als der Eiffelturm gebaut wurde."
+ },
+ {
+  "id": "s037",
+  "category": "geschichte",
+  "question": "Wann passierte es?",
+  "direction": "früh → spät",
+  "unit": "",
+  "items": [
+   {
+    "label": "Erste neuzeitliche Olympische Spiele",
+    "value": 1896
+   },
+   {
+    "label": "Erster Motorflug (Wright)",
+    "value": 1903
+   },
+   {
+    "label": "Erste Fußball-WM",
+    "value": 1930
+   },
+   {
+    "label": "Erstbesteigung des Everest",
+    "value": 1953
+   },
+   {
+    "label": "Mondlandung",
+    "value": 1969
+   }
+  ],
+  "explanation": "Zwischen dem ersten Motorflug und der Mondlandung liegen nur 66 Jahre."
+ },
+ {
+  "id": "s038",
+  "category": "geschichte",
+  "question": "Wann wurde die Universität gegründet?",
+  "direction": "alt → neu",
+  "unit": "",
+  "items": [
+   {
+    "label": "Uni Wien",
+    "value": 1365
+   },
+   {
+    "label": "Uni Heidelberg",
+    "value": 1386
+   },
+   {
+    "label": "Uni Leipzig",
+    "value": 1409
+   },
+   {
+    "label": "Uni Graz",
+    "value": 1585
+   },
+   {
+    "label": "Uni Innsbruck",
+    "value": 1669
+   }
+  ],
+  "explanation": "Die Uni Wien ist die älteste im deutschsprachigen Raum – Heidelberg folgt nur 21 Jahre später."
+ },
+ {
+  "id": "s039",
+  "category": "geschichte",
+  "question": "Wie lange dauerte der Krieg?",
+  "direction": "kurz → lang",
+  "unit": "Tage",
+  "items": [
+   {
+    "label": "Anglo-Sansibar-Krieg (38 Minuten)",
+    "value": 0.026,
+    "text": "38 Minuten"
+   },
+   {
+    "label": "Sechstagekrieg",
+    "value": 6,
+    "text": "6 Tage"
+   },
+   {
+    "label": "Falklandkrieg",
+    "value": 74,
+    "text": "74 Tage"
+   },
+   {
+    "label": "Dreißigjähriger Krieg",
+    "value": 10958,
+    "text": "30 Jahre"
+   },
+   {
+    "label": "Hundertjähriger Krieg",
+    "value": 42340,
+    "text": "116 Jahre"
+   }
+  ],
+  "explanation": "Der kürzeste Krieg der Geschichte dauerte nur 38 Minuten – der Hundertjährige Krieg 116 Jahre."
+ },
+ {
+  "id": "s040",
+  "category": "film",
+  "question": "Wann erschien der Film?",
+  "direction": "alt → neu",
+  "unit": "",
+  "items": [
+   {
+    "label": "Der Pate",
+    "value": 1972
+   },
+   {
+    "label": "Star Wars",
+    "value": 1977
+   },
+   {
+    "label": "Titanic",
+    "value": 1997
+   },
+   {
+    "label": "Matrix",
+    "value": 1999
+   },
+   {
+    "label": "Avatar",
+    "value": 2009
+   }
+  ],
+  "explanation": "Titanic und Matrix trennen nur zwei Jahre."
+ },
+ {
+  "id": "s041",
+  "category": "film",
+  "question": "Sortiere nach Filmlänge",
+  "direction": "kurz → lang",
+  "unit": "Minuten",
+  "items": [
+   {
+    "label": "Toy Story",
+    "value": 81
+   },
+   {
+    "label": "Shrek",
+    "value": 90
+   },
+   {
+    "label": "Matrix",
+    "value": 136
+   },
+   {
+    "label": "Titanic",
+    "value": 194
+   },
+   {
+    "label": "Vom Winde verweht",
+    "value": 238
+   }
+  ],
+  "explanation": "Vom Winde verweht dauert fast vier Stunden – dreimal so lang wie Toy Story."
+ },
+ {
+  "id": "s042",
+  "category": "film",
+  "question": "Wann erschien der Song?",
+  "direction": "alt → neu",
+  "unit": "",
+  "items": [
+   {
+    "label": "Bohemian Rhapsody",
+    "value": 1975
+   },
+   {
+    "label": "Thriller",
+    "value": 1982
+   },
+   {
+    "label": "Smells Like Teen Spirit",
+    "value": 1991
+   },
+   {
+    "label": "Hips Don't Lie",
+    "value": 2006
+   },
+   {
+    "label": "Despacito",
+    "value": 2017
+   }
+  ],
+  "explanation": "Bohemian Rhapsody ist über 50 Jahre alt und trotzdem ständig im Radio."
+ },
+ {
+  "id": "s043",
+  "category": "film",
+  "question": "Wann erschien der Harry-Potter-Band (englisch)?",
+  "direction": "früh → spät",
+  "unit": "",
+  "items": [
+   {
+    "label": "Der Stein der Weisen",
+    "value": 1997
+   },
+   {
+    "label": "Die Kammer des Schreckens",
+    "value": 1998
+   },
+   {
+    "label": "Der Gefangene von Askaban",
+    "value": 1999
+   },
+   {
+    "label": "Der Feuerkelch",
+    "value": 2000
+   },
+   {
+    "label": "Der Orden des Phönix",
+    "value": 2003
+   }
+  ],
+  "explanation": "Zwischen Band 4 und Band 5 lagen drei Jahre – die längste Pause der Reihe."
+ },
+ {
+  "id": "s044",
+  "category": "film",
+  "question": "Wann war der erste Auftritt als James Bond?",
+  "direction": "früh → spät",
+  "unit": "",
+  "items": [
+   {
+    "label": "Sean Connery",
+    "value": 1962
+   },
+   {
+    "label": "Roger Moore",
+    "value": 1973
+   },
+   {
+    "label": "Timothy Dalton",
+    "value": 1987
+   },
+   {
+    "label": "Pierce Brosnan",
+    "value": 1995
+   },
+   {
+    "label": "Daniel Craig",
+    "value": 2006
+   }
+  ],
+  "explanation": "Sean Connery debütierte 1962 mit „Dr. No“."
+ },
+ {
+  "id": "s045",
+  "category": "film",
+  "question": "Wann kam der Disney-Film ins Kino?",
+  "direction": "alt → neu",
+  "unit": "",
+  "items": [
+   {
+    "label": "Schneewittchen",
+    "value": 1937
+   },
+   {
+    "label": "Bambi",
+    "value": 1942
+   },
+   {
+    "label": "Das Dschungelbuch",
+    "value": 1967
+   },
+   {
+    "label": "Der König der Löwen",
+    "value": 1994
+   },
+   {
+    "label": "Die Eiskönigin",
+    "value": 2013
+   }
+  ],
+  "explanation": "Schneewittchen war 1937 der erste abendfüllende Zeichentrickfilm von Disney."
+ },
+ {
+  "id": "s046",
+  "category": "film",
+  "question": "Wann startete die Serie?",
+  "direction": "alt → neu",
+  "unit": "",
+  "items": [
+   {
+    "label": "Sesamstraße (USA)",
+    "value": 1969
+   },
+   {
+    "label": "Die Simpsons",
+    "value": 1989
+   },
+   {
+    "label": "Friends",
+    "value": 1994
+   },
+   {
+    "label": "Game of Thrones",
+    "value": 2011
+   },
+   {
+    "label": "Squid Game",
+    "value": 2021
+   }
+  ],
+  "explanation": "Die Simpsons laufen seit über 35 Jahren – länger als die meisten Zuschauer leben."
+ },
+ {
+  "id": "s047",
+  "category": "sport",
+  "question": "Sortiere nach Ballgewicht",
+  "direction": "leicht → schwer",
+  "unit": "g",
+  "items": [
+   {
+    "label": "Tischtennisball",
+    "value": 2.7
+   },
+   {
+    "label": "Golfball",
+    "value": 46
+   },
+   {
+    "label": "Volleyball",
+    "value": 270
+   },
+   {
+    "label": "Fußball",
+    "value": 430
+   },
+   {
+    "label": "Basketball",
+    "value": 620
+   }
+  ],
+  "explanation": "Ein Basketball wiegt mehr als 200-mal so viel wie ein Tischtennisball."
+ },
+ {
+  "id": "s048",
+  "category": "sport",
+  "question": "Wie viele Spieler stehen pro Team auf dem Feld?",
+  "direction": "wenige → viele",
+  "unit": "Spieler",
+  "items": [
+   {
+    "label": "Beachvolleyball",
+    "value": 2
+   },
+   {
+    "label": "Basketball",
+    "value": 5
+   },
+   {
+    "label": "Handball",
+    "value": 7
+   },
+   {
+    "label": "Fußball",
+    "value": 11
+   },
+   {
+    "label": "Rugby Union",
+    "value": 15
+   }
+  ],
+  "explanation": "Beim Rugby Union stehen 30 Spieler gleichzeitig auf dem Platz."
+ },
+ {
+  "id": "s049",
+  "category": "sport",
+  "question": "Wo fanden die Olympischen Sommerspiele statt?",
+  "direction": "früh → spät",
+  "unit": "",
+  "items": [
+   {
+    "label": "Berlin",
+    "value": 1936
+   },
+   {
+    "label": "London",
+    "value": 1948
+   },
+   {
+    "label": "Tokio",
+    "value": 1964
+   },
+   {
+    "label": "Moskau",
+    "value": 1980
+   },
+   {
+    "label": "Sydney",
+    "value": 2000
+   }
+  ],
+  "explanation": "Tokio richtete 1964 schon einmal Olympia aus – lange vor 2021."
+ },
+ {
+  "id": "s050",
+  "category": "sport",
+  "question": "Wer wurde wann Fußball-Weltmeister?",
+  "direction": "früh → spät",
+  "unit": "",
+  "items": [
+   {
+    "label": "Uruguay (erste WM)",
+    "value": 1930
+   },
+   {
+    "label": "Deutschland (Wunder von Bern)",
+    "value": 1954
+   },
+   {
+    "label": "Brasilien (Pelé)",
+    "value": 1970
+   },
+   {
+    "label": "Argentinien (Maradona)",
+    "value": 1986
+   },
+   {
+    "label": "Frankreich (Heim-WM)",
+    "value": 1998
+   }
+  ],
+  "explanation": "Das Wunder von Bern liegt über 70 Jahre zurück."
+ },
+ {
+  "id": "s051",
+  "category": "sport",
+  "question": "Wie viele Zuschauer passen ins Stadion?",
+  "direction": "wenige → viele",
+  "unit": "Plätze",
+  "items": [
+   {
+    "label": "Ernst-Happel-Stadion Wien",
+    "value": 50865
+   },
+   {
+    "label": "Allianz Arena München",
+    "value": 75024
+   },
+   {
+    "label": "Wembley London",
+    "value": 90000
+   },
+   {
+    "label": "Camp Nou Barcelona",
+    "value": 99354
+   },
+   {
+    "label": "Narendra-Modi-Stadion",
+    "value": 132000
+   }
+  ],
+  "explanation": "Das Cricket-Stadion in Indien fasst mehr als doppelt so viele Menschen wie das Ernst-Happel-Stadion."
+ },
+ {
+  "id": "s052",
+  "category": "sport",
+  "question": "Sortiere nach Streckenlänge",
+  "direction": "kurz → lang",
+  "unit": "km",
+  "items": [
+   {
+    "label": "100-m-Sprint",
+    "value": 0.1
+   },
+   {
+    "label": "10.000-m-Lauf",
+    "value": 10
+   },
+   {
+    "label": "Halbmarathon",
+    "value": 21.1
+   },
+   {
+    "label": "Marathon",
+    "value": 42.2
+   },
+   {
+    "label": "Ironman (Gesamt)",
+    "value": 226
+   }
+  ],
+  "explanation": "Beim Ironman schwimmt man 3,8 km, radelt 180 km und läuft dann noch einen Marathon."
+ },
+ {
+  "id": "s053",
+  "category": "sport",
+  "question": "Sortiere nach Gewicht des Sportgeräts",
+  "direction": "leicht → schwer",
+  "unit": "kg",
+  "items": [
+   {
+    "label": "Eishockey-Puck",
+    "value": 0.17
+   },
+   {
+    "label": "Speer (Herren)",
+    "value": 0.8
+   },
+   {
+    "label": "Diskus (Herren)",
+    "value": 2
+   },
+   {
+    "label": "Kugel (Herren)",
+    "value": 7.26
+   },
+   {
+    "label": "Olympische Hantelstange",
+    "value": 20
+   }
+  ],
+  "explanation": "Ein Eishockey-Puck wiegt nicht einmal ein Fünftel kg – tut aber bei 160 km/h ordentlich weh."
+ },
+ {
+  "id": "s054",
+  "category": "alltag",
+  "question": "Sortiere nach Münzgewicht (Euro)",
+  "direction": "leicht → schwer",
+  "unit": "g",
+  "items": [
+   {
+    "label": "1 Cent",
+    "value": 2.3
+   },
+   {
+    "label": "5 Cent",
+    "value": 3.92
+   },
+   {
+    "label": "20 Cent",
+    "value": 5.74
+   },
+   {
+    "label": "1 Euro",
+    "value": 7.5
+   },
+   {
+    "label": "2 Euro",
+    "value": 8.52
+   }
+  ],
+  "explanation": "Die 2-Euro-Münze ist die schwerste Euro-Münze – ein Cent wiegt nur 2,3 g."
+ },
+ {
+  "id": "s055",
+  "category": "alltag",
+  "question": "Sortiere nach Gewicht des Organs (Mensch)",
+  "direction": "leicht → schwer",
+  "unit": "g",
+  "items": [
+   {
+    "label": "Niere (eine)",
+    "value": 150
+   },
+   {
+    "label": "Herz",
+    "value": 300
+   },
+   {
+    "label": "Gehirn",
+    "value": 1400
+   },
+   {
+    "label": "Leber",
+    "value": 1500
+   },
+   {
+    "label": "Haut",
+    "value": 4000
+   }
+  ],
+  "explanation": "Die Haut ist unser schwerstes Organ – schwerer als Gehirn und Leber zusammen."
+ },
+ {
+  "id": "s056",
+  "category": "alltag",
+  "question": "Sortiere nach Temperatur",
+  "direction": "kalt → heiß",
+  "unit": "°C",
+  "items": [
+   {
+    "label": "Gefrierpunkt von Wasser",
+    "value": 0
+   },
+   {
+    "label": "Körpertemperatur",
+    "value": 37
+   },
+   {
+    "label": "Kochendes Wasser",
+    "value": 100
+   },
+   {
+    "label": "Holzofen-Pizza",
+    "value": 450
+   },
+   {
+    "label": "Oberfläche der Sonne",
+    "value": 5500
+   }
+  ],
+  "explanation": "Ein Holzofen für Pizza wird fast fünfmal so heiß wie kochendes Wasser."
+ },
+ {
+  "id": "s057",
+  "category": "alltag",
+  "question": "Sortiere nach Anzahl (im menschlichen Körper)",
+  "direction": "wenige → viele",
+  "unit": "Stück",
+  "items": [
+   {
+    "label": "Rippen",
+    "value": 24
+   },
+   {
+    "label": "Zähne (Erwachsene)",
+    "value": 32
+   },
+   {
+    "label": "Wirbel",
+    "value": 33
+   },
+   {
+    "label": "Knochen",
+    "value": 206
+   },
+   {
+    "label": "Muskeln",
+    "value": 640
+   }
+  ],
+  "explanation": "Wir haben mehr Wirbel als Zähne – und über 600 Muskeln."
+ },
+ {
+  "id": "s058",
+  "category": "alltag",
+  "question": "Sortiere nach Stromverbrauch",
+  "direction": "wenig → viel",
+  "unit": "Watt",
+  "items": [
+   {
+    "label": "LED-Lampe",
+    "value": 9
+   },
+   {
+    "label": "Laptop",
+    "value": 50
+   },
+   {
+    "label": "Fernseher",
+    "value": 100
+   },
+   {
+    "label": "Staubsauger",
+    "value": 800
+   },
+   {
+    "label": "Wasserkocher",
+    "value": 2000
+   }
+  ],
+  "explanation": "Ein Wasserkocher braucht so viel Strom wie über 200 LED-Lampen."
+ },
+ {
+  "id": "s059",
+  "category": "alltag",
+  "question": "Sortiere nach Papierfläche",
+  "direction": "klein → groß",
+  "unit": "cm²",
+  "items": [
+   {
+    "label": "A6",
+    "value": 155.4
+   },
+   {
+    "label": "A5",
+    "value": 310.8
+   },
+   {
+    "label": "A4",
+    "value": 623.7
+   },
+   {
+    "label": "A3",
+    "value": 1247.4
+   },
+   {
+    "label": "A2",
+    "value": 2494.8
+   }
+  ],
+  "explanation": "Jedes Format hat genau die doppelte Fläche des nächstkleineren."
+ },
+ {
+  "id": "s060",
+  "category": "alltag",
+  "question": "Wann kam das Spiel auf den Markt?",
+  "direction": "alt → neu",
+  "unit": "",
+  "items": [
+   {
+    "label": "Mensch ärgere dich nicht",
+    "value": 1914
+   },
+   {
+    "label": "Monopoly",
+    "value": 1935
+   },
+   {
+    "label": "Scrabble",
+    "value": 1948
+   },
+   {
+    "label": "Risiko",
+    "value": 1957
+   },
+   {
+    "label": "Die Siedler von Catan",
+    "value": 1995
+   }
+  ],
+  "explanation": "Mensch ärgere dich nicht wurde im Ersten Weltkrieg erfunden – als Trost für Soldaten."
+ },
+ {
+  "id": "s061",
+  "category": "at_de",
+  "question": "Sortiere die österreichischen Städte nach Einwohnern",
+  "direction": "wenig → viel",
+  "unit": "Einwohner",
+  "items": [
+   {
+    "label": "Eisenstadt",
+    "value": 15000
+   },
+   {
+    "label": "Bregenz",
+    "value": 30000
+   },
+   {
+    "label": "Innsbruck",
+    "value": 132000
+   },
+   {
+    "label": "Graz",
+    "value": 295000
+   },
+   {
+    "label": "Wien",
+    "value": 1980000
+   }
+  ],
+  "explanation": "Eisenstadt ist die kleinste Landeshauptstadt – Wien hat 130-mal so viele Einwohner."
+ },
+ {
+  "id": "s062",
+  "category": "at_de",
+  "question": "Sortiere die Bundesländer nach Fläche",
+  "direction": "klein → groß",
+  "unit": "km²",
+  "items": [
+   {
+    "label": "Wien",
+    "value": 415
+   },
+   {
+    "label": "Vorarlberg",
+    "value": 2601
+   },
+   {
+    "label": "Salzburg",
+    "value": 7155
+   },
+   {
+    "label": "Tirol",
+    "value": 12648
+   },
+   {
+    "label": "Niederösterreich",
+    "value": 19180
+   }
+  ],
+  "explanation": "Niederösterreich ist fast 50-mal so groß wie Wien."
+ },
+ {
+  "id": "s063",
+  "category": "at_de",
+  "question": "Sortiere die deutschen Bundesländer nach Einwohnern",
+  "direction": "wenig → viel",
+  "unit": "Mio.",
+  "items": [
+   {
+    "label": "Bremen",
+    "value": 0.68
+   },
+   {
+    "label": "Saarland",
+    "value": 0.99
+   },
+   {
+    "label": "Berlin",
+    "value": 3.7
+   },
+   {
+    "label": "Bayern",
+    "value": 13.2
+   },
+   {
+    "label": "Nordrhein-Westfalen",
+    "value": 18.1
+   }
+  ],
+  "explanation": "In Nordrhein-Westfalen leben mehr Menschen als in den Niederlanden."
+ },
+ {
+  "id": "s064",
+  "category": "at_de",
+  "question": "Sortiere die Türme / Bauwerke nach Höhe",
+  "direction": "niedrig → hoch",
+  "unit": "m",
+  "items": [
+   {
+    "label": "Wiener Riesenrad",
+    "value": 65
+   },
+   {
+    "label": "Stephansdom (Südturm)",
+    "value": 136
+   },
+   {
+    "label": "Kölner Dom",
+    "value": 157
+   },
+   {
+    "label": "Donauturm Wien",
+    "value": 252
+   },
+   {
+    "label": "Berliner Fernsehturm",
+    "value": 368
+   }
+  ],
+  "explanation": "Der Kölner Dom war bis 1884 das höchste Gebäude der Welt."
+ },
+ {
+  "id": "s065",
+  "category": "at_de",
+  "question": "Sortiere nach Alkoholgehalt",
+  "direction": "wenig → viel",
+  "unit": "% Vol.",
+  "items": [
+   {
+    "label": "Radler",
+    "value": 2.5
+   },
+   {
+    "label": "Pils",
+    "value": 4.8
+   },
+   {
+    "label": "Wein",
+    "value": 12
+   },
+   {
+    "label": "Obstler",
+    "value": 40
+   },
+   {
+    "label": "Absinth",
+    "value": 70
+   }
+  ],
+  "explanation": "Radler hat nur halb so viel Alkohol wie ein Pils."
+ },
+ {
+  "id": "s066",
+  "category": "at_de",
+  "question": "Sortiere die Mittelgebirge / Berge",
+  "direction": "niedrig → hoch",
+  "unit": "m",
+  "items": [
+   {
+    "label": "Brocken",
+    "value": 1141
+   },
+   {
+    "label": "Fichtelberg",
+    "value": 1215
+   },
+   {
+    "label": "Feldberg (Schwarzwald)",
+    "value": 1493
+   },
+   {
+    "label": "Watzmann",
+    "value": 2713
+   },
+   {
+    "label": "Zugspitze",
+    "value": 2962
+   }
+  ],
+  "explanation": "Der Brocken im Harz ist Norddeutschlands höchster Berg – und trotzdem nur knapp über 1.100 m."
+ },
+ {
+  "id": "s067",
+  "category": "absurd",
+  "question": "Sortiere nach Größe",
+  "direction": "klein → groß",
+  "unit": "m",
+  "items": [
+   {
+    "label": "Wasserstoffatom",
+    "value": 1e-10,
+    "text": "0,0000000001 m"
+   },
+   {
+    "label": "Coronavirus",
+    "value": 1e-07,
+    "text": "0,0000001 m"
+   },
+   {
+    "label": "Rotes Blutkörperchen",
+    "value": 7e-06,
+    "text": "0,000007 m"
+   },
+   {
+    "label": "Sandkorn",
+    "value": 0.0005,
+    "text": "0,5 mm"
+   },
+   {
+    "label": "Ameise",
+    "value": 0.005,
+    "text": "5 mm"
+   }
+  ],
+  "explanation": "Ein Virus ist rund 1.000-mal kleiner als ein Sandkorn."
+ },
+ {
+  "id": "s068",
+  "category": "absurd",
+  "question": "Wie lange ist es her?",
+  "direction": "am längsten her → am kürzesten",
+  "unit": "Jahre",
+  "items": [
+   {
+    "label": "Urknall",
+    "value": 13800000000.0,
+    "text": "13,8 Mrd. Jahre"
+   },
+   {
+    "label": "Entstehung der Erde",
+    "value": 4540000000.0,
+    "text": "4,54 Mrd. Jahre"
+   },
+   {
+    "label": "Aussterben der Dinosaurier",
+    "value": 66000000.0,
+    "text": "66 Mio. Jahre"
+   },
+   {
+    "label": "Erste Homo sapiens",
+    "value": 300000,
+    "text": "300.000 Jahre"
+   },
+   {
+    "label": "Ende der letzten Eiszeit",
+    "value": 11700,
+    "text": "11.700 Jahre"
+   }
+  ],
+  "explanation": "Dinosaurier starben aus, lange bevor es Menschen gab – die Erde ist aber 4,5 Milliarden Jahre alt."
+ },
+ {
+  "id": "s069",
+  "category": "absurd",
+  "question": "Sortiere nach Entfernung von der Erde",
+  "direction": "nah → fern",
+  "unit": "km",
+  "items": [
+   {
+    "label": "ISS",
+    "value": 420,
+    "text": "420 km"
+   },
+   {
+    "label": "Mond",
+    "value": 384400,
+    "text": "384.400 km"
+   },
+   {
+    "label": "Sonne",
+    "value": 149600000.0,
+    "text": "149,6 Mio. km"
+   },
+   {
+    "label": "Pluto (Durchschnitt)",
+    "value": 5900000000.0,
+    "text": "5,9 Mrd. km"
+   },
+   {
+    "label": "Proxima Centauri",
+    "value": 40000000000000.0,
+    "text": "40 Billionen km"
+   }
+  ],
+  "explanation": "Die ISS kreist in 420 km Höhe – das ist weniger als die Strecke Wien–Zürich."
+ },
+ {
+  "id": "s070",
+  "category": "absurd",
+  "question": "Sortiere nach Höhe – vom Turm bis zum Mars",
+  "direction": "niedrig → hoch",
+  "unit": "m",
+  "items": [
+   {
+    "label": "Eiffelturm",
+    "value": 330
+   },
+   {
+    "label": "Burj Khalifa",
+    "value": 828
+   },
+   {
+    "label": "Zugspitze",
+    "value": 2962
+   },
+   {
+    "label": "Mount Everest",
+    "value": 8849
+   },
+   {
+    "label": "Olympus Mons (Mars)",
+    "value": 21900
+   }
+  ],
+  "explanation": "Der größte Vulkan des Mars ist fast zweieinhalbmal so hoch wie der Everest."
+ },
+ {
+  "id": "s071",
+  "category": "absurd",
+  "question": "Wie lange braucht das Licht dafür?",
+  "direction": "kurz → lang",
+  "unit": "Sekunden",
+  "items": [
+   {
+    "label": "Einmal um die Erde",
+    "value": 0.134,
+    "text": "0,13 Sekunden"
+   },
+   {
+    "label": "Erde bis Mond",
+    "value": 1.28,
+    "text": "1,3 Sekunden"
+   },
+   {
+    "label": "Sonne bis Erde",
+    "value": 499,
+    "text": "8 Minuten 19 Sekunden"
+   },
+   {
+    "label": "Sonne bis Pluto",
+    "value": 20000,
+    "text": "etwa 5,5 Stunden"
+   },
+   {
+    "label": "Proxima Centauri bis Erde",
+    "value": 134000000.0,
+    "text": "4,2 Jahre"
+   }
+  ],
+  "explanation": "Licht schafft siebeneinhalb Erdumrundungen pro Sekunde."
+ },
+ {
+  "id": "s072",
+  "category": "absurd",
+  "question": "Aus wie vielen Teilen besteht es?",
+  "direction": "wenige → viele",
+  "unit": "Stück",
+  "items": [
+   {
+    "label": "Würfel (Augen gesamt)",
+    "value": 21
+   },
+   {
+    "label": "Skatblatt",
+    "value": 32
+   },
+   {
+    "label": "Pokerblatt",
+    "value": 52
+   },
+   {
+    "label": "Schachbrett (Felder)",
+    "value": 64
+   },
+   {
+    "label": "Klavier (Tasten)",
+    "value": 88
+   }
+  ],
+  "explanation": "Ein Klavier hat 52 weiße und 36 schwarze Tasten."
+ },
+ {
+  "id": "s073",
+  "category": "absurd",
+  "question": "Wie lange dauerte der Bau?",
+  "direction": "kurz → lang",
+  "unit": "Jahre",
+  "items": [
+   {
+    "label": "Empire State Building",
+    "value": 1.1,
+    "text": "410 Tage"
+   },
+   {
+    "label": "Eiffelturm",
+    "value": 2.2,
+    "text": "2 Jahre, 2 Monate"
+   },
+   {
+    "label": "Taj Mahal",
+    "value": 22,
+    "text": "etwa 22 Jahre"
+   },
+   {
+    "label": "Sagrada Família (bisher)",
+    "value": 143,
+    "text": "seit 1882"
+   },
+   {
+    "label": "Kölner Dom",
+    "value": 632,
+    "text": "1248 bis 1880"
+   }
+  ],
+  "explanation": "Der Kölner Dom wurde 632 Jahre lang gebaut – das Empire State Building in 410 Tagen."
+ },
+ {
+  "id": "s074",
+  "category": "absurd",
+  "question": "Sortiere nach Lautstärke",
+  "direction": "leise → laut",
+  "unit": "dB",
+  "items": [
+   {
+    "label": "Flüstern",
+    "value": 30
+   },
+   {
+    "label": "Gespräch",
+    "value": 60
+   },
+   {
+    "label": "Rasenmäher",
+    "value": 90
+   },
+   {
+    "label": "Presslufthammer",
+    "value": 110
+   },
+   {
+    "label": "Düsenjet beim Start",
+    "value": 140
+   }
+  ],
+  "explanation": "Alle 10 dB verdoppelt sich ungefähr die empfundene Lautstärke."
+ },
+ {
+  "id": "s075",
+  "category": "tiere",
+  "question": "Sortiere nach Gehirngewicht",
+  "direction": "leicht → schwer",
+  "unit": "g",
+  "items": [
+   {
+    "label": "Maus",
+    "value": 0.4
+   },
+   {
+    "label": "Hauskatze",
+    "value": 30
+   },
+   {
+    "label": "Mensch",
+    "value": 1350
+   },
+   {
+    "label": "Delfin",
+    "value": 1600
+   },
+   {
+    "label": "Elefant",
+    "value": 4800
+   }
+  ],
+  "explanation": "Ein Delfin hat ein schwereres Gehirn als ein Mensch – das eines Elefanten wiegt fast das Vierfache."
+ },
+ {
+  "id": "s076",
+  "category": "tiere",
+  "question": "Wie schwer ist das Neugeborene?",
+  "direction": "leicht → schwer",
+  "unit": "kg",
+  "items": [
+   {
+    "label": "Hauskatze",
+    "value": 0.1
+   },
+   {
+    "label": "Mensch",
+    "value": 3.3
+   },
+   {
+    "label": "Pferd",
+    "value": 50
+   },
+   {
+    "label": "Giraffe",
+    "value": 60
+   },
+   {
+    "label": "Elefant",
+    "value": 100
+   }
+  ],
+  "explanation": "Ein neugeborenes Elefantenbaby wiegt so viel wie ein erwachsener Mensch."
+ },
+ {
+  "id": "s077",
+  "category": "technik",
+  "question": "Wann erschien das Windows-System?",
+  "direction": "alt → neu",
+  "unit": "",
+  "items": [
+   {
+    "label": "Windows 1.0",
+    "value": 1985
+   },
+   {
+    "label": "Windows 95",
+    "value": 1995
+   },
+   {
+    "label": "Windows XP",
+    "value": 2001
+   },
+   {
+    "label": "Windows 7",
+    "value": 2009
+   },
+   {
+    "label": "Windows 11",
+    "value": 2021
+   }
+  ],
+  "explanation": "Windows 1.0 lief noch ohne überlappende Fenster."
+ },
+ {
+  "id": "s078",
+  "category": "essen",
+  "question": "Sortiere nach Eiweiß pro 100 g",
+  "direction": "wenig → viel",
+  "unit": "g",
+  "items": [
+   {
+    "label": "Apfel",
+    "value": 0.3
+   },
+   {
+    "label": "Kartoffel",
+    "value": 2
+   },
+   {
+    "label": "Hühnerei",
+    "value": 13
+   },
+   {
+    "label": "Hähnchenbrust",
+    "value": 23
+   },
+   {
+    "label": "Parmesan",
+    "value": 36
+   }
+  ],
+  "explanation": "Parmesan hat mehr Eiweiß als Hähnchenbrust – weil ihm fast das ganze Wasser entzogen wurde."
+ },
+ {
+  "id": "s079",
+  "category": "geografie",
+  "question": "Sortiere die Berge nach Höhe",
+  "direction": "niedrig → hoch",
+  "unit": "m",
+  "items": [
+   {
+    "label": "Kosciuszko (Australien)",
+    "value": 2228
+   },
+   {
+    "label": "Elbrus (Europa)",
+    "value": 5642
+   },
+   {
+    "label": "Kilimandscharo (Afrika)",
+    "value": 5895
+   },
+   {
+    "label": "Denali (Nordamerika)",
+    "value": 6190
+   },
+   {
+    "label": "Aconcagua (Südamerika)",
+    "value": 6961
+   }
+  ],
+  "explanation": "Der höchste Berg Australiens ist niedriger als die Zugspitze."
+ },
+ {
+  "id": "s080",
+  "category": "geschichte",
+  "question": "Wann passierte es? (Umbrüche)",
+  "direction": "früh → spät",
+  "unit": "",
+  "items": [
+   {
+    "label": "Kolumbus erreicht Amerika",
+    "value": 1492
+   },
+   {
+    "label": "Luthers Thesen",
+    "value": 1517
+   },
+   {
+    "label": "Französische Revolution",
+    "value": 1789
+   },
+   {
+    "label": "Beginn des Ersten Weltkriegs",
+    "value": 1914
+   },
+   {
+    "label": "Mondlandung",
+    "value": 1969
+   }
+  ],
+  "explanation": "Zwischen Kolumbus und den Thesen Luthers liegen nur 25 Jahre."
+ },
+ {
+  "id": "s081",
+  "category": "film",
+  "question": "Wann kam der Pixar-Film ins Kino?",
+  "direction": "alt → neu",
+  "unit": "",
+  "items": [
+   {
+    "label": "Toy Story",
+    "value": 1995
+   },
+   {
+    "label": "Findet Nemo",
+    "value": 2003
+   },
+   {
+    "label": "Ratatouille",
+    "value": 2007
+   },
+   {
+    "label": "Oben",
+    "value": 2009
+   },
+   {
+    "label": "Soul",
+    "value": 2020
+   }
+  ],
+  "explanation": "Toy Story war 1995 der erste komplett computeranimierte Spielfilm."
+ },
+ {
+  "id": "s082",
+  "category": "sport",
+  "question": "Seit wann ist die Sportart olympisch?",
+  "direction": "früh → spät",
+  "unit": "",
+  "items": [
+   {
+    "label": "Leichtathletik",
+    "value": 1896
+   },
+   {
+    "label": "Fußball",
+    "value": 1900
+   },
+   {
+    "label": "Basketball",
+    "value": 1936
+   },
+   {
+    "label": "Snowboard",
+    "value": 1998
+   },
+   {
+    "label": "Skateboard",
+    "value": 2021
+   }
+  ],
+  "explanation": "Fußball ist seit 1900 olympisch – Skateboard debütierte erst in Tokio."
+ },
+ {
+  "id": "s083",
+  "category": "absurd",
+  "question": "Wie lange dauert ein Tag auf dem Planeten?",
+  "direction": "kurz → lang",
+  "unit": "Stunden",
+  "items": [
+   {
+    "label": "Jupiter",
+    "value": 9.9
+   },
+   {
+    "label": "Erde",
+    "value": 24
+   },
+   {
+    "label": "Mars",
+    "value": 24.6
+   },
+   {
+    "label": "Merkur",
+    "value": 1408
+   },
+   {
+    "label": "Venus",
+    "value": 5832
+   }
+  ],
+  "explanation": "Ein Tag auf der Venus dauert länger als ihr Jahr."
+ },
+ {
+  "id": "s084",
+  "category": "absurd",
+  "question": "Wie viel Fläche hat die Wüste?",
+  "direction": "klein → groß",
+  "unit": "km²",
+  "items": [
+   {
+    "label": "Kalahari",
+    "value": 900000
+   },
+   {
+    "label": "Gobi",
+    "value": 1300000
+   },
+   {
+    "label": "Arabische Wüste",
+    "value": 2300000
+   },
+   {
+    "label": "Sahara",
+    "value": 9200000
+   },
+   {
+    "label": "Antarktis (Kältewüste)",
+    "value": 14200000
+   }
+  ],
+  "explanation": "Die größte Wüste der Erde ist eisig: die Antarktis."
+ }
+]

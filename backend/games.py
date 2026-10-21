@@ -41,6 +41,7 @@ from .dodge_arena import DodgeArenaEngine
 from .who_am_i import WhoAmIEngine
 from .know_me import KnowMeEngine
 from .majority_game import MajorityGameEngine
+from .sort_game import SortGameEngine
 from .drawing_game import DrawingGameEngine
 from .kopf_kicker import KopfKickerEngine
 
@@ -1043,6 +1044,7 @@ GAME_ENGINES = {
     "whoami": WhoAmIEngine,
     "knowme": KnowMeEngine,
     "majority": MajorityGameEngine,
+    "sortiermeister": SortGameEngine,
     "kritzelmeister": DrawingGameEngine,
     "kopfkicker": KopfKickerEngine,
 }

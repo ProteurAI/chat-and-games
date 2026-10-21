@@ -1505,6 +1505,7 @@ const GAME_META = {
   whoami: { category: "party", desc: "Errate deine geheime Identität." },
   knowme: { category: "party", desc: "Wie gut kennt ihr euch wirklich?" },
   majority: { category: "party", desc: "Errate, was die Mehrheit wählt." },
+  sortiermeister: { category: "party", desc: "Fünf Dinge in die richtige Reihenfolge bringen." },
   timliner: { category: "solo", desc: "Entspanntes Solo-Zeichenspiel." },
   kritzelmeister: { category: "party", desc: "Zeichnen und in Echtzeit erraten." },
   kopfkicker: { category: "arcade", desc: "Dein Gesicht. Dein Kopf. Dein Tor." },
@@ -1551,6 +1552,7 @@ function launchGameByType(gameType) {
   if (gameType === "whoami") { window.WhoAmI.openHostOptionsModal((options) => startGame("whoami", options)); return; }
   if (gameType === "knowme") { window.KnowMe.openHostOptionsModal((options) => startGame("knowme", options)); return; }
   if (gameType === "majority") { window.MajorityGame.openHostOptionsModal((options) => startGame("majority", options)); return; }
+  if (gameType === "sortiermeister") { window.SortGame.openHostOptionsModal((options) => startGame("sortiermeister", options)); return; }
   if (gameType === "kritzelmeister") { window.KritzelmeisterGame.openHostOptionsModal((options) => startGame("kritzelmeister", options)); return; }
   startGame(gameType);
 }
@@ -2284,6 +2286,7 @@ function openGameModal(data) {
   dialog.classList.toggle("whoami-mode", data.game_type === "whoami");
   dialog.classList.toggle("knowme-mode", data.game_type === "knowme");
   dialog.classList.toggle("majority-mode", data.game_type === "majority");
+  dialog.classList.toggle("sortier-mode", data.game_type === "sortiermeister");
   dialog.classList.toggle("kritzelmeister-mode", data.game_type === "kritzelmeister");
   dialog.classList.toggle("kopfkicker-mode", data.game_type === "kopfkicker");
 
@@ -2328,6 +2331,24 @@ function openGameModal(data) {
   } else if (data.game_type === "whoami") {
     const isHost = data.players[0] && data.players[0].id === me.id;
     whoAmIInstance = window.WhoAmI.mount(stage, {
+      me,
+      players: data.players,
+      isHost,
+      sendInput: (payload) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "game_input", session_id: myGameSessionId, payload }));
+        }
+      },
+      sendRematch: () => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "game_rematch", session_id: myGameSessionId }));
+        }
+      },
+      closeGame: () => closeGameModal(),
+    });
+  } else if (data.game_type === "sortiermeister") {
+    const isHost = data.players[0] && data.players[0].id === me.id;
+    sortGameInstance = window.SortGame.mount(stage, {
       me,
       players: data.players,
       isHost,
@@ -2440,6 +2461,7 @@ const GAME_TITLES = {
   whoami: "🎭 Wer bin ich?",
   knowme: "❤️ Kennst du mich?",
   majority: "👑 Mehrheitsmeister",
+  sortiermeister: "🔢 Sortiermeister",
   kritzelmeister: "🎨 Kritzelmeister",
   kopfkicker: "⚽ KopfKicker",
 };
@@ -2459,6 +2481,7 @@ let dodgeArenaInstance = null;
 let whoAmIInstance = null;
 let knowMeInstance = null;
 let majorityGameInstance = null;
+let sortGameInstance = null;
 let kritzelmeisterInstance = null;
 let kopfKickerInstance = null;
 
@@ -2540,6 +2563,10 @@ function closeGameModal() {
     majorityGameInstance.destroy();
     majorityGameInstance = null;
   }
+  if (sortGameInstance) {
+    sortGameInstance.destroy();
+    sortGameInstance = null;
+  }
   if (kritzelmeisterInstance) {
     kritzelmeisterInstance.destroy();
     kritzelmeisterInstance = null;
@@ -2548,7 +2575,7 @@ function closeGameModal() {
     kopfKickerInstance.destroy();
     kopfKickerInstance = null;
   }
-  document.querySelector(".game-modal").classList.remove("timliner-mode", "estimate-mode", "arcade-mode", "whoami-mode", "knowme-mode", "majority-mode", "kritzelmeister-mode", "kopfkicker-mode");
+  document.querySelector(".game-modal").classList.remove("timliner-mode", "estimate-mode", "arcade-mode", "whoami-mode", "knowme-mode", "majority-mode", "sortier-mode", "kritzelmeister-mode", "kopfkicker-mode");
   el("game-modal").hidden = true;
   myGameSessionId = null;
   myGameType = null;
@@ -2598,6 +2625,7 @@ function updateGameState(state) {
   else if (myGameType === "whoami") { if (whoAmIInstance) whoAmIInstance.setState(state); }
   else if (myGameType === "knowme") { if (knowMeInstance) knowMeInstance.setState(state); }
   else if (myGameType === "majority") { if (majorityGameInstance) majorityGameInstance.setState(state); }
+  else if (myGameType === "sortiermeister") { if (sortGameInstance) sortGameInstance.setState(state); }
   else if (myGameType === "kritzelmeister") { if (kritzelmeisterInstance) kritzelmeisterInstance.setState(state); }
   else if (myGameType === "kopfkicker") { if (kopfKickerInstance) kopfKickerInstance.setState(state); }
 }
@@ -2624,6 +2652,10 @@ function showGameOver(data) {
   }
   if (myGameType === "majority") {
     if (majorityGameInstance) majorityGameInstance.showGameOver(data);
+    return;
+  }
+  if (myGameType === "sortiermeister") {
+    if (sortGameInstance) sortGameInstance.showGameOver(data);
     return;
   }
   if (myGameType === "kritzelmeister") {
