@@ -1,7 +1,8 @@
 # GoldRush – aktueller Stand (Handoff)
 
-**Stand:** 2026-10-20 · nach FP2.0A (geriggte First-Person-Arme) auf dem Branch `feature/goldrush-fp2-0a` (Start `e9f87d3` =
-main, Backup `backup/pre-goldrush-fp2-0a`; **nicht nach main gemergt**). Nächste Phase: FP2.0B (Polish) – nicht begonnen.
+**Stand:** 2026-10-21 · nach FP2.0B (First-Person Polish, Bewegung, Kontakt) auf dem Branch `feature/goldrush-fp2-0b` (Start `d299bde` =
+Ende FP2.0A auf `feature/goldrush-fp2-0a`, Backup `backup/pre-goldrush-fp2-0b`; FP2.0A + B **nicht nach main gemergt**, main = `e9f87d3`/Earth 2.0C1).
+Nächste Phase nur auf Anweisung (Roadmap: Material in Motion).
 
 Diese Datei ist der Einstieg. Details je Phase stehen in `docs/goldrush.md` (nur den jeweiligen
 Abschnitt lesen), Asset-Herkunft in `static/games/goldrush/ASSETS.md`, kommende Phasen in
@@ -15,7 +16,7 @@ Abschnitt lesen), Asset-Herkunft in `static/games/goldrush/ASSETS.md`, kommende 
 | Geologie | 4 (Großnuggets) | `GEOLOGY_VERSION`, `goldrush-resources.js` |
 | Hügel-Generator | 1 | `TERRAIN_GEN`, `goldrush-terrain.js` (ändern nur mit Bump + Migration) |
 | three.js | r176, vendored (+ GLTFLoader, BufferGeometryUtils, RGBELoader) | `static/vendor/three/` |
-| Letztes Backup | `backup/pre-goldrush-earth-2-0a` = 1208c45 | Branches `backup/pre-goldrush-*` |
+| Letztes Backup | `backup/pre-goldrush-fp2-0b` = d299bde | Branches `backup/pre-goldrush-*` |
 
 ## Was gebaut ist
 
@@ -29,6 +30,7 @@ Abschnitt lesen), Asset-Herkunft in `static/games/goldrush/ASSETS.md`, kommende 
 | VO-A + Earth B0 | Licht, Post-Stack, Himmel/Dunst, PBR-Boden, Schaufelkontakt, Visual-QA | Visual Overhaul A + Earth B0 |
 | Earth 2.0A | Terrain-Renderer: HeightTex + Zustandstexturen, statische LOD-Kacheln | Earth 2.0A |
 | FP2.0A | Geriggte First-Person-Arme: eigenes Skinned-GLB (Handschuh + Ärmel, Finger-Clips), gemeinsame Arm-IK, prozeduraler Fallback | FP2.0A |
+| FP2.0B | First-Person-Polish: neues Handschuh-Mesh (getrennte Finger, Nähte), Clips je Werkzeugphase, Kontakt auch für die Spitzhacke, Gewicht / Trägheit, Material-Polish, Motion-QA | FP2.0B |
 | Earth 2.0C | Echte Felsen (CC0-Scans, Rock-Material mit Bodenkontakt), Nässe aus Quellen (Nasskarte), Dig-Detail als Kachel-Pool | Earth 2.0C |
 | Earth 2.0B | Graben sichtbar: Werkzeugabdruck (DigDetail), Schnittkanten (StateTex B/A), Nachrutschen (VFX) | Earth 2.0B |
 
@@ -77,6 +79,10 @@ Abgeleitete Darstellungsschicht über der Simulation; nichts davon wird gespeich
 * **FP2.0A** (`assets/fp/fp_arms.glb`, `goldrush-fprig.js`, `goldrush-armik.js`, `tools/goldrush/build_fp_arms.py`): eigene geriggte Arme
   (Knochenkette + Finger-/Daumen-Clips, ~6300 Dreiecke je Arm, eigene Arbeit/CC0), PBR-Material mit Lederrelief; `FirstPersonHands` bleibt der
   Pose-Geber (Grips, Kontaktausrichtung, Phasen des ToolControllers unverändert). Fallback = prozedurale Handschuhe (404/defekte GLB: Warnung).
+* **FP2.0B** (`goldrush-fpclips.js`, `build_fp_arms.py`, `goldrush-hand.js`): Mesh neu (vier gespreizte Finger, runder Daumen, flache Stulpe, Lederpaneele mit
+  Nähten im Shader, Ärmel olivfarben); Werkzeug-Clips = Wegpunkte je Controller-Phase (Dauern / Gameplay unverändert, jede Phase startet an der Endpose der
+  vorigen); Kontakt-Ausrichtung für Schaufel **und** Spitzhacke (`CONTACT_TOOL`); Schulter-Nachgeben (`SHOULDER_SLACK`); Trägheit / Kontakt-Impuls (`MASS`,
+  `_jolt`); Daumen-Winkel zentral (`THUMB`). Details: `docs/goldrush.md` „FP2.0B“.
 * **QA-Cursor-Sicherheit**: in automatisierten Browsern (`navigator.webdriver`) nimmt GoldRush nie den Pointer Lock (Free-Mouse-Modus;
   `window.__GR_ALLOW_POINTER_LOCK = true` zum Testen des Locks); `tests/e2e/qa_safety.py` erzwingt Headless (`GOLDRUSH_QA_HEADED=1` nur manuell).
 * **Schaufel C-lite** (`goldrush-hand.js`, `CONTACT`): Drehung ≤ 34° um die rechte Hand + Schub
@@ -115,14 +121,32 @@ Abgeleitete Darstellungsschicht über der Simulation; nichts davon wird gespeich
 * Mobil-Emulation (390×844, LOW): freie Sicht 60 fps; an Anlage/Halden CPU-gebunden, gepaart ohne
   Mehrkosten gegenüber 9abb6f4; mit 4× CPU-Drosselung 26–55 fps je nach Lauf. Kein echtes Gerät gemessen.
 
+## Teststatus FP2.0B (2026-10-21, Chromium `--quick`)
+
+Unit 103; Kern 47 (erste zwei Läufe T7 2,00 Hübe/s an der Grenze 2–3, einmal zusätzlich T8 Frame-Spitze 50,1 ms – Timing-Flakes wie in FP2.0A; danach zweimal 47/47; eine
+Direktmessung des Hand-Dig-Takts ergibt in FP2.0A und FP2.0B identisch 6 Hübe / 2,5 s), Mining 54, Werkzeuge 62, Quality 64, Dev 64, Premium 45 (erster Lauf 44/45, PERF-Schwelle
+desktop:mine 56,8 / push 49 fps bei 69–91 Draw Calls – Last-Flake, Wiederholung 45/45), Working Mine 119, Mechanisiert 95; WebKit Kern 39 (erster Lauf 38/39: T7 / T8,
+Wiederholung 39/39).
+Schaufelkontakt `visualqa.py shovel`: **20/20, 0 px** (wie FP2.0A). Fallback (`goldrush_fpfallback.py`): 404 / defekte / abgeschnittene / clip-lose GLB → prozedurale
+Handschuhe, genau eine Warnung, Dig ok; Context-Loss (verloren + wiederhergestellt bei gehaltener Schaufel) → gerigte Hände zurück, Dig ok: 21/21.
+Motion-QA (`goldrush_fpmotion.py`, 1/60-s-Schritte, 9 Szenen, 4–8 Hübe je Szene): 0–1 Pose-Sprünge je Szene (vorher: Schaufel-Recover 5 cm / 0,2 rad pro Bild, Spitzhacke 0,10 m /
+0,4 rad), Spitzhacke nie aus dem Bild (vorher 20 % der Bilder: Spitze draußen, zeitweise komplett unsichtbar), Griff-Fehler 0, Kontaktlücke Schaufel ≤ 2 cm
+(Randfall steil/unten ≤ 6 cm), Spitzhacke ≤ 5 cm (vorher 25–33 cm zu kurz), Ellbogenwinkel 58–180° (180° nur bei voll ausgestrecktem Arm, Schulter-Nachgeben 0,4 m).
+**LOW-Heap**: die „48 → 73 MB“ waren Messrauschen (nicht gesammelter Parse-Müll): nach erzwungener GC (`goldrush_fpheap.py`, 3 Läufe je Revision) gehalten Vor-FP 12,7 MB →
+FP2.0A 13,0 → FP2.0B 13,0–13,3 MB; roh (ohne GC) schwankt jede Revision 14–25 MB. Nutzung (3 Runden × 3 Werkzeuge): +0,4–0,5 MB, Plateau, Geometrien (232) / Texturen (64)
+konstant → kein Leck. Perf (`goldrush_fpperf.py`, 1600×900): Draw Calls / Texturen / Geometrien identisch zu FP2.0A, Dreiecke +3,7 k (+2 %); gepaarte MEDIUM-Läufe
+(3× A/B): kein Unterschied außerhalb des Maschinenrauschens (jeder Lauf 42–60 fps je Segment, sustain 60 fps); HIGH schwankt auf dieser iGPU in beiden Revisionen 17–45 fps.
+Nicht gelaufen: Phase 6/7/7A/7B, Camp, Processing, Auto, übrige WebKit-Suiten, Spiele-/UI-Regression (Shared Core unverändert).
+Grenzen: Hand-Dig-Kontakt bleibt unabhängig vom Fadenkreuz-Abstand (die Hand greift ~0,5 m vor die Kamera, der Staub erscheint am Fadenkreuz); Held-Objekte
+(Eimer / Pfanne / Karre) wurden nur über die Suiten und Stichproben geprüft, nicht Bild für Bild; kein Mobil-Gerät.
+
 ## Teststatus FP2.0A (2026-10-20, Chromium `--quick --no-bench`)
 
 Unit 103; Kern 47 (ein Suite-Lauf T7/T8-Timing-Flake, zweimal 47/47), Mining 54, Werkzeuge 62, Quality 61, Material 44, Dev 64, Premium 45,
 Mechanisiert 95, Working Mine 119; WebKit Kern 39. Schaufelkontakt `visualqa.py shovel`: 20/20, 0 px (wie vorher). Fallback (404 / defekte GLB):
 Warnung, Spiel läuft, Dig ok. Perf (1600×900, 2 Läufe, vorher → nachher): MEDIUM 60 fps, Draw Calls 105 → 87 (spawn), Dreiecke +6 k, Texturen +2,
 Heap +5 MB; LOW 60 fps, Heap 48 → 73 MB (GLB geparst). Nicht gelaufen: Phase 6/7/7A/7B, Camp, Processing, Auto, übrige WebKit-Suiten.
-Offen/Grenzen: Finger lesen sich als Fäustling-artige Form (keine einzelnen Fingerphysik/Fingerspitzen-Detail), keine eigenen Clips pro Werkzeugphase
-(die Keyframes in goldrush-hand.js treiben weiter die Pose), Kamera-Impuls nur der vorhandene Kontakt-Kick, Linkshand-Daumen nur grob geprüft.
+Offen/Grenzen (alle in FP2.0B behoben): Finger wie Fäustling, keine Clips pro Werkzeugphase, Kamera-Impuls nur der vorhandene Kontakt-Kick, Linkshand-Daumen grob geprüft.
 
 ## Teststatus Earth 2.0C1 (2026-10-15, Chromium `--quick --no-bench`)
 
@@ -170,7 +194,6 @@ Nicht gelaufen: Phase 6/7/7A/7B/Premium/Camp/Processing/Auto, WebKit-Nebensuiten
 * KTX2 für die Erd-Texturen (kein Basis-Encoder in der Build-Umgebung).
 * Nässe (StateTex G) nur über DevTools – echte Quellen fehlen.
 * Fernes Hintergrund-Massiv (optional in VO-A) nicht gebaut; ferne Berge sind flache Kulissen.
-* Größte sichtbare Prototyp-Reste: Ikosaeder-Felsbrocken, prozedurale Handschuhe/Arme,
-  Box-Maschinen, altes Wasser, kleiner Hügel (~27 m); Camp-Boden etwas orange.
+* Größte sichtbare Prototyp-Reste: Box-Maschinen, altes Wasser, kleiner Hügel (~27 m); Camp-Boden etwas orange. (Ikosaeder-Felsen: Earth 2.0C; Handschuhe/Arme: FP2.0A/B.)
 * Platzhalter-Klänge (synthetisch); kein Mobil-Test auf echtem Gerät.
 * `goldrush-opus-review.zip` + `.sha256` im Repo-Root: absichtlich untracked, **nie committen**.
