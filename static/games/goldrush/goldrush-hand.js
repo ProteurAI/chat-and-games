@@ -30,6 +30,7 @@
 import { ToolModels } from "./goldrush-toolmodels.js";
 import { ARM, SHOULDER, THUMB, GloveBase } from "./goldrush-armik.js";
 import { RiggedArm, makeRigMaterials } from "./goldrush-fprig.js";
+import { hasClip, endPose, sampleClip } from "./goldrush-fpclips.js";
 
 export { ARM };
 
@@ -55,15 +56,15 @@ export const TOOL_KEYS = {
     windup: { p: [0.043, -0.183, -0.774], r: [-0.094, 0.502, 0.2] },      // pulled back, blade up
     thrust: { p: [-0.002, -0.433, -0.996], r: [-0.416, 0.428, 0.1] },     // driven in, forward and down
     scoop: { p: [-0.011, -0.346, -0.886], r: [-0.103, 0.54, 0.05] },      // handle pressed down: the load comes up
-    dump: { p: [0.34, -0.27, -0.84], r: [-0.2, -0.3, 1.72] },             // swung well aside and tipped right over (held a moment)
+    dump: { p: [0.3, -0.27, -0.84], r: [-0.2, -0.3, 1.45] },              // swung aside and tipped over (held a moment; FP2.0B: a little less far, the return is quicker to read)
     recoil: { p: [0.043, -0.188, -0.765], r: [-0.151, 0.532, 0.25] },     // stone: thrown back
     held: { p: [-0.084, -0.544, -0.851], r: [-0.37, 0.588, 0.3] },        // one hand only (inspect)
   },
   pickaxe: {
     rest: { p: [0.202, -0.235, -0.523], r: [0.115, 0.301, -1.3] },        // held low and ready, head turned to show
-    raise: { p: [0.247, 0.021, -0.312], r: [1.955, 0.138, 0] },           // over the shoulder, point forward
-    swing: { p: [0.055, -0.219, -0.605], r: [0.243, 0.116, 0] },          // point in the ground ahead
-    recoil: { p: [0.077, -0.158, -0.574], r: [0.494, 0.118, 0] },
+    raise: { p: [0.2, -0.1, -0.45], r: [1.05, 0.2, -0.15] },              // lifted back and up, the head stays in the view (FP2.0B: it used to leave the screen at the top)
+    swing: { p: [0.08, -0.17, -0.82], r: [0.72, 0.12, -0.3] },            // point in the ground ahead, at the crosshair (FP2.0B: reaches out - the point used to stop 0.25 m short; the head shows a little of its side)
+    recoil: { p: [0.09, -0.13, -0.74], r: [0.92, 0.14, -0.3] },
     held: { p: [0.192, -0.331, -0.587], r: [0.072, 0.219, -1.2] },
   },
 };
@@ -82,6 +83,8 @@ const TOOL_VARIANTS = {
     { p: [-0.025, -0.006, 0.012], r: [-0.05, 0.04, -0.07] },         // shorter, from the left
   ],
 };
+// FP2.0B: how heavy a tool feels in the hands (the sway of the view model behind the camera's turn, the answer to a contact)
+const MASS = { hand: 1, shovel: 1.25, pickaxe: 1.6 };
 // how hard the ground answers (by MAT): the pick is thrown back further off harder ground
 const RECOIL = [0.03, 0.06, 0.08, 0.17];
 
@@ -113,7 +116,9 @@ const HANDLE_IN_GLOVE = [0, -0.036, -0.075];
 // goes in past the surface (along the view ray - the world's depth clips it); turn: the most the shovel is aimed
 // round the right hand (rad); slide: the most it is pushed along / pulled back on its shaft (m) - the arms
 // stretch, they do not grow; a point further away keeps a gap (logged; the gameplay reach is unchanged)
-export const CONTACT = { depth: 0.06, turn: 0.6, slide: 0.42 };
+export const CONTACT = { depth: 0.06, turn: 0.72, slide: 0.42 };      // (FP2.0B: turn 0.6 -> 0.72: the blade rests on the point in the scoop instead of already lifting, so the aim needs a few degrees more)
+// FP2.0B: the pickaxe's point meets the ground where the stroke digs, the same way (a point goes in less far than a blade; it turns about the right hand)
+export const CONTACT_TOOL = { shovel: CONTACT, pickaxe: { depth: 0.02, turn: 0.7, slide: 0.5 } };
 // pushing the barrow: the shoulders on the body (world, from the eyes), the body facing the barrow
 const BODY_SHOULDER = { side: 0.19, down: 0.19, back: 0.06 };
 // a glove on a barrow grip, as if it were the right hand (the handle runs fore-aft through the
@@ -348,6 +353,7 @@ export class FirstPersonHands {
     this._pa = new THREE.Vector3();
     this._qa = new THREE.Quaternion();
     this._freeW = 0;
+    this._iw = 1;                                   // the contact aim's weight (0 while the right hand shows a nugget)
     this._bx = new THREE.Vector3();
     this._by = new THREE.Vector3();
     this._bz = new THREE.Vector3();
@@ -457,6 +463,11 @@ export class FirstPersonHands {
     } else if (kind === "blocked") {
       this.shake = this.reducedMotion ? 0 : 0.22;
     }
+    // FP2.0B: the contact reads in the tool - it is stopped, the far end deflects and settles (a short damped push along the handle)
+    if (!this.reducedMotion && (kind === "ok" || kind === "blocked") && this.tool !== "hand") {
+      const hard = [0.35, 0.65, 0.75, 1][mat] || 0.5;
+      this._jolt = { t: 0, a: (this.tool === "pickaxe" ? 0.05 : 0.028) * (0.55 + 0.45 * hard) * (kind === "blocked" ? 1.5 : 1) };
+    }
   }
 
   // hold a found nugget up in the right hand for a moment (a second one
@@ -507,20 +518,22 @@ export class FirstPersonHands {
   // camera turn this frame (radians) -> the hands lag a little behind
   look(dx, dy) {
     if (this.reducedMotion) return;
-    this.sway.x = Math.max(-0.03, Math.min(0.03, this.sway.x - dx * 0.35));
-    this.sway.y = Math.max(-0.03, Math.min(0.03, this.sway.y + dy * 0.35));
+    const m = MASS[this.tool] || 1, lim = 0.03 * m;
+    this.sway.x = Math.max(-lim, Math.min(lim, this.sway.x - dx * 0.35 * m));
+    this.sway.y = Math.max(-lim, Math.min(lim, this.sway.y + dy * 0.35 * m));
   }
 
   /**
    * Per frame: pose hands and tool from the controller's view
    * (goldrush-tools.js ToolController.view()) + lighting.
    */
-  update(dt, view, { camera, sunDir, sunVisible, walk, bob, contact = null }) {
+  update(dt, view, { camera, sunDir, sunVisible, walk, bob, contact = null, kick = 0 }) {
     const rm = this.reducedMotion;
     this._cam = camera;
     this._ct = contact;                    // { target, at } world points: the crosshair's / the last contact's
     this.clipWanted = false;
     this.time += dt;
+    this._dt = dt;
     if (this.grab > 0) this.grab = Math.max(0, this.grab - dt / 0.22);
     if (this.shake > 0) this.shake = Math.max(0, this.shake - dt);
     if (this.inspecting) {
@@ -532,14 +545,21 @@ export class FirstPersonHands {
     this.state = view.state;
     this.phase = view.phase;
     // sway settles back
-    const k = Math.exp(-dt * 9);
+    const mass = MASS[this.tool] || 1;
+    const k = Math.exp(-dt * 9 / Math.sqrt(mass));
     this.sway.x *= k;
     this.sway.y *= k;
     // lowering / raising while switching tools
     const sw = view.state === "lower" ? ease(view.switchU) : view.state === "raise" ? 1 - ease(view.switchU) : 0;
     const breathe = rm ? 0 : Math.sin(this.time * 1.3) * 0.003;
     const bobX = rm ? 0 : Math.sin(bob) * 0.008 * walk, bobY = rm ? 0 : -Math.abs(Math.cos(bob)) * 0.01 * walk;
-    const extra = { x: this.sway.x + bobX, y: this.sway.y + bobY + breathe - sw * 0.42, rx: -sw * 0.5 };
+    // the contact's jolt (damped, along the handle) and the camera's small contact dip: the view model resists a little (it appears to
+    // stay a hair behind the dip) - subtle, never a shake; the aim and the gameplay are untouched
+    if (this._jolt && (this._jolt.t += dt) > 0.5) this._jolt = null;
+    this._j = this._jolt ? this._jolt.a * Math.exp(-14 * this._jolt.t) * Math.cos(28 * this._jolt.t) : 0;
+    const dip = rm ? 0 : Math.min(0.03, kick || 0);
+    const extra = { x: this.sway.x + bobX, y: this.sway.y + bobY + breathe - sw * 0.42 + dip * 0.25 * mass, rx: -sw * 0.5 + dip * 0.35,
+      ry: rm || this.tool === "hand" ? 0 : -this.sway.x * 0.6, rxl: rm || this.tool === "hand" ? 0 : this.sway.y * 0.6 };
     if (!this.held) this.toolRoot.visible = this.tool !== "hand";
     this._matchCam = null;
     if (this.barrow && this.barrow.handsOn > 0) this._updateBarrow(dt, extra, camera);
@@ -649,12 +669,24 @@ export class FirstPersonHands {
     const pose = this._toolPose;
     const inspecting = !!this.inspecting || !!this.reaching;
     const sig = `${view.state}:${view.phase}:${view.cycle}`;
-    if (sig !== this._phaseSig) { this._phaseSig = sig; this._toolFrom = clonePose(pose); }
+    if (sig !== this._phaseSig) {
+      // a new phase starts where the previous one ENDED (its last waypoint), not where the last frame was drawn: no pop at a
+      // boundary, whatever the frame rate; after a hit-stop, a tool switch or anything else, from the drawn pose
+      const pc = this._clipNow;
+      const end = pc && pc.tool === id && view.state === "action" && !this._stopped ? endPose(TOOL_KEYS, id, pc.phase) : null;
+      this._phaseSig = sig;
+      this._toolFrom = end ? clonePose(end) : clonePose(pose);
+      this._stopped = false;
+    }
+    this._clipNow = view.state === "action" ? { tool: id, phase: view.phase, cycle: view.cycle } : null;
     if (this._stop > 0) {
       this._stop -= dt;                                  // hit-stop: the tool stays where it struck
+      this._stopped = true;
     } else if (this.debugToolPose) {
       pose.p = [...this.debugToolPose.p];
       pose.r = [...this.debugToolPose.r];
+    } else if (view.state === "action" && hasClip(id, view.phase)) {
+      sampleClip(TOOL_KEYS, id, view.phase, this._toolFrom, view.u, pose);
     } else if (view.state === "action" && PHASE_KEY[id][view.phase]) {
       const [key, e] = PHASE_KEY[id][view.phase];
       lerpPose(this._toolFrom, keys[key], EASE[e](view.u), pose);
@@ -692,11 +724,16 @@ export class FirstPersonHands {
     }
     const shake = this.shake > 0 ? Math.sin(this.time * 70) * 0.012 * (this.shake / 0.22) : 0;
     const T = this.toolRoot;
-    T.position.set((pose.p[0] + vp[0]) * this.aspectK + extra.x + shake, pose.p[1] + vp[1] + extra.y, pose.p[2] + vp[2]);
-    T.rotation.set(pose.r[0] + vp[3] + extra.rx + (rm ? 0 : shake * 2), pose.r[1] + vp[4], pose.r[2] + vp[5]);
+    const jl = this._j || 0;
+    T.position.set((pose.p[0] + vp[0]) * this.aspectK + extra.x + shake, pose.p[1] + vp[1] + extra.y, pose.p[2] + vp[2] + jl * 0.35);
+    T.rotation.set(pose.r[0] + vp[3] + extra.rx + extra.rxl + jl + (rm ? 0 : shake * 2), pose.r[1] + vp[4] + extra.ry, pose.r[2] + vp[5]);
     T.updateMatrix();
     T.updateMatrixWorld(true);
-    if (id === "shovel" && !this.debugToolPose && !inspecting) this._contactPose(view, T);
+    // (a found nugget lets the right hand go: the contact stays on its point for 0.25 s - it is still the contact moment - and then
+    // the aim fades out over 0.12 s instead of switching off: no jump)
+    this._inspT = inspecting ? (this._inspT || 0) + dt : 0;
+    this._iw = inspecting ? Math.max(0, Math.min(1, 1 - (this._inspT - 0.25) / 0.12)) : 1;
+    if ((id === "shovel" || id === "pickaxe") && !this.debugToolPose) this._contactPose(view, T, this._iw);
     else { this._cw = 0; this.contactInfo = null; }
     // gloves on the grips (the right one may be away, showing a nugget)
     for (const grip of GRIPS[id]) {
@@ -734,49 +771,69 @@ export class FirstPersonHands {
   // point): it starts to aim in the windup, is on the point at contact (end of the thrust), stays a moment in the
   // scoop, lets go as the load comes up / it bounces off / it is pulled back. The gloves follow their grips, the
   // arms their gloves. The world's depth clips the tip in the ground (goldrush-post.js installToolClip).
-  _contactPose(view, T) {
+  _contactPose(view, T, fade = 1) {
+    const id = this.tool, C = CONTACT_TOOL[id], model = this.models[id];
     const st = view.state === "action" ? view.phase : null, u = view.u || 0;
     let w = 0;
-    if (st === "windup") w = 0.25 * ease(u);
-    else if (st === "thrust") w = 0.25 + 0.75 * easeIn(Math.min(1, u * 1.25));
-    else if (st === "scoop") w = u < 0.4 ? 1 : 1 - 0.8 * ease((u - 0.4) / 0.6);       // on the point a moment, then the load comes up
-    else if (st === "dump") w = 0.2 * (1 - ease(Math.min(1, u * 2)));
-    else if (st === "recoil") w = 1 - ease(Math.min(1, u * 1.6));
-    else if (st === "recover" && view.react === "air") w = 1 - ease(Math.min(1, u * 1.6));
+    if (id === "shovel") {
+      if (st === "windup") w = 0.25 * ease(u);
+      else if (st === "thrust") w = 0.25 + 0.75 * easeIn(Math.min(1, u * 1.25));
+      else if (st === "scoop") w = u < 0.4 ? 1 : 1 - 0.8 * ease((u - 0.4) / 0.6);       // on the point a moment, then the load comes up
+      else if (st === "dump") w = 0.2 * (1 - ease(Math.min(1, u * 2)));
+      else if (st === "recoil") w = 1 - ease(Math.min(1, u * 1.6));
+      else if (st === "recover" && view.react === "air") w = 1 - ease(Math.min(1, u * 1.6));
+    } else {
+      // the pickaxe: aimed while it is raised (a little), on the point at the end of the swing, thrown back off it in the recoil
+      if (st === "raise") w = 0.12 * ease(u);
+      else if (st === "swing") w = 0.12 + 0.88 * easeIn(Math.min(1, u * 1.15));
+      else if (st === "recoil") w = 1 - 0.4 * ease(Math.min(1, u * 2.5));           // thrown back a little ...
+      else if (st === "recover") w = view.react === "air" ? 1 - ease(Math.min(1, u * 1.6)) : 0.6 * (1 - ease(u));   // ... and the point is drawn out of the ground
+    }
+    w *= fade;
     this._cw = w;
-    const c = this._ct, p = st === "windup" || st === "thrust" ? c && c.target : c && c.at;
-    if (w < 0.002 || !p || !this._cam) { this.contactInfo = null; return; }
+    const aiming = st === "windup" || st === "thrust" || st === "raise" || st === "swing";
+    const c = this._ct, p0 = aiming ? c && c.target : c && c.at;
+    if (w < 0.002 || !p0 || !this._cam) { this.contactInfo = null; this._apUsed = null; return; }
     const THREE = this.THREE, cam = this._cam;
     const v = this._cv || (this._cv = { hit: new THREE.Vector3(), tip: new THREE.Vector3(), want: new THREE.Vector3(), p: new THREE.Vector3(),
-      a: new THREE.Vector3(), b: new THREE.Vector3(), q: new THREE.Quaternion(), qf: new THREE.Quaternion(), qi: new THREE.Quaternion() });
+      a: new THREE.Vector3(), b: new THREE.Vector3(), q: new THREE.Quaternion(), qf: new THREE.Quaternion(), qi: new THREE.Quaternion(),
+      ap: new THREE.Vector3(), apFrom: new THREE.Vector3(), raw: new THREE.Vector3() });
+    // the ground point the tool is aimed at: the crosshair's while it comes down, the contact's after it. The two differ by a few
+    // cm; the switch is blended over 70 ms (the tool does not jump), and by the end of the contact it is exactly the contact's
+    const raw = v.raw.set(p0.x, p0.y, p0.z), srcKey = aiming ? 1 : 2;
+    if (!this._apUsed) { v.ap.copy(raw); this._apK = 1; this._apSrc = srcKey; this._apUsed = v.ap; }
+    else if (this._apSrc !== srcKey) { v.apFrom.copy(v.ap); this._apK = 0; this._apSrc = srcKey; }
+    this._apK = Math.min(1, this._apK + (this._dt || 0.016) / 0.07);
+    if (this._apK < 1) v.ap.lerpVectors(v.apFrom, raw, ease(this._apK)); else v.ap.copy(raw);
+    const p = v.ap;
     cam.updateMatrixWorld();
     const hit = v.hit.set(p.x, p.y, p.z).applyMatrix4(cam.matrixWorldInverse);
-    const want = v.want.copy(hit).addScaledVector(v.a.copy(hit).normalize(), CONTACT.depth);
-    const g = GRIPS.shovel[0], P = v.p.set(g.pos[0], g.pos[1], g.pos[2]).applyMatrix4(T.matrix);
-    const tip = this.models.shovel.localToWorld(v.tip.copy(this.models.shovel.userData.tip));
+    const want = v.want.copy(hit).addScaledVector(v.a.copy(hit).normalize(), C.depth);
+    const g = GRIPS[id][0], P = v.p.set(g.pos[0], g.pos[1], g.pos[2]).applyMatrix4(T.matrix);
+    const tip = model.localToWorld(v.tip.copy(model.userData.tip));
     const need = tip.distanceTo(want);
     const a = v.a.subVectors(tip, P), b = v.b.subVectors(want, P), la = a.length(), lb = b.length();
     a.multiplyScalar(1 / la); b.multiplyScalar(1 / lb);
-    // aim: the smallest turn that lays the blade on the line to the point (at most CONTACT.turn), weighted
+    // aim: the smallest turn that lays the tool's point on the line to the ground point (at most C.turn), weighted
     const full = v.qf.setFromUnitVectors(a, b), ang = 2 * Math.acos(Math.min(1, Math.abs(full.w)));
-    const k = (ang > CONTACT.turn ? CONTACT.turn / ang : 1) * w;
+    const k = (ang > C.turn ? C.turn / ang : 1) * w;
     const q = v.q.slerpQuaternions(v.qi.identity(), full, k);
     T.position.sub(P).applyQuaternion(q).add(P);
     T.quaternion.premultiply(q);
-    // push / pull along the shaft (at most CONTACT.slide)
-    const slide = Math.max(-CONTACT.slide, Math.min(CONTACT.slide, lb - la));
+    // push / pull along the aimed line (at most C.slide)
+    const slide = Math.max(-C.slide, Math.min(C.slide, lb - la));
     T.position.addScaledVector(a.applyQuaternion(q), slide * w);
     T.updateMatrix();
     T.updateMatrixWorld(true);
-    const gap = this.models.shovel.localToWorld(v.tip.copy(this.models.shovel.userData.tip)).distanceTo(want);
+    const gap = model.localToWorld(v.tip.copy(model.userData.tip)).distanceTo(want);
     // need: how far the keyframed tip was from the point; turn (deg) / slide (m) used; gapFull: left at full weight
-    const turned = Math.min(ang, CONTACT.turn);
-    const gapFull = Math.max(0, Math.abs(lb - la) - CONTACT.slide) + (ang > CONTACT.turn ? 2 * lb * Math.sin((ang - CONTACT.turn) / 2) : 0);
-    this.contactInfo = { phase: st, cycle: view.cycle, w: +w.toFixed(3), need: +need.toFixed(3), turnDeg: +(turned * 57.2958).toFixed(1), slide: +slide.toFixed(3),
+    const turned = Math.min(ang, C.turn);
+    const gapFull = Math.max(0, Math.abs(lb - la) - C.slide) + (ang > C.turn ? 2 * lb * Math.sin((ang - C.turn) / 2) : 0);
+    this.contactInfo = { tool: id, phase: st, cycle: view.cycle, w: +w.toFixed(3), need: +need.toFixed(3), turnDeg: +(turned * 57.2958).toFixed(1), slide: +slide.toFixed(3),
       gap: +gap.toFixed(3), gapFull: +gapFull.toFixed(3), hitDist: +hit.length().toFixed(3) };
-    this.clipWanted = w > 0.3 && (st === "thrust" || st === "scoop" || st === "recoil");
-    // QA log: one entry per stroke, the first frame after its contact
-    if ((st === "scoop" || st === "recoil") && this._logCycle !== view.cycle) {
+    this.clipWanted = w > 0.3 && (st === "thrust" || st === "scoop" || st === "recoil" || st === "swing");
+    // QA log: one entry per stroke, the first frame after its contact (not while the right hand has let go to show a nugget)
+    if ((st === "scoop" || st === "recoil") && this._logCycle !== view.cycle && fade >= 0.999) {
       this._logCycle = view.cycle;
       const L = this.contactLog || (this.contactLog = []);
       L.push(this.contactInfo);

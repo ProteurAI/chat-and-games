@@ -10,6 +10,10 @@ export const ARM = { upper: 0.31, fore: 0.28 };
 // where the shoulders are while the hands work in view space (tools, bucket, pan): just below
 // and behind the camera, out to the sides (the right one; mirrored for the left)
 export const SHOULDER = [0.25, -0.42, 0.14];
+// FP2.0B: when the hand is further from the shoulder than the arm is long (a tool held out in both hands) the shoulder follows
+// the hand - the body leans in and the shoulder rolls forward - by at most this much, so the arm keeps an elbow instead of
+// hanging straight; beyond it, the old rule (the arm points back at the shoulder, never stretched) still applies
+export const SHOULDER_SLACK = 0.4;
 
 // the thumb's root rotation (euler XYZ, the right hand; the left one is mirrored): open = the rest pose of the arm GLB
 // (tools/goldrush/build_fp_arms.py THUMB_EULER), grip = closed over a handle, rim = (see GRIPS in goldrush-hand.js)
@@ -68,8 +72,13 @@ export class GloveBase {
     const W = this._a.set(0, -0.004, 0.035).applyMatrix4(this.root.matrix);
     const S = shoulder ? this._b.copy(shoulder) : this._b.set(SHOULDER[0] * s * aspectK, SHOULDER[1], SHOULDER[2]);
     const dir = this._d.subVectors(S, W);
-    const d = Math.max(1e-6, dir.length());
+    let d = Math.max(1e-6, dir.length());
     dir.multiplyScalar(1 / d);
+    if (!shoulder && d > (a + b) * 0.97) {
+      const pull = Math.min(d - (a + b) * 0.97, SHOULDER_SLACK);
+      S.addScaledVector(dir, -pull);
+      d -= pull;
+    }
     const E = this._e, U = this._u;
     let reach = true;
     if (d >= a + b - 1e-6) {

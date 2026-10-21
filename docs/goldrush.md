@@ -1578,6 +1578,40 @@ Masse und Save sind unverändert; die Platzierung der Spiel-Boulder (`MaterialFi
 * **Erhalten**: Schaufelkontakt (`visualqa.py shovel`: 20/20, 0 px Abstand), Gameplay, Werte, Save.
 * **QA**: `tests/e2e/goldrush_fpqa.py` (Standbilder und Bildfolgen je Zustand/Phase, `--root` für alte Revision).
 
+## FP2.0B – First-Person Polish, Bewegung, Kontakt
+
+* **Hand-/Finger-Mesh** (`tools/goldrush/build_fp_arms.py`, `fp_arms.glb`): vier gespreizte, getrennte Finger (Abstand ≥ Fingerdurchmesser + Fächerung, harte
+  Vereinigung untereinander, weiche zur Handfläche), Gelenkwülste, runde Fingerspitzen, kürzerer, stumpfer Daumen; flach endende Stulpe mit gerolltem
+  Rand, aus der der Ärmel sauber tritt (vorher durchstieß er die Kappe: Z-Fighting). Behoben: der Daumen wurde vom Voxelgitter (x < −0,078) abgeschnitten
+  (Gitter jetzt −0,125 … 0,062); Skin-Gewichte schärfer an den Fingern (σ 5,6 mm, kein Fäustling), weicher am Daumenansatz (kein gestrecktes Fell über dem
+  Handrücken). Skelett und Clips unverändert (Namen, Bone-Achsen). ~8200 Dreiecke je Arm (vorher ~6300). Farben: dunkleres, wärmeres Leder, olivfarbener
+  Leinenärmel (Hand und Arm lesen sich getrennt).
+* **Material** (`makeRigMaterials`): gefleckte Haut (Rest-Pose-Rauschen) und **Nähte im Shader** (Fingerseiten, Handrücken-Paneele, Knöchelschutz-Kante,
+  Stulpen-Stichreihen; Rest-Position, folgt dem Skin). Werkzeuge: dunkleres, braunes Holz, dunklerer Stahl mit weniger/kleineren Rostflecken.
+* **Zentralisierte Werte**: `THUMB` (offen/Griff) in `goldrush-armik.js` (Skript, Rig und Fallback lesen dieselben Winkel), `HANDLE_IN_GLOVE` aus dem
+  Fingerschleifen-Fit (Faust bei Krümmung 0,97: Mitte y −0,036 / z −0,075), `CONTACT_TOOL` (Schaufel + Spitzhacke), `SHOULDER_SLACK`, `MASS`.
+* **Arm**: die Schulter folgt der Hand um höchstens `SHOULDER_SLACK` (0,4 m), wenn sie weiter weg ist als der Arm lang (zwei Hände am Werkzeug) – der Arm hat
+  einen Ellbogen statt gerade zu hängen; darüber hinaus gilt die alte Regel (nie gestreckt, zeigt zur Schulter). Karre (`shoulder` übergeben) unverändert.
+* **Clips** (`goldrush-fpclips.js`, Daten): je Werkzeug und **Controller-Phase** Wegpunkte `[u, Ziel, Easing, Bogen]`. Die Phasen und ihre Dauern bleiben
+  Gameplay (`goldrush-tools.js` unverändert). Jede Phase startet am **Ende der vorigen** (Endpose des letzten Wegpunkts, nicht dem zuletzt gezeichneten Bild) –
+  kein Pop an Phasengrenzen, bei jeder Bildrate.
+  * Schaufel: windup (kurzes Eintauchen + kontrollierter Hub) · thrust (kubisches Easing, Bogen: der Stoß beschleunigt bis zum Kontakt) · **Kontakt** (Blatt
+    ruht kurz auf dem Punkt, leicht eingedrückt) · scoop (Griff nach unten: Last kommt hoch) · dump (seitlich auskippen, gehalten, zurück – kommt vor
+    dem Recover in Ruhe an) · recover (letztes Setzen). Schlüssel `dump` etwas weniger extrem (1,45 statt 1,72 rad).
+  * Spitzhacke: raise (kleiner Dip, schwerer Hub, hängt oben; **bleibt im Bild**: Pitch 1,05 statt 1,955 rad) · swing (quadratische Beschleunigung, Bogen) ·
+    **Aufprall** · recoil (sofort zurück, dann langsam) · recover (langsam, Gewicht des Kopfes).
+  * Hand-Dig: unverändert (reach → contact → pull → recovery waren schon die vier Posen).
+* **Kontakt** (`_contactPose`, jetzt für Schaufel **und** Spitzhacke): das Werkzeug wird um die rechte Hand auf den Treffpunkt gedreht und entlang gezogen
+  (`CONTACT_TOOL`: Schaufel 0,06 / 0,6 rad / 0,42 m, Spitzhacke 0,02 / 0,7 rad / 0,5 m). Der Wechsel Zielpunkt → Treffpunkt wird über 70 ms überblendet; bei
+  „Inspect“ (Fund) blendet die Korrektur in ~0,1 s aus statt hart zu springen. Der Gameplay-Treffer wird nie verschoben (`_contactAt` unverändert).
+  Spitzhacke: Schlüssel `swing`/`recoil` weiter vorn (Spitze beim Fadenkreuz, vorher 25 cm zu kurz); nach dem Aufprall zieht der Recover die Spitze aus dem Boden.
+* **Gewicht / Kamera** (`MASS`: Hand 1, Schaufel 1,25, Spitzhacke 1,6): Nachlauf des Werkzeugs hinter der Blickdrehung (Weg und Rotation) und der Kontakt-Impuls
+  (`_jolt`: gedämpfte Schwingung entlang des Griffs, härterer Boden → stärker). Die vorhandene Kamera-Nickbewegung (`player.kick`, ≤ 0,03 rad) bleibt wie
+  sie war; das Werkzeug bleibt ein Stück dahinter zurück (25 % Gegenbewegung · Masse). Zielrichtung / Gameplay unberührt; `reducedMotion` schaltet alles ab.
+* **QA**: `goldrush_fpclose.py` (Nahaufnahmen), `goldrush_fpmotion.py` (Sequenzen mit Messwerten je 1/60-s-Bild: Pops, Sichtbarkeit, Griff-Fehler,
+  Ellbogenwinkel, Kontaktlücke; Filmstreifen + GIF), `goldrush_fpheap.py` (Heap nach erzwungener GC, Ressourcenzähler), `goldrush_fpfallback.py` (404 / defekte /
+  abgeschnittene / clip-lose GLB, Context-Loss), `goldrush_fpperf.py`.
+
 ## Entwicklertools (QA-Modus, Prompt 5.5)
 
 - **Zugang nur serverseitig:** Umgebungsvariable `GOLDRUSH_DEV_CODE`

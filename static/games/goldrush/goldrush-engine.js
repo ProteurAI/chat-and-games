@@ -1018,7 +1018,7 @@ export class GoldRushGame {
     // (C-lite: the stroke's ground point - the crosshair's while the tool comes down, the contact's after it)
     const ct = this._handsContact || (this._handsContact = { target: null, at: null });
     ct.target = this.target || null; ct.at = this._contactAt || null;
-    this.hands.update(dt, this.tools.view(), { camera: this.camera, sunDir: SUN_VEC, sunVisible: this.sunVisible, walk: Math.min(1, Math.hypot(this.player.vx, this.player.vz) / WALK), bob: this.player.bob, contact: ct });
+    this.hands.update(dt, this.tools.view(), { camera: this.camera, sunDir: SUN_VEC, sunVisible: this.sunVisible, walk: Math.min(1, Math.hypot(this.player.vx, this.player.vz) / WALK), bob: this.player.bob, contact: ct, kick: this.player.kick });
     this.hud.update(dt);
     this.stations.update(dt);
     if (this.reticle.visible) { const m = this.reticle.material; m.opacity += ((this._reticleWant || 0.2) - m.opacity) * Math.min(1, dt * 10); }

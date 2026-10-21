@@ -12,11 +12,11 @@ import { GridLoad, bladeShape } from "./goldrush-heap.js";
 // long wood grain along v, a few darker worn patches
 function woodGrain(ctx, w, h, seed) {
   const rng = mulberry32(seed);
-  ctx.fillStyle = "rgb(168,118,72)";
+  ctx.fillStyle = "rgb(148,112,80)";                                   // (FP2.0B: duller, browner - it read as orange plastic)
   ctx.fillRect(0, 0, w, h);
   for (let i = 0; i < 70; i++) {
     const x = rng() * w, a = 0.06 + rng() * 0.14, lw = 0.6 + rng() * 1.8;
-    ctx.strokeStyle = rng() < 0.5 ? `rgba(92,58,30,${a})` : `rgba(214,170,118,${a})`;
+    ctx.strokeStyle = rng() < 0.5 ? `rgba(70,46,28,${a * 1.3})` : `rgba(196,160,120,${a})`;
     ctx.lineWidth = lw;
     ctx.beginPath();
     ctx.moveTo(x, 0);
@@ -36,21 +36,21 @@ function steelGrime(ctx, w, h, seed) {
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const n = noise2(x * 0.05, y * 0.05, seed) * 0.5 + noise2(x * 0.2, y * 0.2, seed + 3) * 0.25;
-      const g = 196 + n * 40;
+      const g = 158 + n * 36;                                         // (FP2.0B: a darker steel - the head read chalky white)
       const i = (y * w + x) * 4;
       img.data[i] = g; img.data[i + 1] = g - 2; img.data[i + 2] = g - 6; img.data[i + 3] = 255;
     }
   }
   ctx.putImageData(img, 0, 0);
   for (let i = 0; i < 120; i++) {                                     // scratches
-    ctx.strokeStyle = `rgba(255,255,255,${0.08 + rng() * 0.12})`;
+    ctx.strokeStyle = `rgba(255,255,255,${0.05 + rng() * 0.09})`;
     ctx.lineWidth = 0.5;
     const x = rng() * w, y = rng() * h, a = rng() * Math.PI;
     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * (4 + rng() * 14), y + Math.sin(a) * (4 + rng() * 14)); ctx.stroke();
   }
-  for (let i = 0; i < 40; i++) {                                      // rust / dried mud
-    ctx.fillStyle = rng() < 0.5 ? `rgba(120,70,40,${0.15 + rng() * 0.2})` : `rgba(110,86,60,${0.15 + rng() * 0.2})`;
-    ctx.beginPath(); ctx.arc(rng() * w, rng() * h, 1 + rng() * 4, 0, Math.PI * 2); ctx.fill();
+  for (let i = 0; i < 22; i++) {                                      // rust / dried mud
+    ctx.fillStyle = rng() < 0.5 ? `rgba(120,70,40,${0.12 + rng() * 0.16})` : `rgba(110,86,60,${0.12 + rng() * 0.16})`;
+    ctx.beginPath(); ctx.arc(rng() * w, rng() * h, 0.7 + rng() * 2.2, 0, Math.PI * 2); ctx.fill();
   }
 }
 
@@ -102,7 +102,7 @@ export class ToolModels {
     const track = (g) => { this.geos.push(g); return g; };
     this.woodTex = canvasTex(THREE, 64, 512, (c, w, h) => woodGrain(c, w, h, 41));
     this.steelTex = canvasTex(THREE, 128, 128, (c, w, h) => steelGrime(c, w, h, 43));
-    this.wood = new THREE.MeshStandardMaterial({ map: this.woodTex, color: 0xbdb2a2, roughness: 0.72, metalness: 0 });   // (VO-A: a little less orange)
+    this.wood = new THREE.MeshStandardMaterial({ map: this.woodTex, color: 0xbdb2a2, roughness: 0.8, metalness: 0 });   // (VO-A: a little less orange)
     this.steel = new THREE.MeshStandardMaterial({ map: this.steelTex, color: 0x8a8c8f, roughness: 0.45, metalness: 0.85, envMap: envMap || null, envMapIntensity: 0.9 });
     this.edge = new THREE.MeshStandardMaterial({ map: this.steelTex, color: 0xc9c7c2, roughness: 0.3, metalness: 0.95, envMap: envMap || null, envMapIntensity: 1.1 });
     // leather grip wrap: a strap wound round the handle (diagonal turns)
